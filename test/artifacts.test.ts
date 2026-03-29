@@ -3,6 +3,7 @@ import { mkdirSync, mkdtempSync, readFileSync, readdirSync, rmSync, writeFileSyn
 import os from 'node:os';
 import path from 'node:path';
 import test from 'node:test';
+import { loadDistModule } from './helpers/load-dist-module.js';
 import {
   readJsonArtifact,
   readJsonLinesArtifact,
@@ -10,6 +11,10 @@ import {
   writeJsonLinesArtifact,
   writeTextArtifact,
 } from '../src/lib/artifacts.js';
+
+async function loadDistArtifactsModule(): Promise<typeof import('../src/lib/artifacts.js')> {
+  return loadDistModule('src/lib/artifacts.js');
+}
 
 test('writeTextArtifact writes plain text and creates parent directories', () => {
   const dir = mkdtempSync(path.join(os.tmpdir(), 'tg-cli-artifacts-text-'));
@@ -112,6 +117,28 @@ test('readJsonLinesArtifact skips blank lines and throws on invalid JSONL', () =
       () => readJsonLinesArtifact(invalidPath),
       /Artifact file contains invalid JSONL at line 2/u,
     );
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+test('artifact helpers behave the same from the built dist module', async () => {
+  const artifacts = await loadDistArtifactsModule();
+  const dir = mkdtempSync(path.join(os.tmpdir(), 'tg-cli-artifacts-dist-'));
+  const textPath = path.join(dir, 'nested', 'artifact.txt');
+  const jsonPath = path.join(dir, 'artifact.json');
+  const jsonlPath = path.join(dir, 'artifact.jsonl');
+
+  try {
+    assert.equal(artifacts.writeTextArtifact(textPath, 'hello\n'), textPath);
+    assert.equal(readFileSync(textPath, 'utf8'), 'hello\n');
+
+    artifacts.writeJsonArtifact(jsonPath, { hello: 'world' }, true);
+    assert.deepEqual(artifacts.readJsonArtifact(jsonPath), { hello: 'world' });
+
+    artifacts.writeJsonLinesArtifact(jsonlPath, { id: 1 });
+    artifacts.writeJsonLinesArtifact(jsonlPath, [{ id: 2 }], { append: true });
+    assert.deepEqual(artifacts.readJsonLinesArtifact(jsonlPath), [{ id: 1 }, { id: 2 }]);
   } finally {
     rmSync(dir, { recursive: true, force: true });
   }

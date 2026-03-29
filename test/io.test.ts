@@ -3,7 +3,12 @@ import assert from 'node:assert/strict';
 import { mkdtempSync, rmSync, writeFileSync } from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
+import { loadDistModule } from './helpers/load-dist-module.js';
 import { readJsonInput, stringifyJson } from '../src/lib/io.js';
+
+async function loadDistIoModule(): Promise<typeof import('../src/lib/io.js')> {
+  return loadDistModule('src/lib/io.js');
+}
 
 test('readJsonInput reads valid json files', () => {
   const dir = mkdtempSync(path.join(os.tmpdir(), 'tg-cli-io-valid-'));
@@ -35,4 +40,10 @@ test('readJsonInput throws for missing and invalid files', () => {
 test('stringifyJson supports pretty and compact output', () => {
   assert.equal(stringifyJson({ hello: 'world' }, false), '{\n  "hello": "world"\n}\n');
   assert.equal(stringifyJson({ hello: 'world' }, true), '{"hello":"world"}\n');
+});
+
+test('io helpers behave the same from the built dist module', async () => {
+  const io = await loadDistIoModule();
+
+  assert.equal(io.stringifyJson({ hello: 'world' }, true), '{"hello":"world"}\n');
 });

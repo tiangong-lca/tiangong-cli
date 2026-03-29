@@ -17,9 +17,21 @@ Current implementation choices:
 - `tiangong search flow`
 - `tiangong search process`
 - `tiangong search lifecyclemodel`
+- `tiangong lifecyclemodel build-resulting-process`
 - `tiangong publish run`
 - `tiangong validation run`
 - `tiangong admin embedding-run`
+
+## Planned command surface
+
+The `lifecyclemodel` namespace is now partially implemented. The remaining planned surface is:
+
+- `tiangong lifecyclemodel publish-resulting-process`
+- `tiangong lifecyclemodel auto-build`
+- `tiangong lifecyclemodel validate-build`
+- `tiangong lifecyclemodel publish-build`
+
+These remaining commands are intentionally not executable yet. They print an explicit `not implemented yet` message and exit with code `2` until the corresponding workflows are migrated into TypeScript.
 
 The stable launcher is `bin/tiangong.js`. It loads the compiled runtime at `dist/src/main.js`, while `npm start -- ...` rebuilds and dogfoods the same launcher path.
 
@@ -73,6 +85,7 @@ npm start -- --help
 npm start -- doctor
 npm start -- doctor --json
 npm start -- search flow --input ./request.json --dry-run
+npm start -- lifecyclemodel build-resulting-process --input ./request.json --json
 npm start -- publish run --input ./publish-request.json --dry-run
 npm start -- validation run --input-dir ./tidas-package --engine auto
 npm start -- admin embedding-run --input ./jobs.json --dry-run

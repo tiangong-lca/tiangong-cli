@@ -30,6 +30,8 @@ tiangong
     flow
     process
     lifecyclemodel
+  lifecyclemodel
+    build-resulting-process
   publish
     run
   validation
@@ -40,15 +42,27 @@ tiangong
 
 对应关系：
 
-| CLI 命令                         | 当前后端能力                                         |
-| -------------------------------- | ---------------------------------------------------- |
-| `tiangong doctor`                | 本地环境诊断、`.env` 加载、统一 env 合同检查         |
-| `tiangong search flow`           | `flow_hybrid_search`                                 |
-| `tiangong search process`        | `process_hybrid_search`                              |
-| `tiangong search lifecyclemodel` | `lifecyclemodel_hybrid_search`                       |
-| `tiangong publish run`           | 本地 publish 契约归一化、dry-run/commit、report 输出 |
-| `tiangong validation run`        | 本地 `tidas-sdk` / `tidas-tools` 校验收口            |
-| `tiangong admin embedding-run`   | `embedding_ft`                                       |
+| CLI 命令 | 当前后端能力 |
+| --- | --- |
+| `tiangong doctor` | 本地环境诊断、`.env` 加载、统一 env 合同检查 |
+| `tiangong search flow` | `flow_hybrid_search` |
+| `tiangong search process` | `process_hybrid_search` |
+| `tiangong search lifecyclemodel` | `lifecyclemodel_hybrid_search` |
+| `tiangong lifecyclemodel build-resulting-process` | 本地 lifecycle model resulting process 聚合、内部 flow 抵消、artifact 输出 |
+| `tiangong publish run` | 本地 publish 契约归一化、dry-run/commit、report 输出 |
+| `tiangong validation run` | 本地 `tidas-sdk` / `tidas-tools` 校验收口 |
+| `tiangong admin embedding-run` | `embedding_ft` |
+
+此外，CLI 现在已经正式引入 `tiangong lifecyclemodel ...` 一级命名空间，其中：
+
+- `tiangong lifecyclemodel build-resulting-process` 已可执行
+- `publish-resulting-process`、`auto-build`、`validate-build`、`publish-build` 仍处于 planned 状态
+
+注意：
+
+- 已实现的 `build-resulting-process` 走本地优先、artifact-first 路径，不依赖 Python 或 MCP
+- 其余未实现的 `lifecyclemodel` 子命令仍只提供 help 和固定命名
+- 这样做的目的不是“假装已完成”，而是先固定命令树，再逐个把 workflow 迁入 TypeScript CLI
 
 ### 2.2 已经固定的工程约束
 

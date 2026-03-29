@@ -4,6 +4,11 @@ import type { DotEnvLoadResult } from './lib/dotenv.js';
 import { CliError, toErrorPayload } from './lib/errors.js';
 import type { FetchLike } from './lib/http.js';
 import { stringifyJson } from './lib/io.js';
+import {
+  runLifecyclemodelBuildResultingProcess,
+  type LifecyclemodelResultingProcessReport,
+  type RunLifecyclemodelResultingProcessOptions,
+} from './lib/lifecyclemodel-resulting-process.js';
 import { runPublish, type PublishReport, type RunPublishOptions } from './lib/publish.js';
 import { executeRemoteCommand, getRemoteCommandHelp } from './lib/remote.js';
 import {
@@ -18,6 +23,9 @@ export type CliDeps = {
   fetchImpl: FetchLike;
   runPublishImpl?: (options: RunPublishOptions) => Promise<PublishReport>;
   runValidationImpl?: (options: RunValidationOptions) => Promise<ValidationRunReport>;
+  runLifecyclemodelBuildResultingProcessImpl?: (
+    options: RunLifecyclemodelResultingProcessOptions,
+  ) => Promise<LifecyclemodelResultingProcessReport>;
 };
 
 export type CliResult = {
@@ -46,16 +54,23 @@ Usage:
   tiangong <command> [subcommand] [options]
 
 Commands:
-  auth       whoami | doctor-auth
+Implemented Commands:
+  doctor     show environment diagnostics
   search     flow | process | lifecyclemodel
+  lifecyclemodel build-resulting-process
   publish    run
   validation run
+  admin      embedding-run
+
+Planned Surface (not implemented yet):
+  auth       whoami | doctor-auth
+  lifecyclemodel publish-resulting-process | auto-build | validate-build | publish-build
   review     flow | process
   flow       get | list | remediate | publish-version | regen-product
   process    get | auto-build | resume-build | publish-build | batch-build
   job        get | wait | logs
-  admin      embedding-run
-  doctor     show environment diagnostics
+
+Planned commands currently print an explicit "not implemented yet" message and exit with code 2.
 
 Examples:
   tiangong doctor
@@ -136,6 +151,93 @@ Options:
   --json               Print compact JSON
   -h, --help
 `.trim();
+}
+
+function renderLifecyclemodelBuildResultingProcessHelp(): string {
+  return `Usage:
+  tiangong lifecyclemodel build-resulting-process --input <file> [options]
+
+Options:
+  --input <file>     JSON request file
+  --out-dir <dir>    Override the default artifact output directory
+  --json             Print compact JSON
+  -h, --help
+`.trim();
+}
+
+function renderLifecyclemodelHelp(): string {
+  return `Usage:
+  tiangong lifecyclemodel <subcommand> [options]
+
+Implemented Subcommands:
+  build-resulting-process   Deterministically aggregate a lifecycle model into a resulting process bundle
+
+Planned Subcommands:
+  publish-resulting-process Publish a previously built resulting process run through the unified publish layer
+  auto-build                Assemble lifecycle models from discovered candidate processes
+  validate-build            Re-run local validation on a lifecycle model build run
+  publish-build             Publish a lifecycle model build run through the unified publish layer
+
+Examples:
+  tiangong lifecyclemodel --help
+  tiangong lifecyclemodel build-resulting-process --help
+  tiangong lifecyclemodel auto-build --help
+`.trim();
+}
+
+const lifecyclemodelPlannedHelp = {
+  'publish-resulting-process': `Usage:
+  tiangong lifecyclemodel publish-resulting-process --run-dir <dir> [options]
+
+Planned contract:
+  - read one prior resulting-process run directory
+  - ingest its publish handoff artifacts
+  - delegate commit semantics to the unified publish module
+
+Status:
+  Planned command. Execution is not implemented yet.
+`.trim(),
+  'auto-build': `Usage:
+  tiangong lifecyclemodel auto-build --input <file> [options]
+
+Planned contract:
+  - read one lifecycle model build manifest from --input
+  - discover candidate processes through CLI query surfaces
+  - assemble native json_ordered lifecycle model artifacts locally
+
+Status:
+  Planned command. Execution is not implemented yet.
+`.trim(),
+  'validate-build': `Usage:
+  tiangong lifecyclemodel validate-build --run-dir <dir> [options]
+
+Planned contract:
+  - load one lifecycle model build run directory
+  - re-run local validation through the unified validation module
+  - write a structured validation report into the run artifacts
+
+Status:
+  Planned command. Execution is not implemented yet.
+`.trim(),
+  'publish-build': `Usage:
+  tiangong lifecyclemodel publish-build --run-dir <dir> [options]
+
+Planned contract:
+  - load one lifecycle model build run directory
+  - publish lifecycle model artifacts through the unified publish module
+  - preserve dry-run and commit semantics from tiangong publish run
+
+Status:
+  Planned command. Execution is not implemented yet.
+`.trim(),
+} as const;
+
+type LifecyclemodelPlannedSubcommand = keyof typeof lifecyclemodelPlannedHelp;
+
+function isLifecyclemodelPlannedSubcommand(
+  value: string | null,
+): value is LifecyclemodelPlannedSubcommand {
+  return Boolean(value && value in lifecyclemodelPlannedHelp);
 }
 
 function renderDoctorText(report: ReturnType<typeof buildDoctorReport>): string {
@@ -388,6 +490,40 @@ function parseValidationFlags(args: string[]): {
   };
 }
 
+function parseLifecyclemodelBuildFlags(args: string[]): {
+  help: boolean;
+  json: boolean;
+  inputPath: string;
+  outDir: string | null;
+} {
+  let values: ReturnType<typeof parseArgs>['values'];
+  try {
+    ({ values } = parseArgs({
+      args,
+      allowPositionals: false,
+      strict: true,
+      options: {
+        help: { type: 'boolean', short: 'h' },
+        json: { type: 'boolean' },
+        input: { type: 'string' },
+        'out-dir': { type: 'string' },
+      },
+    }));
+  } catch (error) {
+    throw new CliError(String(error), {
+      code: 'INVALID_ARGS',
+      exitCode: 2,
+    });
+  }
+
+  return {
+    help: Boolean(values.help),
+    json: Boolean(values.json),
+    inputPath: typeof values.input === 'string' ? values.input : '',
+    outDir: typeof values['out-dir'] === 'string' ? values['out-dir'] : null,
+  };
+}
+
 function plannedCommand(command: string, subcommand?: string): CliResult {
   const suffix = subcommand ? ` ${subcommand}` : '';
   return {
@@ -415,6 +551,8 @@ export async function executeCli(argv: string[], deps: CliDeps): Promise<CliResu
     const { flags, command, subcommand, commandArgs } = parseCommandLine(argv);
     const publishImpl = deps.runPublishImpl ?? runPublish;
     const validationImpl = deps.runValidationImpl ?? runValidation;
+    const lifecyclemodelBuildImpl =
+      deps.runLifecyclemodelBuildResultingProcessImpl ?? runLifecyclemodelBuildResultingProcess;
 
     if (flags.version) {
       return { exitCode: 0, stdout: '0.0.1\n', stderr: '' };
@@ -464,6 +602,43 @@ export async function executeCli(argv: string[], deps: CliDeps): Promise<CliResu
         }),
         stderr: '',
       };
+    }
+
+    if (command === 'lifecyclemodel' && !subcommand) {
+      return { exitCode: 0, stdout: `${renderLifecyclemodelHelp()}\n`, stderr: '' };
+    }
+
+    if (command === 'lifecyclemodel' && subcommand === 'build-resulting-process') {
+      const lifecyclemodelFlags = parseLifecyclemodelBuildFlags(commandArgs);
+      if (lifecyclemodelFlags.help) {
+        return {
+          exitCode: 0,
+          stdout: `${renderLifecyclemodelBuildResultingProcessHelp()}\n`,
+          stderr: '',
+        };
+      }
+
+      const report = await lifecyclemodelBuildImpl({
+        inputPath: lifecyclemodelFlags.inputPath,
+        outDir: lifecyclemodelFlags.outDir,
+      });
+
+      return {
+        exitCode: 0,
+        stdout: stringifyJson(report, lifecyclemodelFlags.json),
+        stderr: '',
+      };
+    }
+
+    if (command === 'lifecyclemodel' && isLifecyclemodelPlannedSubcommand(subcommand)) {
+      if (commandArgs.includes('--help') || commandArgs.includes('-h')) {
+        return {
+          exitCode: 0,
+          stdout: `${lifecyclemodelPlannedHelp[subcommand]}\n`,
+          stderr: '',
+        };
+      }
+      return plannedCommand(command, subcommand);
     }
 
     if (command === 'admin' && !subcommand && commandArgs.includes('--help')) {

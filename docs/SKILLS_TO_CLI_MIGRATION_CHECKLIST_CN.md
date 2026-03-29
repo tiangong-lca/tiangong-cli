@@ -71,7 +71,7 @@
 | `embedding-ft` | 已有等价 CLI | shell wrapper | 只保留 skill 文档，调用 `tiangong admin embedding-run` | P0 |
 | `process-automated-builder` | 仍是重 workflow | shell + Python + LangGraph + MCP + OpenAI + AI edge search + TianGong unstructured | 迁成 `tiangong process ...` 主链 | P1 |
 | `lifecyclemodel-automated-builder` | 仍是重 workflow | shell + Python + MCP + OpenAI | 迁成 `tiangong lifecyclemodel ...` 主链 | P1 |
-| `lifecyclemodel-resulting-process-builder` | 仍是重 workflow | Python builder + 可选 MCP lookup | 迁成 `tiangong lifecyclemodel ...` 或 `tiangong process ...` 构建子命令 | P1 |
+| `lifecyclemodel-resulting-process-builder` | CLI 本地 build 已落地，skill 仍未切换 | Python builder + 可选 MCP lookup | 迁成 `skill -> tiangong lifecyclemodel build/publish-resulting-process` | P1 |
 | `lifecycleinventory-review` | 仍是 review workflow | Python review script | 迁成 `tiangong review process` | P2 |
 | `flow-governance-review` | 仍是治理 workflow | shell + 多个 Python helper + 可选 MCP | 迁成 `tiangong flow ...` / `tiangong review flow` | P2 |
 | `lifecyclemodel-recursive-orchestrator` | 仍是 orchestrator | Python orchestrator，串联多个技能 | 迁成 CLI 编排命令 | P3 |
@@ -91,36 +91,87 @@
 - “应该统一到 CLI”是目标态
 - “现在还有 Python / skills 逻辑”是现状债务
 
-## 6. 分批迁移清单
+## 6. 可执行迁移路线
 
-## Phase 0：冻结旧世界
+下面这部分不是“方向建议”，而是可以直接排期和建 issue 的执行顺序。
 
-- [ ] 明确宣布：不再新增 Python 业务 workflow
-- [ ] 明确宣布：不再新增 skill 自带 transport / env parsing
-- [ ] 明确宣布：不再新增基于 MCP 的 CLI 内部能力
+总原则只有一句：
+
+> 先让 CLI 成为唯一真实入口，再把每个 skill 逐个改成 `skill -> tiangong`，最后删除 Python / MCP / 旧 env 遗留层。
+
+### Phase 0：冻结旧世界
+
+目标：
+
+- 停止继续制造新的 Python / MCP 债务
+
+ToDo：
+
+- [ ] 明确宣布：不再新增任何 Python 业务 workflow
+- [ ] 明确宣布：不再新增任何 skill 自带 transport / env parsing
+- [ ] 明确宣布：不再新增任何基于 MCP 的 CLI 内部能力
 - [ ] 将 `tiangong-lca-skills` 中所有新需求默认路由到 CLI issue
+- [ ] 将“skills 最终只保留文档、示例、薄 wrapper”写成明确约束，而不是口头共识
 
-## Phase 1：清掉薄 remote 技能
+完成定义：
 
-这批已经有 CLI 对应能力，应该最先清掉。
+- [ ] 新需求默认先问“CLI 命令叫什么”，而不是“再加一个 skill 脚本吗”
+- [ ] 新提交里不再出现新的 Python workflow、MCP client、独立 env parser
+
+### Phase 1：收口 CLI 当前事实
+
+目标：
+
+- 先把 CLI 变成“诚实的入口”，避免命令帮助和真实能力脱节
+
+ToDo：
+
+- [x] 整理 `tiangong-lca-cli` 当前命令面，只保留真实可用命令，或把未实现命令明确标成 `planned`
+- [x] 决定 `lifecyclemodel` 是否作为 CLI 一级命名空间正式引入
+- [x] 把当前真实已实现能力和计划中能力分开写清楚
+- [x] 清理明显的文档残留，例如 `TIANGONG_CLI_DIR` -> `TIANGONG_LCA_CLI_DIR`
+- [x] 确保 agent 看完 `--help` 后不会误以为某个关键命令已经可用
+
+交付物：
+
+- [x] 更新后的 CLI help
+- [x] 更新后的 CLI 实施文档
+- [x] 更新后的 skills 说明文档
+
+完成定义：
+
+- [x] “命令面”与“实际实现”一致
+- [x] 当前阶段需要调用的能力，都能从 CLI 文档直接找到
+
+### Phase 2：清掉薄 remote skills
+
+目标：
+
+- 完成第一批已经有 CLI 等价能力的 skill 收口
+
+ToDo：
 
 - [x] `flow-hybrid-search` wrapper 改为只调用 `tiangong search flow`
 - [x] `process-hybrid-search` wrapper 改为只调用 `tiangong search process`
 - [x] `lifecyclemodel-hybrid-search` wrapper 改为只调用 `tiangong search lifecyclemodel`
 - [x] `embedding-ft` wrapper 改为只调用 `tiangong admin embedding-run`
-- [x] 删除这些 skill 中的旧 token / env 兼容文案
-- [x] 删除这些 skill 中的直接 `curl` / shell transport 逻辑
-- [x] 统一 skill 调用路径变量为 `TIANGONG_LCA_CLI_DIR`
+- [ ] 再做一轮 smoke check，确认这些 wrapper 不再保留旧 token / env / HTTP 分支
+- [x] 全量文档中统一 skill 调用路径变量为 `TIANGONG_LCA_CLI_DIR`
 
 完成定义：
 
 - [x] 调用链只剩 `skill -> tiangong`
 - [x] 不再出现 `TIANGONG_API_KEY`、`TIANGONG_LCA_APIKEY`、`SUPABASE_FUNCTIONS_URL` 之类旧名
 - [x] 不再出现 skill 自己解析 HTTP header / base URL
+- [ ] 这 4 个 skill 可以被视为“迁移模板”
 
-## Phase 2：先补 CLI 基础模块，再迁重 workflow
+### Phase 3：把 CLI 基础模块正式变成 workflow 依赖面
 
-在移植重 workflow 前，CLI 需要先有可复用的 TS 基础能力。
+目标：
+
+- 不再让重 workflow 自己管理运行态、artifact、校验、LLM、KB、OCR、publish
+
+当前已具备：
 
 - [x] `run` 基础模块：`run_id`、目录布局、manifest、resume 元数据
 - [x] `artifacts` 模块：统一 JSON / JSONL / audit / report 输出
@@ -128,41 +179,103 @@
 - [x] `http` / `rest-client` 模块：统一 REST 调用、重试、超时、错误格式
 - [x] `llm` 模块：统一模型调用抽象，不再直接暴露 `OPENAI_*`
 - [x] `kb-search` 模块：统一 `tiangong-ai-edge-function` 检索客户端
-- [x] `unstructured` 模块：统一 TianGong unstructured OCR / SI 解析客户端（当前使用 `/mineru_with_images`）
+- [x] `unstructured` 模块：统一 TianGong unstructured OCR / SI 解析客户端
 - [x] `publish` 模块：统一 dry-run / commit / publish report
 - [x] `validation` 模块：把 `tidas-sdk` / `tidas-tools` 校验调用收口到 CLI
 
+还需要做：
+
+- [ ] 明确哪些模块已经允许 workflow 直接依赖，哪些仍是内部预备模块
+- [ ] 为后续 workflow 命令确定稳定的输入输出契约
+- [ ] 确保未来不会再在 skill 里复制一份这些能力
+
 完成定义：
 
-- [x] 重 workflow 不再需要自己管理 env 解析
-- [x] 重 workflow 不再需要自己管理 artifact 目录约定
-- [x] 后续命令只是在复用 CLI 模块，而不是复制 Python 脚本
+- [ ] 重 workflow 迁移时，只需要编排 CLI 模块，而不需要重新设计 transport / cache / validation / publish
 
-当前落地点：
+### Phase 4：先迁 `lifecyclemodel-resulting-process-builder`
 
-- `tiangong publish run`：统一 publish request、bundle ingestion、dry-run / commit override、publish-report
-- `tiangong validation run`：统一 `tidas-sdk` / `tidas-tools` 报告形状与选择逻辑
-- `publish` 当前不会为了兼容旧实现而把 MCP 写库路径倒灌进 CLI；远端 commit 通过后续显式 executor 接入
+这一步不是因为它最重要，而是因为它最适合作为“第一个完整 CLI 化重 workflow 模板”。
 
-## Phase 3：迁 `process-automated-builder`
+当前状态：
 
-这是最高优先级的重 workflow。
+- `tiangong lifecyclemodel build-resulting-process` 已在 CLI 中落地，且通过 `npm run prepush:gate`
+- 仍未完成 `publish-resulting-process`、skill wrapper 收口、旧 Python 主入口删除
 
-建议目标命令：
+目标命令：
+
+- [x] `tiangong lifecyclemodel build-resulting-process`
+- [ ] `tiangong lifecyclemodel publish-resulting-process`
+
+ToDo：
+
+- [x] 在 CLI 中补齐 `lifecyclemodel` 顶层命名空间
+- [x] 将 lifecycle model 读取、拓扑解析、聚合投影逻辑迁到 TS
+- [x] 将 process catalog / local run 解析改为复用 CLI 模块
+- [ ] 将远程 process lookup 从可选 MCP lookup 改为直接 REST 查询
+- [ ] 保留 `publish-bundle.json` 契约，但发布入口统一走 CLI publish
+- [ ] skill wrapper 改为只调用 CLI
+- [ ] 删除 Python build / publish 主入口
+
+交付物：
+
+- [x] CLI 子命令实现
+- [x] CLI 测试
+- [x] 对应文档
+- [ ] skills 薄 wrapper
+
+完成定义：
+
+- [ ] 这个 skill 不再需要 Python builder
+- [ ] 这个 skill 不再需要 MCP lookup
+- [ ] 这个 skill 成为后续其它重 workflow CLI 化的参考模板
+
+### Phase 5：收口 publish / validation，清掉交付层并行实现
+
+目标：
+
+- 不再允许某个 skill 自带一套 publish 或 validation 逻辑
+
+ToDo：
+
+- [ ] 所有需要本地校验的 skill，统一改走 `tiangong validation run`
+- [ ] 所有需要 publish handoff 的 skill，统一改走 `tiangong publish run`
+- [ ] 若 `publish run` 还缺少远端 commit executor，则在 CLI 里补，不在 skills 里补
+- [ ] 将 `lca-publish-executor` 改成 CLI wrapper 或直接废弃
+- [ ] 明确 relation manifest / deferred publish / dry-run / commit 的唯一语义
+
+完成定义：
+
+- [ ] `lca-publish-executor` 不再是 Python publish contract layer
+- [ ] 没有任何 skill 再维护独立 publish 契约
+- [ ] 没有任何 skill 再自行判断用 `tidas-sdk` 还是 `tidas-tools`
+
+### Phase 6：迁 `process-automated-builder`
+
+这是最大的债务，也是最关键的主链迁移。
+
+目标命令：
 
 - [ ] `tiangong process auto-build`
 - [ ] `tiangong process resume-build`
 - [ ] `tiangong process publish-build`
 - [ ] `tiangong process batch-build`
 
+建议拆成 4 个连续小步骤，而不是一次性大迁移：
+
+- [ ] 6.1 先实现 `auto-build` 的本地产物路径，不做 publish
+- [ ] 6.2 再实现 `resume-build`，把 state-lock / run manifest 彻底收口到 CLI
+- [ ] 6.3 再实现 `publish-build`，接到统一 publish 模块
+- [ ] 6.4 最后实现 `batch-build`
+
 迁移内容：
 
 - [ ] 流程编排迁到 TS
 - [ ] flow search 改为直接 REST，而不是 MCP
-- [ ] publish 改为直接 REST，而不是 MCP CRUD
-- [ ] LLM 调用改为 CLI 自己的 provider abstraction
-- [ ] KB 检索改为 CLI 自己的 AI edge search client
-- [ ] unstructured 调用改为 CLI 自己的 client
+- [ ] publish 改为直接 REST / CLI publish，而不是 MCP CRUD
+- [ ] LLM 调用改为 CLI 的 provider abstraction
+- [ ] KB 检索改为 CLI 的 AI edge search client
+- [ ] unstructured 调用改为 CLI 的 client
 - [ ] 本地状态锁、cache、resume 逻辑迁到 CLI
 - [ ] 保留 artifact 契约，不保留 Python 实现
 
@@ -172,72 +285,90 @@
 - [ ] 对 LangGraph 的硬依赖
 - [ ] 对 `OPENAI_*`、`TIANGONG_LCA_REMOTE_*`、`TIANGONG_KB_REMOTE_*`、`TIANGONG_MINERU_WITH_IMAGE_*` 的依赖
 
-## Phase 4：迁 `lifecyclemodel-automated-builder`
+完成定义：
 
-建议目标命令：
+- [ ] `process-automated-builder` 只剩 `skill -> tiangong process ...`
+- [ ] agent 不再需要知道 LangGraph / MCP / OpenAI / MinerU 细节
+
+### Phase 7：迁 `lifecyclemodel-automated-builder`
+
+目标命令：
 
 - [ ] `tiangong lifecyclemodel auto-build`
 - [ ] `tiangong lifecyclemodel validate-build`
 - [ ] `tiangong lifecyclemodel publish-build`
 
-迁移内容：
+ToDo：
 
 - [ ] process discovery 改为 CLI 统一查询面
+- [ ] AI 选择逻辑改为 CLI LLM 模块
 - [ ] 本地 `json_ordered` 组装改为 TS
 - [ ] 本地校验改为 CLI 调用 `tidas-sdk` / `tidas-tools`
-- [ ] publish 改为直接 REST
+- [ ] publish 改为统一 publish 模块
 - [ ] 去掉只为 MCP insert 保留的分支
 
-## Phase 5：迁 `lifecyclemodel-resulting-process-builder`
+完成定义：
 
-建议目标命令：
+- [ ] lifecycle model 自动构建不再依赖 Python 和 MCP
+- [ ] 与 resulting-process / process build 的运行态契约一致
 
-- [ ] `tiangong lifecyclemodel build-resulting-process`
-- [ ] `tiangong lifecyclemodel publish-resulting-process`
+### Phase 8：迁 review / governance
 
-迁移内容：
+目标：
 
-- [ ] lifecycle model 读取、拓扑解析、聚合投影改为 TS
-- [ ] process catalog / local run 解析改为 CLI 模块
-- [ ] 远程 process lookup 改为直接 REST 查询
-- [ ] `publish-bundle.json` 生成契约保留，Python builder 删除
+- 把 review 与治理能力收口到统一 CLI，而不是分散脚本
 
-## Phase 6：迁 review / governance / publish
-
-这一批偏治理和交付层，复杂度高，但也最能体现 CLI 统一入口价值。
+ToDo：
 
 - [ ] `lifecycleinventory-review` -> `tiangong review process`
-- [ ] `flow-governance-review` -> `tiangong flow ...` / `tiangong review flow`
-- [ ] `lca-publish-executor` -> `tiangong publish ...`
+- [ ] `flow-governance-review` -> `tiangong review flow`
+- [ ] 视需要补 `tiangong flow get|list|remediate|publish-version|regen-product`
+- [ ] review 输出继续保持本地 artifact-first
+- [ ] 去掉 review 脚本中的直接 OpenAI / MCP 路径
 
-重点原则：
+完成定义：
 
-- [ ] review 输出保持本地 artifact-first
-- [ ] publish 统一 dry-run / commit 语义
-- [ ] 不再允许某个 skill 自带一套 publish 契约
+- [ ] review / governance 能力可以直接从 CLI 命令树被发现
+- [ ] agent 不再需要进入某个 skill 内部脚本目录才能执行治理任务
 
-## Phase 7：迁 orchestrator
+### Phase 9：最后迁 orchestrator
+
+只有在前面的构建、publish、review 子命令都稳定后，才应该做这一步。
+
+ToDo：
 
 - [ ] `lifecyclemodel-recursive-orchestrator` 迁成 CLI 编排命令
 - [ ] 所有子步骤只通过 `tiangong` 子命令调用
+- [ ] orchestrator 只负责编排，不再承载业务实现
 - [ ] 不再保留 Python orchestrator 作为总入口
 
-这一步必须放在前面重 workflow 完成后再做，否则只是把 Python 总控换个壳。
+完成定义：
 
-## Phase 8：删除遗留层
+- [ ] 总控层只编排 CLI
+- [ ] 没有新的“第二套入口”
+
+### Phase 10：删除遗留层
+
+目标：
+
+- 在代码层面真正完成“skills 全部只使用 CLI”
+
+ToDo：
 
 - [ ] 删除 skills 中的业务 Python 运行时
-- [ ] 删除 skills 中的业务 shell wrapper
-- [ ] 删除 skills 中的 transport/env parsing 逻辑
+- [ ] 删除 skills 中的业务 shell 实现，只保留薄 wrapper
+- [ ] 删除 skills 中的 transport / env parsing 逻辑
 - [ ] 删除 skills 中的 MCP-only 实现
 - [ ] 删除所有旧 env 名文档
 - [ ] 删除对 `TIANGONG_CLI_DIR` 旧变量名的依赖
+- [ ] 每个相关 repo merge 后，更新 `lca-workspace` 子模块指针
 
 最终 `skills` 仓库应只剩：
 
 - [ ] `SKILL.md`
 - [ ] 示例 request / assets
-- [ ] 对 `tiangong` 的单行调用
+- [ ] 参考文档
+- [ ] 对 `tiangong` 的薄调用
 
 ## 7. Env 收敛清单
 
@@ -272,10 +403,13 @@
 - [ ] `SUPABASE_FUNCTIONS_URL`
 - [ ] `SUPABASE_FUNCTION_REGION`
 - [ ] `OPENAI_*`
+- [ ] `LCA_OPENAI_*`
 - [ ] `TIANGONG_KB_*`（旧直连命名）
 - [ ] `TIANGONG_LCA_REMOTE_*`
 - [ ] `TIANGONG_KB_REMOTE_*`
 - [ ] `TIANGONG_MINERU_WITH_IMAGE_*`
+- [ ] `MINERU_*`
+- [ ] `MINERU_WITH_IMAGES_*`
 
 ## 8. 每个 Skill 的完成定义
 
@@ -285,31 +419,35 @@
 - [ ] skill 不再直接访问 REST / MCP
 - [ ] skill 不再解析 env
 - [ ] skill 不再持有独立 publish 逻辑
-- [ ] skill 调用统一 `tiangong` 命令
+- [ ] skill 只调用统一 `tiangong` 命令
 - [ ] 对应 CLI 子命令有测试
 - [ ] 对应 CLI 子命令有文档
 - [ ] 对应 CLI 子命令纳入 `npm run prepush:gate`
+- [ ] 对应 skill 文档已改成 CLI 用法
 
-## 9. 建议执行顺序
+## 9. 立即执行的短清单
 
-推荐严格按这个顺序推进：
+如果只按最短路径推进，下一轮建议严格做这 8 件事：
 
-1. 先清掉薄 remote skill
-2. 再补 CLI 基础模块
-3. 再迁 `process-automated-builder`
-4. 再迁 `lifecyclemodel-automated-builder`
-5. 再迁 `lifecyclemodel-resulting-process-builder`
-6. 再迁 review / governance / publish
-7. 最后迁 orchestrator
-8. 全量删除 Python 遗留层
+当前已完成：1-4。
 
-不建议的顺序：
+1. 修 CLI help，让命令面和真实实现一致。
+2. 修 skills 文档中的 `TIANGONG_CLI_DIR` 残留。
+3. 正式引入 `tiangong lifecyclemodel ...` 命名空间。
+4. 先完成 `tiangong lifecyclemodel build-resulting-process`。
+5. 再完成 `tiangong lifecyclemodel publish-resulting-process`。
+6. 把 `lifecyclemodel-resulting-process-builder` 改成薄 wrapper。
+7. 把 `lca-publish-executor` 收口到 `tiangong publish run`。
+8. 再进入 `tiangong process auto-build` 主链迁移。
 
-- 先迁 orchestrator
-- 先保留 Python 主逻辑，只包一层 TS 壳
-- 先统一文档，不统一执行面
+## 10. 不应该做的事
 
-## 10. 一句话标准
+- [ ] 不要先迁 orchestrator
+- [ ] 不要保留 Python 主逻辑，只包一层 TS 壳就算完成
+- [ ] 不要继续在 skills 里加新 env、新 transport、新 publish 约定
+- [ ] 不要为了兼容旧实现，把 MCP 重新带回 CLI
+
+## 11. 一句话标准
 
 判断迁移是否走在正确方向上，只问一句：
 

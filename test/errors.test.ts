@@ -1,6 +1,11 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
+import { loadDistModule } from './helpers/load-dist-module.js';
 import { CliError, toErrorPayload } from '../src/lib/errors.js';
+
+async function loadDistErrorsModule(): Promise<typeof import('../src/lib/errors.js')> {
+  return loadDistModule('src/lib/errors.js');
+}
 
 test('CliError stores code, exitCode, and details', () => {
   const error = new CliError('boom', {
@@ -50,6 +55,17 @@ test('toErrorPayload handles CliError, Error, and unknown values', () => {
     error: {
       code: 'UNKNOWN_THROWN_VALUE',
       message: 'weird',
+    },
+  });
+});
+
+test('error helpers behave the same from the built dist module', async () => {
+  const errors = await loadDistErrorsModule();
+
+  assert.deepEqual(errors.toErrorPayload(new errors.CliError('boom', { code: 'DIST_ERROR' })), {
+    error: {
+      code: 'DIST_ERROR',
+      message: 'boom',
     },
   });
 });

@@ -3,6 +3,7 @@ import { existsSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'no
 import os from 'node:os';
 import path from 'node:path';
 import test from 'node:test';
+import { loadDistModule } from './helpers/load-dist-module.js';
 import {
   buildResumeMetadata,
   buildRunId,
@@ -14,6 +15,10 @@ import {
   sanitizeRunToken,
   writeLatestRunId,
 } from '../src/lib/run.js';
+
+async function loadDistRunModule(): Promise<typeof import('../src/lib/run.js')> {
+  return loadDistModule('src/lib/run.js');
+}
 
 test('sanitizeRunToken normalizes user input and preserves fallback behavior', () => {
   assert.equal(sanitizeRunToken('Flow Search / CN'), 'flow_search_cn');
@@ -166,4 +171,56 @@ test('buildRunManifest and buildResumeMetadata emit deterministic metadata paylo
       resumedAt: '2026-03-28T08:50:00.000Z',
     },
   );
+});
+
+test('run helpers behave the same from the built dist module', async () => {
+  const run = await loadDistRunModule();
+  const dir = mkdtempSync(path.join(os.tmpdir(), 'tg-cli-run-dist-'));
+  const now = new Date('2026-03-28T09:00:00.000Z');
+
+  try {
+    assert.equal(run.sanitizeRunToken('Flow Search / CN'), 'flow_search_cn');
+    assert.equal(run.buildUtcTimestamp(now), '20260328T090000Z');
+
+    const runId = run.buildRunId({
+      namespace: 'Flow Search',
+      subject: 'Battery Pack',
+      operation: 'Build',
+      now,
+      suffix: 'custom-id',
+    });
+    assert.equal(runId, 'flow_search_battery_pack_build_20260328T090000Z_custom_id');
+
+    const layout = run.ensureRunLayout(run.resolveRunLayout(dir, 'Flow Search', 'run-dist'));
+    assert.equal(existsSync(layout.cacheDir), true);
+
+    run.writeLatestRunId(layout, 'run-dist-2');
+    assert.equal(run.readLatestRunId(layout.collectionDir), 'run-dist-2');
+
+    const manifest = run.buildRunManifest({
+      layout,
+      command: ['tiangong', 'flow', 'search'],
+      cwd: '/tmp/workspace',
+      createdAt: now,
+    });
+    assert.equal(manifest.cwd, '/tmp/workspace');
+    assert.equal(manifest.createdAt, now.toISOString());
+
+    const resumeMetadata = run.buildResumeMetadata({
+      runId: 'run-dist',
+      resumedFrom: 'step-02',
+      checkpoint: 'checkpoint-a',
+      attempt: 3,
+      resumedAt: now,
+    });
+    assert.deepEqual(resumeMetadata, {
+      runId: 'run-dist',
+      resumedFrom: 'step-02',
+      checkpoint: 'checkpoint-a',
+      attempt: 3,
+      resumedAt: now.toISOString(),
+    });
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
 });

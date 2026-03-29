@@ -35,6 +35,10 @@ test('executeCli prints main help when no command is given', async () => {
   const result = await executeCli([], makeDeps());
   assert.equal(result.exitCode, 0);
   assert.match(result.stdout, /Unified TianGong command entrypoint/u);
+  assert.match(result.stdout, /Implemented Commands:/u);
+  assert.match(result.stdout, /Planned Surface \(not implemented yet\):/u);
+  assert.match(result.stdout, /lifecyclemodel build-resulting-process/u);
+  assert.match(result.stdout, /exit with code 2/u);
   assert.equal(result.stderr, '');
 });
 
@@ -143,6 +147,78 @@ test('executeCli returns group help for search and admin namespaces', async () =
   const adminHelp = await executeCli(['admin', '--help'], makeDeps());
   assert.equal(adminHelp.exitCode, 0);
   assert.match(adminHelp.stdout, /tiangong admin embedding-run/u);
+});
+
+test('executeCli returns help for the lifecyclemodel namespace and planned subcommands', async () => {
+  const lifecyclemodelHelp = await executeCli(['lifecyclemodel'], makeDeps());
+  assert.equal(lifecyclemodelHelp.exitCode, 0);
+  assert.match(lifecyclemodelHelp.stdout, /tiangong lifecyclemodel <subcommand>/u);
+  assert.match(lifecyclemodelHelp.stdout, /build-resulting-process/u);
+
+  const buildHelp = await executeCli(
+    ['lifecyclemodel', 'build-resulting-process', '--help'],
+    makeDeps(),
+  );
+  assert.equal(buildHelp.exitCode, 0);
+  assert.match(buildHelp.stdout, /tiangong lifecyclemodel build-resulting-process --input <file>/u);
+  assert.doesNotMatch(buildHelp.stdout, /Planned command/u);
+});
+
+test('executeCli executes lifecyclemodel build-resulting-process with injected implementation', async () => {
+  const dir = mkdtempSync(path.join(os.tmpdir(), 'tg-cli-lifecyclemodel-cli-'));
+  const inputPath = path.join(dir, 'request.json');
+  writeFileSync(inputPath, '{"source_model":{"json_ordered_path":"./model.json"}}', 'utf8');
+
+  try {
+    const result = await executeCli(
+      [
+        'lifecyclemodel',
+        'build-resulting-process',
+        '--json',
+        '--input',
+        inputPath,
+        '--out-dir',
+        './out',
+      ],
+      {
+        ...makeDeps(),
+        runLifecyclemodelBuildResultingProcessImpl: async (options) => {
+          assert.equal(options.inputPath, inputPath);
+          assert.equal(options.outDir, './out');
+          return {
+            generated_at_utc: '2026-03-29T00:00:00.000Z',
+            request_path: inputPath,
+            out_dir: path.join(dir, 'out'),
+            status: 'prepared_local_bundle',
+            projected_process_count: 1,
+            relation_count: 1,
+            source_model: {
+              id: 'lm-demo',
+              version: '00.00.001',
+              name: 'Demo model',
+              json_ordered_path: path.join(dir, 'model.json'),
+              reference_to_resulting_process_id: 'proc-demo',
+              reference_to_resulting_process_version: '00.00.001',
+              reference_process_instance_id: '1',
+            },
+            files: {
+              normalized_request: path.join(dir, 'out', 'request.normalized.json'),
+              source_model_normalized: path.join(dir, 'out', 'source-model.normalized.json'),
+              source_model_summary: path.join(dir, 'out', 'source-model.summary.json'),
+              projection_report: path.join(dir, 'out', 'projection-report.json'),
+              process_projection_bundle: path.join(dir, 'out', 'process-projection-bundle.json'),
+            },
+          };
+        },
+      },
+    );
+
+    assert.equal(result.exitCode, 0);
+    assert.match(result.stdout, /"status":"prepared_local_bundle"/u);
+    assert.match(result.stdout, /"process_projection_bundle"/u);
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
 });
 
 test('executeCli keeps subcommand --json inside remote command parsing', async () => {
@@ -458,6 +534,16 @@ test('executeCli returns parsing errors for invalid publish and validation flags
   assert.match(validationResult.stderr, /INVALID_ARGS/u);
 });
 
+test('executeCli returns parsing errors for invalid lifecyclemodel build flags', async () => {
+  const result = await executeCli(
+    ['lifecyclemodel', 'build-resulting-process', '--bad-flag'],
+    makeDeps(),
+  );
+  assert.equal(result.exitCode, 2);
+  assert.equal(result.stdout, '');
+  assert.match(result.stderr, /INVALID_ARGS/u);
+});
+
 test('executeCli executes validation run with injected implementation and report file', async () => {
   const dir = mkdtempSync(path.join(os.tmpdir(), 'tg-cli-validation-cli-'));
 
@@ -570,6 +656,21 @@ test('executeCli returns planned command message for unimplemented command', asy
   assert.equal(result.exitCode, 2);
   assert.equal(result.stdout, '');
   assert.match(result.stderr, /not implemented yet/u);
+});
+
+test('executeCli returns planned command message for lifecyclemodel subcommands after help is introduced', async () => {
+  const result = await executeCli(['lifecyclemodel', 'auto-build'], makeDeps());
+  assert.equal(result.exitCode, 2);
+  assert.equal(result.stdout, '');
+  assert.match(result.stderr, /Command 'lifecyclemodel auto-build'/u);
+});
+
+test('executeCli returns dedicated help for planned lifecyclemodel subcommands', async () => {
+  const result = await executeCli(['lifecyclemodel', 'auto-build', '--help'], makeDeps());
+  assert.equal(result.exitCode, 0);
+  assert.match(result.stdout, /Planned contract:/u);
+  assert.match(result.stdout, /discover candidate processes/u);
+  assert.equal(result.stderr, '');
 });
 
 test('executeCli returns planned command message when a command is missing a subcommand', async () => {
