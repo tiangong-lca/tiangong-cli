@@ -19,6 +19,11 @@ import {
   type ProcessAutoBuildReport,
   type RunProcessAutoBuildOptions,
 } from './lib/process-auto-build.js';
+import {
+  runProcessResumeBuild,
+  type ProcessResumeBuildReport,
+  type RunProcessResumeBuildOptions,
+} from './lib/process-resume-build.js';
 import { runPublish, type PublishReport, type RunPublishOptions } from './lib/publish.js';
 import { executeRemoteCommand, getRemoteCommandHelp } from './lib/remote.js';
 import {
@@ -42,6 +47,9 @@ export type CliDeps = {
   runProcessAutoBuildImpl?: (
     options: RunProcessAutoBuildOptions,
   ) => Promise<ProcessAutoBuildReport>;
+  runProcessResumeBuildImpl?: (
+    options: RunProcessResumeBuildOptions,
+  ) => Promise<ProcessResumeBuildReport>;
 };
 
 export type CliResult = {
@@ -73,7 +81,7 @@ Commands:
 Implemented Commands:
   doctor     show environment diagnostics
   search     flow | process | lifecyclemodel
-  process    auto-build
+  process    auto-build | resume-build
   lifecyclemodel build-resulting-process | publish-resulting-process
   publish    run
   validation run
@@ -94,6 +102,7 @@ Examples:
   tiangong search flow --input ./request.json
   tiangong search process --input ./request.json --dry-run
   tiangong process auto-build --input ./pff-request.json
+  tiangong process resume-build --run-id <id>
   tiangong publish run --input ./publish-request.json --dry-run
   tiangong validation run --input-dir ./package --engine auto
   tiangong admin embedding-run --input ./jobs.json
@@ -228,23 +237,35 @@ Options:
 `.trim();
 }
 
+function renderProcessResumeBuildHelp(): string {
+  return `Usage:
+  tiangong process resume-build [--run-id <id>] [--run-dir <dir>] [options]
+
+Options:
+  --run-id <id>      Existing process build run id
+  --run-dir <dir>    Existing process build run directory
+  --json             Print compact JSON
+  -h, --help
+`.trim();
+}
+
 function renderProcessHelp(): string {
   return `Usage:
   tiangong process <subcommand> [options]
 
 Implemented Subcommands:
   auto-build   Prepare a local process-from-flow run scaffold and artifact workspace
+  resume-build Prepare a local resume handoff from one existing process build run
 
 Planned Subcommands:
   get          Load one process dataset or process build run summary
-  resume-build Resume a prepared process build run and continue execution stages
   publish-build Publish a process build run through the unified publish layer
   batch-build  Run multiple process build requests through one batch-oriented CLI surface
 
 Examples:
   tiangong process --help
   tiangong process auto-build --help
-  tiangong process resume-build --help
+  tiangong process resume-build --run-id <id> --help
 `.trim();
 }
 
@@ -291,16 +312,6 @@ const processPlannedHelp = {
 Planned contract:
   - load one process dataset or process build run summary by identifier
   - keep read-only access distinct from build/publish workflows
-
-Status:
-  Planned command. Execution is not implemented yet.
-`.trim(),
-  'resume-build': `Usage:
-  tiangong process resume-build --run-id <id> [options]
-
-Planned contract:
-  - load one prepared process auto-build run
-  - continue stage execution from the persisted local state under artifacts/process_from_flow/<run_id>
 
 Status:
   Planned command. Execution is not implemented yet.
@@ -695,6 +706,40 @@ function parseProcessAutoBuildFlags(args: string[]): {
   };
 }
 
+function parseProcessResumeBuildFlags(args: string[]): {
+  help: boolean;
+  json: boolean;
+  runId: string;
+  runDir: string | null;
+} {
+  let values: ReturnType<typeof parseArgs>['values'];
+  try {
+    ({ values } = parseArgs({
+      args,
+      allowPositionals: false,
+      strict: true,
+      options: {
+        help: { type: 'boolean', short: 'h' },
+        json: { type: 'boolean' },
+        'run-id': { type: 'string' },
+        'run-dir': { type: 'string' },
+      },
+    }));
+  } catch (error) {
+    throw new CliError(String(error), {
+      code: 'INVALID_ARGS',
+      exitCode: 2,
+    });
+  }
+
+  return {
+    help: Boolean(values.help),
+    json: Boolean(values.json),
+    runId: typeof values['run-id'] === 'string' ? values['run-id'] : '',
+    runDir: typeof values['run-dir'] === 'string' ? values['run-dir'] : null,
+  };
+}
+
 function plannedCommand(command: string, subcommand?: string): CliResult {
   const suffix = subcommand ? ` ${subcommand}` : '';
   return {
@@ -727,6 +772,7 @@ export async function executeCli(argv: string[], deps: CliDeps): Promise<CliResu
     const lifecyclemodelPublishImpl =
       deps.runLifecyclemodelPublishResultingProcessImpl ?? runLifecyclemodelPublishResultingProcess;
     const processAutoBuildImpl = deps.runProcessAutoBuildImpl ?? runProcessAutoBuild;
+    const processResumeBuildImpl = deps.runProcessResumeBuildImpl ?? runProcessResumeBuild;
 
     if (flags.version) {
       return { exitCode: 0, stdout: '0.0.1\n', stderr: '' };
@@ -855,6 +901,28 @@ export async function executeCli(argv: string[], deps: CliDeps): Promise<CliResu
       const report = await processAutoBuildImpl({
         inputPath: processFlags.inputPath,
         outDir: processFlags.outDir,
+      });
+
+      return {
+        exitCode: 0,
+        stdout: stringifyJson(report, processFlags.json),
+        stderr: '',
+      };
+    }
+
+    if (command === 'process' && subcommand === 'resume-build') {
+      const processFlags = parseProcessResumeBuildFlags(commandArgs);
+      if (processFlags.help) {
+        return {
+          exitCode: 0,
+          stdout: `${renderProcessResumeBuildHelp()}\n`,
+          stderr: '',
+        };
+      }
+
+      const report = await processResumeBuildImpl({
+        runId: processFlags.runId || undefined,
+        runDir: processFlags.runDir,
       });
 
       return {

@@ -16,6 +16,7 @@
 - `tiangong search process`
 - `tiangong search lifecyclemodel`
 - `tiangong process auto-build`
+- `tiangong process resume-build`
 - `tiangong lifecyclemodel build-resulting-process`
 - `tiangong lifecyclemodel publish-resulting-process`
 - `tiangong publish run`
@@ -73,6 +74,7 @@ npm start -- doctor
 npm start -- doctor --json
 npm start -- search flow --input ./request.json --dry-run
 npm start -- process auto-build --input ./pff-request.json --json
+npm start -- process resume-build --run-id <run-id> --json
 npm start -- lifecyclemodel build-resulting-process --input ./request.json --json
 npm start -- lifecyclemodel publish-resulting-process --run-dir ./runs/example --publish-processes --publish-relations --json
 npm start -- publish run --input ./publish-request.json --dry-run
@@ -94,9 +96,20 @@ npm start -- admin embedding-run --input ./jobs.json --dry-run
 
 这个命令当前只负责本地 intake 与 scaffold，不负责继续执行后续工作流阶段。
 
+`tiangong process resume-build` 现在也已经进入可执行状态，负责：
+
+- 从 `--run-id` 或 `--run-dir` 重开一个现有 process build run
+- 校验 `process_from_flow_state.json`、`agent_handoff_summary.json`、`run-manifest.json` 等关键产物
+- 复用本地 state lock，避免并发写入同一个 run
+- 清理持久化的 `stop_after` checkpoint，并把状态推进到 `resume_prepared`
+- 输出 `resume-metadata.json`、`resume-history.jsonl`、更新 `invocation-index.json`
+- 重写 `agent_handoff_summary.json`
+- 输出 `process-resume-build-report.json`
+
+这个命令当前也只负责本地 resume handoff，不负责继续执行后续工作流阶段。
+
 也就是说，下面这些还没有迁完：
 
-- `tiangong process resume-build`
 - `tiangong process publish-build`
 - `tiangong process batch-build`
 
@@ -181,6 +194,7 @@ npm run build
 
 - 轻量远程 skill 直接调用 `tiangong search ...` 或 `tiangong admin ...`
 - `process-automated-builder` 已先迁入 `tiangong process auto-build` 本地 scaffold；剩余阶段继续按子命令切片迁移
+- `process-automated-builder` 的本地 resume handoff 也已迁入 `tiangong process resume-build`；后续阶段继续按子命令切片迁移
 - 其余重型 workflow 先保留原执行器，但由 `tiangong` 统一调度
 - 所有新脚本优先使用统一环境变量名，不再扩散旧变量名
 

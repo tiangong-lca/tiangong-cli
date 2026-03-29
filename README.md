@@ -18,6 +18,7 @@ Current implementation choices:
 - `tiangong search process`
 - `tiangong search lifecyclemodel`
 - `tiangong process auto-build`
+- `tiangong process resume-build`
 - `tiangong lifecyclemodel build-resulting-process`
 - `tiangong lifecyclemodel publish-resulting-process`
 - `tiangong publish run`
@@ -32,7 +33,6 @@ The `lifecyclemodel` and `process` namespaces are now partially implemented. The
 - `tiangong lifecyclemodel validate-build`
 - `tiangong lifecyclemodel publish-build`
 - `tiangong process get`
-- `tiangong process resume-build`
 - `tiangong process publish-build`
 - `tiangong process batch-build`
 
@@ -91,6 +91,7 @@ npm start -- doctor
 npm start -- doctor --json
 npm start -- search flow --input ./request.json --dry-run
 npm start -- process auto-build --input ./pff-request.json --json
+npm start -- process resume-build --run-id <run-id> --json
 npm start -- lifecyclemodel build-resulting-process --input ./request.json --json
 npm start -- lifecyclemodel publish-resulting-process --run-dir ./runs/example --publish-processes --publish-relations --json
 npm start -- publish run --input ./publish-request.json --dry-run
@@ -104,7 +105,9 @@ npm start -- admin embedding-run --input ./jobs.json --dry-run
 
 The command keeps the legacy per-run layout that later stages still expect, including `input/`, `exports/processes/`, `exports/sources/`, `cache/process_from_flow_state.json`, and `cache/agent_handoff_summary.json`. It also adds CLI-owned manifests such as the normalized request snapshot, flow summary, assembly plan, lineage manifest, invocation index, run manifest, and a compact report artifact.
 
-This command does not yet execute the downstream workflow stages. `resume-build`, `publish-build`, and `batch-build` remain separate planned slices.
+`tiangong process resume-build` is the second migrated `process_from_flow` slice. It reopens one existing local run by `--run-id` or `--run-dir`, validates the required run artifacts, takes the local state lock, clears any persisted `stop_after` checkpoint, records `resume-metadata.json` and `resume-history.jsonl`, updates `invocation-index.json`, rewrites `agent_handoff_summary.json`, and emits `process-resume-build-report.json`.
+
+`resume-build` still stops at the handoff boundary. It does not yet execute the downstream workflow stages; `publish-build` and `batch-build` remain planned slices.
 
 ## Publish and validation
 
@@ -119,6 +122,7 @@ Run the built artifact directly:
 ```bash
 node ./bin/tiangong.js doctor
 node ./bin/tiangong.js process auto-build --input ./pff-request.json --json
+node ./bin/tiangong.js process resume-build --run-id <run-id> --json
 node ./dist/src/main.js doctor --json
 ```
 

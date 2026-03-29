@@ -191,6 +191,15 @@ test('executeCli returns help for the process namespace and implemented subcomma
   assert.match(autoBuildHelp.stdout, /tiangong process auto-build --input <file>/u);
   assert.match(autoBuildHelp.stdout, /--out-dir/u);
   assert.doesNotMatch(autoBuildHelp.stdout, /Planned command/u);
+
+  const resumeBuildHelp = await executeCli(['process', 'resume-build', '--help'], makeDeps());
+  assert.equal(resumeBuildHelp.exitCode, 0);
+  assert.match(
+    resumeBuildHelp.stdout,
+    /tiangong process resume-build \[--run-id <id>\] \[--run-dir <dir>\]/u,
+  );
+  assert.match(resumeBuildHelp.stdout, /--run-dir/u);
+  assert.doesNotMatch(resumeBuildHelp.stdout, /Planned command/u);
 });
 
 test('executeCli executes lifecyclemodel build-resulting-process with injected implementation', async () => {
@@ -356,6 +365,110 @@ test('executeCli executes process auto-build with injected implementation', asyn
     assert.equal(result.exitCode, 0);
     assert.match(result.stdout, /"status":"prepared_local_process_auto_build_run"/u);
     assert.match(result.stdout, /"request_snapshot"/u);
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+test('executeCli executes process resume-build with injected implementation', async () => {
+  const dir = mkdtempSync(path.join(os.tmpdir(), 'tg-cli-process-resume-build-cli-'));
+  const runDir = path.join(dir, 'artifacts', 'process_from_flow', 'run-1');
+
+  try {
+    const result = await executeCli(
+      ['process', 'resume-build', '--json', '--run-id', 'run-1', '--run-dir', runDir],
+      {
+        ...makeDeps(),
+        runProcessResumeBuildImpl: async (options) => {
+          assert.equal(options.runId, 'run-1');
+          assert.equal(options.runDir, runDir);
+          return {
+            schema_version: 1,
+            generated_at_utc: '2026-03-29T00:00:00.000Z',
+            status: 'prepared_local_process_resume_run',
+            run_id: 'run-1',
+            run_root: runDir,
+            request_id: 'req-1',
+            resumed_from: '04_exchange_values',
+            checkpoint: 'matches',
+            attempt: 2,
+            state_summary: {
+              build_status: 'resume_prepared',
+              next_stage: '04_exchange_values',
+              stop_after: null,
+              process_count: 1,
+              matched_exchange_count: 1,
+              process_dataset_count: 1,
+              source_dataset_count: 1,
+            },
+            files: {
+              state: path.join(runDir, 'cache', 'process_from_flow_state.json'),
+              handoff_summary: path.join(runDir, 'cache', 'agent_handoff_summary.json'),
+              run_manifest: path.join(runDir, 'manifests', 'run-manifest.json'),
+              invocation_index: path.join(runDir, 'manifests', 'invocation-index.json'),
+              resume_metadata: path.join(runDir, 'manifests', 'resume-metadata.json'),
+              resume_history: path.join(runDir, 'manifests', 'resume-history.jsonl'),
+              report: path.join(runDir, 'reports', 'process-resume-build-report.json'),
+            },
+            next_actions: ['inspect: state'],
+          };
+        },
+      },
+    );
+
+    assert.equal(result.exitCode, 0);
+    assert.match(result.stdout, /"status":"prepared_local_process_resume_run"/u);
+    assert.match(result.stdout, /"resume_metadata"/u);
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+test('executeCli executes process resume-build with run-dir only', async () => {
+  const dir = mkdtempSync(path.join(os.tmpdir(), 'tg-cli-process-resume-build-cli-rundir-'));
+  const runDir = path.join(dir, 'artifacts', 'process_from_flow', 'run-2');
+
+  try {
+    const result = await executeCli(['process', 'resume-build', '--run-dir', runDir], {
+      ...makeDeps(),
+      runProcessResumeBuildImpl: async (options) => {
+        assert.equal(options.runId, undefined);
+        assert.equal(options.runDir, runDir);
+        return {
+          schema_version: 1,
+          generated_at_utc: '2026-03-29T00:10:00.000Z',
+          status: 'prepared_local_process_resume_run',
+          run_id: 'run-2',
+          run_root: runDir,
+          request_id: null,
+          resumed_from: 'resume_prepared',
+          checkpoint: null,
+          attempt: 1,
+          state_summary: {
+            build_status: 'resume_prepared',
+            next_stage: null,
+            stop_after: null,
+            process_count: 0,
+            matched_exchange_count: 0,
+            process_dataset_count: 0,
+            source_dataset_count: 0,
+          },
+          files: {
+            state: path.join(runDir, 'cache', 'process_from_flow_state.json'),
+            handoff_summary: path.join(runDir, 'cache', 'agent_handoff_summary.json'),
+            run_manifest: path.join(runDir, 'manifests', 'run-manifest.json'),
+            invocation_index: path.join(runDir, 'manifests', 'invocation-index.json'),
+            resume_metadata: path.join(runDir, 'manifests', 'resume-metadata.json'),
+            resume_history: path.join(runDir, 'manifests', 'resume-history.jsonl'),
+            report: path.join(runDir, 'reports', 'process-resume-build-report.json'),
+          },
+          next_actions: ['inspect: state'],
+        };
+      },
+    });
+
+    assert.equal(result.exitCode, 0);
+    assert.match(result.stdout, /prepared_local_process_resume_run/u);
   } finally {
     rmSync(dir, { recursive: true, force: true });
   }
@@ -674,7 +787,7 @@ test('executeCli returns parsing errors for invalid publish and validation flags
   assert.match(validationResult.stderr, /INVALID_ARGS/u);
 });
 
-test('executeCli returns parsing errors for invalid lifecyclemodel build, process build, and publish flags', async () => {
+test('executeCli returns parsing errors for invalid lifecyclemodel build, process build, resume, and publish flags', async () => {
   const result = await executeCli(
     ['lifecyclemodel', 'build-resulting-process', '--bad-flag'],
     makeDeps(),
@@ -695,6 +808,14 @@ test('executeCli returns parsing errors for invalid lifecyclemodel build, proces
   assert.equal(processResult.exitCode, 2);
   assert.equal(processResult.stdout, '');
   assert.match(processResult.stderr, /INVALID_ARGS/u);
+
+  const processResumeResult = await executeCli(
+    ['process', 'resume-build', '--bad-flag'],
+    makeDeps(),
+  );
+  assert.equal(processResumeResult.exitCode, 2);
+  assert.equal(processResumeResult.stdout, '');
+  assert.match(processResumeResult.stderr, /INVALID_ARGS/u);
 });
 
 test('executeCli executes validation run with injected implementation and report file', async () => {
@@ -819,10 +940,10 @@ test('executeCli returns planned command message for lifecyclemodel subcommands 
 });
 
 test('executeCli returns planned command message for process subcommands after help is introduced', async () => {
-  const result = await executeCli(['process', 'resume-build'], makeDeps());
+  const result = await executeCli(['process', 'publish-build'], makeDeps());
   assert.equal(result.exitCode, 2);
   assert.equal(result.stdout, '');
-  assert.match(result.stderr, /Command 'process resume-build'/u);
+  assert.match(result.stderr, /Command 'process publish-build'/u);
 });
 
 test('executeCli returns dedicated help for planned lifecyclemodel subcommands', async () => {
@@ -834,9 +955,9 @@ test('executeCli returns dedicated help for planned lifecyclemodel subcommands',
 });
 
 test('executeCli returns dedicated help for planned process subcommands', async () => {
-  const result = await executeCli(['process', 'resume-build', '--help'], makeDeps());
+  const result = await executeCli(['process', 'publish-build', '--help'], makeDeps());
   assert.equal(result.exitCode, 0);
-  assert.match(result.stdout, /tiangong process resume-build --run-id <id>/u);
+  assert.match(result.stdout, /tiangong process publish-build --run-id <id>/u);
   assert.match(result.stdout, /Execution is not implemented yet/u);
   assert.equal(result.stderr, '');
 });

@@ -32,6 +32,7 @@ tiangong
     lifecyclemodel
   process
     auto-build
+    resume-build
   lifecyclemodel
     build-resulting-process
     publish-resulting-process
@@ -52,6 +53,7 @@ tiangong
 | `tiangong search process` | `process_hybrid_search` |
 | `tiangong search lifecyclemodel` | `lifecyclemodel_hybrid_search` |
 | `tiangong process auto-build` | 本地 `process_from_flow` intake、run-id 生成、artifact scaffold 预写 |
+| `tiangong process resume-build` | 本地 `process_from_flow` resume handoff、state-lock/manifest 收口、resume 元数据与报告输出 |
 | `tiangong lifecyclemodel build-resulting-process` | 本地 lifecycle model resulting process 聚合、内部 flow 抵消、artifact 输出 |
 | `tiangong lifecyclemodel publish-resulting-process` | 读取 resulting-process run，生成 `publish-bundle.json` / `publish-intent.json` 本地交付物 |
 | `tiangong publish run` | 本地 publish 契约归一化、dry-run/commit、report 输出 |
@@ -67,12 +69,15 @@ tiangong
 `tiangong process ...` 也已经开始承接 `process_from_flow` 主链迁移，其中：
 
 - `tiangong process auto-build` 已可执行
-- `get`、`resume-build`、`publish-build`、`batch-build` 仍处于 planned 状态
+- `tiangong process resume-build` 已可执行
+- `get`、`publish-build`、`batch-build` 仍处于 planned 状态
 
 注意：
 
 - 已实现的 `process auto-build` 保留了旧 `artifacts/process_from_flow/<run_id>/`、`cache/process_from_flow_state.json`、`cache/agent_handoff_summary.json` 等运行布局
 - `process auto-build` 当前只负责本地 request intake、flow 归一化、run scaffold 和 manifest/report 预写，不继续执行后续阶段
+- 已实现的 `process resume-build` 保留同一套 run 布局，并把本地 state-lock、run-manifest 校验、resume metadata/history、invocation index 更新统一收口到 CLI
+- `process resume-build` 当前只负责本地 resume handoff，不继续执行 route / split / exchange / QA / publish 阶段
 - 已实现的 `build-resulting-process` 和 `publish-resulting-process` 都走本地优先、artifact-first 路径，不依赖 Python 或 MCP
 - `publish-resulting-process` 当前负责生成本地 publish handoff 产物，还没有把提交语义直接并入 `publish run`
 - 其余未实现的 `lifecyclemodel` / `process` 子命令仍只提供 help 和固定命名
@@ -190,6 +195,25 @@ tiangong admin embedding-run --input ./jobs.json --dry-run
 - 远程检索、LLM、OCR、publish commit
 - `resume-build`、`publish-build`、`batch-build`
 
+`process resume-build` 现在固定的是“本地 process-from-flow resume handoff 契约层”。
+
+它负责：
+
+- 从 `--run-id` 或 `--run-dir` 重开已有 run
+- 校验 `run-manifest.json`、`process_from_flow_state.json`、`agent_handoff_summary.json`
+- 使用 CLI 的 state lock 保护本地状态更新
+- 清除历史 `stop_after` checkpoint，并将状态推进到 `resume_prepared`
+- 写出 `resume-metadata.json`、追加 `resume-history.jsonl`
+- 更新 `invocation-index.json`
+- 重写 `agent_handoff_summary.json`
+- 产出 `process-resume-build-report.json`
+
+它现在还不负责：
+
+- 执行 route / split / exchange / QA / publish 等后续阶段
+- 远程检索、LLM、OCR、publish commit
+- `publish-build`、`batch-build`
+
 `publish run` 现在固定的是“稳定 publish 契约层”，不是历史 MCP 写库脚本的 TypeScript 复刻。
 
 它负责：
@@ -290,7 +314,8 @@ npm run prepush:gate
 
 - `process-automated-builder`
   - 已落地 `tiangong process auto-build`
-  - 仍待迁移 `resume-build`、`publish-build`、`batch-build`
+  - 已落地 `tiangong process resume-build`
+  - 仍待迁移 `publish-build`、`batch-build`
 - `lifecycleinventory-review`
 - 其他重型 Python workflow
 
@@ -327,7 +352,7 @@ npm run prepush:gate
 
 ### Phase 2
 
-- 继续补齐 `process resume-build` / `publish-build` / `batch-build`
+- 继续补齐 `process publish-build` / `batch-build`
 - 引入 `review` / `job` / `flow` / `process` 的更多业务子命令
 - 用 CLI 接管现有 workflow 的稳定 contract 层
 - 统一 run-dir / artifact / manifest 输入输出格式
