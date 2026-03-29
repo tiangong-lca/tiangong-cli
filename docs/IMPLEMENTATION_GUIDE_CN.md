@@ -34,6 +34,7 @@ tiangong
     auto-build
     resume-build
     publish-build
+    batch-build
   lifecyclemodel
     build-resulting-process
     publish-resulting-process
@@ -56,6 +57,7 @@ tiangong
 | `tiangong process auto-build` | 本地 `process_from_flow` intake、run-id 生成、artifact scaffold 预写 |
 | `tiangong process resume-build` | 本地 `process_from_flow` resume handoff、state-lock/manifest 收口、resume 元数据与报告输出 |
 | `tiangong process publish-build` | 本地 `process_from_flow` publish handoff、publish bundle/request/intent 产出、state/invocation/handoff 更新 |
+| `tiangong process batch-build` | 本地 `process_from_flow` batch manifest 编排、批量调用 auto-build、batch report 输出 |
 | `tiangong lifecyclemodel build-resulting-process` | 本地 lifecycle model resulting process 聚合、内部 flow 抵消、artifact 输出 |
 | `tiangong lifecyclemodel publish-resulting-process` | 读取 resulting-process run，生成 `publish-bundle.json` / `publish-intent.json` 本地交付物 |
 | `tiangong publish run` | 本地 publish 契约归一化、dry-run/commit、report 输出 |
@@ -73,7 +75,8 @@ tiangong
 - `tiangong process auto-build` 已可执行
 - `tiangong process resume-build` 已可执行
 - `tiangong process publish-build` 已可执行
-- `get`、`batch-build` 仍处于 planned 状态
+- `tiangong process batch-build` 已可执行
+- `get` 仍处于 planned 状态
 
 注意：
 
@@ -83,6 +86,8 @@ tiangong
 - `process resume-build` 当前只负责本地 resume handoff，不直接执行 route / split / exchange / QA / publish 阶段
 - 已实现的 `process publish-build` 继续保留同一套 run 布局，并把本地 publish-bundle/request/intent、state/invocation/handoff 更新统一收口到 CLI
 - `process publish-build` 当前只负责本地 publish handoff，不直接执行远端 publish commit 或数据库写入
+- 已实现的 `process batch-build` 继续走本地优先、artifact-first 路径，并把批量 item 编排、聚合 report、默认 run_dir 分配统一收口到 CLI
+- `process batch-build` 当前只负责本地 batch orchestration，不直接串接 resume / publish 或远端执行器
 - 已实现的 `build-resulting-process` 和 `publish-resulting-process` 都走本地优先、artifact-first 路径，不依赖 Python 或 MCP
 - `publish-resulting-process` 当前负责生成本地 publish handoff 产物，还没有把提交语义直接并入 `publish run`
 - 其余未实现的 `lifecyclemodel` / `process` 子命令仍只提供 help 和固定命名
@@ -240,6 +245,23 @@ tiangong admin embedding-run --input ./jobs.json --dry-run
 - 重新实现历史 MCP transport
 - `batch-build`
 
+`process batch-build` 现在固定的是“本地 process-from-flow batch orchestration 契约层”。
+
+它负责：
+
+- 读取单个 batch manifest
+- 生成 batch root、normalized request、invocation index、run manifest、aggregate report
+- 顺序复用 `process auto-build` 为多个 item 准备本地 run
+- 给每个 item 分配稳定的默认 `run_root`
+- 输出 per-item `prepared` / `failed` / `skipped` 状态
+- 为后续 `resume-build` / `publish-build` 保留明确的 `run_root`
+
+它现在还不负责：
+
+- 直接串接 `resume-build` / `publish-build`
+- 并发调度、daemon、远端 CRUD、历史 Python orchestrator 复刻
+- `process get`
+
 `publish run` 现在固定的是“稳定 publish 契约层”，不是历史 MCP 写库脚本的 TypeScript 复刻。
 
 它负责：
@@ -342,7 +364,7 @@ npm run prepush:gate
   - 已落地 `tiangong process auto-build`
   - 已落地 `tiangong process resume-build`
   - 已落地 `tiangong process publish-build`
-  - 仍待迁移 `batch-build`
+  - 已落地 `tiangong process batch-build`
 - `lifecycleinventory-review`
 - 其他重型 Python workflow
 
@@ -379,7 +401,7 @@ npm run prepush:gate
 
 ### Phase 2
 
-- 继续补齐 `process batch-build`
+- 切 `process-automated-builder` 到 CLI-only wrapper
 - 引入 `review` / `job` / `flow` / `process` 的更多业务子命令
 - 用 CLI 接管现有 workflow 的稳定 contract 层
 - 统一 run-dir / artifact / manifest 输入输出格式

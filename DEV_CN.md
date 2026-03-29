@@ -18,6 +18,7 @@
 - `tiangong process auto-build`
 - `tiangong process resume-build`
 - `tiangong process publish-build`
+- `tiangong process batch-build`
 - `tiangong lifecyclemodel build-resulting-process`
 - `tiangong lifecyclemodel publish-resulting-process`
 - `tiangong publish run`
@@ -77,6 +78,7 @@ npm start -- search flow --input ./request.json --dry-run
 npm start -- process auto-build --input ./pff-request.json --json
 npm start -- process resume-build --run-id <run-id> --json
 npm start -- process publish-build --run-id <run-id> --json
+npm start -- process batch-build --input ./batch-request.json --json
 npm start -- lifecyclemodel build-resulting-process --input ./request.json --json
 npm start -- lifecyclemodel publish-resulting-process --run-dir ./runs/example --publish-processes --publish-relations --json
 npm start -- publish run --input ./publish-request.json --dry-run
@@ -123,9 +125,16 @@ npm start -- admin embedding-run --input ./jobs.json --dry-run
 
 这个命令当前只负责本地 publish handoff，不负责真正的远端 publish commit；真正的 dry-run / commit 边界仍由 `tiangong publish run` 负责。
 
-也就是说，下面这些还没有迁完：
+`tiangong process batch-build` 现在也已经进入可执行状态，负责：
 
-- `tiangong process batch-build`
+- 读取单个 batch manifest
+- 创建自包含的 batch root 和聚合 report 路径
+- 顺序复用 CLI 的 `process auto-build` 契约执行多个 item
+- 为每个 item 生成稳定的本地 run 目录
+- 在 batch report 中记录 per-item prepared / failed / skipped 结果
+- 为后续 `resume-build` / `publish-build` 保留明确的 `run_root`
+
+这个命令当前只负责本地 batch orchestration，不负责继续串接 resume / publish，也不负责远端 publish commit。
 
 `tiangong publish run` 现在已经成为统一 publish 契约入口，负责：
 
@@ -210,6 +219,7 @@ npm run build
 - `process-automated-builder` 已先迁入 `tiangong process auto-build` 本地 scaffold；剩余阶段继续按子命令切片迁移
 - `process-automated-builder` 的本地 resume handoff 也已迁入 `tiangong process resume-build`；后续阶段继续按子命令切片迁移
 - `process-automated-builder` 的本地 publish handoff 也已迁入 `tiangong process publish-build`
+- `process-automated-builder` 的本地 batch orchestration 也已迁入 `tiangong process batch-build`
 - 其余重型 workflow 先保留原执行器，但由 `tiangong` 统一调度
 - 所有新脚本优先使用统一环境变量名，不再扩散旧变量名
 

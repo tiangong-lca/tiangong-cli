@@ -20,6 +20,11 @@ import {
   type RunProcessAutoBuildOptions,
 } from './lib/process-auto-build.js';
 import {
+  runProcessBatchBuild,
+  type ProcessBatchBuildReport,
+  type RunProcessBatchBuildOptions,
+} from './lib/process-batch-build.js';
+import {
   runProcessResumeBuild,
   type ProcessResumeBuildReport,
   type RunProcessResumeBuildOptions,
@@ -52,6 +57,9 @@ export type CliDeps = {
   runProcessAutoBuildImpl?: (
     options: RunProcessAutoBuildOptions,
   ) => Promise<ProcessAutoBuildReport>;
+  runProcessBatchBuildImpl?: (
+    options: RunProcessBatchBuildOptions,
+  ) => Promise<ProcessBatchBuildReport>;
   runProcessResumeBuildImpl?: (
     options: RunProcessResumeBuildOptions,
   ) => Promise<ProcessResumeBuildReport>;
@@ -89,7 +97,7 @@ Commands:
 Implemented Commands:
   doctor     show environment diagnostics
   search     flow | process | lifecyclemodel
-  process    auto-build | resume-build | publish-build
+  process    auto-build | resume-build | publish-build | batch-build
   lifecyclemodel build-resulting-process | publish-resulting-process
   publish    run
   validation run
@@ -100,7 +108,7 @@ Planned Surface (not implemented yet):
   lifecyclemodel auto-build | validate-build | publish-build
   review     flow | process
   flow       get | list | remediate | publish-version | regen-product
-  process    get | batch-build
+  process    get
   job        get | wait | logs
 
 Planned commands currently print an explicit "not implemented yet" message and exit with code 2.
@@ -112,6 +120,7 @@ Examples:
   tiangong process auto-build --input ./pff-request.json
   tiangong process resume-build --run-id <id>
   tiangong process publish-build --run-id <id>
+  tiangong process batch-build --input ./batch-request.json
   tiangong publish run --input ./publish-request.json --dry-run
   tiangong validation run --input-dir ./package --engine auto
   tiangong admin embedding-run --input ./jobs.json
@@ -270,6 +279,18 @@ Options:
 `.trim();
 }
 
+function renderProcessBatchBuildHelp(): string {
+  return `Usage:
+  tiangong process batch-build --input <file> [options]
+
+Options:
+  --input <file>     JSON batch manifest file
+  --out-dir <dir>    Override the batch artifact output directory
+  --json             Print compact JSON
+  -h, --help
+`.trim();
+}
+
 function renderProcessHelp(): string {
   return `Usage:
   tiangong process <subcommand> [options]
@@ -278,16 +299,17 @@ Implemented Subcommands:
   auto-build   Prepare a local process-from-flow run scaffold and artifact workspace
   resume-build Prepare a local resume handoff from one existing process build run
   publish-build Prepare publish handoff artifacts from one existing process build run
+  batch-build  Run multiple process auto-build requests through one batch-oriented CLI surface
 
 Planned Subcommands:
   get          Load one process dataset or process build run summary
-  batch-build  Run multiple process build requests through one batch-oriented CLI surface
 
 Examples:
   tiangong process --help
   tiangong process auto-build --help
   tiangong process resume-build --run-id <id> --help
   tiangong process publish-build --run-id <id> --help
+  tiangong process batch-build --input ./batch-request.json --help
 `.trim();
 }
 
@@ -786,6 +808,40 @@ function parseProcessPublishBuildFlags(args: string[]): {
   };
 }
 
+function parseProcessBatchBuildFlags(args: string[]): {
+  help: boolean;
+  json: boolean;
+  inputPath: string;
+  outDir: string | null;
+} {
+  let values: ReturnType<typeof parseArgs>['values'];
+  try {
+    ({ values } = parseArgs({
+      args,
+      allowPositionals: false,
+      strict: true,
+      options: {
+        help: { type: 'boolean', short: 'h' },
+        json: { type: 'boolean' },
+        input: { type: 'string' },
+        'out-dir': { type: 'string' },
+      },
+    }));
+  } catch (error) {
+    throw new CliError(String(error), {
+      code: 'INVALID_ARGS',
+      exitCode: 2,
+    });
+  }
+
+  return {
+    help: Boolean(values.help),
+    json: Boolean(values.json),
+    inputPath: typeof values.input === 'string' ? values.input : '',
+    outDir: typeof values['out-dir'] === 'string' ? values['out-dir'] : null,
+  };
+}
+
 function plannedCommand(command: string, subcommand?: string): CliResult {
   const suffix = subcommand ? ` ${subcommand}` : '';
   return {
@@ -818,6 +874,7 @@ export async function executeCli(argv: string[], deps: CliDeps): Promise<CliResu
     const lifecyclemodelPublishImpl =
       deps.runLifecyclemodelPublishResultingProcessImpl ?? runLifecyclemodelPublishResultingProcess;
     const processAutoBuildImpl = deps.runProcessAutoBuildImpl ?? runProcessAutoBuild;
+    const processBatchBuildImpl = deps.runProcessBatchBuildImpl ?? runProcessBatchBuild;
     const processResumeBuildImpl = deps.runProcessResumeBuildImpl ?? runProcessResumeBuild;
     const processPublishBuildImpl = deps.runProcessPublishBuildImpl ?? runProcessPublishBuild;
 
@@ -996,6 +1053,28 @@ export async function executeCli(argv: string[], deps: CliDeps): Promise<CliResu
 
       return {
         exitCode: 0,
+        stdout: stringifyJson(report, processFlags.json),
+        stderr: '',
+      };
+    }
+
+    if (command === 'process' && subcommand === 'batch-build') {
+      const processFlags = parseProcessBatchBuildFlags(commandArgs);
+      if (processFlags.help) {
+        return {
+          exitCode: 0,
+          stdout: `${renderProcessBatchBuildHelp()}\n`,
+          stderr: '',
+        };
+      }
+
+      const report = await processBatchBuildImpl({
+        inputPath: processFlags.inputPath,
+        outDir: processFlags.outDir,
+      });
+
+      return {
+        exitCode: report.status === 'completed_with_failures' ? 1 : 0,
         stdout: stringifyJson(report, processFlags.json),
         stderr: '',
       };

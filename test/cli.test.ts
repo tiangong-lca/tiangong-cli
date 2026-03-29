@@ -186,6 +186,7 @@ test('executeCli returns help for the process namespace and implemented subcomma
   assert.match(processHelp.stdout, /auto-build/u);
   assert.match(processHelp.stdout, /resume-build/u);
   assert.match(processHelp.stdout, /publish-build/u);
+  assert.match(processHelp.stdout, /batch-build/u);
 
   const autoBuildHelp = await executeCli(['process', 'auto-build', '--help'], makeDeps());
   assert.equal(autoBuildHelp.exitCode, 0);
@@ -210,6 +211,12 @@ test('executeCli returns help for the process namespace and implemented subcomma
   );
   assert.match(publishBuildHelp.stdout, /--run-dir/u);
   assert.doesNotMatch(publishBuildHelp.stdout, /Planned command/u);
+
+  const batchBuildHelp = await executeCli(['process', 'batch-build', '--help'], makeDeps());
+  assert.equal(batchBuildHelp.exitCode, 0);
+  assert.match(batchBuildHelp.stdout, /tiangong process batch-build --input <file>/u);
+  assert.match(batchBuildHelp.stdout, /--out-dir/u);
+  assert.doesNotMatch(batchBuildHelp.stdout, /Planned command/u);
 });
 
 test('executeCli executes lifecyclemodel build-resulting-process with injected implementation', async () => {
@@ -632,6 +639,120 @@ test('executeCli executes process publish-build with run-dir only', async () => 
   }
 });
 
+test('executeCli executes process batch-build with injected implementation', async () => {
+  const dir = mkdtempSync(path.join(os.tmpdir(), 'tg-cli-process-batch-build-cli-'));
+  const inputPath = path.join(dir, 'batch-request.json');
+  writeFileSync(inputPath, '{"items":["./request-a.json"]}', 'utf8');
+
+  try {
+    const result = await executeCli(
+      ['process', 'batch-build', '--json', '--input', inputPath, '--out-dir', './batch-root'],
+      {
+        ...makeDeps(),
+        runProcessBatchBuildImpl: async (options) => {
+          assert.equal(options.inputPath, inputPath);
+          assert.equal(options.outDir, './batch-root');
+          return {
+            schema_version: 1,
+            generated_at_utc: '2026-03-29T00:22:00.000Z',
+            status: 'completed',
+            manifest_path: inputPath,
+            batch_id: 'batch-1',
+            batch_root: path.join(dir, 'batch-root'),
+            continue_on_error: true,
+            counts: {
+              total: 1,
+              prepared: 1,
+              failed: 0,
+              skipped: 0,
+            },
+            files: {
+              request_snapshot: path.join(dir, 'batch-root', 'request', 'batch-request.json'),
+              normalized_request: path.join(
+                dir,
+                'batch-root',
+                'request',
+                'request.normalized.json',
+              ),
+              invocation_index: path.join(dir, 'batch-root', 'manifests', 'invocation-index.json'),
+              run_manifest: path.join(dir, 'batch-root', 'manifests', 'run-manifest.json'),
+              report: path.join(dir, 'batch-root', 'reports', 'process-batch-build-report.json'),
+            },
+            items: [
+              {
+                item_id: 'request_a',
+                index: 0,
+                input_path: path.join(dir, 'request-a.json'),
+                out_dir: path.join(dir, 'batch-root', 'runs', '001_request_a'),
+                status: 'prepared',
+                run_id: 'run-1',
+                run_root: path.join(dir, 'batch-root', 'runs', '001_request_a'),
+                request_id: 'req-1',
+                files: {
+                  request_snapshot: path.join(dir, 'item', 'request.json'),
+                  report: path.join(dir, 'item', 'report.json'),
+                  state: path.join(dir, 'item', 'state.json'),
+                  handoff_summary: path.join(dir, 'item', 'handoff.json'),
+                  run_manifest: path.join(dir, 'item', 'run-manifest.json'),
+                },
+                error: null,
+              },
+            ],
+            next_actions: ['inspect: report'],
+          };
+        },
+      },
+    );
+
+    assert.equal(result.exitCode, 0);
+    assert.match(result.stdout, /"status":"completed"/u);
+    assert.match(result.stdout, /"batch_id":"batch-1"/u);
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+test('executeCli maps process batch-build failures to exit code 1', async () => {
+  const dir = mkdtempSync(path.join(os.tmpdir(), 'tg-cli-process-batch-build-cli-failure-'));
+  const inputPath = path.join(dir, 'batch-request.json');
+  writeFileSync(inputPath, '{"items":["./request-a.json"]}', 'utf8');
+
+  try {
+    const result = await executeCli(['process', 'batch-build', '--input', inputPath], {
+      ...makeDeps(),
+      runProcessBatchBuildImpl: async () => ({
+        schema_version: 1,
+        generated_at_utc: '2026-03-29T00:23:00.000Z',
+        status: 'completed_with_failures',
+        manifest_path: inputPath,
+        batch_id: 'batch-2',
+        batch_root: path.join(dir, 'batch-root'),
+        continue_on_error: true,
+        counts: {
+          total: 1,
+          prepared: 0,
+          failed: 1,
+          skipped: 0,
+        },
+        files: {
+          request_snapshot: path.join(dir, 'batch-root', 'request', 'batch-request.json'),
+          normalized_request: path.join(dir, 'batch-root', 'request', 'request.normalized.json'),
+          invocation_index: path.join(dir, 'batch-root', 'manifests', 'invocation-index.json'),
+          run_manifest: path.join(dir, 'batch-root', 'manifests', 'run-manifest.json'),
+          report: path.join(dir, 'batch-root', 'reports', 'process-batch-build-report.json'),
+        },
+        items: [],
+        next_actions: ['inspect: report'],
+      }),
+    });
+
+    assert.equal(result.exitCode, 1);
+    assert.match(result.stdout, /completed_with_failures/u);
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+});
+
 test('executeCli keeps subcommand --json inside remote command parsing', async () => {
   const dir = mkdtempSync(path.join(os.tmpdir(), 'tg-cli-search-json-'));
   const inputPath = path.join(dir, 'request.json');
@@ -945,7 +1066,7 @@ test('executeCli returns parsing errors for invalid publish and validation flags
   assert.match(validationResult.stderr, /INVALID_ARGS/u);
 });
 
-test('executeCli returns parsing errors for invalid lifecyclemodel build, process build, resume, and publish-build flags', async () => {
+test('executeCli returns parsing errors for invalid lifecyclemodel build, process build, resume, publish-build, and batch-build flags', async () => {
   const result = await executeCli(
     ['lifecyclemodel', 'build-resulting-process', '--bad-flag'],
     makeDeps(),
@@ -982,6 +1103,11 @@ test('executeCli returns parsing errors for invalid lifecyclemodel build, proces
   assert.equal(processPublishResult.exitCode, 2);
   assert.equal(processPublishResult.stdout, '');
   assert.match(processPublishResult.stderr, /INVALID_ARGS/u);
+
+  const processBatchResult = await executeCli(['process', 'batch-build', '--bad-flag'], makeDeps());
+  assert.equal(processBatchResult.exitCode, 2);
+  assert.equal(processBatchResult.stdout, '');
+  assert.match(processBatchResult.stderr, /INVALID_ARGS/u);
 });
 
 test('executeCli executes validation run with injected implementation and report file', async () => {
@@ -1106,10 +1232,10 @@ test('executeCli returns planned command message for lifecyclemodel subcommands 
 });
 
 test('executeCli returns planned command message for process subcommands after help is introduced', async () => {
-  const result = await executeCli(['process', 'batch-build'], makeDeps());
+  const result = await executeCli(['process', 'get'], makeDeps());
   assert.equal(result.exitCode, 2);
   assert.equal(result.stdout, '');
-  assert.match(result.stderr, /Command 'process batch-build'/u);
+  assert.match(result.stderr, /Command 'process get'/u);
 });
 
 test('executeCli returns dedicated help for planned lifecyclemodel subcommands', async () => {
@@ -1121,9 +1247,9 @@ test('executeCli returns dedicated help for planned lifecyclemodel subcommands',
 });
 
 test('executeCli returns dedicated help for planned process subcommands', async () => {
-  const result = await executeCli(['process', 'batch-build', '--help'], makeDeps());
+  const result = await executeCli(['process', 'get', '--help'], makeDeps());
   assert.equal(result.exitCode, 0);
-  assert.match(result.stdout, /tiangong process batch-build --input <file>/u);
+  assert.match(result.stdout, /tiangong process get --id <process-id>/u);
   assert.match(result.stdout, /Execution is not implemented yet/u);
   assert.equal(result.stderr, '');
 });
