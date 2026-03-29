@@ -461,8 +461,9 @@ npm run prepush:gate
   - 已落地 `tiangong review process`
   - `review lifecyclemodel` 仍处于 planned 状态
 - `flow-governance-review`
-  - 已落地 `tiangong review flow`（当前只覆盖 `review-flows` slice）
-  - `tiangong flow remediate|publish-version|regen-product|...` 仍处于 planned 状态
+  - 已落地 `tiangong review flow`（覆盖 `review-flows` slice）
+  - 已落地 `tiangong flow remediate`（覆盖 `remediate-flows` / round1 deterministic remediation slice）
+  - `tiangong flow get|list|publish-version|regen-product|...` 仍处于 planned 状态
 - 其他重型 Python workflow
 
 更合理的路径是：

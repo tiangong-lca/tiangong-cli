@@ -50,6 +50,11 @@ import {
   type FlowReviewReport,
   type RunFlowReviewOptions,
 } from './lib/review-flow.js';
+import {
+  runFlowRemediate,
+  type FlowRemediationReport,
+  type RunFlowRemediateOptions,
+} from './lib/flow-remediate.js';
 import { executeRemoteCommand, getRemoteCommandHelp } from './lib/remote.js';
 import {
   runValidation,
@@ -84,6 +89,7 @@ export type CliDeps = {
   ) => Promise<ProcessPublishBuildReport>;
   runProcessReviewImpl?: (options: RunProcessReviewOptions) => Promise<ProcessReviewReport>;
   runFlowReviewImpl?: (options: RunFlowReviewOptions) => Promise<FlowReviewReport>;
+  runFlowRemediateImpl?: (options: RunFlowRemediateOptions) => Promise<FlowRemediationReport>;
 };
 
 export type CliResult = {
@@ -116,6 +122,7 @@ Implemented Commands:
   doctor     show environment diagnostics
   search     flow | process | lifecyclemodel
   process    get | auto-build | resume-build | publish-build | batch-build
+  flow       remediate
   lifecyclemodel build-resulting-process | publish-resulting-process
   review     process | flow
   publish    run
@@ -126,7 +133,7 @@ Planned Surface (not implemented yet):
   auth       whoami | doctor-auth
   lifecyclemodel auto-build | validate-build | publish-build
   review     lifecyclemodel
-  flow       get | list | remediate | publish-version | regen-product
+  flow       get | list | publish-version | regen-product
   job        get | wait | logs
 
 Planned commands currently print an explicit "not implemented yet" message and exit with code 2.
@@ -140,6 +147,7 @@ Examples:
   tiangong process resume-build --run-id <id>
   tiangong process publish-build --run-id <id>
   tiangong process batch-build --input ./batch-request.json
+  tiangong flow remediate --input-file ./invalid-flows.jsonl --out-dir ./flow-remediation
   tiangong review process --run-root ./artifacts/process_from_flow/<run_id> --run-id <run_id> --out-dir ./review
   tiangong review flow --rows-file ./flows.json --out-dir ./review
   tiangong publish run --input ./publish-request.json --dry-run
@@ -216,6 +224,45 @@ Options:
   --report-file <file> Write the structured validation report to a file
   --json               Print compact JSON
   -h, --help
+`.trim();
+}
+
+function renderFlowHelp(): string {
+  return `Usage:
+  tiangong flow <subcommand> [options]
+
+Implemented Subcommands:
+  remediate    Deterministically repair invalid local flow rows and emit artifact-first outputs
+
+Planned Subcommands:
+  get             Load one flow through the unified CLI surface
+  list            Query or enumerate flows through the unified CLI surface
+  publish-version Prepare a later flow publish/version handoff
+  regen-product   Regenerate later product-side artifacts from a flow workflow slice
+
+Examples:
+  tiangong flow --help
+  tiangong flow remediate --help
+`.trim();
+}
+
+function renderFlowRemediateHelp(): string {
+  return `Usage:
+  tiangong flow remediate --input-file <file> --out-dir <dir> [options]
+
+Options:
+  --input-file <file>  Invalid flow rows as JSON or JSONL
+  --out-dir <dir>      Output directory for remediation artifacts
+  --json               Print compact JSON
+  -h, --help
+
+Outputs written under --out-dir:
+  - flows_tidas_sdk_plus_classification_remediated_all.jsonl
+  - flows_tidas_sdk_plus_classification_remediated_ready_for_mcp.jsonl
+  - flows_tidas_sdk_plus_classification_residual_manual_queue.jsonl
+  - flows_tidas_sdk_plus_classification_remediation_audit.jsonl
+  - flows_tidas_sdk_plus_classification_remediation_report.json
+  - flows_tidas_sdk_plus_classification_residual_manual_queue_prompt.md
 `.trim();
 }
 
@@ -468,8 +515,52 @@ Status:
 `.trim(),
 } as const;
 
+const flowPlannedHelp = {
+  get: `Usage:
+  tiangong flow get --id <flow-id> [options]
+
+Planned contract:
+  - load one canonical flow by identity through the unified CLI surface
+  - return one structured flow payload without exposing transport details
+
+Status:
+  Planned command. Execution is not implemented yet.
+`.trim(),
+  list: `Usage:
+  tiangong flow list [options]
+
+Planned contract:
+  - enumerate flow rows through the unified CLI surface
+  - keep filtering, pagination, and output shape deterministic for agents
+
+Status:
+  Planned command. Execution is not implemented yet.
+`.trim(),
+  'publish-version': `Usage:
+  tiangong flow publish-version --input <file> [options]
+
+Planned contract:
+  - prepare or execute a later flow version publish handoff
+  - preserve dry-run and commit semantics from the unified publish contract
+
+Status:
+  Planned command. Execution is not implemented yet.
+`.trim(),
+  'regen-product': `Usage:
+  tiangong flow regen-product --input <file> [options]
+
+Planned contract:
+  - regenerate later product-side artifacts from a flow-centered workflow slice
+  - keep artifact boundaries explicit and file-first
+
+Status:
+  Planned command. Execution is not implemented yet.
+`.trim(),
+} as const;
+
 type LifecyclemodelPlannedSubcommand = keyof typeof lifecyclemodelPlannedHelp;
 type ReviewPlannedSubcommand = keyof typeof reviewPlannedHelp;
+type FlowPlannedSubcommand = keyof typeof flowPlannedHelp;
 
 function isLifecyclemodelPlannedSubcommand(
   value: string | null,
@@ -479,6 +570,10 @@ function isLifecyclemodelPlannedSubcommand(
 
 function isReviewPlannedSubcommand(value: string | null): value is ReviewPlannedSubcommand {
   return Boolean(value && value in reviewPlannedHelp);
+}
+
+function isFlowPlannedSubcommand(value: string | null): value is FlowPlannedSubcommand {
+  return Boolean(value && value in flowPlannedHelp);
 }
 
 function renderDoctorText(report: ReturnType<typeof buildDoctorReport>): string {
@@ -728,6 +823,40 @@ function parseValidationFlags(args: string[]): {
     inputDir: typeof values['input-dir'] === 'string' ? values['input-dir'] : '',
     engine: typeof values.engine === 'string' ? values.engine : undefined,
     reportFile: typeof values['report-file'] === 'string' ? values['report-file'] : null,
+  };
+}
+
+function parseFlowRemediateFlags(args: string[]): {
+  help: boolean;
+  json: boolean;
+  inputFile: string;
+  outDir: string;
+} {
+  let values: ReturnType<typeof parseArgs>['values'];
+  try {
+    ({ values } = parseArgs({
+      args,
+      allowPositionals: false,
+      strict: true,
+      options: {
+        help: { type: 'boolean', short: 'h' },
+        json: { type: 'boolean' },
+        'input-file': { type: 'string' },
+        'out-dir': { type: 'string' },
+      },
+    }));
+  } catch (error) {
+    throw new CliError(String(error), {
+      code: 'INVALID_ARGS',
+      exitCode: 2,
+    });
+  }
+
+  return {
+    help: Boolean(values.help),
+    json: Boolean(values.json),
+    inputFile: typeof values['input-file'] === 'string' ? values['input-file'] : '',
+    outDir: typeof values['out-dir'] === 'string' ? values['out-dir'] : '',
   };
 }
 
@@ -1191,6 +1320,7 @@ export async function executeCli(argv: string[], deps: CliDeps): Promise<CliResu
     const processPublishBuildImpl = deps.runProcessPublishBuildImpl ?? runProcessPublishBuild;
     const processReviewImpl = deps.runProcessReviewImpl ?? runProcessReview;
     const flowReviewImpl = deps.runFlowReviewImpl ?? runFlowReview;
+    const flowRemediateImpl = deps.runFlowRemediateImpl ?? runFlowRemediate;
 
     if (flags.version) {
       return { exitCode: 0, stdout: '0.0.1\n', stderr: '' };
@@ -1418,6 +1548,39 @@ export async function executeCli(argv: string[], deps: CliDeps): Promise<CliResu
         stdout: stringifyJson(report, processFlags.json),
         stderr: '',
       };
+    }
+
+    if (command === 'flow' && !subcommand) {
+      return { exitCode: 0, stdout: `${renderFlowHelp()}\n`, stderr: '' };
+    }
+
+    if (command === 'flow' && subcommand === 'remediate') {
+      const flowFlags = parseFlowRemediateFlags(commandArgs);
+      if (flowFlags.help) {
+        return { exitCode: 0, stdout: `${renderFlowRemediateHelp()}\n`, stderr: '' };
+      }
+
+      const report = await flowRemediateImpl({
+        inputFile: flowFlags.inputFile,
+        outDir: flowFlags.outDir,
+      });
+
+      return {
+        exitCode: 0,
+        stdout: stringifyJson(report, flowFlags.json),
+        stderr: '',
+      };
+    }
+
+    if (command === 'flow' && isFlowPlannedSubcommand(subcommand)) {
+      if (commandArgs.includes('--help') || commandArgs.includes('-h')) {
+        return {
+          exitCode: 0,
+          stdout: `${flowPlannedHelp[subcommand]}\n`,
+          stderr: '',
+        };
+      }
+      return plannedCommand(command, subcommand);
     }
 
     if (command === 'admin' && !subcommand && commandArgs.includes('--help')) {

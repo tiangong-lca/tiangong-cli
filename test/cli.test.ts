@@ -6,6 +6,7 @@ import path from 'node:path';
 import { executeCli } from '../src/cli.js';
 import type { DotEnvLoadResult } from '../src/lib/dotenv.js';
 import type { FetchLike } from '../src/lib/http.js';
+import type { RunFlowRemediateOptions } from '../src/lib/flow-remediate.js';
 import type { RunFlowReviewOptions } from '../src/lib/review-flow.js';
 
 const dotEnvStatus: DotEnvLoadResult = {
@@ -136,6 +137,11 @@ test('executeCli returns help for publish and validation namespaces', async () =
   const reviewHelp = await executeCli(['review', '--help'], makeDeps());
   assert.equal(reviewHelp.exitCode, 0);
   assert.match(reviewHelp.stdout, /tiangong review <subcommand>/u);
+
+  const flowHelp = await executeCli(['flow', '--help'], makeDeps());
+  assert.equal(flowHelp.exitCode, 0);
+  assert.match(flowHelp.stdout, /tiangong flow <subcommand>/u);
+  assert.match(flowHelp.stdout, /remediate/u);
 });
 
 test('executeCli returns help for publish and validation subcommands', async () => {
@@ -163,6 +169,14 @@ test('executeCli returns help for publish and validation subcommands', async () 
     ),
   );
   assert.match(reviewFlowHelp.stdout, /--similarity-threshold/u);
+
+  const flowRemediateHelp = await executeCli(['flow', 'remediate', '--help'], makeDeps());
+  assert.equal(flowRemediateHelp.exitCode, 0);
+  assert.match(
+    flowRemediateHelp.stdout,
+    /tiangong flow remediate --input-file <file> --out-dir <dir>/u,
+  );
+  assert.match(flowRemediateHelp.stdout, /ready_for_mcp/u);
 });
 
 test('executeCli returns group help for search and admin namespaces', async () => {
@@ -1588,6 +1602,99 @@ test('executeCli dispatches review flow to the implemented CLI module', async ()
   }
 });
 
+test('executeCli dispatches flow remediate to the implemented CLI module', async () => {
+  const dir = mkdtempSync(path.join(os.tmpdir(), 'tg-cli-flow-remediate-dispatch-'));
+  const inputFile = path.join(dir, 'invalid-flows.jsonl');
+  writeFileSync(inputFile, '[]\n', 'utf8');
+
+  try {
+    let observedOptions: RunFlowRemediateOptions | undefined;
+    const result = await executeCli(
+      [
+        'flow',
+        'remediate',
+        '--input-file',
+        inputFile,
+        '--out-dir',
+        path.join(dir, 'remediation'),
+        '--json',
+      ],
+      {
+        ...makeDeps(),
+        runFlowRemediateImpl: async (options) => {
+          observedOptions = options;
+          return {
+            schema_version: 1,
+            generated_at_utc: '2026-03-30T09:00:00.000Z',
+            status: 'completed_local_flow_remediation',
+            input_file: inputFile,
+            out_dir: path.join(dir, 'remediation'),
+            counts: {
+              input_rows: 1,
+              state_code_0_rows: 1,
+              state_code_100_rows: 0,
+              remediated_rows: 1,
+              ready_for_mcp_rows: 1,
+              residual_manual_rows: 0,
+            },
+            applied_fix_counts: {
+              normalize_flow_properties: 1,
+            },
+            residual_manual_ids: [],
+            validation_backend: 'tidas_sdk',
+            files: {
+              all_remediated: path.join(
+                dir,
+                'remediation',
+                'flows_tidas_sdk_plus_classification_remediated_all.jsonl',
+              ),
+              ready_for_mcp: path.join(
+                dir,
+                'remediation',
+                'flows_tidas_sdk_plus_classification_remediated_ready_for_mcp.jsonl',
+              ),
+              residual_manual_queue: path.join(
+                dir,
+                'remediation',
+                'flows_tidas_sdk_plus_classification_residual_manual_queue.jsonl',
+              ),
+              audit: path.join(
+                dir,
+                'remediation',
+                'flows_tidas_sdk_plus_classification_remediation_audit.jsonl',
+              ),
+              prompt: path.join(
+                dir,
+                'remediation',
+                'flows_tidas_sdk_plus_classification_residual_manual_queue_prompt.md',
+              ),
+              report: path.join(
+                dir,
+                'remediation',
+                'flows_tidas_sdk_plus_classification_remediation_report.json',
+              ),
+            },
+          };
+        },
+      },
+    );
+
+    assert.equal(result.exitCode, 0);
+    assert.equal(result.stderr, '');
+    assert.equal(JSON.parse(result.stdout).status, 'completed_local_flow_remediation');
+    assert.equal(observedOptions?.inputFile, inputFile);
+    assert.equal(observedOptions?.outDir, path.join(dir, 'remediation'));
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+test('executeCli returns parsing errors for invalid flow remediate flags', async () => {
+  const result = await executeCli(['flow', 'remediate', '--bad-flag'], makeDeps());
+  assert.equal(result.exitCode, 2);
+  assert.match(result.stderr, /INVALID_ARGS/u);
+});
+
 test('executeCli supports alternate review flow input modes and validates numeric review-flow flags', async () => {
   const dir = mkdtempSync(path.join(os.tmpdir(), 'tg-cli-review-flow-alt-dispatch-'));
   const rowsFile = path.join(dir, 'flows.json');
@@ -1759,6 +1866,11 @@ test('executeCli returns planned command message for other unimplemented process
   assert.equal(result.exitCode, 2);
   assert.equal(result.stdout, '');
   assert.match(result.stderr, /Command 'process list'/u);
+
+  const flowGetHelp = await executeCli(['flow', 'get', '--help'], makeDeps());
+  assert.equal(flowGetHelp.exitCode, 0);
+  assert.match(flowGetHelp.stdout, /Planned contract:/u);
+  assert.match(flowGetHelp.stdout, /canonical flow/u);
 });
 
 test('executeCli returns dedicated help for planned lifecyclemodel subcommands', async () => {
@@ -1770,8 +1882,8 @@ test('executeCli returns dedicated help for planned lifecyclemodel subcommands',
 });
 
 test('executeCli returns planned command message when a command is missing a subcommand', async () => {
-  const result = await executeCli(['flow'], makeDeps());
+  const result = await executeCli(['job'], makeDeps());
   assert.equal(result.exitCode, 2);
   assert.equal(result.stdout, '');
-  assert.match(result.stderr, /Command 'flow'/u);
+  assert.match(result.stderr, /Command 'job'/u);
 });

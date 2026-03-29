@@ -332,7 +332,8 @@ ToDo：
 
 - [x] `lifecycleinventory-review` -> `tiangong review process`
 - [x] `flow-governance-review` 的 `review-flows` slice -> `tiangong review flow`
-- [ ] `flow-governance-review` 的剩余治理子命令 -> `tiangong flow get|list|remediate|publish-version|regen-product`
+- [x] `flow-governance-review` 的 `remediate-flows` slice -> `tiangong flow remediate`
+- [ ] `flow-governance-review` 的剩余治理子命令 -> `tiangong flow get|list|publish-version|regen-product`
 - [x] review 输出继续保持本地 artifact-first
 - [ ] 去掉剩余治理 / 修复脚本中的直接 MCP 路径
 
