@@ -31,7 +31,8 @@ test('main writes stdout and stderr from CLI results', async () => {
 
     assert.equal(exitCode, 2);
     assert.equal(stdout, '');
-    assert.match(stderr, /not implemented yet/u);
+    assert.match(stderr, /"code":"INPUT_REQUIRED"/u);
+    assert.match(stderr, /Missing required --input value\./u);
   } finally {
     process.stdout.write = originalStdoutWrite;
     process.stderr.write = originalStderrWrite;

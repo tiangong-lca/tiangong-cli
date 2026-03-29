@@ -30,6 +30,8 @@ tiangong
     flow
     process
     lifecyclemodel
+  process
+    auto-build
   lifecyclemodel
     build-resulting-process
     publish-resulting-process
@@ -49,6 +51,7 @@ tiangong
 | `tiangong search flow` | `flow_hybrid_search` |
 | `tiangong search process` | `process_hybrid_search` |
 | `tiangong search lifecyclemodel` | `lifecyclemodel_hybrid_search` |
+| `tiangong process auto-build` | 本地 `process_from_flow` intake、run-id 生成、artifact scaffold 预写 |
 | `tiangong lifecyclemodel build-resulting-process` | 本地 lifecycle model resulting process 聚合、内部 flow 抵消、artifact 输出 |
 | `tiangong lifecyclemodel publish-resulting-process` | 读取 resulting-process run，生成 `publish-bundle.json` / `publish-intent.json` 本地交付物 |
 | `tiangong publish run` | 本地 publish 契约归一化、dry-run/commit、report 输出 |
@@ -61,11 +64,18 @@ tiangong
 - `tiangong lifecyclemodel publish-resulting-process` 已可执行
 - `auto-build`、`validate-build`、`publish-build` 仍处于 planned 状态
 
+`tiangong process ...` 也已经开始承接 `process_from_flow` 主链迁移，其中：
+
+- `tiangong process auto-build` 已可执行
+- `get`、`resume-build`、`publish-build`、`batch-build` 仍处于 planned 状态
+
 注意：
 
+- 已实现的 `process auto-build` 保留了旧 `artifacts/process_from_flow/<run_id>/`、`cache/process_from_flow_state.json`、`cache/agent_handoff_summary.json` 等运行布局
+- `process auto-build` 当前只负责本地 request intake、flow 归一化、run scaffold 和 manifest/report 预写，不继续执行后续阶段
 - 已实现的 `build-resulting-process` 和 `publish-resulting-process` 都走本地优先、artifact-first 路径，不依赖 Python 或 MCP
 - `publish-resulting-process` 当前负责生成本地 publish handoff 产物，还没有把提交语义直接并入 `publish run`
-- 其余未实现的 `lifecyclemodel` 子命令仍只提供 help 和固定命名
+- 其余未实现的 `lifecyclemodel` / `process` 子命令仍只提供 help 和固定命名
 - 这样做的目的不是“假装已完成”，而是先固定命令树，再逐个把 workflow 迁入 TypeScript CLI
 
 ### 2.2 已经固定的工程约束
@@ -160,7 +170,25 @@ tiangong admin embedding-run --input ./jobs.json --dry-run
 
 而不是长自然语言参数和不稳定的 shell 拼接。
 
-### 4.4 publish 和 validation 的当前边界
+### 4.4 process / publish / validation 的当前边界
+
+`process auto-build` 现在固定的是“本地 process-from-flow intake 与 scaffold 契约层”。
+
+它负责：
+
+- 读取单个 request JSON
+- 解析 `flow_file` 指向的 ILCD flow payload
+- 兼容旧 `pfw_<flow_code>_<flow_uuid8>_<operation>_<UTC_TIMESTAMP>` run-id 规则
+- 创建本地 run root、`input/`、`exports/`、`cache/`、`reports/` 等目录
+- 预写 `process_from_flow_state.json`
+- 预写 `agent_handoff_summary.json`
+- 写出 normalized request、flow summary、assembly plan、lineage manifest、invocation index、run manifest、report
+
+它现在还不负责：
+
+- 执行 route / split / exchange / QA / publish 等后续阶段
+- 远程检索、LLM、OCR、publish commit
+- `resume-build`、`publish-build`、`batch-build`
 
 `publish run` 现在固定的是“稳定 publish 契约层”，不是历史 MCP 写库脚本的 TypeScript 复刻。
 
@@ -256,11 +284,13 @@ npm run prepush:gate
 | `lifecyclemodel-hybrid-search` | `tiangong search lifecyclemodel` |
 | `embedding-ft`                 | `tiangong admin embedding-run`   |
 
-### 7.3 暂不全量重写的对象
+### 7.3 已启动但未完成迁移的对象
 
-这类能力先不做 JS/TS 全量重写：
+这类能力已经进入 CLI 迁移路线，但还没有完全变成纯 TS 主链：
 
 - `process-automated-builder`
+  - 已落地 `tiangong process auto-build`
+  - 仍待迁移 `resume-build`、`publish-build`、`batch-build`
 - `lifecycleinventory-review`
 - 其他重型 Python workflow
 
@@ -297,13 +327,15 @@ npm run prepush:gate
 
 ### Phase 2
 
+- 继续补齐 `process resume-build` / `publish-build` / `batch-build`
 - 引入 `review` / `job` / `flow` / `process` 的更多业务子命令
-- 用 CLI 调度现有 Python workflow
+- 用 CLI 接管现有 workflow 的稳定 contract 层
 - 统一 run-dir / artifact / manifest 输入输出格式
 
 ### Phase 3
 
-- 把重型 workflow 中真正稳定的远程能力逐步服务化
+- 把重型 workflow 中真正稳定的执行阶段逐步迁成纯 TS CLI
+- 把其中适合服务化的远程能力逐步服务化
 - 继续减少 skill 仓库里的 transport logic
 - 让 agent 主要理解 `tiangong` 命令树，而不是 repo 内部脚本细节
 

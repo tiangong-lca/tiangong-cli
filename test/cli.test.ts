@@ -37,6 +37,7 @@ test('executeCli prints main help when no command is given', async () => {
   assert.match(result.stdout, /Unified TianGong command entrypoint/u);
   assert.match(result.stdout, /Implemented Commands:/u);
   assert.match(result.stdout, /Planned Surface \(not implemented yet\):/u);
+  assert.match(result.stdout, /process\s+auto-build/u);
   assert.match(result.stdout, /lifecyclemodel build-resulting-process/u);
   assert.match(result.stdout, /publish-resulting-process/u);
   assert.match(result.stdout, /exit with code 2/u);
@@ -178,6 +179,20 @@ test('executeCli returns help for the lifecyclemodel namespace and implemented s
   assert.doesNotMatch(publishHelp.stdout, /Planned command/u);
 });
 
+test('executeCli returns help for the process namespace and implemented subcommands', async () => {
+  const processHelp = await executeCli(['process'], makeDeps());
+  assert.equal(processHelp.exitCode, 0);
+  assert.match(processHelp.stdout, /tiangong process <subcommand>/u);
+  assert.match(processHelp.stdout, /auto-build/u);
+  assert.match(processHelp.stdout, /resume-build/u);
+
+  const autoBuildHelp = await executeCli(['process', 'auto-build', '--help'], makeDeps());
+  assert.equal(autoBuildHelp.exitCode, 0);
+  assert.match(autoBuildHelp.stdout, /tiangong process auto-build --input <file>/u);
+  assert.match(autoBuildHelp.stdout, /--out-dir/u);
+  assert.doesNotMatch(autoBuildHelp.stdout, /Planned command/u);
+});
+
 test('executeCli executes lifecyclemodel build-resulting-process with injected implementation', async () => {
   const dir = mkdtempSync(path.join(os.tmpdir(), 'tg-cli-lifecyclemodel-cli-'));
   const inputPath = path.join(dir, 'request.json');
@@ -281,6 +296,66 @@ test('executeCli executes lifecyclemodel publish-resulting-process with injected
     assert.equal(result.exitCode, 0);
     assert.match(result.stdout, /"status":"prepared_local_publish_bundle"/u);
     assert.match(result.stdout, /"publish_bundle"/u);
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+test('executeCli executes process auto-build with injected implementation', async () => {
+  const dir = mkdtempSync(path.join(os.tmpdir(), 'tg-cli-process-auto-build-cli-'));
+  const inputPath = path.join(dir, 'request.json');
+  writeFileSync(inputPath, '{"flow_file":"./flow.json"}', 'utf8');
+
+  try {
+    const result = await executeCli(
+      ['process', 'auto-build', '--json', '--input', inputPath, '--out-dir', './run-root'],
+      {
+        ...makeDeps(),
+        runProcessAutoBuildImpl: async (options) => {
+          assert.equal(options.inputPath, inputPath);
+          assert.equal(options.outDir, './run-root');
+          return {
+            schema_version: 1,
+            generated_at_utc: '2026-03-29T00:00:00.000Z',
+            status: 'prepared_local_process_auto_build_run',
+            request_path: inputPath,
+            request_id: 'pff-demo',
+            run_id: 'pfw_demo_unknown_produce_20260329T000000Z',
+            run_root: path.join(dir, 'run-root'),
+            operation: 'produce',
+            flow: {
+              source_path: path.join(dir, 'flow.json'),
+              artifact_path: path.join(dir, 'run-root', 'input', 'flow.json'),
+              wrapper: 'flowDataSet',
+              uuid: 'flow-uuid',
+              version: '00.00.001',
+              base_name: 'Demo flow',
+            },
+            source_input_count: 0,
+            stage_count: 10,
+            files: {
+              request_snapshot: path.join(dir, 'run-root', 'request', 'pff-request.json'),
+              normalized_request: path.join(dir, 'run-root', 'request', 'request.normalized.json'),
+              source_policy: path.join(dir, 'run-root', 'request', 'source-policy.json'),
+              flow_summary: path.join(dir, 'run-root', 'manifests', 'flow-summary.json'),
+              input_manifest: path.join(dir, 'run-root', 'input', 'input_manifest.json'),
+              assembly_plan: path.join(dir, 'run-root', 'manifests', 'assembly-plan.json'),
+              lineage_manifest: path.join(dir, 'run-root', 'manifests', 'lineage-manifest.json'),
+              invocation_index: path.join(dir, 'run-root', 'manifests', 'invocation-index.json'),
+              run_manifest: path.join(dir, 'run-root', 'manifests', 'run-manifest.json'),
+              state: path.join(dir, 'run-root', 'cache', 'process_from_flow_state.json'),
+              handoff_summary: path.join(dir, 'run-root', 'cache', 'agent_handoff_summary.json'),
+              report: path.join(dir, 'run-root', 'reports', 'process-auto-build-report.json'),
+            },
+            next_actions: ['inspect: state'],
+          };
+        },
+      },
+    );
+
+    assert.equal(result.exitCode, 0);
+    assert.match(result.stdout, /"status":"prepared_local_process_auto_build_run"/u);
+    assert.match(result.stdout, /"request_snapshot"/u);
   } finally {
     rmSync(dir, { recursive: true, force: true });
   }
@@ -599,7 +674,7 @@ test('executeCli returns parsing errors for invalid publish and validation flags
   assert.match(validationResult.stderr, /INVALID_ARGS/u);
 });
 
-test('executeCli returns parsing errors for invalid lifecyclemodel build and publish flags', async () => {
+test('executeCli returns parsing errors for invalid lifecyclemodel build, process build, and publish flags', async () => {
   const result = await executeCli(
     ['lifecyclemodel', 'build-resulting-process', '--bad-flag'],
     makeDeps(),
@@ -615,6 +690,11 @@ test('executeCli returns parsing errors for invalid lifecyclemodel build and pub
   assert.equal(publishResult.exitCode, 2);
   assert.equal(publishResult.stdout, '');
   assert.match(publishResult.stderr, /INVALID_ARGS/u);
+
+  const processResult = await executeCli(['process', 'auto-build', '--bad-flag'], makeDeps());
+  assert.equal(processResult.exitCode, 2);
+  assert.equal(processResult.stdout, '');
+  assert.match(processResult.stderr, /INVALID_ARGS/u);
 });
 
 test('executeCli executes validation run with injected implementation and report file', async () => {
@@ -725,7 +805,7 @@ test('executeCli prints main help for the explicit help command', async () => {
 });
 
 test('executeCli returns planned command message for unimplemented command', async () => {
-  const result = await executeCli(['process', 'auto-build'], makeDeps());
+  const result = await executeCli(['flow', 'get'], makeDeps());
   assert.equal(result.exitCode, 2);
   assert.equal(result.stdout, '');
   assert.match(result.stderr, /not implemented yet/u);
@@ -738,11 +818,26 @@ test('executeCli returns planned command message for lifecyclemodel subcommands 
   assert.match(result.stderr, /Command 'lifecyclemodel auto-build'/u);
 });
 
+test('executeCli returns planned command message for process subcommands after help is introduced', async () => {
+  const result = await executeCli(['process', 'resume-build'], makeDeps());
+  assert.equal(result.exitCode, 2);
+  assert.equal(result.stdout, '');
+  assert.match(result.stderr, /Command 'process resume-build'/u);
+});
+
 test('executeCli returns dedicated help for planned lifecyclemodel subcommands', async () => {
   const result = await executeCli(['lifecyclemodel', 'auto-build', '--help'], makeDeps());
   assert.equal(result.exitCode, 0);
   assert.match(result.stdout, /Planned contract:/u);
   assert.match(result.stdout, /discover candidate processes/u);
+  assert.equal(result.stderr, '');
+});
+
+test('executeCli returns dedicated help for planned process subcommands', async () => {
+  const result = await executeCli(['process', 'resume-build', '--help'], makeDeps());
+  assert.equal(result.exitCode, 0);
+  assert.match(result.stdout, /tiangong process resume-build --run-id <id>/u);
+  assert.match(result.stdout, /Execution is not implemented yet/u);
   assert.equal(result.stderr, '');
 });
 
