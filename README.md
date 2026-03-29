@@ -19,6 +19,8 @@ Current implementation choices:
 - `tiangong search lifecyclemodel`
 - `tiangong process auto-build`
 - `tiangong process resume-build`
+- `tiangong process publish-build`
+- `tiangong process batch-build`
 - `tiangong lifecyclemodel build-resulting-process`
 - `tiangong lifecyclemodel publish-resulting-process`
 - `tiangong publish run`
@@ -33,8 +35,6 @@ The `lifecyclemodel` and `process` namespaces are now partially implemented. The
 - `tiangong lifecyclemodel validate-build`
 - `tiangong lifecyclemodel publish-build`
 - `tiangong process get`
-- `tiangong process publish-build`
-- `tiangong process batch-build`
 
 These remaining commands are intentionally not executable yet. They print an explicit `not implemented yet` message and exit with code `2` until the corresponding workflows are migrated into TypeScript.
 
@@ -92,6 +92,8 @@ npm start -- doctor --json
 npm start -- search flow --input ./request.json --dry-run
 npm start -- process auto-build --input ./pff-request.json --json
 npm start -- process resume-build --run-id <run-id> --json
+npm start -- process publish-build --run-id <run-id> --json
+npm start -- process batch-build --input ./batch-request.json --json
 npm start -- lifecyclemodel build-resulting-process --input ./request.json --json
 npm start -- lifecyclemodel publish-resulting-process --run-dir ./runs/example --publish-processes --publish-relations --json
 npm start -- publish run --input ./publish-request.json --dry-run
@@ -107,9 +109,17 @@ The command keeps the legacy per-run layout that later stages still expect, incl
 
 `tiangong process resume-build` is the second migrated `process_from_flow` slice. It reopens one existing local run by `--run-id` or `--run-dir`, validates the required run artifacts, takes the local state lock, clears any persisted `stop_after` checkpoint, records `resume-metadata.json` and `resume-history.jsonl`, updates `invocation-index.json`, rewrites `agent_handoff_summary.json`, and emits `process-resume-build-report.json`.
 
-`resume-build` still stops at the handoff boundary. It does not yet execute the downstream workflow stages; `publish-build` and `batch-build` remain planned slices.
+`tiangong process publish-build` is the third migrated `process_from_flow` slice. It reopens one existing local run by `--run-id` or `--run-dir`, validates `process_from_flow_state.json`, `agent_handoff_summary.json`, `run-manifest.json`, and `invocation-index.json`, collects canonical process/source datasets from `exports/` or state fallbacks, writes `stage_outputs/10_publish/publish-bundle.json`, `publish-request.json`, `publish-intent.json`, rewrites `agent_handoff_summary.json`, updates the run state and invocation index, and emits `process-publish-build-report.json`.
+
+`tiangong process batch-build` is the fourth migrated `process_from_flow` slice. It reads one batch manifest, prepares a self-contained batch root, fans out multiple local `process auto-build` runs through the CLI-owned contract, writes a structured per-item aggregate report, and preserves deterministic item-level artifact paths for downstream `resume-build` or `publish-build` steps.
+
+`resume-build`, `publish-build`, and `batch-build` all still stop at local handoff boundaries. They do not execute remote publish CRUD or commit mode themselves; that boundary remains in `tiangong publish run`.
 
 ## Publish and validation
+
+`tiangong process publish-build` is the process-side local publish handoff command. It prepares the local bundle/request/intent artifacts expected by `tiangong publish run` without reintroducing Python, MCP, or legacy remote writers into the CLI.
+
+`tiangong process batch-build` is the process-side local batch orchestration command. It keeps batch execution file-first and JSON-first, reuses the single-run `process auto-build` contract for each item, and emits one batch report instead of pushing shell loops or Python coordinators back onto the caller.
 
 `tiangong lifecyclemodel publish-resulting-process` is the lifecyclemodel-side local publish handoff command. It reads a prior resulting-process run, writes `publish-bundle.json` and `publish-intent.json`, and preserves the old builder's artifact contract without reintroducing Python or MCP into the CLI.
 
@@ -123,6 +133,8 @@ Run the built artifact directly:
 node ./bin/tiangong.js doctor
 node ./bin/tiangong.js process auto-build --input ./pff-request.json --json
 node ./bin/tiangong.js process resume-build --run-id <run-id> --json
+node ./bin/tiangong.js process publish-build --run-id <run-id> --json
+node ./bin/tiangong.js process batch-build --input ./batch-request.json --json
 node ./dist/src/main.js doctor --json
 ```
 

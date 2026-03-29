@@ -131,6 +131,9 @@ export type RunProcessAutoBuildOptions = {
   outDir?: string | null;
   now?: Date;
   cwd?: string;
+  inputValue?: unknown;
+  requestIdOverride?: string;
+  runIdOverride?: string;
 };
 
 type ProcessAutoBuildStage = {
@@ -883,7 +886,13 @@ function buildReport(
 
 export function normalizeProcessAutoBuildRequest(
   input: unknown,
-  options: { inputPath: string; outDir?: string | null; now?: Date },
+  options: {
+    inputPath: string;
+    outDir?: string | null;
+    now?: Date;
+    requestIdOverride?: string;
+    runIdOverride?: string;
+  },
 ): NormalizedProcessAutoBuildRequest {
   const request = requiredRequestObject(input);
   const requestDir = path.dirname(path.resolve(options.inputPath));
@@ -893,6 +902,7 @@ export function normalizeProcessAutoBuildRequest(
   const { flowDataset, wrapper } = extractFlowDatasetRoot(flowPayload);
   const flowSummary = extractFlowSummary(flowDataset, wrapper);
   const runId =
+    nonEmptyString(options.runIdOverride) ??
     nonEmptyString(request.run_id) ??
     buildProcessAutoBuildRunId(flowFile, operation, flowSummary, options.now);
   const runRoot = resolveRunRoot(requestDir, runId, options.outDir, request.workspace_run_root);
@@ -901,7 +911,10 @@ export function normalizeProcessAutoBuildRequest(
   return {
     schema_version: 1,
     request_path: path.resolve(options.inputPath),
-    request_id: nonEmptyString(request.request_id) ?? `pff-${runId}`,
+    request_id:
+      nonEmptyString(options.requestIdOverride) ??
+      nonEmptyString(request.request_id) ??
+      `pff-${runId}`,
     flow_file: flowFile,
     flow_summary: flowSummary,
     flow_dataset: flowDataset,
@@ -920,12 +933,14 @@ export function normalizeProcessAutoBuildRequest(
 export async function runProcessAutoBuild(
   options: RunProcessAutoBuildOptions,
 ): Promise<ProcessAutoBuildReport> {
-  const input = readJsonInput(options.inputPath);
+  const input = options.inputValue ?? readJsonInput(options.inputPath);
   const now = options.now ?? new Date();
   const normalized = normalizeProcessAutoBuildRequest(input, {
     inputPath: options.inputPath,
     outDir: options.outDir,
     now,
+    requestIdOverride: options.requestIdOverride,
+    runIdOverride: options.runIdOverride,
   });
   const layout = buildLayout(normalized.run_root, normalized.run_id);
   const flowArtifactPath = path.join(layout.inputsDir, path.basename(normalized.flow_file));
