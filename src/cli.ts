@@ -14,6 +14,11 @@ import {
   type LifecyclemodelPublishResultingProcessReport,
   type RunLifecyclemodelPublishResultingProcessOptions,
 } from './lib/lifecyclemodel-publish-resulting-process.js';
+import {
+  runProcessAutoBuild,
+  type ProcessAutoBuildReport,
+  type RunProcessAutoBuildOptions,
+} from './lib/process-auto-build.js';
 import { runPublish, type PublishReport, type RunPublishOptions } from './lib/publish.js';
 import { executeRemoteCommand, getRemoteCommandHelp } from './lib/remote.js';
 import {
@@ -34,6 +39,9 @@ export type CliDeps = {
   runLifecyclemodelPublishResultingProcessImpl?: (
     options: RunLifecyclemodelPublishResultingProcessOptions,
   ) => Promise<LifecyclemodelPublishResultingProcessReport>;
+  runProcessAutoBuildImpl?: (
+    options: RunProcessAutoBuildOptions,
+  ) => Promise<ProcessAutoBuildReport>;
 };
 
 export type CliResult = {
@@ -65,6 +73,7 @@ Commands:
 Implemented Commands:
   doctor     show environment diagnostics
   search     flow | process | lifecyclemodel
+  process    auto-build
   lifecyclemodel build-resulting-process | publish-resulting-process
   publish    run
   validation run
@@ -84,6 +93,7 @@ Examples:
   tiangong doctor
   tiangong search flow --input ./request.json
   tiangong search process --input ./request.json --dry-run
+  tiangong process auto-build --input ./pff-request.json
   tiangong publish run --input ./publish-request.json --dry-run
   tiangong validation run --input-dir ./package --engine auto
   tiangong admin embedding-run --input ./jobs.json
@@ -206,6 +216,38 @@ Examples:
 `.trim();
 }
 
+function renderProcessAutoBuildHelp(): string {
+  return `Usage:
+  tiangong process auto-build --input <file> [options]
+
+Options:
+  --input <file>     JSON request file
+  --out-dir <dir>    Override the default run root directory
+  --json             Print compact JSON
+  -h, --help
+`.trim();
+}
+
+function renderProcessHelp(): string {
+  return `Usage:
+  tiangong process <subcommand> [options]
+
+Implemented Subcommands:
+  auto-build   Prepare a local process-from-flow run scaffold and artifact workspace
+
+Planned Subcommands:
+  get          Load one process dataset or process build run summary
+  resume-build Resume a prepared process build run and continue execution stages
+  publish-build Publish a process build run through the unified publish layer
+  batch-build  Run multiple process build requests through one batch-oriented CLI surface
+
+Examples:
+  tiangong process --help
+  tiangong process auto-build --help
+  tiangong process resume-build --help
+`.trim();
+}
+
 const lifecyclemodelPlannedHelp = {
   'auto-build': `Usage:
   tiangong lifecyclemodel auto-build --input <file> [options]
@@ -242,12 +284,60 @@ Status:
 `.trim(),
 } as const;
 
+const processPlannedHelp = {
+  get: `Usage:
+  tiangong process get --id <process-id> [options]
+
+Planned contract:
+  - load one process dataset or process build run summary by identifier
+  - keep read-only access distinct from build/publish workflows
+
+Status:
+  Planned command. Execution is not implemented yet.
+`.trim(),
+  'resume-build': `Usage:
+  tiangong process resume-build --run-id <id> [options]
+
+Planned contract:
+  - load one prepared process auto-build run
+  - continue stage execution from the persisted local state under artifacts/process_from_flow/<run_id>
+
+Status:
+  Planned command. Execution is not implemented yet.
+`.trim(),
+  'publish-build': `Usage:
+  tiangong process publish-build --run-id <id> [options]
+
+Planned contract:
+  - load one completed process build run
+  - generate publish handoff artifacts and later commit through the unified publish layer
+
+Status:
+  Planned command. Execution is not implemented yet.
+`.trim(),
+  'batch-build': `Usage:
+  tiangong process batch-build --input <file> [options]
+
+Planned contract:
+  - process multiple process auto-build requests from one batch manifest
+  - preserve isolated run directories and state locks per request
+
+Status:
+  Planned command. Execution is not implemented yet.
+`.trim(),
+} as const;
+
 type LifecyclemodelPlannedSubcommand = keyof typeof lifecyclemodelPlannedHelp;
+type ProcessPlannedSubcommand = keyof typeof processPlannedHelp;
 
 function isLifecyclemodelPlannedSubcommand(
   value: string | null,
 ): value is LifecyclemodelPlannedSubcommand {
   return Boolean(value && value in lifecyclemodelPlannedHelp);
+}
+
+function isProcessPlannedSubcommand(value: string | null): value is ProcessPlannedSubcommand {
+  return Boolean(value && value in processPlannedHelp);
 }
 
 function renderDoctorText(report: ReturnType<typeof buildDoctorReport>): string {
@@ -571,6 +661,40 @@ function parseLifecyclemodelBuildFlags(args: string[]): {
   };
 }
 
+function parseProcessAutoBuildFlags(args: string[]): {
+  help: boolean;
+  json: boolean;
+  inputPath: string;
+  outDir: string | null;
+} {
+  let values: ReturnType<typeof parseArgs>['values'];
+  try {
+    ({ values } = parseArgs({
+      args,
+      allowPositionals: false,
+      strict: true,
+      options: {
+        help: { type: 'boolean', short: 'h' },
+        json: { type: 'boolean' },
+        input: { type: 'string' },
+        'out-dir': { type: 'string' },
+      },
+    }));
+  } catch (error) {
+    throw new CliError(String(error), {
+      code: 'INVALID_ARGS',
+      exitCode: 2,
+    });
+  }
+
+  return {
+    help: Boolean(values.help),
+    json: Boolean(values.json),
+    inputPath: typeof values.input === 'string' ? values.input : '',
+    outDir: typeof values['out-dir'] === 'string' ? values['out-dir'] : null,
+  };
+}
+
 function plannedCommand(command: string, subcommand?: string): CliResult {
   const suffix = subcommand ? ` ${subcommand}` : '';
   return {
@@ -602,6 +726,7 @@ export async function executeCli(argv: string[], deps: CliDeps): Promise<CliResu
       deps.runLifecyclemodelBuildResultingProcessImpl ?? runLifecyclemodelBuildResultingProcess;
     const lifecyclemodelPublishImpl =
       deps.runLifecyclemodelPublishResultingProcessImpl ?? runLifecyclemodelPublishResultingProcess;
+    const processAutoBuildImpl = deps.runProcessAutoBuildImpl ?? runProcessAutoBuild;
 
     if (flags.version) {
       return { exitCode: 0, stdout: '0.0.1\n', stderr: '' };
@@ -707,6 +832,43 @@ export async function executeCli(argv: string[], deps: CliDeps): Promise<CliResu
         return {
           exitCode: 0,
           stdout: `${lifecyclemodelPlannedHelp[subcommand]}\n`,
+          stderr: '',
+        };
+      }
+      return plannedCommand(command, subcommand);
+    }
+
+    if (command === 'process' && !subcommand) {
+      return { exitCode: 0, stdout: `${renderProcessHelp()}\n`, stderr: '' };
+    }
+
+    if (command === 'process' && subcommand === 'auto-build') {
+      const processFlags = parseProcessAutoBuildFlags(commandArgs);
+      if (processFlags.help) {
+        return {
+          exitCode: 0,
+          stdout: `${renderProcessAutoBuildHelp()}\n`,
+          stderr: '',
+        };
+      }
+
+      const report = await processAutoBuildImpl({
+        inputPath: processFlags.inputPath,
+        outDir: processFlags.outDir,
+      });
+
+      return {
+        exitCode: 0,
+        stdout: stringifyJson(report, processFlags.json),
+        stderr: '',
+      };
+    }
+
+    if (command === 'process' && isProcessPlannedSubcommand(subcommand)) {
+      if (commandArgs.includes('--help') || commandArgs.includes('-h')) {
+        return {
+          exitCode: 0,
+          stdout: `${processPlannedHelp[subcommand]}\n`,
           stderr: '',
         };
       }

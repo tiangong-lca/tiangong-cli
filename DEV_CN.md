@@ -15,6 +15,9 @@
 - `tiangong search flow`
 - `tiangong search process`
 - `tiangong search lifecyclemodel`
+- `tiangong process auto-build`
+- `tiangong lifecyclemodel build-resulting-process`
+- `tiangong lifecyclemodel publish-resulting-process`
 - `tiangong publish run`
 - `tiangong validation run`
 - `tiangong admin embedding-run`
@@ -69,12 +72,33 @@ npm start -- --help
 npm start -- doctor
 npm start -- doctor --json
 npm start -- search flow --input ./request.json --dry-run
+npm start -- process auto-build --input ./pff-request.json --json
+npm start -- lifecyclemodel build-resulting-process --input ./request.json --json
+npm start -- lifecyclemodel publish-resulting-process --run-dir ./runs/example --publish-processes --publish-relations --json
 npm start -- publish run --input ./publish-request.json --dry-run
 npm start -- validation run --input-dir ./tidas-package --engine auto
 npm start -- admin embedding-run --input ./jobs.json --dry-run
 ```
 
-## publish / validation 边界
+## process / publish / validation 边界
+
+`tiangong process auto-build` 现在已经承担 `process_from_flow` 主链的第一个 CLI 切片，负责：
+
+- 读取单个 process-from-flow request
+- 解析 `flow_file` 指向的 ILCD flow JSON
+- 生成兼容旧工作流的 `run_id`
+- 创建本地 `artifacts/process_from_flow/<run_id>/` 运行骨架
+- 预写 `cache/process_from_flow_state.json`
+- 预写 `cache/agent_handoff_summary.json`
+- 产出 request / flow / assembly / lineage / invocation / run manifest / report
+
+这个命令当前只负责本地 intake 与 scaffold，不负责继续执行后续工作流阶段。
+
+也就是说，下面这些还没有迁完：
+
+- `tiangong process resume-build`
+- `tiangong process publish-build`
+- `tiangong process batch-build`
 
 `tiangong publish run` 现在已经成为统一 publish 契约入口，负责：
 
@@ -156,7 +180,8 @@ npm run build
 当前建议：
 
 - 轻量远程 skill 直接调用 `tiangong search ...` 或 `tiangong admin ...`
-- 重型 Python workflow 先保留原执行器，但由 `tiangong` 统一调度
+- `process-automated-builder` 已先迁入 `tiangong process auto-build` 本地 scaffold；剩余阶段继续按子命令切片迁移
+- 其余重型 workflow 先保留原执行器，但由 `tiangong` 统一调度
 - 所有新脚本优先使用统一环境变量名，不再扩散旧变量名
 
 ## 当前目录约定

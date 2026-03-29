@@ -17,6 +17,7 @@ Current implementation choices:
 - `tiangong search flow`
 - `tiangong search process`
 - `tiangong search lifecyclemodel`
+- `tiangong process auto-build`
 - `tiangong lifecyclemodel build-resulting-process`
 - `tiangong lifecyclemodel publish-resulting-process`
 - `tiangong publish run`
@@ -25,11 +26,15 @@ Current implementation choices:
 
 ## Planned command surface
 
-The `lifecyclemodel` namespace is now partially implemented. The remaining planned surface is:
+The `lifecyclemodel` and `process` namespaces are now partially implemented. The remaining workflow migration surface is:
 
 - `tiangong lifecyclemodel auto-build`
 - `tiangong lifecyclemodel validate-build`
 - `tiangong lifecyclemodel publish-build`
+- `tiangong process get`
+- `tiangong process resume-build`
+- `tiangong process publish-build`
+- `tiangong process batch-build`
 
 These remaining commands are intentionally not executable yet. They print an explicit `not implemented yet` message and exit with code `2` until the corresponding workflows are migrated into TypeScript.
 
@@ -85,12 +90,21 @@ npm start -- --help
 npm start -- doctor
 npm start -- doctor --json
 npm start -- search flow --input ./request.json --dry-run
+npm start -- process auto-build --input ./pff-request.json --json
 npm start -- lifecyclemodel build-resulting-process --input ./request.json --json
 npm start -- lifecyclemodel publish-resulting-process --run-dir ./runs/example --publish-processes --publish-relations --json
 npm start -- publish run --input ./publish-request.json --dry-run
 npm start -- validation run --input-dir ./tidas-package --engine auto
 npm start -- admin embedding-run --input ./jobs.json --dry-run
 ```
+
+## Process build scaffold
+
+`tiangong process auto-build` is the first migrated `process_from_flow` slice. It reads one request JSON from `--input`, loads the referenced ILCD flow dataset from `flow_file`, preserves the old run id contract (`pfw_<flow_code>_<flow_uuid8>_<operation>_<UTC_TIMESTAMP>`), and writes a local run scaffold under `artifacts/process_from_flow/<run_id>/` or `--out-dir`.
+
+The command keeps the legacy per-run layout that later stages still expect, including `input/`, `exports/processes/`, `exports/sources/`, `cache/process_from_flow_state.json`, and `cache/agent_handoff_summary.json`. It also adds CLI-owned manifests such as the normalized request snapshot, flow summary, assembly plan, lineage manifest, invocation index, run manifest, and a compact report artifact.
+
+This command does not yet execute the downstream workflow stages. `resume-build`, `publish-build`, and `batch-build` remain separate planned slices.
 
 ## Publish and validation
 
@@ -104,6 +118,7 @@ Run the built artifact directly:
 
 ```bash
 node ./bin/tiangong.js doctor
+node ./bin/tiangong.js process auto-build --input ./pff-request.json --json
 node ./dist/src/main.js doctor --json
 ```
 
@@ -112,7 +127,8 @@ node ./dist/src/main.js doctor --json
 `tiangong-lca-skills` should converge on this CLI instead of keeping separate transport scripts. The current migration strategy is:
 
 - thin remote wrappers move first
-- heavier Python workflows stay in place temporarily
+- local artifact-first workflow slices move into the CLI incrementally
+- remaining heavier workflow stages stay in place temporarily until the matching CLI subcommands exist
 - future skill execution should call `tiangong` as the stable entrypoint
 
 ## Docs

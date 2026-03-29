@@ -69,9 +69,9 @@
 | `process-hybrid-search` | 已有等价 CLI | shell wrapper，历史 token/env 兼容 | 只保留 skill 文档，调用 `tiangong search process` | P0 |
 | `lifecyclemodel-hybrid-search` | 已有等价 CLI | shell wrapper，历史 token/env 兼容 | 只保留 skill 文档，调用 `tiangong search lifecyclemodel` | P0 |
 | `embedding-ft` | 已有等价 CLI | shell wrapper | 只保留 skill 文档，调用 `tiangong admin embedding-run` | P0 |
-| `process-automated-builder` | 仍是重 workflow | shell + Python + LangGraph + MCP + OpenAI + AI edge search + TianGong unstructured | 迁成 `tiangong process ...` 主链 | P1 |
+| `process-automated-builder` | 已进入 CLI 化，6.1 已落地 | `tiangong process auto-build` + shell/Python/LangGraph/MCP/OpenAI/AI edge search/TianGong unstructured 遗留阶段 | 迁成 `tiangong process ...` 主链 | P1 |
 | `lifecyclemodel-automated-builder` | 仍是重 workflow | shell + Python + MCP + OpenAI | 迁成 `tiangong lifecyclemodel ...` 主链 | P1 |
-| `lifecyclemodel-resulting-process-builder` | CLI 本地 build/publish handoff 已落地，skill 仍未切换 | Python builder + 可选 MCP lookup | 迁成 `skill -> tiangong lifecyclemodel build/publish-resulting-process` | P1 |
+| `lifecyclemodel-resulting-process-builder` | CLI 本地 build/publish handoff 已落地，skill wrapper 已切换 | `skill -> tiangong lifecyclemodel build/publish-resulting-process` | 保持薄 wrapper，继续去掉遗留 lookup 分支 | P1 |
 | `lifecycleinventory-review` | 仍是 review workflow | Python review script | 迁成 `tiangong review process` | P2 |
 | `flow-governance-review` | 仍是治理 workflow | shell + 多个 Python helper + 可选 MCP | 迁成 `tiangong flow ...` / `tiangong review flow` | P2 |
 | `lifecyclemodel-recursive-orchestrator` | 仍是 orchestrator | Python orchestrator，串联多个技能 | 迁成 CLI 编排命令 | P3 |
@@ -90,6 +90,7 @@
 
 - “应该统一到 CLI”是目标态
 - “现在还有 Python / skills 逻辑”是现状债务
+- 但 `process_from_flow` 的 intake/scaffold 已经开始被 CLI 接管，后续应该沿同一路径继续削减遗留层
 
 ## 6. 可执行迁移路线
 
@@ -258,20 +259,21 @@ ToDo：
 
 目标命令：
 
-- [ ] `tiangong process auto-build`
+- [x] `tiangong process auto-build`
 - [ ] `tiangong process resume-build`
 - [ ] `tiangong process publish-build`
 - [ ] `tiangong process batch-build`
 
 建议拆成 4 个连续小步骤，而不是一次性大迁移：
 
-- [ ] 6.1 先实现 `auto-build` 的本地产物路径，不做 publish
+- [x] 6.1 先实现 `auto-build` 的本地产物路径，不做 publish
 - [ ] 6.2 再实现 `resume-build`，把 state-lock / run manifest 彻底收口到 CLI
 - [ ] 6.3 再实现 `publish-build`，接到统一 publish 模块
 - [ ] 6.4 最后实现 `batch-build`
 
 迁移内容：
 
+- [x] intake request normalization / flow 归一化 / run-id / local artifact scaffold 迁到 TS CLI
 - [ ] 流程编排迁到 TS
 - [ ] flow search 改为直接 REST，而不是 MCP
 - [ ] publish 改为直接 REST / CLI publish，而不是 MCP CRUD
@@ -431,7 +433,7 @@ ToDo：
 
 如果只按最短路径推进，下一轮建议严格做这 8 件事：
 
-当前已完成：1-5。
+当前重点已经推进到第 8 项，且 `tiangong process auto-build` / Phase 6.1 已完成。
 
 1. 修 CLI help，让命令面和真实实现一致。
 2. 修 skills 文档中的 `TIANGONG_CLI_DIR` 残留。
@@ -440,7 +442,7 @@ ToDo：
 5. 完成 `tiangong lifecyclemodel publish-resulting-process`。
 6. 把 `lifecyclemodel-resulting-process-builder` 改成薄 wrapper。
 7. 把 `lca-publish-executor` 收口到 `tiangong publish run`。
-8. 再进入 `tiangong process auto-build` 主链迁移。
+8. 继续推进 `tiangong process resume-build`，把后续阶段执行面从遗留 workflow 收口到 CLI。
 
 ## 10. 不应该做的事
 
