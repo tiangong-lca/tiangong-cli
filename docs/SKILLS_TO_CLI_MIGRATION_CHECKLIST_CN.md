@@ -67,10 +67,10 @@
 
 | Skill | 当前状态 | 当前技术形态 | 目标状态 | 优先级 |
 | --- | --- | --- | --- | --- | --- | --- | --- | --- |
-| `flow-hybrid-search` | 已完成 CLI 收口 | Node wrapper -> `tiangong search flow`，shell 仅兼容壳 | 只保留 skill 文档，调用 `tiangong search flow` | P0 |
-| `process-hybrid-search` | 已完成 CLI 收口 | Node wrapper -> `tiangong search process`，shell 仅兼容壳 | 只保留 skill 文档，调用 `tiangong search process` | P0 |
-| `lifecyclemodel-hybrid-search` | 已完成 CLI 收口 | Node wrapper -> `tiangong search lifecyclemodel`，shell 仅兼容壳 | 只保留 skill 文档，调用 `tiangong search lifecyclemodel` | P0 |
-| `embedding-ft` | 已完成 CLI 收口 | Node wrapper -> `tiangong admin embedding-run`，shell 仅兼容壳 | 只保留 skill 文档，调用 `tiangong admin embedding-run` | P0 |
+| `flow-hybrid-search` | 已完成 CLI 收口 | 原生 Node `.mjs` wrapper -> `tiangong search flow`，不再保留 shell shim | 只保留 skill 文档，调用 `tiangong search flow` | P0 |
+| `process-hybrid-search` | 已完成 CLI 收口 | 原生 Node `.mjs` wrapper -> `tiangong search process`，不再保留 shell shim | 只保留 skill 文档，调用 `tiangong search process` | P0 |
+| `lifecyclemodel-hybrid-search` | 已完成 CLI 收口 | 原生 Node `.mjs` wrapper -> `tiangong search lifecyclemodel`，不再保留 shell shim | 只保留 skill 文档，调用 `tiangong search lifecyclemodel` | P0 |
+| `embedding-ft` | 已完成 CLI 收口 | 原生 Node `.mjs` wrapper -> `tiangong admin embedding-run`，不再保留 shell shim | 只保留 skill 文档，调用 `tiangong admin embedding-run` | P0 |
 | `process-automated-builder` | 已进入 CLI 化，canonical skill 入口切为原生 Node `.mjs`；CLI 先接管本地 build/publish handoff slices | `node wrapper (.mjs) -> tiangong process auto-build | resume-build | publish-build | batch-build`已落地；legacy Python/LangGraph/MCP/OpenAI/AI edge search/TianGong unstructured 仅保留在显式`legacy` 子命令后 | 继续把剩余 LangGraph/Python 阶段迁入 CLI 模块，并持续缩小 legacy 路径 | P1 |
 | `lifecyclemodel-automated-builder` | 仍是重 workflow | shell + Python + MCP + OpenAI | 迁成 `tiangong lifecyclemodel ...` 主链 | P1 |
 | `lifecyclemodel-resulting-process-builder` | CLI 本地 build/publish handoff + direct REST lookup 已落地，Node wrapper 已切换 | `node wrapper -> tiangong lifecyclemodel build/publish-resulting-process` | 保持薄 wrapper，作为 lifecyclemodel CLI 化参考模板 | P1 |
