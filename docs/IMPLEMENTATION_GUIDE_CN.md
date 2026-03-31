@@ -42,7 +42,13 @@ tiangong
     list
     remediate
     publish-version
+    publish-reviewed-data
+    build-alias-map
+    scan-process-flow-refs
+    plan-process-flow-repairs
+    apply-process-flow-repairs
     regen-product
+    validate-processes
   process
     get
     auto-build
@@ -50,8 +56,12 @@ tiangong
     publish-build
     batch-build
   lifecyclemodel
+    auto-build
+    validate-build
+    publish-build
     build-resulting-process
     publish-resulting-process
+    orchestrate
   review
     process
     flow
@@ -75,14 +85,24 @@ tiangong
 | `tiangong flow list` | 统一 CLI 持有的只读 flow 枚举面；从 `TIANGONG_LCA_API_BASE_URL` 推导 Supabase REST 路径并提供稳定过滤/排序/分页 |
 | `tiangong flow remediate` | 本地 flow governance round1 deterministic remediation、artifact-first 输出 |
 | `tiangong flow publish-version` | 统一 CLI 持有的 remediated-flow publish/update 入口；从 `TIANGONG_LCA_API_BASE_URL` 推导 Supabase REST 路径并写出稳定 success/failure artifacts |
+| `tiangong flow publish-reviewed-data` | 统一 CLI 持有的 reviewed publish preparation 入口；支持 flow unchanged skip、flow/process append-only bump / current-version upsert、process flow-ref rewrite、本地 `publish-report.json` 与兼容的 flow success/failure artifacts |
+| `tiangong flow build-alias-map` | 独立 deterministic alias map 入口；从 old/new flow snapshots 与可选 seed alias map 生成 alias plan、manual queue 与稳定 alias map |
+| `tiangong flow scan-process-flow-refs` | 独立 process ref 扫描入口；对 local process rows 做 scope/catalog/alias 分类并写出 scan artifacts |
+| `tiangong flow plan-process-flow-repairs` | 独立 deterministic repair planning 入口；从 process/scope/alias/scan 契约生成 repair plan |
+| `tiangong flow apply-process-flow-repairs` | 独立 deterministic repair apply 入口；应用 deterministic subset、写出 patch evidence，并可同步本地 process pool |
 | `tiangong flow regen-product` | 本地治理后 process-side 再生产物入口；在一个命令下执行 scan / repair / apply / validate 并输出稳定 artifacts |
+| `tiangong flow validate-processes` | 本地治理后 patched process rows 的独立校验入口；校验 flow ref-only diff、quantitative reference 稳定性，并可选复用 `tidas-sdk` |
 | `tiangong process get` | 统一 CLI 持有的只读 process 详情读取面；从 `TIANGONG_LCA_API_BASE_URL` 推导 Supabase REST 路径并按 `id/version` 读取 |
 | `tiangong process auto-build` | 本地 `process_from_flow` intake、run-id 生成、artifact scaffold 预写 |
 | `tiangong process resume-build` | 本地 `process_from_flow` resume handoff、state-lock/manifest 收口、resume 元数据与报告输出 |
 | `tiangong process publish-build` | 本地 `process_from_flow` publish handoff、publish bundle/request/intent 产出、state/invocation/handoff 更新 |
 | `tiangong process batch-build` | 本地 `process_from_flow` batch manifest 编排、批量调用 auto-build、batch report 输出 |
+| `tiangong lifecyclemodel auto-build` | 本地 lifecyclemodel local-run intake、graph 推断、reference process 选择、`json_ordered` artifact 输出 |
+| `tiangong lifecyclemodel validate-build` | 本地 lifecyclemodel build run 校验重跑、per-model 校验报告与 aggregate report 输出 |
+| `tiangong lifecyclemodel publish-build` | 本地 lifecyclemodel publish handoff、publish bundle/request/intent 产出、validation 摘要复用 |
 | `tiangong lifecyclemodel build-resulting-process` | 本地 lifecycle model resulting process 聚合、内部 flow 抵消、artifact 输出 |
 | `tiangong lifecyclemodel publish-resulting-process` | 读取 resulting-process run，生成 `publish-bundle.json` / `publish-intent.json` 本地交付物 |
+| `tiangong lifecyclemodel orchestrate` | 递归装配的 plan / execute / publish-handoff 命令；写出 graph/lineage/publish bundle 工件，并只调用原生 CLI builder slices |
 | `tiangong review process` | 本地 process review、artifact-first 报告输出、可选 CLI LLM 语义审核 |
 | `tiangong review flow` | 本地 flow governance review、rows-file 物化、artifact-first 报告输出、可选 CLI LLM 语义审核 |
 | `tiangong publish run` | 本地 publish 契约归一化、dry-run/commit、report 输出 |
@@ -91,9 +111,12 @@ tiangong
 
 此外，CLI 现在已经正式引入 `tiangong lifecyclemodel ...` 一级命名空间，其中：
 
+- `tiangong lifecyclemodel auto-build` 已可执行
+- `tiangong lifecyclemodel validate-build` 已可执行
+- `tiangong lifecyclemodel publish-build` 已可执行
 - `tiangong lifecyclemodel build-resulting-process` 已可执行
 - `tiangong lifecyclemodel publish-resulting-process` 已可执行
-- `auto-build`、`validate-build`、`publish-build` 仍处于 planned 状态
+- `tiangong lifecyclemodel orchestrate` 已可执行
 
 `tiangong review ...` 也已经开始进入统一命令树，其中：
 
@@ -107,7 +130,13 @@ tiangong
 - `tiangong flow list` 已可执行
 - `tiangong flow remediate` 已可执行
 - `tiangong flow publish-version` 已可执行
+- `tiangong flow publish-reviewed-data` 已可执行
+- `tiangong flow build-alias-map` 已可执行
+- `tiangong flow scan-process-flow-refs` 已可执行
+- `tiangong flow plan-process-flow-repairs` 已可执行
+- `tiangong flow apply-process-flow-repairs` 已可执行
 - `tiangong flow regen-product` 已可执行
+- `tiangong flow validate-processes` 已可执行
 
 `tiangong process ...` 也已经开始承接 `process_from_flow` 主链迁移，其中：
 
@@ -128,9 +157,18 @@ tiangong
 - `process publish-build` 当前只负责本地 publish handoff，不直接执行远端 publish commit 或数据库写入
 - 已实现的 `process batch-build` 继续走本地优先、artifact-first 路径，并把批量 item 编排、聚合 report、默认 run_dir 分配统一收口到 CLI
 - `process batch-build` 当前只负责本地 batch orchestration，不直接串接 resume / publish 或远端执行器
+- 已实现的 `lifecyclemodel auto-build` 走本地只读、artifact-first 路径，输入固定为 local run manifest，不依赖 Python、MCP、KB、LLM 或远端 CRUD
+- `lifecyclemodel auto-build` 当前负责 graph 推断、reference process 选择、`@multiplicationFactor` 计算与 `json_ordered` lifecyclemodel 产物输出，并保留 `run-plan.json`、`resolved-manifest.json`、`selection/selection-brief.md`、`discovery/reference-model-summary.json`、`connections.json`、`process-catalog.json` 等 CLI 契约
+- `lifecyclemodel auto-build` 当前明确不负责 reference-model discovery、任何远端 lifecyclemodel 写入，也不会自动串接 validate-build / publish-build
+- 已实现的 `lifecyclemodel validate-build` 继续保留同一套 run 布局，并把模型扫描、统一 validation 模块调用、per-model report 与 aggregate report 输出统一收口到 CLI
+- `lifecyclemodel validate-build` 当前只负责本地 validation handoff，不直接触发 publish，也不做任何远端写入
+- 已实现的 `lifecyclemodel publish-build` 继续保留同一套 run 布局，并把本地 publish-bundle/request/intent、validation 摘要复用、invocation index 更新统一收口到 CLI
+- `lifecyclemodel publish-build` 当前只负责本地 publish handoff，不直接执行远端 publish commit 或数据库写入；真正的 dry-run / commit 边界仍由 `tiangong publish run` 负责
 - 已实现的 `build-resulting-process` 和 `publish-resulting-process` 都走本地优先、artifact-first 路径，不依赖 Python 或 MCP
 - `build-resulting-process` 现在还支持一个显式的 deterministic direct-read 补全路径：当 request 打开 `process_sources.allow_remote_lookup=true` 时，CLI 会从 `TIANGONG_LCA_API_BASE_URL` 推导 Supabase REST 路径，按 `process_id/version` 直接补齐缺失的 process dataset
 - `publish-resulting-process` 当前负责生成本地 publish handoff 产物，还没有把提交语义直接并入 `publish run`
+- 已实现的 `lifecyclemodel orchestrate` 把递归装配的 `plan | execute | publish` 三个动作统一收口到 CLI，并直接复用原生 `process auto-build`、`lifecyclemodel auto-build`、`lifecyclemodel build-resulting-process` slices
+- `lifecyclemodel orchestrate` 当前明确拒绝 legacy `process_builder.mode=langgraph` 与 `process_builder.python_bin` 输入，不再保留任何 Python fallback 配置面
 - 已实现的 `review process` 保留本地 artifact-first review contract，把规则核查、报告输出和可选 LLM 语义审核统一收口到 CLI；语义审核只使用 `TIANGONG_LCA_LLM_*`，不再透出 `OPENAI_*`
 - 已实现的 `review flow` 保留本地 artifact-first governance review contract，把 flow 摘要、相似对、规则 findings、可选 LLM findings 和双语 markdown 报告统一收口到 CLI；语义审核同样只使用 `TIANGONG_LCA_LLM_*`
 - `review flow` 当前明确不支持 `--with-reference-context`，也还没有接入本地 registry enrichment；这部分仍需后续迁移切片单独落地
@@ -138,8 +176,14 @@ tiangong
 - 已实现的 `flow list` 保留 deterministic direct-read 边界，支持稳定 `id/state_code/type_of_dataset` 过滤、显式 `order=id.asc,version.asc` 默认值，以及 `--all --page-size` 的 offset 分页
 - 已实现的 `flow remediate` 保留旧 invalid-flow 输入与 round1 artifact 契约，但运行时已经收口到 CLI，不再需要 skill 私有 Python remediation 入口
 - 已实现的 `flow publish-version` 直接从 `TIANGONG_LCA_API_BASE_URL` 推导 `/rest/v1/flows` 写入路径，支持 dry-run/commit，并保留 `mcp_success_list`、`remote_validation_failed`、`mcp_sync_report` 这些历史文件名
+- 已实现的 `flow publish-reviewed-data` 负责 reviewed publish preparation 阶段：支持 `--original-flow-rows-file` unchanged skip、flow/process `skip | append_only_bump | upsert_current_version`、`prepared-flow-rows.json` / `prepared-process-rows.json` / `flow-version-map.json` / `skipped-unchanged-flow-rows.json` / `process-flow-ref-rewrite-evidence.jsonl` / `publish-report.json` 输出，并在 `--commit` 时同时执行 prepared flow rows 与 prepared process rows 的远端写入
+- 已实现的 `flow build-alias-map` 把治理链中的 deterministic alias-map 构建切片收口到 CLI，固定 old/new flow snapshots 与可选 `seed-alias-map` 输入契约，并直接写出 `alias-plan.json` / `flow-alias-map.json` / `manual-review-queue.jsonl` / `alias-summary.json`
+- 已实现的 `flow scan-process-flow-refs` 把治理链中的独立 process ref scan 切片收口到 CLI，固定 process/scope/catalog/alias 输入契约，并直接写出 `scan-summary.json` / `scan-findings.json` / `scan-findings.jsonl`
+- 已实现的 `flow plan-process-flow-repairs` 把治理链中的独立 deterministic repair planning 切片收口到 CLI，固定 process/scope/alias/scan 输入契约，并直接写出 `repair-plan.json` / `manual-review-queue.jsonl` / `repair-summary.json`
+- 已实现的 `flow apply-process-flow-repairs` 把治理链中的独立 deterministic repair apply 切片收口到 CLI，固定与 planning 相同的输入契约，直接写出 `patched-processes.json` / `process-patches/**`，并可在 `--process-pool-file` 下同步本地 pool
 - 已实现的 `flow regen-product` 把治理后的 process-side 再生产物链收口到 CLI，在一个命令下固定 `scan -> repair plan -> optional apply -> optional validate` 契约，并把退出码 `1` 保留给 `--apply` 之后的本地校验失败
-- 其余未实现的 `flow` / `lifecyclemodel` / `process` 子命令仍只提供 help 和固定命名
+- 已实现的 `flow validate-processes` 把治理后 patched process rows 的独立校验切片收口到 CLI，固定 original/patched/scope 三类输入契约，并直接写出 `validation-report.json` / `validation-failures.jsonl`
+- 当前仍未实现的重点命令主要是 `review lifecyclemodel`；其余未迁移子命令继续只提供 help 和固定命名
 - 这样做的目的不是“假装已完成”，而是先固定命令树，再逐个把 workflow 迁入 TypeScript CLI
 
 ### 2.2 已经固定的工程约束
@@ -317,6 +361,62 @@ tiangong admin embedding-run --input ./jobs.json --dry-run
 - 并发调度、daemon、远端 CRUD、历史 Python orchestrator 复刻
 - `process get`
 
+`lifecyclemodel auto-build` 现在固定的是“本地 lifecyclemodel local-run 组装契约层”。
+
+它负责：
+
+- 读取单个 request JSON
+- 解析一个或多个 `process-automated-builder` 本地 run
+- 从共享 flow UUID 推断 process graph
+- 选择 reference process
+- 计算各 process instance 的 `@multiplicationFactor`
+- 写出原生 `json_ordered` lifecyclemodel 数据集
+- 写出 `run-plan.json`、`resolved-manifest.json`、`selection/selection-brief.md`
+- 写出 `discovery/reference-model-summary.json`、`models/**/summary.json`、`connections.json`、`process-catalog.json`
+- 产出 `lifecyclemodel-auto-build-report.json`
+
+它现在还不负责：
+
+- reference-model discovery
+- 任何远端 lifecyclemodel CRUD
+- MCP / KB / LLM / OCR runtime
+
+`lifecyclemodel validate-build` 现在固定的是“本地 lifecyclemodel validation handoff 契约层”。
+
+它负责：
+
+- 从 `--run-dir` 重开已有 lifecyclemodel auto-build run
+- 扫描 `models/*/tidas_bundle/lifecyclemodels/*.json`
+- 通过统一 `validation` 模块重跑每个 model bundle 的本地校验
+- 在 `reports/model-validations/` 下输出 per-model 校验报告
+- 更新 `manifests/invocation-index.json`
+- 产出 `reports/lifecyclemodel-validate-build-report.json`
+
+它现在还不负责：
+
+- 远端 lifecyclemodel CRUD
+- 自动触发 `publish-build`
+- MCP / KB / LLM / OCR runtime
+
+`lifecyclemodel publish-build` 现在固定的是“本地 lifecyclemodel publish handoff 契约层”。
+
+它负责：
+
+- 从 `--run-dir` 重开已有 lifecyclemodel auto-build run
+- 收集 `models/*/tidas_bundle/lifecyclemodels/*.json` 下的原生 lifecyclemodel payload
+- 若存在 `reports/lifecyclemodel-validate-build-report.json`，则复用其中的 aggregate 校验摘要
+- 写出 `stage_outputs/10_publish/publish-bundle.json`
+- 写出 `stage_outputs/10_publish/publish-request.json`
+- 写出 `stage_outputs/10_publish/publish-intent.json`
+- 更新 `manifests/invocation-index.json`
+- 产出 `reports/lifecyclemodel-publish-build-report.json`
+
+它现在还不负责：
+
+- 直接执行远端 publish commit 或数据库 CRUD
+- 重新实现历史 MCP transport
+- reference-model discovery
+
 `review process` 现在固定的是“本地 process review 契约层”。
 
 它负责：
@@ -420,6 +520,90 @@ tiangong admin embedding-run --input ./jobs.json --dry-run
 - 其他治理后处理
 - 任何 MCP transport
 
+`flow build-alias-map` 现在固定的是“治理链中的独立 deterministic alias-map 构建契约层”。
+
+它负责：
+
+- 读取一个或多个 old flow JSON / JSONL 输入
+- 读取一个或多个 new flow JSON / JSONL 输入
+- 可选读取 `seed-alias-map`
+- 对每个 old flow 生成 `no_alias_needed | alias_map_entry | manual_review` 决策
+- 输出 `alias-plan.json`
+- 输出 `alias-plan.jsonl`
+- 输出 `flow-alias-map.json`
+- 输出 `manual-review-queue.jsonl`
+- 输出 `alias-summary.json`
+
+它现在还不负责：
+
+- process ref 扫描
+- repair planning / apply
+- 任何远端 publish/write
+- 任何 MCP transport
+
+`flow scan-process-flow-refs` 现在固定的是“治理链中的独立 process ref scan 契约层”。
+
+它负责：
+
+- 读取 process JSON / JSONL 输入
+- 读取一个或多个 scope flow JSON / JSONL 输入
+- 可选读取 catalog flow 与 alias map
+- 对每个 exchange 的 `referenceToFlowDataSet` 做 deterministic 分类
+- 可选先剔除 emergy-named process
+- 输出 `emergy-excluded-processes.json`
+- 输出 `scan-summary.json`
+- 输出 `scan-findings.json`
+- 输出 `scan-findings.jsonl`
+
+它现在还不负责：
+
+- 修复计划
+- patch apply
+- 后续本地校验
+- 任何远端 publish/write
+- 任何 MCP transport
+
+`flow plan-process-flow-repairs` 现在固定的是“治理链中的独立 deterministic repair planning 契约层”。
+
+它负责：
+
+- 读取 process JSON / JSONL 输入
+- 读取一个或多个 scope flow JSON / JSONL 输入
+- 可选读取 alias map
+- 可选读取 `scan-findings`
+- 显式执行 `disabled | alias-only | alias-or-unique-name` auto-patch boundary
+- 输出 `repair-plan.json`
+- 输出 `repair-plan.jsonl`
+- 输出 `manual-review-queue.jsonl`
+- 输出 `repair-summary.json`
+
+它现在还不负责：
+
+- 真正修改 process rows
+- 后续本地校验
+- 任何远端 publish/write
+- 任何 MCP transport
+
+`flow apply-process-flow-repairs` 现在固定的是“治理链中的独立 deterministic repair apply 契约层”。
+
+它负责：
+
+- 复用 planning 相同的 process / scope / alias / scan 输入契约
+- 只应用 deterministic subset
+- 输出 `patched-processes.json`
+- 输出 `process-patches/<process-id__version>/before.json`
+- 输出 `process-patches/<process-id__version>/after.json`
+- 输出 `process-patches/<process-id__version>/diff.patch`
+- 输出 `process-patches/<process-id__version>/evidence.json`
+- 若显式传入 `--process-pool-file`，把 exact-version patched rows 同步回本地 pool，并在 `repair-summary.json` 记录 `process_pool_sync`
+
+它现在还不负责：
+
+- 后续本地校验
+- 任何远端 publish/write
+- round2 remote-validation retry
+- 任何 MCP transport
+
 `flow regen-product` 现在固定的是“治理后 process-side 再生产物契约层”。
 
 它负责：
@@ -489,7 +673,7 @@ TIANGONG_LCA_LLM_MODEL=
 
 - 只为当前已实现的命令暴露 env
 - 不为了历史实现或未来猜测保留 alias
-- 某类能力如果还停留在 skills / Python workflow 层，就继续由那一层自己管理 env
+- CLI 仓库内部即使已经有预备模块，也要等到公开命令真正消费时才把对应 env 纳入契约
 - `review process` 的可选语义审核统一走 `TIANGONG_LCA_LLM_*`，不再引入 `OPENAI_*`
 - `review flow` 的可选语义审核也统一走 `TIANGONG_LCA_LLM_*`，不再引入 `OPENAI_*`
 - `publish run` / `validation run` 都是本地契约与执行收口，不新增远程 env
@@ -504,6 +688,7 @@ TIANGONG_LCA_LLM_MODEL=
 | `admin embedding-run` | `TIANGONG_LCA_API_BASE_URL`、`TIANGONG_LCA_API_KEY`（`TIANGONG_LCA_REGION` 可选） |
 | `process get` | `TIANGONG_LCA_API_BASE_URL`、`TIANGONG_LCA_API_KEY` |
 | `process auto-build | resume-build | publish-build | batch-build` | 无 |
+| `lifecyclemodel auto-build | validate-build | publish-build | orchestrate` | 无 |
 | `lifecyclemodel build-resulting-process` | 本地运行默认无；若 request 开启 `process_sources.allow_remote_lookup=true`，则需要 `TIANGONG_LCA_API_BASE_URL`、`TIANGONG_LCA_API_KEY` |
 | `lifecyclemodel publish-resulting-process` | 无 |
 | `review process` | 纯规则 review 默认无；若显式开启 `--enable-llm`，则需要 `TIANGONG_LCA_LLM_BASE_URL`、`TIANGONG_LCA_LLM_API_KEY`、`TIANGONG_LCA_LLM_MODEL` |
@@ -512,6 +697,10 @@ TIANGONG_LCA_LLM_MODEL=
 | `flow list` | `TIANGONG_LCA_API_BASE_URL`、`TIANGONG_LCA_API_KEY` |
 | `flow remediate` | 无 |
 | `flow publish-version` | `TIANGONG_LCA_API_BASE_URL`、`TIANGONG_LCA_API_KEY` |
+| `flow publish-reviewed-data` | 本地 dry-run 默认无；若 `--commit` 发布 prepared flow/process rows，则需要 `TIANGONG_LCA_API_BASE_URL`、`TIANGONG_LCA_API_KEY` |
+| `flow scan-process-flow-refs` | 无 |
+| `flow plan-process-flow-repairs` | 无 |
+| `flow apply-process-flow-repairs` | 无 |
 | `flow regen-product` | 无 |
 | `publish run` | 无 |
 | `validation run` | 无 |
@@ -564,32 +753,50 @@ npm run prepush:gate
 | `lifecyclemodel-hybrid-search` | `tiangong search lifecyclemodel` |
 | `embedding-ft`                 | `tiangong admin embedding-run`   |
 
-### 7.3 已启动但未完成迁移的对象
+### 7.3 已完成 CLI 收口的 workflow skills
 
-这类能力已经进入 CLI 迁移路线，但还没有完全变成纯 TS 主链：
+当前 canonical path 已经固定为 `skill -> 原生 Node .mjs wrapper -> tiangong CLI`：
 
 - `process-automated-builder`
-  - 已落地 `tiangong process auto-build`
-  - 已落地 `tiangong process resume-build`
-  - 已落地 `tiangong process publish-build`
-  - 已落地 `tiangong process batch-build`
+  - `tiangong process auto-build`
+  - `tiangong process resume-build`
+  - `tiangong process publish-build`
+  - `tiangong process batch-build`
+  - skill 侧不再保留 Python / LangGraph / MCP / KB / OCR fallback
+- `lifecyclemodel-automated-builder`
+  - `tiangong lifecyclemodel auto-build`
+  - `tiangong lifecyclemodel validate-build`
+  - `tiangong lifecyclemodel publish-build`
+  - skill 侧不再保留 shell 兼容壳或 Python / MCP runtime
 - `lifecycleinventory-review`
-  - 已落地 `tiangong review process`
-  - `review lifecyclemodel` 仍处于 planned 状态
+  - `tiangong review process`
+  - 仍保留 `review lifecyclemodel` 作为未来原生 CLI 增量，不属于遗留 Python runtime
 - `flow-governance-review`
-  - 已落地 `tiangong review flow`（覆盖 `review-flows` slice）
-  - 已落地 `tiangong flow get`（覆盖治理链中的 deterministic direct-read detail slice）
-  - 已落地 `tiangong flow list`（覆盖治理链中的 deterministic direct-read list slice）
-  - 已落地 `tiangong flow remediate`（覆盖 `remediate-flows` / round1 deterministic remediation slice）
-  - 已落地 `tiangong flow publish-version`（覆盖 remediated-flow publish/update slice，并保留历史 sync artifacts）
-  - 已落地 `tiangong flow regen-product`（覆盖治理后的 process-side 再生产物 slice）
-- 其他重型 Python workflow
+  - `tiangong review flow`
+  - `tiangong flow get`
+  - `tiangong flow list`
+  - `tiangong flow remediate`
+  - `tiangong flow publish-version`
+  - `tiangong flow publish-reviewed-data`
+  - `tiangong flow build-alias-map`
+  - `tiangong flow scan-process-flow-refs`
+  - `tiangong flow plan-process-flow-repairs`
+  - `tiangong flow apply-process-flow-repairs`
+  - `tiangong flow regen-product`
+  - `tiangong flow validate-processes`
+  - OpenClaw / dedup / legacy Python orchestration 已从 supported path 中移除
+- `lifecyclemodel-recursive-orchestrator`
+  - `tiangong lifecyclemodel orchestrate`
+  - skill wrapper 只保留对 `plan | execute | publish` 的薄调用
+- `lca-publish-executor`
+  - `tiangong publish run`
+  - publish contract 已不再保留私有 Python 实现
 
-更合理的路径是：
+当前更合理的扩展路径是：
 
-1. 先让 CLI 成为统一入口
-2. 由 CLI 调度现有本地执行器
-3. 再逐步把值得平台化的环节抽成 REST 能力
+1. 先在 CLI 命令树定义稳定动作
+2. 再让 skill 只做薄调用
+3. 最后才判断是否值得继续下沉成 REST/Edge Function 能力
 
 ## 8. 推荐的 skills 调用方式
 
@@ -599,6 +806,7 @@ npm run prepush:gate
 
 - 默认路径：`${WORKSPACE_ROOT}/tiangong-lca-cli`
 - 可覆盖路径：`TIANGONG_LCA_CLI_DIR`
+- skill wrapper 直接使用原生 Node `.mjs`，不再保留 shell 兼容壳
 
 调用方式优先顺序：
 
@@ -610,25 +818,19 @@ npm run prepush:gate
 
 ## 9. 下一阶段路线
 
-### Phase 1
+### 当前已经完成
 
-- 完成当前薄远程命令
-- 完成 skills 对这批命令的收敛
-- 固定统一环境变量名和帮助文本
+- 统一 CLI 命令树已经固定
+- skills 已切为原生 Node `.mjs` 薄 wrapper
+- 旧 Python / MCP / shell runtime 已不再是 supported path
+- publish / validation / governance / orchestrate 都已经有统一 CLI 边界
 
-### Phase 2
+### 后续只保留原生增量，不再叫“遗留迁移”
 
-- 切 `process-automated-builder` 到 CLI-only wrapper
-- 引入 `review` / `job` / `flow` / `process` 的更多业务子命令
-- 用 CLI 接管现有 workflow 的稳定 contract 层
-- 统一 run-dir / artifact / manifest 输入输出格式
-
-### Phase 3
-
-- 把重型 workflow 中真正稳定的执行阶段逐步迁成纯 TS CLI
-- 把其中适合服务化的远程能力逐步服务化
-- 继续减少 skill 仓库里的 transport logic
-- 让 agent 主要理解 `tiangong` 命令树，而不是 repo 内部脚本细节
+- `review lifecyclemodel` 何时实现，取决于是否真的形成稳定业务动作
+- lifecyclemodel 的 discovery / AI 选择逻辑，只有在产品面确认需要时才继续抽象成新的 CLI 子命令
+- `auth` / `job` 之类 placeholder surface 只有在真实场景出现时才补齐，而不是为了对称性先做
+- 任何新增能力都必须先定义成 `tiangong <noun> <verb>`，再决定是否要进一步服务化
 
 ## 10. 结论
 

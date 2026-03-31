@@ -5,6 +5,11 @@ import { CliError, toErrorPayload } from './lib/errors.js';
 import type { FetchLike } from './lib/http.js';
 import { stringifyJson } from './lib/io.js';
 import {
+  runLifecyclemodelAutoBuild,
+  type LifecyclemodelAutoBuildReport,
+  type RunLifecyclemodelAutoBuildOptions,
+} from './lib/lifecyclemodel-auto-build.js';
+import {
   runLifecyclemodelBuildResultingProcess,
   type LifecyclemodelResultingProcessReport,
   type RunLifecyclemodelResultingProcessOptions,
@@ -14,6 +19,21 @@ import {
   type LifecyclemodelPublishResultingProcessReport,
   type RunLifecyclemodelPublishResultingProcessOptions,
 } from './lib/lifecyclemodel-publish-resulting-process.js';
+import {
+  runLifecyclemodelValidateBuild,
+  type LifecyclemodelValidateBuildReport,
+  type RunLifecyclemodelValidateBuildOptions,
+} from './lib/lifecyclemodel-validate-build.js';
+import {
+  runLifecyclemodelPublishBuild,
+  type LifecyclemodelPublishBuildReport,
+  type RunLifecyclemodelPublishBuildOptions,
+} from './lib/lifecyclemodel-publish-build.js';
+import {
+  runLifecyclemodelOrchestrate,
+  type LifecyclemodelOrchestrateReport,
+  type RunLifecyclemodelOrchestrateOptions,
+} from './lib/lifecyclemodel-orchestrate.js';
 import {
   runProcessAutoBuild,
   type ProcessAutoBuildReport,
@@ -63,9 +83,31 @@ import {
   type RunFlowPublishVersionOptions,
 } from './lib/flow-publish-version.js';
 import {
+  runFlowReviewedPublishData,
+  type FlowReviewedPublishDataReport,
+  type RunFlowReviewedPublishDataOptions,
+} from './lib/flow-publish-reviewed-data.js';
+import {
+  runFlowBuildAliasMap,
+  type FlowBuildAliasMapReport,
+  type RunFlowBuildAliasMapOptions,
+} from './lib/flow-build-alias-map.js';
+import {
+  runFlowApplyProcessFlowRepairs,
+  runFlowPlanProcessFlowRepairs,
   runFlowRegenProduct,
+  runFlowScanProcessFlowRefs,
+  runFlowValidateProcesses,
+  type FlowApplyProcessFlowRepairsReport,
+  type FlowPlanProcessFlowRepairsReport,
   type FlowRegenProductReport,
+  type FlowScanProcessFlowRefsReport,
+  type FlowValidateProcessesReport,
+  type RunFlowApplyProcessFlowRepairsOptions,
+  type RunFlowPlanProcessFlowRepairsOptions,
   type RunFlowRegenProductOptions,
+  type RunFlowScanProcessFlowRefsOptions,
+  type RunFlowValidateProcessesOptions,
 } from './lib/flow-regen-product.js';
 import { executeRemoteCommand, getRemoteCommandHelp } from './lib/remote.js';
 import {
@@ -80,12 +122,24 @@ export type CliDeps = {
   fetchImpl: FetchLike;
   runPublishImpl?: (options: RunPublishOptions) => Promise<PublishReport>;
   runValidationImpl?: (options: RunValidationOptions) => Promise<ValidationRunReport>;
+  runLifecyclemodelAutoBuildImpl?: (
+    options: RunLifecyclemodelAutoBuildOptions,
+  ) => Promise<LifecyclemodelAutoBuildReport>;
   runLifecyclemodelBuildResultingProcessImpl?: (
     options: RunLifecyclemodelResultingProcessOptions,
   ) => Promise<LifecyclemodelResultingProcessReport>;
   runLifecyclemodelPublishResultingProcessImpl?: (
     options: RunLifecyclemodelPublishResultingProcessOptions,
   ) => Promise<LifecyclemodelPublishResultingProcessReport>;
+  runLifecyclemodelValidateBuildImpl?: (
+    options: RunLifecyclemodelValidateBuildOptions,
+  ) => Promise<LifecyclemodelValidateBuildReport>;
+  runLifecyclemodelPublishBuildImpl?: (
+    options: RunLifecyclemodelPublishBuildOptions,
+  ) => Promise<LifecyclemodelPublishBuildReport>;
+  runLifecyclemodelOrchestrateImpl?: (
+    options: RunLifecyclemodelOrchestrateOptions,
+  ) => Promise<LifecyclemodelOrchestrateReport>;
   runProcessGetImpl?: (options: RunProcessGetOptions) => Promise<ProcessGetReport>;
   runProcessAutoBuildImpl?: (
     options: RunProcessAutoBuildOptions,
@@ -107,9 +161,27 @@ export type CliDeps = {
   runFlowPublishVersionImpl?: (
     options: RunFlowPublishVersionOptions,
   ) => Promise<FlowPublishVersionReport>;
+  runFlowReviewedPublishDataImpl?: (
+    options: RunFlowReviewedPublishDataOptions,
+  ) => Promise<FlowReviewedPublishDataReport>;
+  runFlowBuildAliasMapImpl?: (
+    options: RunFlowBuildAliasMapOptions,
+  ) => Promise<FlowBuildAliasMapReport>;
+  runFlowScanProcessFlowRefsImpl?: (
+    options: RunFlowScanProcessFlowRefsOptions,
+  ) => Promise<FlowScanProcessFlowRefsReport>;
+  runFlowPlanProcessFlowRepairsImpl?: (
+    options: RunFlowPlanProcessFlowRepairsOptions,
+  ) => Promise<FlowPlanProcessFlowRepairsReport>;
+  runFlowApplyProcessFlowRepairsImpl?: (
+    options: RunFlowApplyProcessFlowRepairsOptions,
+  ) => Promise<FlowApplyProcessFlowRepairsReport>;
   runFlowRegenProductImpl?: (
     options: RunFlowRegenProductOptions,
   ) => Promise<FlowRegenProductReport>;
+  runFlowValidateProcessesImpl?: (
+    options: RunFlowValidateProcessesOptions,
+  ) => Promise<FlowValidateProcessesReport>;
 };
 
 export type CliResult = {
@@ -142,8 +214,8 @@ Implemented Commands:
   doctor     show environment diagnostics
   search     flow | process | lifecyclemodel
   process    get | auto-build | resume-build | publish-build | batch-build
-  flow       get | list | remediate | publish-version | regen-product
-  lifecyclemodel build-resulting-process | publish-resulting-process
+  flow       get | list | remediate | publish-version | publish-reviewed-data | build-alias-map | scan-process-flow-refs | plan-process-flow-repairs | apply-process-flow-repairs | regen-product | validate-processes
+  lifecyclemodel auto-build | validate-build | publish-build | build-resulting-process | publish-resulting-process | orchestrate
   review     process | flow
   publish    run
   validation run
@@ -151,7 +223,6 @@ Implemented Commands:
 
 Planned Surface (not implemented yet):
   auth       whoami | doctor-auth
-  lifecyclemodel auto-build | validate-build | publish-build
   review     lifecyclemodel
   job        get | wait | logs
 
@@ -166,11 +237,21 @@ Examples:
   tiangong process resume-build --run-id <id>
   tiangong process publish-build --run-id <id>
   tiangong process batch-build --input ./batch-request.json
+  tiangong lifecyclemodel auto-build --input ./lifecyclemodel-auto-build.request.json
+  tiangong lifecyclemodel validate-build --run-dir ./artifacts/lifecyclemodel_auto_build/<run_id>
+  tiangong lifecyclemodel publish-build --run-dir ./artifacts/lifecyclemodel_auto_build/<run_id>
+  tiangong lifecyclemodel orchestrate plan --input ./lifecyclemodel-orchestrate.request.json --out-dir ./artifacts/lifecyclemodel_recursive/run-001
   tiangong flow get --id <flow-id> --version <version>
   tiangong flow list --id <flow-id> --state-code 100 --limit 20
   tiangong flow remediate --input-file ./invalid-flows.jsonl --out-dir ./flow-remediation
   tiangong flow publish-version --input-file ./ready-flows.jsonl --out-dir ./flow-publish --commit
+  tiangong flow publish-reviewed-data --flow-rows-file ./reviewed-flows.jsonl --original-flow-rows-file ./original-flows.jsonl --out-dir ./flow-publish-review
+  tiangong flow build-alias-map --old-flow-file ./old-flows.jsonl --new-flow-file ./new-flows.jsonl --out-dir ./flow-alias-map
+  tiangong flow scan-process-flow-refs --processes-file ./processes.jsonl --scope-flow-file ./flows.jsonl --out-dir ./flow-scan
+  tiangong flow plan-process-flow-repairs --processes-file ./processes.jsonl --scope-flow-file ./flows.jsonl --out-dir ./flow-repair-plan
+  tiangong flow apply-process-flow-repairs --processes-file ./processes.jsonl --scope-flow-file ./flows.jsonl --out-dir ./flow-repair-apply
   tiangong flow regen-product --processes-file ./processes.jsonl --scope-flow-file ./flows.jsonl --out-dir ./flow-regeneration --apply
+  tiangong flow validate-processes --original-processes-file ./before.jsonl --patched-processes-file ./after.jsonl --scope-flow-file ./flows.jsonl --out-dir ./flow-validation
   tiangong review process --run-root ./artifacts/process_from_flow/<run_id> --run-id <run_id> --out-dir ./review
   tiangong review flow --rows-file ./flows.json --out-dir ./review
   tiangong publish run --input ./publish-request.json --dry-run
@@ -259,7 +340,13 @@ Implemented Subcommands:
   list         Enumerate flow datasets through direct Supabase REST with deterministic filters
   remediate    Deterministically repair invalid local flow rows and emit artifact-first outputs
   publish-version Publish remediated flow versions through the unified CLI surface
+  publish-reviewed-data Prepare reviewed flow rows, skip unchanged snapshots, and optionally publish the resulting versions
+  build-alias-map Build a deterministic flow alias map from old/new local flow snapshots
+  scan-process-flow-refs Classify process exchange references against the current flow scope
+  plan-process-flow-repairs Plan deterministic repairs for local process-flow references
+  apply-process-flow-repairs Apply deterministic process-flow reference repairs and emit patch artifacts
   regen-product Regenerate local process-side artifacts after flow governance changes
+  validate-processes Validate locally patched process rows against allowed flow-reference-only changes
 
 Examples:
   tiangong flow --help
@@ -267,7 +354,13 @@ Examples:
   tiangong flow list --help
   tiangong flow remediate --help
   tiangong flow publish-version --help
+  tiangong flow publish-reviewed-data --help
+  tiangong flow build-alias-map --help
+  tiangong flow scan-process-flow-refs --help
+  tiangong flow plan-process-flow-repairs --help
+  tiangong flow apply-process-flow-repairs --help
   tiangong flow regen-product --help
+  tiangong flow validate-processes --help
 `.trim();
 }
 
@@ -365,6 +458,131 @@ Outputs written under --out-dir:
 `.trim();
 }
 
+function renderFlowPublishReviewedDataHelp(): string {
+  return `Usage:
+  tiangong flow publish-reviewed-data --out-dir <dir> [--flow-rows-file <file>] [--process-rows-file <file>] [options]
+
+Options:
+  --flow-rows-file <file>           Reviewed flow rows as JSON or JSONL
+  --original-flow-rows-file <file>  Optional original flow snapshot used to skip unchanged reviewed rows
+  --process-rows-file <file>        Optional reviewed process rows as JSON or JSONL
+  --flow-publish-policy <mode>      skip | append_only_bump | upsert_current_version (default: append_only_bump)
+  --process-publish-policy <mode>   skip | append_only_bump | upsert_current_version (default: append_only_bump)
+  --no-rewrite-process-flow-refs    Keep process flow references unchanged during local preparation
+  --commit                          Execute remote writes for prepared flow and process rows
+  --dry-run                         Keep the command local-only and write prepared artifacts without remote writes
+  --max-workers <n>                 Parallel worker count for the flow commit step (default: 4)
+  --target-user-id <id>             Override the target owner when prepared flow rows omit user_id
+  --json                            Print compact JSON
+  -h, --help
+
+Environment:
+  none for local dry-run
+  TIANGONG_LCA_API_BASE_URL and TIANGONG_LCA_API_KEY when --commit publishes prepared rows
+
+Outputs written under --out-dir:
+  - prepared-flow-rows.json
+  - prepared-process-rows.json
+  - flow-version-map.json
+  - skipped-unchanged-flow-rows.json
+  - process-flow-ref-rewrite-evidence.jsonl
+  - publish-report.json
+  - flows_tidas_sdk_plus_classification_mcp_success_list.json
+  - flows_tidas_sdk_plus_classification_remote_validation_failed.jsonl
+  - flows_tidas_sdk_plus_classification_mcp_sync_report.json
+`.trim();
+}
+
+function renderFlowBuildAliasMapHelp(): string {
+  return `Usage:
+  tiangong flow build-alias-map --old-flow-file <file> --new-flow-file <file> --out-dir <dir> [options]
+
+Options:
+  --old-flow-file <file>          Repeatable pre-governance flow snapshot as JSON or JSONL
+  --new-flow-file <file>          Repeatable post-governance flow snapshot as JSON or JSONL
+  --seed-alias-map <file>         Optional existing alias map JSON object used as deterministic seed input
+  --out-dir <dir>                 Output directory for alias-plan artifacts
+  --json                          Print compact JSON
+  -h, --help
+
+Outputs written under --out-dir:
+  - alias-plan.json
+  - alias-plan.jsonl
+  - flow-alias-map.json
+  - manual-review-queue.jsonl
+  - alias-summary.json
+`.trim();
+}
+
+function renderFlowScanProcessFlowRefsHelp(): string {
+  return `Usage:
+  tiangong flow scan-process-flow-refs --processes-file <file> --scope-flow-file <file> --out-dir <dir> [options]
+
+Options:
+  --processes-file <file>         Process rows as JSON or JSONL
+  --scope-flow-file <file>        Repeatable target flow scope file as JSON or JSONL
+  --catalog-flow-file <file>      Repeatable catalog flow file; defaults to the scope files
+  --alias-map <file>              Optional flow alias map JSON object
+  --exclude-emergy                Exclude emergy-named processes before reference scanning
+  --out-dir <dir>                 Output directory for scan artifacts
+  --json                          Print compact JSON
+  -h, --help
+
+Outputs written under --out-dir:
+  - emergy-excluded-processes.json
+  - scan-summary.json
+  - scan-findings.json
+  - scan-findings.jsonl
+`.trim();
+}
+
+function renderFlowPlanProcessFlowRepairsHelp(): string {
+  return `Usage:
+  tiangong flow plan-process-flow-repairs --processes-file <file> --scope-flow-file <file> --out-dir <dir> [options]
+
+Options:
+  --processes-file <file>         Process rows as JSON or JSONL
+  --scope-flow-file <file>        Repeatable target flow scope file as JSON or JSONL
+  --alias-map <file>              Optional flow alias map JSON object
+  --scan-findings <file>          Optional scan-findings JSON or JSONL from a prior scan step
+  --auto-patch-policy <mode>      disabled | alias-only | alias-or-unique-name (default: alias-only)
+  --out-dir <dir>                 Output directory for repair plan artifacts
+  --json                          Print compact JSON
+  -h, --help
+
+Outputs written under --out-dir:
+  - repair-plan.json
+  - repair-plan.jsonl
+  - manual-review-queue.jsonl
+  - repair-summary.json
+`.trim();
+}
+
+function renderFlowApplyProcessFlowRepairsHelp(): string {
+  return `Usage:
+  tiangong flow apply-process-flow-repairs --processes-file <file> --scope-flow-file <file> --out-dir <dir> [options]
+
+Options:
+  --processes-file <file>         Process rows as JSON or JSONL
+  --scope-flow-file <file>        Repeatable target flow scope file as JSON or JSONL
+  --alias-map <file>              Optional flow alias map JSON object
+  --scan-findings <file>          Optional scan-findings JSON or JSONL from a prior scan step
+  --auto-patch-policy <mode>      disabled | alias-only | alias-or-unique-name (default: alias-only)
+  --process-pool-file <file>      Optional process pool file to sync after patch application
+  --out-dir <dir>                 Output directory for repair apply artifacts
+  --json                          Print compact JSON
+  -h, --help
+
+Outputs written under --out-dir:
+  - repair-plan.json
+  - repair-plan.jsonl
+  - manual-review-queue.jsonl
+  - repair-summary.json
+  - patched-processes.json
+  - process-patches/
+`.trim();
+}
+
 function renderFlowRegenProductHelp(): string {
   return `Usage:
   tiangong flow regen-product --processes-file <file> --scope-flow-file <file> --out-dir <dir> [options]
@@ -389,6 +607,25 @@ Outputs written under --out-dir:
   - repair/
   - repair-apply/ (only with --apply)
   - validate/ (only with --apply)
+`.trim();
+}
+
+function renderFlowValidateProcessesHelp(): string {
+  return `Usage:
+  tiangong flow validate-processes --original-processes-file <file> --patched-processes-file <file> --scope-flow-file <file> --out-dir <dir> [options]
+
+Options:
+  --original-processes-file <file>  Original process rows before repair as JSON or JSONL
+  --patched-processes-file <file>   Patched process rows after repair as JSON or JSONL
+  --scope-flow-file <file>          Repeatable target flow scope file as JSON or JSONL
+  --out-dir <dir>                   Output directory for validation-report.json and validation-failures.jsonl
+  --tidas-mode <mode>               auto | required | skip (default: auto)
+  --json                            Print compact JSON
+  -h, --help
+
+Outputs written under --out-dir:
+  - validation-report.json
+  - validation-failures.jsonl
 `.trim();
 }
 
@@ -488,18 +725,103 @@ function renderLifecyclemodelHelp(): string {
   tiangong lifecyclemodel <subcommand> [options]
 
 Implemented Subcommands:
+  auto-build                Build native lifecyclemodel json_ordered artifacts from local process run exports
+  validate-build            Re-run local validation on one lifecyclemodel build run
+  publish-build             Prepare lifecyclemodel publish handoff artifacts from one local build run
   build-resulting-process   Deterministically aggregate a lifecycle model into a resulting process bundle
   publish-resulting-process Prepare publish-bundle.json and publish-intent.json from a prior resulting-process run
-
-Planned Subcommands:
-  auto-build                Assemble lifecycle models from discovered candidate processes
-  validate-build            Re-run local validation on a lifecycle model build run
-  publish-build             Publish a lifecycle model build run through the unified publish layer
+  orchestrate               Plan, execute, or publish a recursive lifecyclemodel assembly run
 
 Examples:
   tiangong lifecyclemodel --help
-  tiangong lifecyclemodel build-resulting-process --help
   tiangong lifecyclemodel auto-build --help
+  tiangong lifecyclemodel validate-build --help
+  tiangong lifecyclemodel publish-build --help
+  tiangong lifecyclemodel build-resulting-process --help
+  tiangong lifecyclemodel orchestrate --help
+`.trim();
+}
+
+function renderLifecyclemodelOrchestrateHelp(): string {
+  return `Usage:
+  tiangong lifecyclemodel orchestrate <plan|execute|publish> [options]
+
+Plan / execute options:
+  --input <file>                           JSON request file
+  --request <file>                         Alias for --input
+  --out-dir <dir>                          Output run directory
+  --allow-process-build                    Override orchestration.allow_process_build=true during execute
+  --allow-submodel-build                   Override orchestration.allow_submodel_build=true during execute
+  --json                                   Print compact JSON
+  -h, --help
+
+Publish options:
+  --run-dir <dir>                          Existing orchestrator run directory
+  --publish-lifecyclemodels                Include built lifecyclemodels in publish-bundle.json
+  --publish-resulting-process-relations    Include projected processes and resulting-process relations in publish-bundle.json
+  --json                                   Print compact JSON
+  -h, --help
+
+This command:
+  - normalizes a recursive request into assembly-plan.json, graph-manifest.json, lineage-manifest.json, and boundary-report.json
+  - executes only native CLI-backed builders; no Python fallback path remains
+  - prepares a local publish-bundle.json from prior invocation artifacts
+`.trim();
+}
+
+function renderLifecyclemodelAutoBuildHelp(): string {
+  return `Usage:
+  tiangong lifecyclemodel auto-build --input <file> [options]
+
+Options:
+  --input <file>     JSON request file
+  --out-dir <dir>    Override the default lifecyclemodel build run root
+  --json             Print compact JSON
+  -h, --help
+
+Minimal request contract:
+  {
+    "local_runs": ["/abs/path/to/process-build-run"]
+  }
+
+This first CLI slice is local-only and read-only:
+  - loads local process build run directories
+  - infers the process graph from shared flow UUIDs
+  - emits native lifecyclemodel json_ordered artifacts
+  - leaves follow-up validation and publish handoff to the companion validate-build and publish-build commands
+`.trim();
+}
+
+function renderLifecyclemodelValidateBuildHelp(): string {
+  return `Usage:
+  tiangong lifecyclemodel validate-build --run-dir <dir> [options]
+
+Options:
+  --run-dir <dir>    Existing lifecyclemodel auto-build run directory
+  --engine <mode>    auto | sdk | tools | all (default: auto)
+  --json             Print compact JSON
+  -h, --help
+
+This command:
+  - scans models/*/tidas_bundle from one lifecyclemodel auto-build run
+  - re-runs local validation through the unified validation module
+  - writes per-model validation reports plus one aggregate report
+`.trim();
+}
+
+function renderLifecyclemodelPublishBuildHelp(): string {
+  return `Usage:
+  tiangong lifecyclemodel publish-build --run-dir <dir> [options]
+
+Options:
+  --run-dir <dir>    Existing lifecyclemodel auto-build run directory
+  --json             Print compact JSON
+  -h, --help
+
+This command:
+  - collects native lifecyclemodel json_ordered payloads from one local build run
+  - writes publish-bundle.json, publish-request.json, and publish-intent.json
+  - keeps actual dry-run / commit execution in tiangong publish run
 `.trim();
 }
 
@@ -591,42 +913,6 @@ Examples:
 `.trim();
 }
 
-const lifecyclemodelPlannedHelp = {
-  'auto-build': `Usage:
-  tiangong lifecyclemodel auto-build --input <file> [options]
-
-Planned contract:
-  - read one lifecycle model build manifest from --input
-  - discover candidate processes through CLI query surfaces
-  - assemble native json_ordered lifecycle model artifacts locally
-
-Status:
-  Planned command. Execution is not implemented yet.
-`.trim(),
-  'validate-build': `Usage:
-  tiangong lifecyclemodel validate-build --run-dir <dir> [options]
-
-Planned contract:
-  - load one lifecycle model build run directory
-  - re-run local validation through the unified validation module
-  - write a structured validation report into the run artifacts
-
-Status:
-  Planned command. Execution is not implemented yet.
-`.trim(),
-  'publish-build': `Usage:
-  tiangong lifecyclemodel publish-build --run-dir <dir> [options]
-
-Planned contract:
-  - load one lifecycle model build run directory
-  - publish lifecycle model artifacts through the unified publish module
-  - preserve dry-run and commit semantics from tiangong publish run
-
-Status:
-  Planned command. Execution is not implemented yet.
-`.trim(),
-} as const;
-
 const reviewPlannedHelp = {
   lifecyclemodel: `Usage:
   tiangong review lifecyclemodel --input <file> [options]
@@ -641,14 +927,7 @@ Status:
 `.trim(),
 } as const;
 
-type LifecyclemodelPlannedSubcommand = keyof typeof lifecyclemodelPlannedHelp;
 type ReviewPlannedSubcommand = keyof typeof reviewPlannedHelp;
-
-function isLifecyclemodelPlannedSubcommand(
-  value: string | null,
-): value is LifecyclemodelPlannedSubcommand {
-  return Boolean(value && value in lifecyclemodelPlannedHelp);
-}
 
 function isReviewPlannedSubcommand(value: string | null): value is ReviewPlannedSubcommand {
   return Boolean(value && value in reviewPlannedHelp);
@@ -1036,6 +1315,361 @@ function parseFlowPublishVersionFlags(args: string[]): {
   };
 }
 
+function parseFlowPublishReviewedDataFlags(args: string[]): {
+  help: boolean;
+  json: boolean;
+  flowRowsFile: string;
+  originalFlowRowsFile: string | null;
+  processRowsFile: string | null;
+  flowPublishPolicy: 'skip' | 'append_only_bump' | 'upsert_current_version';
+  processPublishPolicy: 'skip' | 'append_only_bump' | 'upsert_current_version';
+  rewriteProcessFlowRefs: boolean;
+  outDir: string;
+  commit: boolean;
+  maxWorkers: number | undefined;
+  targetUserId: string | null;
+} {
+  let values: ReturnType<typeof parseArgs>['values'];
+  try {
+    ({ values } = parseArgs({
+      args,
+      allowPositionals: false,
+      strict: true,
+      options: {
+        help: { type: 'boolean', short: 'h' },
+        json: { type: 'boolean' },
+        'flow-rows-file': { type: 'string' },
+        'original-flow-rows-file': { type: 'string' },
+        'process-rows-file': { type: 'string' },
+        'flow-publish-policy': { type: 'string' },
+        'process-publish-policy': { type: 'string' },
+        'no-rewrite-process-flow-refs': { type: 'boolean' },
+        'out-dir': { type: 'string' },
+        commit: { type: 'boolean' },
+        'dry-run': { type: 'boolean' },
+        'max-workers': { type: 'string' },
+        'target-user-id': { type: 'string' },
+      },
+    }));
+  } catch (error) {
+    throw new CliError(String(error), {
+      code: 'INVALID_ARGS',
+      exitCode: 2,
+    });
+  }
+
+  if (values.commit && values['dry-run']) {
+    throw new CliError('Cannot pass both --commit and --dry-run.', {
+      code: 'FLOW_PUBLISH_REVIEWED_MODE_CONFLICT',
+      exitCode: 2,
+    });
+  }
+
+  const processPublishPolicy =
+    typeof values['process-publish-policy'] === 'string'
+      ? values['process-publish-policy']
+      : 'append_only_bump';
+  if (
+    processPublishPolicy !== 'skip' &&
+    processPublishPolicy !== 'append_only_bump' &&
+    processPublishPolicy !== 'upsert_current_version'
+  ) {
+    throw new CliError(
+      'Expected --process-publish-policy to be one of: skip, append_only_bump, upsert_current_version.',
+      {
+        code: 'FLOW_PUBLISH_REVIEWED_PROCESS_POLICY_INVALID',
+        exitCode: 2,
+      },
+    );
+  }
+
+  const flowPublishPolicy =
+    typeof values['flow-publish-policy'] === 'string'
+      ? values['flow-publish-policy']
+      : 'append_only_bump';
+  if (
+    flowPublishPolicy !== 'skip' &&
+    flowPublishPolicy !== 'append_only_bump' &&
+    flowPublishPolicy !== 'upsert_current_version'
+  ) {
+    throw new CliError(
+      'Expected --flow-publish-policy to be one of: skip, append_only_bump, upsert_current_version.',
+      {
+        code: 'FLOW_PUBLISH_REVIEWED_FLOW_POLICY_INVALID',
+        exitCode: 2,
+      },
+    );
+  }
+
+  const parsePositiveIntegerFlag = (
+    value: unknown,
+    label: string,
+    code: string,
+  ): number | undefined => {
+    if (typeof value !== 'string') {
+      return undefined;
+    }
+    const parsed = Number.parseInt(value, 10);
+    if (!Number.isInteger(parsed) || parsed <= 0) {
+      throw new CliError(`Expected ${label} to be a positive integer.`, {
+        code,
+        exitCode: 2,
+      });
+    }
+    return parsed;
+  };
+
+  return {
+    help: Boolean(values.help),
+    json: Boolean(values.json),
+    flowRowsFile: typeof values['flow-rows-file'] === 'string' ? values['flow-rows-file'] : '',
+    originalFlowRowsFile:
+      typeof values['original-flow-rows-file'] === 'string'
+        ? values['original-flow-rows-file']
+        : null,
+    processRowsFile:
+      typeof values['process-rows-file'] === 'string' ? values['process-rows-file'] : null,
+    flowPublishPolicy,
+    processPublishPolicy,
+    rewriteProcessFlowRefs: !values['no-rewrite-process-flow-refs'],
+    outDir: typeof values['out-dir'] === 'string' ? values['out-dir'] : '',
+    commit: Boolean(values.commit),
+    maxWorkers: parsePositiveIntegerFlag(
+      values['max-workers'],
+      '--max-workers',
+      'INVALID_FLOW_PUBLISH_REVIEWED_MAX_WORKERS',
+    ),
+    targetUserId: typeof values['target-user-id'] === 'string' ? values['target-user-id'] : null,
+  };
+}
+
+function parseFlowBuildAliasMapFlags(args: string[]): {
+  help: boolean;
+  json: boolean;
+  oldFlowFiles: string[];
+  newFlowFiles: string[];
+  seedAliasMapFile: string | null;
+  outDir: string;
+} {
+  let values: ReturnType<typeof parseArgs>['values'];
+  try {
+    ({ values } = parseArgs({
+      args,
+      allowPositionals: false,
+      strict: true,
+      options: {
+        help: { type: 'boolean', short: 'h' },
+        json: { type: 'boolean' },
+        'old-flow-file': { type: 'string', multiple: true },
+        'new-flow-file': { type: 'string', multiple: true },
+        'seed-alias-map': { type: 'string' },
+        'out-dir': { type: 'string' },
+      },
+    }));
+  } catch (error) {
+    throw new CliError(String(error), {
+      code: 'INVALID_ARGS',
+      exitCode: 2,
+    });
+  }
+
+  return {
+    help: Boolean(values.help),
+    json: Boolean(values.json),
+    oldFlowFiles: Array.isArray(values['old-flow-file'])
+      ? values['old-flow-file'].filter((value): value is string => typeof value === 'string')
+      : [],
+    newFlowFiles: Array.isArray(values['new-flow-file'])
+      ? values['new-flow-file'].filter((value): value is string => typeof value === 'string')
+      : [],
+    seedAliasMapFile:
+      typeof values['seed-alias-map'] === 'string' ? values['seed-alias-map'] : null,
+    outDir: typeof values['out-dir'] === 'string' ? values['out-dir'] : '',
+  };
+}
+
+function parseFlowScanProcessFlowRefsFlags(args: string[]): {
+  help: boolean;
+  json: boolean;
+  processesFile: string;
+  scopeFlowFiles: string[];
+  catalogFlowFiles: string[];
+  aliasMapFile: string | null;
+  excludeEmergy: boolean;
+  outDir: string;
+} {
+  let values: ReturnType<typeof parseArgs>['values'];
+  try {
+    ({ values } = parseArgs({
+      args,
+      allowPositionals: false,
+      strict: true,
+      options: {
+        help: { type: 'boolean', short: 'h' },
+        json: { type: 'boolean' },
+        'processes-file': { type: 'string' },
+        'scope-flow-file': { type: 'string', multiple: true },
+        'catalog-flow-file': { type: 'string', multiple: true },
+        'alias-map': { type: 'string' },
+        'exclude-emergy': { type: 'boolean' },
+        'out-dir': { type: 'string' },
+      },
+    }));
+  } catch (error) {
+    throw new CliError(String(error), {
+      code: 'INVALID_ARGS',
+      exitCode: 2,
+    });
+  }
+
+  return {
+    help: Boolean(values.help),
+    json: Boolean(values.json),
+    processesFile: typeof values['processes-file'] === 'string' ? values['processes-file'] : '',
+    scopeFlowFiles: Array.isArray(values['scope-flow-file'])
+      ? values['scope-flow-file'].filter((value): value is string => typeof value === 'string')
+      : [],
+    catalogFlowFiles: Array.isArray(values['catalog-flow-file'])
+      ? values['catalog-flow-file'].filter((value): value is string => typeof value === 'string')
+      : [],
+    aliasMapFile: typeof values['alias-map'] === 'string' ? values['alias-map'] : null,
+    excludeEmergy: Boolean(values['exclude-emergy']),
+    outDir: typeof values['out-dir'] === 'string' ? values['out-dir'] : '',
+  };
+}
+
+function parseFlowPlanProcessFlowRepairsFlags(args: string[]): {
+  help: boolean;
+  json: boolean;
+  processesFile: string;
+  scopeFlowFiles: string[];
+  aliasMapFile: string | null;
+  scanFindingsFile: string | null;
+  autoPatchPolicy: 'disabled' | 'alias-only' | 'alias-or-unique-name';
+  outDir: string;
+} {
+  let values: ReturnType<typeof parseArgs>['values'];
+  try {
+    ({ values } = parseArgs({
+      args,
+      allowPositionals: false,
+      strict: true,
+      options: {
+        help: { type: 'boolean', short: 'h' },
+        json: { type: 'boolean' },
+        'processes-file': { type: 'string' },
+        'scope-flow-file': { type: 'string', multiple: true },
+        'alias-map': { type: 'string' },
+        'scan-findings': { type: 'string' },
+        'auto-patch-policy': { type: 'string' },
+        'out-dir': { type: 'string' },
+      },
+    }));
+  } catch (error) {
+    throw new CliError(String(error), {
+      code: 'INVALID_ARGS',
+      exitCode: 2,
+    });
+  }
+
+  const autoPatchPolicy =
+    typeof values['auto-patch-policy'] === 'string' ? values['auto-patch-policy'] : 'alias-only';
+  if (
+    autoPatchPolicy !== 'disabled' &&
+    autoPatchPolicy !== 'alias-only' &&
+    autoPatchPolicy !== 'alias-or-unique-name'
+  ) {
+    throw new CliError(
+      'Expected --auto-patch-policy to be one of disabled, alias-only, or alias-or-unique-name.',
+      {
+        code: 'INVALID_FLOW_PLAN_PROCESS_FLOW_REPAIRS_AUTO_PATCH_POLICY',
+        exitCode: 2,
+      },
+    );
+  }
+
+  return {
+    help: Boolean(values.help),
+    json: Boolean(values.json),
+    processesFile: typeof values['processes-file'] === 'string' ? values['processes-file'] : '',
+    scopeFlowFiles: Array.isArray(values['scope-flow-file'])
+      ? values['scope-flow-file'].filter((value): value is string => typeof value === 'string')
+      : [],
+    aliasMapFile: typeof values['alias-map'] === 'string' ? values['alias-map'] : null,
+    scanFindingsFile: typeof values['scan-findings'] === 'string' ? values['scan-findings'] : null,
+    autoPatchPolicy,
+    outDir: typeof values['out-dir'] === 'string' ? values['out-dir'] : '',
+  };
+}
+
+function parseFlowApplyProcessFlowRepairsFlags(args: string[]): {
+  help: boolean;
+  json: boolean;
+  processesFile: string;
+  scopeFlowFiles: string[];
+  aliasMapFile: string | null;
+  scanFindingsFile: string | null;
+  autoPatchPolicy: 'disabled' | 'alias-only' | 'alias-or-unique-name';
+  processPoolFile: string | null;
+  outDir: string;
+} {
+  let values: ReturnType<typeof parseArgs>['values'];
+  try {
+    ({ values } = parseArgs({
+      args,
+      allowPositionals: false,
+      strict: true,
+      options: {
+        help: { type: 'boolean', short: 'h' },
+        json: { type: 'boolean' },
+        'processes-file': { type: 'string' },
+        'scope-flow-file': { type: 'string', multiple: true },
+        'alias-map': { type: 'string' },
+        'scan-findings': { type: 'string' },
+        'auto-patch-policy': { type: 'string' },
+        'process-pool-file': { type: 'string' },
+        'out-dir': { type: 'string' },
+      },
+    }));
+  } catch (error) {
+    throw new CliError(String(error), {
+      code: 'INVALID_ARGS',
+      exitCode: 2,
+    });
+  }
+
+  const autoPatchPolicy =
+    typeof values['auto-patch-policy'] === 'string' ? values['auto-patch-policy'] : 'alias-only';
+  if (
+    autoPatchPolicy !== 'disabled' &&
+    autoPatchPolicy !== 'alias-only' &&
+    autoPatchPolicy !== 'alias-or-unique-name'
+  ) {
+    throw new CliError(
+      'Expected --auto-patch-policy to be one of disabled, alias-only, or alias-or-unique-name.',
+      {
+        code: 'INVALID_FLOW_APPLY_PROCESS_FLOW_REPAIRS_AUTO_PATCH_POLICY',
+        exitCode: 2,
+      },
+    );
+  }
+
+  return {
+    help: Boolean(values.help),
+    json: Boolean(values.json),
+    processesFile: typeof values['processes-file'] === 'string' ? values['processes-file'] : '',
+    scopeFlowFiles: Array.isArray(values['scope-flow-file'])
+      ? values['scope-flow-file'].filter((value): value is string => typeof value === 'string')
+      : [],
+    aliasMapFile: typeof values['alias-map'] === 'string' ? values['alias-map'] : null,
+    scanFindingsFile: typeof values['scan-findings'] === 'string' ? values['scan-findings'] : null,
+    autoPatchPolicy,
+    processPoolFile:
+      typeof values['process-pool-file'] === 'string' ? values['process-pool-file'] : null,
+    outDir: typeof values['out-dir'] === 'string' ? values['out-dir'] : '',
+  };
+}
+
 function parseFlowRegenProductFlags(args: string[]): {
   help: boolean;
   json: boolean;
@@ -1125,6 +1759,63 @@ function parseFlowRegenProductFlags(args: string[]): {
     apply: Boolean(values.apply),
     processPoolFile:
       typeof values['process-pool-file'] === 'string' ? values['process-pool-file'] : null,
+    tidasMode,
+    outDir: typeof values['out-dir'] === 'string' ? values['out-dir'] : '',
+  };
+}
+
+function parseFlowValidateProcessesFlags(args: string[]): {
+  help: boolean;
+  json: boolean;
+  originalProcessesFile: string;
+  patchedProcessesFile: string;
+  scopeFlowFiles: string[];
+  tidasMode: 'auto' | 'required' | 'skip';
+  outDir: string;
+} {
+  let values: ReturnType<typeof parseArgs>['values'];
+  try {
+    ({ values } = parseArgs({
+      args,
+      allowPositionals: false,
+      strict: true,
+      options: {
+        help: { type: 'boolean', short: 'h' },
+        json: { type: 'boolean' },
+        'original-processes-file': { type: 'string' },
+        'patched-processes-file': { type: 'string' },
+        'scope-flow-file': { type: 'string', multiple: true },
+        'tidas-mode': { type: 'string' },
+        'out-dir': { type: 'string' },
+      },
+    }));
+  } catch (error) {
+    throw new CliError(String(error), {
+      code: 'INVALID_ARGS',
+      exitCode: 2,
+    });
+  }
+
+  const tidasMode = typeof values['tidas-mode'] === 'string' ? values['tidas-mode'] : 'auto';
+  if (tidasMode !== 'auto' && tidasMode !== 'required' && tidasMode !== 'skip') {
+    throw new CliError('Expected --tidas-mode to be one of auto, required, or skip.', {
+      code: 'INVALID_FLOW_VALIDATE_TIDAS_MODE',
+      exitCode: 2,
+    });
+  }
+
+  return {
+    help: Boolean(values.help),
+    json: Boolean(values.json),
+    originalProcessesFile:
+      typeof values['original-processes-file'] === 'string'
+        ? values['original-processes-file']
+        : '',
+    patchedProcessesFile:
+      typeof values['patched-processes-file'] === 'string' ? values['patched-processes-file'] : '',
+    scopeFlowFiles: Array.isArray(values['scope-flow-file'])
+      ? values['scope-flow-file'].filter((value): value is string => typeof value === 'string')
+      : [],
     tidasMode,
     outDir: typeof values['out-dir'] === 'string' ? values['out-dir'] : '',
   };
@@ -1538,6 +2229,71 @@ function parseLifecyclemodelPublishFlags(args: string[]): {
   };
 }
 
+function parseLifecyclemodelValidateBuildFlags(args: string[]): {
+  help: boolean;
+  json: boolean;
+  runDir: string;
+  engine: string | undefined;
+} {
+  let values: ReturnType<typeof parseArgs>['values'];
+  try {
+    ({ values } = parseArgs({
+      args,
+      allowPositionals: false,
+      strict: true,
+      options: {
+        help: { type: 'boolean', short: 'h' },
+        json: { type: 'boolean' },
+        'run-dir': { type: 'string' },
+        engine: { type: 'string' },
+      },
+    }));
+  } catch (error) {
+    throw new CliError(String(error), {
+      code: 'INVALID_ARGS',
+      exitCode: 2,
+    });
+  }
+
+  return {
+    help: Boolean(values.help),
+    json: Boolean(values.json),
+    runDir: typeof values['run-dir'] === 'string' ? values['run-dir'] : '',
+    engine: typeof values.engine === 'string' ? values.engine : undefined,
+  };
+}
+
+function parseLifecyclemodelPublishBuildFlags(args: string[]): {
+  help: boolean;
+  json: boolean;
+  runDir: string;
+} {
+  let values: ReturnType<typeof parseArgs>['values'];
+  try {
+    ({ values } = parseArgs({
+      args,
+      allowPositionals: false,
+      strict: true,
+      options: {
+        help: { type: 'boolean', short: 'h' },
+        json: { type: 'boolean' },
+        'run-dir': { type: 'string' },
+      },
+    }));
+  } catch (error) {
+    throw new CliError(String(error), {
+      code: 'INVALID_ARGS',
+      exitCode: 2,
+    });
+  }
+
+  return {
+    help: Boolean(values.help),
+    json: Boolean(values.json),
+    runDir: typeof values['run-dir'] === 'string' ? values['run-dir'] : '',
+  };
+}
+
 function parseLifecyclemodelBuildFlags(args: string[]): {
   help: boolean;
   json: boolean;
@@ -1569,6 +2325,60 @@ function parseLifecyclemodelBuildFlags(args: string[]): {
     json: Boolean(values.json),
     inputPath: typeof values.input === 'string' ? values.input : '',
     outDir: typeof values['out-dir'] === 'string' ? values['out-dir'] : null,
+  };
+}
+
+function parseLifecyclemodelOrchestrateFlags(args: string[]): {
+  help: boolean;
+  json: boolean;
+  action: string;
+  inputPath: string;
+  outDir: string | null;
+  runDir: string;
+  allowProcessBuild: boolean;
+  allowSubmodelBuild: boolean;
+  publishLifecyclemodels: boolean;
+  publishResultingProcessRelations: boolean;
+} {
+  let values: ReturnType<typeof parseArgs>['values'];
+  let positionals: string[];
+  try {
+    ({ values, positionals } = parseArgs({
+      args,
+      allowPositionals: true,
+      strict: true,
+      options: {
+        help: { type: 'boolean', short: 'h' },
+        json: { type: 'boolean' },
+        input: { type: 'string' },
+        request: { type: 'string' },
+        'out-dir': { type: 'string' },
+        'run-dir': { type: 'string' },
+        'allow-process-build': { type: 'boolean' },
+        'allow-submodel-build': { type: 'boolean' },
+        'publish-lifecyclemodels': { type: 'boolean' },
+        'publish-resulting-process-relations': { type: 'boolean' },
+      },
+    }));
+  } catch (error) {
+    throw new CliError(String(error), {
+      code: 'INVALID_ARGS',
+      exitCode: 2,
+    });
+  }
+
+  const inputAlias = typeof values.request === 'string' ? values.request : '';
+  return {
+    help: Boolean(values.help),
+    json: Boolean(values.json),
+    action: positionals[0] ?? '',
+    inputPath: typeof values.input === 'string' ? values.input : inputAlias,
+    outDir: typeof values['out-dir'] === 'string' ? values['out-dir'] : null,
+    runDir: typeof values['run-dir'] === 'string' ? values['run-dir'] : '',
+    allowProcessBuild: Boolean(values['allow-process-build']),
+    allowSubmodelBuild: Boolean(values['allow-submodel-build']),
+    publishLifecyclemodels: Boolean(values['publish-lifecyclemodels']),
+    publishResultingProcessRelations: Boolean(values['publish-resulting-process-relations']),
   };
 }
 
@@ -1769,10 +2579,18 @@ export async function executeCli(argv: string[], deps: CliDeps): Promise<CliResu
     const { flags, command, subcommand, commandArgs } = parseCommandLine(argv);
     const publishImpl = deps.runPublishImpl ?? runPublish;
     const validationImpl = deps.runValidationImpl ?? runValidation;
+    const lifecyclemodelAutoBuildImpl =
+      deps.runLifecyclemodelAutoBuildImpl ?? runLifecyclemodelAutoBuild;
     const lifecyclemodelBuildImpl =
       deps.runLifecyclemodelBuildResultingProcessImpl ?? runLifecyclemodelBuildResultingProcess;
     const lifecyclemodelPublishImpl =
       deps.runLifecyclemodelPublishResultingProcessImpl ?? runLifecyclemodelPublishResultingProcess;
+    const lifecyclemodelValidateImpl =
+      deps.runLifecyclemodelValidateBuildImpl ?? runLifecyclemodelValidateBuild;
+    const lifecyclemodelPublishBuildImpl =
+      deps.runLifecyclemodelPublishBuildImpl ?? runLifecyclemodelPublishBuild;
+    const lifecyclemodelOrchestrateImpl =
+      deps.runLifecyclemodelOrchestrateImpl ?? runLifecyclemodelOrchestrate;
     const processGetImpl = deps.runProcessGetImpl ?? runProcessGet;
     const processAutoBuildImpl = deps.runProcessAutoBuildImpl ?? runProcessAutoBuild;
     const processBatchBuildImpl = deps.runProcessBatchBuildImpl ?? runProcessBatchBuild;
@@ -1784,7 +2602,17 @@ export async function executeCli(argv: string[], deps: CliDeps): Promise<CliResu
     const flowGetImpl = deps.runFlowGetImpl ?? runFlowGet;
     const flowListImpl = deps.runFlowListImpl ?? runFlowList;
     const flowPublishVersionImpl = deps.runFlowPublishVersionImpl ?? runFlowPublishVersion;
+    const flowReviewedPublishDataImpl =
+      deps.runFlowReviewedPublishDataImpl ?? runFlowReviewedPublishData;
+    const flowBuildAliasMapImpl = deps.runFlowBuildAliasMapImpl ?? runFlowBuildAliasMap;
+    const flowScanProcessFlowRefsImpl =
+      deps.runFlowScanProcessFlowRefsImpl ?? runFlowScanProcessFlowRefs;
+    const flowPlanProcessFlowRepairsImpl =
+      deps.runFlowPlanProcessFlowRepairsImpl ?? runFlowPlanProcessFlowRepairs;
+    const flowApplyProcessFlowRepairsImpl =
+      deps.runFlowApplyProcessFlowRepairsImpl ?? runFlowApplyProcessFlowRepairs;
     const flowRegenProductImpl = deps.runFlowRegenProductImpl ?? runFlowRegenProduct;
+    const flowValidateProcessesImpl = deps.runFlowValidateProcessesImpl ?? runFlowValidateProcesses;
 
     if (flags.version) {
       return { exitCode: 0, stdout: '0.0.1\n', stderr: '' };
@@ -1840,6 +2668,29 @@ export async function executeCli(argv: string[], deps: CliDeps): Promise<CliResu
       return { exitCode: 0, stdout: `${renderLifecyclemodelHelp()}\n`, stderr: '' };
     }
 
+    if (command === 'lifecyclemodel' && subcommand === 'auto-build') {
+      const lifecyclemodelFlags = parseLifecyclemodelBuildFlags(commandArgs);
+      if (lifecyclemodelFlags.help) {
+        return {
+          exitCode: 0,
+          stdout: `${renderLifecyclemodelAutoBuildHelp()}\n`,
+          stderr: '',
+        };
+      }
+
+      const report = await lifecyclemodelAutoBuildImpl({
+        inputPath: lifecyclemodelFlags.inputPath,
+        outDir: lifecyclemodelFlags.outDir,
+        cwd: process.cwd(),
+      });
+
+      return {
+        exitCode: 0,
+        stdout: stringifyJson(report, lifecyclemodelFlags.json),
+        stderr: '',
+      };
+    }
+
     if (command === 'lifecyclemodel' && subcommand === 'build-resulting-process') {
       const lifecyclemodelFlags = parseLifecyclemodelBuildFlags(commandArgs);
       if (lifecyclemodelFlags.help) {
@@ -1887,15 +2738,92 @@ export async function executeCli(argv: string[], deps: CliDeps): Promise<CliResu
       };
     }
 
-    if (command === 'lifecyclemodel' && isLifecyclemodelPlannedSubcommand(subcommand)) {
-      if (commandArgs.includes('--help') || commandArgs.includes('-h')) {
+    if (command === 'lifecyclemodel' && subcommand === 'validate-build') {
+      const lifecyclemodelFlags = parseLifecyclemodelValidateBuildFlags(commandArgs);
+      if (lifecyclemodelFlags.help) {
         return {
           exitCode: 0,
-          stdout: `${lifecyclemodelPlannedHelp[subcommand]}\n`,
+          stdout: `${renderLifecyclemodelValidateBuildHelp()}\n`,
           stderr: '',
         };
       }
-      return plannedCommand(command, subcommand);
+
+      const report = await lifecyclemodelValidateImpl({
+        runDir: lifecyclemodelFlags.runDir,
+        engine: lifecyclemodelFlags.engine,
+        cwd: process.cwd(),
+      });
+
+      return {
+        exitCode: report.ok ? 0 : 1,
+        stdout: stringifyJson(report, lifecyclemodelFlags.json),
+        stderr: '',
+      };
+    }
+
+    if (command === 'lifecyclemodel' && subcommand === 'publish-build') {
+      const lifecyclemodelFlags = parseLifecyclemodelPublishBuildFlags(commandArgs);
+      if (lifecyclemodelFlags.help) {
+        return {
+          exitCode: 0,
+          stdout: `${renderLifecyclemodelPublishBuildHelp()}\n`,
+          stderr: '',
+        };
+      }
+
+      const report = await lifecyclemodelPublishBuildImpl({
+        runDir: lifecyclemodelFlags.runDir,
+        cwd: process.cwd(),
+      });
+
+      return {
+        exitCode: 0,
+        stdout: stringifyJson(report, lifecyclemodelFlags.json),
+        stderr: '',
+      };
+    }
+
+    if (command === 'lifecyclemodel' && subcommand === 'orchestrate') {
+      const lifecyclemodelFlags = parseLifecyclemodelOrchestrateFlags(commandArgs);
+      if (lifecyclemodelFlags.help || !lifecyclemodelFlags.action) {
+        return {
+          exitCode: 0,
+          stdout: `${renderLifecyclemodelOrchestrateHelp()}\n`,
+          stderr: '',
+        };
+      }
+      if (
+        lifecyclemodelFlags.action !== 'plan' &&
+        lifecyclemodelFlags.action !== 'execute' &&
+        lifecyclemodelFlags.action !== 'publish'
+      ) {
+        throw new CliError(
+          "lifecyclemodel orchestrate action must be 'plan', 'execute', or 'publish'.",
+          {
+            code: 'INVALID_ARGS',
+            exitCode: 2,
+          },
+        );
+      }
+
+      const report = await lifecyclemodelOrchestrateImpl({
+        action: lifecyclemodelFlags.action,
+        inputPath: lifecyclemodelFlags.inputPath,
+        outDir: lifecyclemodelFlags.outDir,
+        runDir: lifecyclemodelFlags.runDir,
+        allowProcessBuild: lifecyclemodelFlags.allowProcessBuild,
+        allowSubmodelBuild: lifecyclemodelFlags.allowSubmodelBuild,
+        publishLifecyclemodels: lifecyclemodelFlags.publishLifecyclemodels,
+        publishResultingProcessRelations: lifecyclemodelFlags.publishResultingProcessRelations,
+        env: deps.env,
+        fetchImpl: deps.fetchImpl,
+      });
+
+      return {
+        exitCode: report.action === 'execute' && report.status !== 'completed' ? 1 : 0,
+        stdout: stringifyJson(report, lifecyclemodelFlags.json),
+        stderr: '',
+      };
     }
 
     if (command === 'process' && !subcommand) {
@@ -2110,6 +3038,129 @@ export async function executeCli(argv: string[], deps: CliDeps): Promise<CliResu
       };
     }
 
+    if (command === 'flow' && subcommand === 'publish-reviewed-data') {
+      const flowFlags = parseFlowPublishReviewedDataFlags(commandArgs);
+      if (flowFlags.help) {
+        return { exitCode: 0, stdout: `${renderFlowPublishReviewedDataHelp()}\n`, stderr: '' };
+      }
+
+      const report = await flowReviewedPublishDataImpl({
+        flowRowsFile: flowFlags.flowRowsFile,
+        originalFlowRowsFile: flowFlags.originalFlowRowsFile,
+        processRowsFile: flowFlags.processRowsFile,
+        outDir: flowFlags.outDir,
+        flowPublishPolicy: flowFlags.flowPublishPolicy,
+        processPublishPolicy: flowFlags.processPublishPolicy,
+        rewriteProcessFlowRefs: flowFlags.rewriteProcessFlowRefs,
+        commit: flowFlags.commit,
+        maxWorkers: flowFlags.maxWorkers,
+        targetUserId: flowFlags.targetUserId,
+        env: deps.env,
+        fetchImpl: deps.fetchImpl,
+      });
+
+      return {
+        exitCode: report.status === 'completed_flow_publish_reviewed_data_with_failures' ? 1 : 0,
+        stdout: stringifyJson(report, flowFlags.json),
+        stderr: '',
+      };
+    }
+
+    if (command === 'flow' && subcommand === 'build-alias-map') {
+      const flowFlags = parseFlowBuildAliasMapFlags(commandArgs);
+      if (flowFlags.help) {
+        return { exitCode: 0, stdout: `${renderFlowBuildAliasMapHelp()}\n`, stderr: '' };
+      }
+
+      const report = await flowBuildAliasMapImpl({
+        oldFlowFiles: flowFlags.oldFlowFiles,
+        newFlowFiles: flowFlags.newFlowFiles,
+        seedAliasMapFile: flowFlags.seedAliasMapFile,
+        outDir: flowFlags.outDir,
+      });
+
+      return {
+        exitCode: 0,
+        stdout: stringifyJson(report, flowFlags.json),
+        stderr: '',
+      };
+    }
+
+    if (command === 'flow' && subcommand === 'scan-process-flow-refs') {
+      const flowFlags = parseFlowScanProcessFlowRefsFlags(commandArgs);
+      if (flowFlags.help) {
+        return { exitCode: 0, stdout: `${renderFlowScanProcessFlowRefsHelp()}\n`, stderr: '' };
+      }
+
+      const report = await flowScanProcessFlowRefsImpl({
+        processesFile: flowFlags.processesFile,
+        scopeFlowFiles: flowFlags.scopeFlowFiles,
+        catalogFlowFiles: flowFlags.catalogFlowFiles,
+        aliasMapFile: flowFlags.aliasMapFile,
+        excludeEmergy: flowFlags.excludeEmergy,
+        outDir: flowFlags.outDir,
+      });
+
+      return {
+        exitCode: 0,
+        stdout: stringifyJson(report, flowFlags.json),
+        stderr: '',
+      };
+    }
+
+    if (command === 'flow' && subcommand === 'plan-process-flow-repairs') {
+      const flowFlags = parseFlowPlanProcessFlowRepairsFlags(commandArgs);
+      if (flowFlags.help) {
+        return {
+          exitCode: 0,
+          stdout: `${renderFlowPlanProcessFlowRepairsHelp()}\n`,
+          stderr: '',
+        };
+      }
+
+      const report = await flowPlanProcessFlowRepairsImpl({
+        processesFile: flowFlags.processesFile,
+        scopeFlowFiles: flowFlags.scopeFlowFiles,
+        aliasMapFile: flowFlags.aliasMapFile,
+        scanFindingsFile: flowFlags.scanFindingsFile,
+        autoPatchPolicy: flowFlags.autoPatchPolicy,
+        outDir: flowFlags.outDir,
+      });
+
+      return {
+        exitCode: 0,
+        stdout: stringifyJson(report, flowFlags.json),
+        stderr: '',
+      };
+    }
+
+    if (command === 'flow' && subcommand === 'apply-process-flow-repairs') {
+      const flowFlags = parseFlowApplyProcessFlowRepairsFlags(commandArgs);
+      if (flowFlags.help) {
+        return {
+          exitCode: 0,
+          stdout: `${renderFlowApplyProcessFlowRepairsHelp()}\n`,
+          stderr: '',
+        };
+      }
+
+      const report = await flowApplyProcessFlowRepairsImpl({
+        processesFile: flowFlags.processesFile,
+        scopeFlowFiles: flowFlags.scopeFlowFiles,
+        aliasMapFile: flowFlags.aliasMapFile,
+        scanFindingsFile: flowFlags.scanFindingsFile,
+        autoPatchPolicy: flowFlags.autoPatchPolicy,
+        processPoolFile: flowFlags.processPoolFile,
+        outDir: flowFlags.outDir,
+      });
+
+      return {
+        exitCode: 0,
+        stdout: stringifyJson(report, flowFlags.json),
+        stderr: '',
+      };
+    }
+
     if (command === 'flow' && subcommand === 'regen-product') {
       const flowFlags = parseFlowRegenProductFlags(commandArgs);
       if (flowFlags.help) {
@@ -2131,6 +3182,27 @@ export async function executeCli(argv: string[], deps: CliDeps): Promise<CliResu
 
       return {
         exitCode: report.validation.ok === false ? 1 : 0,
+        stdout: stringifyJson(report, flowFlags.json),
+        stderr: '',
+      };
+    }
+
+    if (command === 'flow' && subcommand === 'validate-processes') {
+      const flowFlags = parseFlowValidateProcessesFlags(commandArgs);
+      if (flowFlags.help) {
+        return { exitCode: 0, stdout: `${renderFlowValidateProcessesHelp()}\n`, stderr: '' };
+      }
+
+      const report = await flowValidateProcessesImpl({
+        originalProcessesFile: flowFlags.originalProcessesFile,
+        patchedProcessesFile: flowFlags.patchedProcessesFile,
+        scopeFlowFiles: flowFlags.scopeFlowFiles,
+        tidasMode: flowFlags.tidasMode,
+        outDir: flowFlags.outDir,
+      });
+
+      return {
+        exitCode: report.summary.failed > 0 ? 1 : 0,
         stdout: stringifyJson(report, flowFlags.json),
         stderr: '',
       };
@@ -2182,6 +3254,8 @@ export async function executeCli(argv: string[], deps: CliDeps): Promise<CliResu
         inputPath: publishFlags.inputPath,
         outDir: publishFlags.outDir,
         commit: publishFlags.commitOverride,
+        env: deps.env,
+        fetchImpl: deps.fetchImpl,
       });
 
       return {

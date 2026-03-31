@@ -43,6 +43,28 @@ function makeSource(id: string): Record<string, unknown> {
   };
 }
 
+function makeResponse(options: {
+  ok: boolean;
+  status: number;
+  contentType?: string;
+  body?: string;
+}) {
+  return {
+    ok: options.ok,
+    status: options.status,
+    headers: {
+      get(name: string): string | null {
+        return name.toLowerCase() === 'content-type'
+          ? (options.contentType ?? 'application/json')
+          : null;
+      },
+    },
+    async text(): Promise<string> {
+      return options.body ?? '';
+    },
+  };
+}
+
 test('normalizePublishRequest resolves paths relative to the request file and applies defaults', () => {
   const requestPath = '/tmp/tg-cli-publish/request.json';
   const normalized = normalizePublishRequest(
@@ -397,6 +419,79 @@ test('runPublish honors commit override, defers missing executors, and rejects i
   }
 });
 
+test('runPublish uses default Supabase REST dataset executors when runtime env and fetch are provided', async () => {
+  const dir = mkdtempSync(path.join(os.tmpdir(), 'tg-cli-publish-default-rest-'));
+  const requestPath = path.join(dir, 'request.json');
+  const observed: Array<{ method: string; url: string; body?: string }> = [];
+
+  writeJson(requestPath, {
+    inputs: {
+      processes: [makeCanonicalProcess('proc-default-rest')],
+      sources: [makeSource('src-default-rest')],
+    },
+    publish: {
+      commit: true,
+    },
+  });
+
+  try {
+    const report = await runPublish({
+      inputPath: requestPath,
+      env: {
+        TIANGONG_LCA_API_BASE_URL: 'https://example.supabase.co',
+        TIANGONG_LCA_API_KEY: 'key',
+      } as NodeJS.ProcessEnv,
+      fetchImpl: async (url, init) => {
+        observed.push({
+          method: String(init?.method ?? 'GET'),
+          url: String(url),
+          body: typeof init?.body === 'string' ? init.body : undefined,
+        });
+
+        if (String(url).includes('/processes?select=')) {
+          return makeResponse({
+            ok: true,
+            status: 200,
+            body: '[]',
+          });
+        }
+
+        if (String(url).includes('/sources?select=')) {
+          return makeResponse({
+            ok: true,
+            status: 200,
+            body: '[{"id":"src-default-rest","version":"01.01.000","state_code":0}]',
+          });
+        }
+
+        return makeResponse({
+          ok: true,
+          status: 200,
+          body: '[{"id":"ok"}]',
+        });
+      },
+      now: new Date('2026-03-28T00:00:00Z'),
+    });
+
+    assert.equal(report.processes[0].status, 'executed');
+    assert.equal(report.sources[0].status, 'executed');
+    assert.deepEqual(report.processes[0].execution, {
+      status: 'success',
+      operation: 'insert',
+    });
+    assert.deepEqual(report.sources[0].execution, {
+      status: 'success',
+      operation: 'update_existing',
+    });
+    assert.deepEqual(
+      observed.map((entry) => entry.method),
+      ['GET', 'POST', 'GET', 'PATCH'],
+    );
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+});
+
 test('runPublish skips disabled publish groups and can clear relation manifests', async () => {
   const dir = mkdtempSync(path.join(os.tmpdir(), 'tg-cli-publish-disabled-'));
   const requestPath = path.join(dir, 'request.json');
@@ -586,6 +681,53 @@ test('runPublish rejects non-object dataset files and missing lifecyclemodel ide
         }),
       /Lifecycle model payload missing/u,
     );
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+test('runPublish accepts native lifecyclemodel json_ordered payload wrappers', async () => {
+  const dir = mkdtempSync(path.join(os.tmpdir(), 'tg-cli-publish-native-lifecyclemodel-'));
+  const requestPath = path.join(dir, 'request.json');
+
+  writeJson(requestPath, {
+    inputs: {
+      lifecyclemodels: [
+        {
+          jsonOrdered: {
+            lifeCycleModelDataSet: {
+              lifeCycleModelInformation: {
+                dataSetInformation: {
+                  'common:UUID': 'lm-native-1',
+                  referenceToResultingProcess: {
+                    '@refObjectId': 'lm-native-1-result',
+                  },
+                },
+                quantitativeReference: {
+                  referenceToReferenceProcess: '1',
+                },
+              },
+              administrativeInformation: {
+                publicationAndOwnership: {
+                  'common:dataSetVersion': '02.03.004',
+                },
+              },
+            },
+          },
+        },
+      ],
+    },
+  });
+
+  try {
+    const report = await runPublish({
+      inputPath: requestPath,
+    });
+
+    assert.equal(report.lifecyclemodels.length, 1);
+    assert.equal(report.lifecyclemodels[0].status, 'prepared');
+    assert.equal(report.lifecyclemodels[0].id, 'lm-native-1');
+    assert.equal(report.lifecyclemodels[0].version, '02.03.004');
   } finally {
     rmSync(dir, { recursive: true, force: true });
   }
