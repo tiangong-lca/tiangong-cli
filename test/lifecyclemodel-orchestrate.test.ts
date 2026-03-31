@@ -655,6 +655,18 @@ test('lifecyclemodel orchestrate validates required options', async () => {
 test('lifecyclemodel orchestrate helper internals validate primitive values and normalize config shapes', () => {
   const baseDir = path.join(os.tmpdir(), 'tg-cli-lm-orchestrate-helpers');
 
+  assert.equal(__testInternals.invariant('ready', 'value should exist'), 'ready');
+  assert.throws(
+    () => __testInternals.invariant(undefined, 'missing helper invariant'),
+    (error) => {
+      assert.ok(error instanceof CliError);
+      assert.equal(error.code, 'LIFECYCLEMODEL_ORCHESTRATE_INTERNAL_STATE');
+      return true;
+    },
+  );
+  assert.equal(__testInternals.safeSlug('Hello, World!'), 'hello-world');
+  assert.equal(__testInternals.safeSlug('---'), 'item');
+
   assert.deepEqual(__testInternals.requireObject({ ok: true }, 'request'), { ok: true });
   assert.throws(
     () => __testInternals.requireObject(null, 'request'),
@@ -704,6 +716,21 @@ test('lifecyclemodel orchestrate helper internals validate primitive values and 
     existing_lifecyclemodels: true,
     existing_resulting_processes: true,
   });
+  assert.deepEqual(
+    __testInternals.entityFromRoot({ kind: 'reference_flow', flow: { id: 'f-1' } }),
+    {
+      id: 'f-1',
+    },
+  );
+  assert.deepEqual(__testInternals.entityFromRoot({ kind: 'reference_flow', flow: 'bad' }), {});
+  assert.deepEqual(
+    __testInternals.entityFromRoot({ kind: 'lifecyclemodel', lifecyclemodel: null }),
+    {},
+  );
+  assert.deepEqual(
+    __testInternals.entityFromRoot({ kind: 'resulting_process', resulting_process: [] }),
+    {},
+  );
 
   assert.deepEqual(__testInternals.normalizeCandidate('candidate-a'), {
     id: 'candidate-a',
@@ -749,6 +776,35 @@ test('lifecyclemodel orchestrate helper internals validate primitive values and 
     /requested_action must be one of/u,
   );
   assert.deepEqual(__testInternals.normalizeDependsOn(['a', '', null, 'b']), ['a', 'b']);
+  assert.deepEqual(
+    __testInternals.normalizePublishConfig({
+      intent: 'publish',
+      prepare_lifecyclemodel_payload: false,
+      prepare_resulting_process_payload: false,
+    }),
+    {
+      intent: 'publish',
+      prepare_lifecyclemodel_payload: false,
+      prepare_resulting_process_payload: false,
+      prepare_relation_payload: true,
+    },
+  );
+  assert.deepEqual(
+    __testInternals.normalizeInvocationFailure(
+      new CliError('boom', {
+        code: 'TEST',
+        exitCode: 7,
+      }),
+    ),
+    {
+      exit_code: 7,
+      error: 'boom',
+    },
+  );
+  assert.deepEqual(__testInternals.normalizeInvocationFailure('plain failure'), {
+    exit_code: 1,
+    error: 'plain failure',
+  });
 
   assert.equal(__testInternals.normalizeProcessBuilderConfig(null, baseDir), undefined);
   assert.deepEqual(
@@ -775,6 +831,35 @@ test('lifecyclemodel orchestrate helper internals validate primitive values and 
       commit: true,
       forward_args: ['--alpha', '--beta'],
     },
+  );
+  assert.deepEqual(
+    __testInternals.serializeInvocationConfig(
+      {
+        mode: 'workflow',
+        flow_file: null,
+        flow_json: null,
+        run_id: null,
+        python_bin: null,
+        publish: false,
+        commit: false,
+        forward_args: [],
+      },
+      'config should exist',
+    ),
+    {
+      mode: 'workflow',
+      flow_file: null,
+      flow_json: null,
+      run_id: null,
+      python_bin: null,
+      publish: false,
+      commit: false,
+      forward_args: [],
+    },
+  );
+  assert.throws(
+    () => __testInternals.serializeInvocationConfig(undefined, 'config should exist'),
+    /config should exist/u,
   );
 
   assert.equal(__testInternals.normalizeSubmodelBuilderConfig(null, baseDir), undefined);
@@ -846,6 +931,7 @@ test('lifecyclemodel orchestrate root/entity helpers, edges, and topo sort cover
     baseDir,
   );
   assert.equal(processRoot.label, 'Fallback goal');
+  assert.equal(processRoot.node_id, 'root');
   assert.deepEqual(processRoot.entity, {});
 
   assert.deepEqual(
@@ -944,6 +1030,27 @@ test('lifecyclemodel orchestrate root/entity helpers, edges, and topo sort cover
   assert.deepEqual(
     acyclic.ordered.map((entry) => entry.node_id),
     ['upstream', 'downstream'],
+  );
+  const fanOut = __testInternals.topoSortNodes([
+    {
+      ...normalizedNode,
+      node_id: 'fan-root',
+      depends_on: [],
+    },
+    {
+      ...normalizedNode,
+      node_id: 'fan-child-b',
+      depends_on: ['fan-root'],
+    },
+    {
+      ...normalizedNode,
+      node_id: 'fan-child-a',
+      depends_on: ['fan-root'],
+    },
+  ]);
+  assert.deepEqual(
+    fanOut.ordered.map((entry) => entry.node_id),
+    ['fan-root', 'fan-child-b', 'fan-child-a'],
   );
 
   const cyclic = __testInternals.topoSortNodes([
@@ -1355,6 +1462,27 @@ test('lifecyclemodel orchestrate validates request shapes and buildPlan handles 
     assert.deepEqual(generatedPlan.notes, ['keep me']);
     assert.equal(generatedPlan.nodes.length, 1);
     assert.deepEqual(generatedPlan.candidate_sources, __testInternals.defaultCandidateSources());
+    const mergedCandidatePlan = __testInternals.buildPlan(
+      {
+        ...makeValidRequest({
+          node_id: 'root',
+          kind: 'process',
+          process: { id: 'proc-root', name: 'Root process' },
+        }),
+        candidate_sources: {
+          my_processes: false,
+          external_catalogs: ['db-1'],
+        },
+      },
+      requestPath,
+      outDir,
+      new Date('2026-03-31T00:00:00Z'),
+    );
+    assert.deepEqual(mergedCandidatePlan.candidate_sources, {
+      ...__testInternals.defaultCandidateSources(),
+      my_processes: false,
+      external_catalogs: ['db-1'],
+    });
 
     const unresolvedPlan = __testInternals.buildPlan(
       {
@@ -1500,7 +1628,7 @@ test('lifecyclemodel orchestrate helper artifacts cover file checks, inline JSON
       orchestration: { mode: 'collapsed', max_depth: 1 },
       candidate_sources: { my_processes: true },
       publish: {
-        intent: '',
+        intent: 'prepare_only',
         prepare_lifecyclemodel_payload: false,
         prepare_resulting_process_payload: false,
         prepare_relation_payload: true,
@@ -1812,6 +1940,52 @@ test('lifecyclemodel orchestrate helper artifacts cover file checks, inline JSON
       ),
       null,
     );
+    assert.deepEqual(
+      __testInternals.collectProjectorDependencyArtifacts(
+        {
+          depends_on_invocation_id: 'completed-node:lifecyclemodel-builder',
+        } as never,
+        new Map([
+          [
+            'completed-node:lifecyclemodel-builder',
+            {
+              artifacts: {
+                process_catalog_files: ['', path.join(dir, 'catalog.json')],
+                source_run_dirs: ['', path.join(dir, 'run-a'), null, path.join(dir, 'run-b')],
+              },
+            },
+          ],
+        ]) as never,
+      ),
+      {
+        processCatalogPath: path.join(dir, 'catalog.json'),
+        sourceRunDirs: [path.join(dir, 'run-a'), path.join(dir, 'run-b')],
+      },
+    );
+    assert.deepEqual(
+      __testInternals.collectProjectorDependencyArtifacts(
+        {
+          depends_on_invocation_id: 'missing-dependency',
+        } as never,
+        new Map(),
+      ),
+      {
+        processCatalogPath: null,
+        sourceRunDirs: [],
+      },
+    );
+    assert.deepEqual(
+      __testInternals.collectProjectorDependencyArtifacts(
+        {
+          config: {},
+        } as never,
+        new Map(),
+      ),
+      {
+        processCatalogPath: null,
+        sourceRunDirs: [],
+      },
+    );
 
     assert.deepEqual(__testInternals.normalizeRequestForArtifacts(plan as never), {
       request_id: 'artifact-demo',
@@ -1820,7 +1994,7 @@ test('lifecyclemodel orchestrate helper artifacts cover file checks, inline JSON
       orchestration: { mode: 'collapsed', max_depth: 1 },
       candidate_sources: { my_processes: true },
       publish: {
-        intent: '',
+        intent: 'prepare_only',
         prepare_lifecyclemodel_payload: false,
         prepare_resulting_process_payload: false,
         prepare_relation_payload: true,

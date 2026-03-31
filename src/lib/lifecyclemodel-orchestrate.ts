@@ -111,6 +111,21 @@ type PlanInvocation = {
   artifacts?: JsonRecord;
 };
 
+type NormalizedPublishConfig = {
+  intent: 'dry_run' | 'prepare_only' | 'publish';
+  prepare_lifecyclemodel_payload: boolean;
+  prepare_resulting_process_payload: boolean;
+  prepare_relation_payload: boolean;
+};
+
+type ExecutionSummary = {
+  executed_at: string;
+  successful_invocations: number;
+  failed_invocations: number;
+  blocked_invocations: number;
+  status: 'completed' | 'failed';
+};
+
 type AssemblyPlan = {
   skill: 'lifecyclemodel-recursive-orchestrator';
   request_id: string;
@@ -120,7 +135,7 @@ type AssemblyPlan = {
   root: JsonRecord;
   orchestration: JsonRecord;
   candidate_sources: JsonRecord;
-  publish: JsonRecord;
+  publish: NormalizedPublishConfig;
   notes: string[];
   nodes: OrchestrateNode[];
   edges: Array<{ from: string; to: string; relation: string }>;
@@ -149,13 +164,7 @@ type AssemblyPlan = {
     invocation_count: number;
     unresolved_count: number;
   };
-  execution_summary?: {
-    executed_at: string;
-    successful_invocations: number;
-    failed_invocations: number;
-    blocked_invocations: number;
-    status: 'completed' | 'failed';
-  };
+  execution_summary?: ExecutionSummary;
 };
 
 type InvocationExecutionResult = {
@@ -312,12 +321,23 @@ function firstNonEmpty(...values: unknown[]): string | null {
   return null;
 }
 
+function invariant<T>(value: T | null | undefined, message: string, details?: JsonRecord): T {
+  if (value === undefined || value === null) {
+    throw new CliError(message, {
+      code: 'LIFECYCLEMODEL_ORCHESTRATE_INTERNAL_STATE',
+      exitCode: 1,
+      details,
+    });
+  }
+
+  return value;
+}
+
 function safeSlug(value: string): string {
   const slug = value
     .toLowerCase()
     .replace(/[^a-z0-9]+/gu, '-')
     .replace(/^-+|-+$/gu, '');
-  /* c8 ignore next -- fallback only triggers for punctuation-only helper inputs */
   return slug || 'item';
 }
 
@@ -400,22 +420,46 @@ function defaultCandidateSources(): JsonRecord {
 function entityFromRoot(root: JsonRecord): JsonRecord {
   const kind = root.kind;
   if (kind === 'reference_flow') {
-    /* c8 ignore next -- inline fallback is defensive and separately validated */
     return isRecord(root.flow) ? copyJson(root.flow) : {};
   }
   if (kind === 'process') {
     return isRecord(root.process) ? copyJson(root.process) : {};
   }
   if (kind === 'lifecyclemodel') {
-    /* c8 ignore next -- inline fallback is defensive and separately validated */
     return isRecord(root.lifecyclemodel) ? copyJson(root.lifecyclemodel) : {};
   }
   if (kind === 'resulting_process') {
-    /* c8 ignore next -- inline fallback is defensive and separately validated */
     return isRecord(root.resulting_process) ? copyJson(root.resulting_process) : {};
   }
 
   return {};
+}
+
+function normalizePublishConfig(publish: JsonRecord): NormalizedPublishConfig {
+  return {
+    intent: requireEnum(publish.intent, ['dry_run', 'prepare_only', 'publish'], 'publish.intent'),
+    prepare_lifecyclemodel_payload: publish.prepare_lifecyclemodel_payload !== false,
+    prepare_resulting_process_payload: publish.prepare_resulting_process_payload !== false,
+    prepare_relation_payload: publish.prepare_relation_payload !== false,
+  };
+}
+
+function serializeInvocationConfig(
+  value: ProcessBuilderConfig | SubmodelBuilderConfig | ProjectorConfig | undefined,
+  message: string,
+  details?: JsonRecord,
+): JsonRecord {
+  return copyJson(invariant(value, message, details)) as JsonRecord;
+}
+
+function normalizeInvocationFailure(error: unknown): {
+  exit_code: number;
+  error: string;
+} {
+  return {
+    exit_code: error instanceof CliError ? error.exitCode : 1,
+    error: error instanceof Error ? error.message : String(error),
+  };
 }
 
 function normalizeCandidate(raw: unknown): Candidate {
@@ -541,8 +585,10 @@ function normalizeProjectorConfig(value: unknown, baseDir: string): ProjectorCon
 }
 
 function normalizeNode(rawNode: JsonRecord, index: number, baseDir: string): OrchestrateNode {
-  /* c8 ignore next -- fallback only applies when both node_id and id normalize empty */
-  const nodeId = firstNonEmpty(rawNode.node_id, rawNode.id, `node-${index}`) ?? `node-${index}`;
+  const nodeId = invariant(
+    firstNonEmpty(rawNode.node_id, rawNode.id, `node-${index}`),
+    `Node ${index} id normalization failed unexpectedly.`,
+  );
   const kind = requireEnum(
     rawNode.kind ?? 'process',
     ['reference_flow', 'process', 'lifecyclemodel', 'resulting_process', 'subsystem'],
@@ -558,8 +604,10 @@ function normalizeNode(rawNode: JsonRecord, index: number, baseDir: string): Orc
     }
   }
 
-  /* c8 ignore next -- fallback only applies when explicit labels and entity names are absent */
-  const label = firstNonEmpty(rawNode.label, entity.name, nodeId) ?? nodeId;
+  const label = invariant(
+    firstNonEmpty(rawNode.label, entity.name, nodeId),
+    `Node ${nodeId} label normalization failed unexpectedly.`,
+  );
   const parentNodeId = firstNonEmpty(rawNode.parent_node_id);
   const dependsOn = normalizeDependsOn(rawNode.depends_on);
   if (parentNodeId) {
@@ -590,11 +638,15 @@ function normalizeNode(rawNode: JsonRecord, index: number, baseDir: string): Orc
 
 function deriveRootNode(root: JsonRecord, goal: JsonRecord, baseDir: string): OrchestrateNode {
   const entity = entityFromRoot(root);
-  /* c8 ignore next -- fallback only applies for malformed direct helper inputs */
-  const label = firstNonEmpty(entity.name, goal.name, root.kind, 'root') ?? 'root';
+  const label = invariant(
+    firstNonEmpty(entity.name, goal.name, root.kind, 'root'),
+    'Root label normalization failed unexpectedly.',
+  );
   const rootNode: JsonRecord = {
-    /* c8 ignore next -- fallback only applies for malformed direct helper inputs */
-    node_id: firstNonEmpty(root.node_id, entity.id, 'root') ?? 'root',
+    node_id: invariant(
+      firstNonEmpty(root.node_id, entity.id, 'root'),
+      'Root node_id normalization failed unexpectedly.',
+    ),
     kind: root.kind,
     label,
     entity,
@@ -625,8 +677,10 @@ function buildEdges(
 
     const from = nonEmptyString(raw.from);
     const to = nonEmptyString(raw.to);
-    /* c8 ignore next -- default relation is only used when request edges omit relation */
-    const relation = firstNonEmpty(raw.relation, 'depends_on') ?? 'depends_on';
+    const relation = invariant(
+      firstNonEmpty(raw.relation, 'depends_on'),
+      'Edge relation normalization failed unexpectedly.',
+    );
     if (!from || !to) {
       return;
     }
@@ -678,33 +732,52 @@ function topoSortNodes(nodes: OrchestrateNode[]): {
         return;
       }
 
-      /* c8 ignore next -- Map#get fallback is purely defensive */
-      indegree.set(node.node_id, (indegree.get(node.node_id) ?? 0) + 1);
-      adjacency.get(dependency)?.push(node.node_id);
+      indegree.set(
+        node.node_id,
+        invariant(indegree.get(node.node_id), `Missing indegree entry for ${node.node_id}.`, {
+          node_id: node.node_id,
+          dependency,
+        }) + 1,
+      );
+      invariant(adjacency.get(dependency), `Missing adjacency list for ${dependency}.`, {
+        node_id: node.node_id,
+        dependency,
+      }).push(node.node_id);
     });
   });
 
-  /* c8 ignore start -- these comparator/index fallbacks are purely defensive */
   const queue = nodes
-    .filter((node) => (indegree.get(node.node_id) ?? 0) === 0)
-    .sort((left, right) => (order.get(left.node_id) ?? 0) - (order.get(right.node_id) ?? 0))
+    .filter(
+      (node) =>
+        invariant(indegree.get(node.node_id), `Missing indegree entry for ${node.node_id}.`) === 0,
+    )
+    .sort(
+      (left, right) =>
+        invariant(order.get(left.node_id), `Missing order index for ${left.node_id}.`) -
+        invariant(order.get(right.node_id), `Missing order index for ${right.node_id}.`),
+    )
     .map((node) => node.node_id);
   const ordered: OrchestrateNode[] = [];
 
   while (queue.length > 0) {
-    const nodeId = queue.shift() as string;
-    ordered.push(nodeMap.get(nodeId) as OrchestrateNode);
-    const downstream = (adjacency.get(nodeId) ?? []).sort(
-      (left, right) => (order.get(left) ?? 0) - (order.get(right) ?? 0),
+    const nodeId = invariant(queue.shift(), 'Queue unexpectedly emptied during topological sort.');
+    ordered.push(invariant(nodeMap.get(nodeId), `Missing node definition for ${nodeId}.`));
+    const downstream = invariant(
+      adjacency.get(nodeId),
+      `Missing adjacency list for ${nodeId}.`,
+    ).sort(
+      (left, right) =>
+        invariant(order.get(left), `Missing order index for ${left}.`) -
+        invariant(order.get(right), `Missing order index for ${right}.`),
     );
     downstream.forEach((item) => {
-      indegree.set(item, (indegree.get(item) ?? 0) - 1);
-      if ((indegree.get(item) ?? 0) === 0) {
+      const nextIndegree = invariant(indegree.get(item), `Missing indegree entry for ${item}.`) - 1;
+      indegree.set(item, nextIndegree);
+      if (nextIndegree === 0) {
         queue.push(item);
       }
     });
   }
-  /* c8 ignore stop */
 
   if (ordered.length !== nodes.length) {
     warnings.push('Dependency cycle detected; preserving original order for cyclic remainder.');
@@ -981,7 +1054,6 @@ function buildPlan(
   const publish = copyJson(requireObject(request.publish, 'publish'));
   const candidateSources = {
     ...defaultCandidateSources(),
-    /* c8 ignore next -- normal execution keeps candidate_sources object-shaped */
     ...(isRecord(request.candidate_sources) ? copyJson(request.candidate_sources) : {}),
   };
 
@@ -1073,8 +1145,11 @@ function buildPlan(
         invocation_id: invocationId,
         node_id: node.node_id,
         kind: 'process_builder',
-        /* c8 ignore next -- build_via_process_automated_builder always has process_builder config */
-        config: copyJson((node.process_builder ?? {}) as JsonRecord),
+        config: serializeInvocationConfig(
+          node.process_builder,
+          `Node ${node.node_id} resolved to process_builder without process_builder config.`,
+          { node_id: node.node_id, resolution: resolution.resolution },
+        ),
         artifact_dir: artifactDir,
       });
       node.planned_invocations.push(invocationId);
@@ -1090,8 +1165,11 @@ function buildPlan(
         invocation_id: invocationId,
         node_id: node.node_id,
         kind: 'lifecyclemodel_builder',
-        /* c8 ignore next -- build_via_lifecyclemodel_automated_builder always has submodel_builder config */
-        config: copyJson((node.submodel_builder ?? {}) as JsonRecord),
+        config: serializeInvocationConfig(
+          node.submodel_builder,
+          `Node ${node.node_id} resolved to lifecyclemodel_builder without submodel_builder config.`,
+          { node_id: node.node_id, resolution: resolution.resolution },
+        ),
         artifact_dir: artifactDir,
       });
       node.planned_invocations.push(invocationId);
@@ -1111,8 +1189,11 @@ function buildPlan(
         invocation_id: invocationId,
         node_id: node.node_id,
         kind: 'projector',
-        /* c8 ignore next -- projector invocations are only scheduled when projector config exists */
-        config: copyJson((node.projector ?? {}) as JsonRecord),
+        config: serializeInvocationConfig(
+          node.projector,
+          `Node ${node.node_id} scheduled projector without projector config.`,
+          { node_id: node.node_id, resolution: resolution.resolution },
+        ),
         artifact_dir: artifactDir,
         depends_on_invocation_id: dependsOnInvocationId,
       });
@@ -1131,13 +1212,7 @@ function buildPlan(
     root,
     orchestration,
     candidate_sources: candidateSources,
-    publish: {
-      /* c8 ignore next -- validateRequestShape guarantees a supported intent before buildPlan runs */
-      intent: firstNonEmpty(publish.intent, 'dry_run') ?? 'dry_run',
-      prepare_lifecyclemodel_payload: publish.prepare_lifecyclemodel_payload !== false,
-      prepare_resulting_process_payload: publish.prepare_resulting_process_payload !== false,
-      prepare_relation_payload: publish.prepare_relation_payload !== false,
-    },
+    publish: normalizePublishConfig(publish),
     notes: ensureList(request.notes)
       .map((entry) => nonEmptyString(entry))
       .filter((entry): entry is string => Boolean(entry)),
@@ -1268,8 +1343,11 @@ function buildGraphManifest(
       label: node.label,
       kind: node.kind,
       resolution: node.resolution,
-      /* c8 ignore next -- executionStatusByNode always materializes every plan node */
-      execution_status: nodeStatuses[node.node_id] ?? 'planned',
+      execution_status: invariant(
+        nodeStatuses[node.node_id],
+        `Missing execution status for node ${node.node_id}.`,
+        { node_id: node.node_id },
+      ),
       selected_candidate: copyJson(node.selected_candidate ?? null),
       depends_on: copyJson(node.depends_on),
       boundary_reason: node.boundary_reason ?? null,
@@ -1332,8 +1410,11 @@ function buildLineageManifest(
       resolution: node.resolution,
       reason: node.resolution_reason,
       selected_candidate: copyJson(node.selected_candidate ?? null),
-      /* c8 ignore next -- executionStatusByNode always materializes every plan node */
-      execution_status: nodeStatuses[node.node_id] ?? 'planned',
+      execution_status: invariant(
+        nodeStatuses[node.node_id],
+        `Missing execution status for node ${node.node_id}.`,
+        { node_id: node.node_id },
+      ),
     })),
     published_dependencies: publishedDependencies,
     resulting_process_relations: collectResultingProcessRelations(executionResults),
@@ -1606,6 +1687,26 @@ function inferProjectorModelFile(
   return modelFiles[0] ?? null;
 }
 
+function collectProjectorDependencyArtifacts(
+  invocation: PlanInvocation,
+  executionMap: Map<string, InvocationExecutionResult>,
+): {
+  processCatalogPath: string | null;
+  sourceRunDirs: string[];
+} {
+  const dependencyId = nonEmptyString(invocation.depends_on_invocation_id);
+  const dependency = executionMap.get(dependencyId ?? '');
+  return {
+    processCatalogPath:
+      ensureList(dependency?.artifacts?.process_catalog_files)
+        .map((entry) => nonEmptyString(entry))
+        .filter((entry): entry is string => Boolean(entry))[0] ?? null,
+    sourceRunDirs: ensureList(dependency?.artifacts?.source_run_dirs)
+      .map((entry) => nonEmptyString(entry))
+      .filter((entry): entry is string => Boolean(entry)),
+  };
+}
+
 function buildProjectorRequest(
   invocation: PlanInvocation,
   modelFile: string,
@@ -1630,8 +1731,7 @@ function buildProjectorRequest(
       allow_remote_lookup: false,
     },
     publish: {
-      /* c8 ignore next -- buildPlan normalizes intent before projector requests are constructed */
-      intent: firstNonEmpty(plan.publish.intent, 'prepare_only') ?? 'prepare_only',
+      intent: plan.publish.intent,
       prepare_process_payloads: plan.publish.prepare_resulting_process_payload !== false,
       prepare_relation_payloads: plan.publish.prepare_relation_payload !== false,
     },
@@ -1660,18 +1760,10 @@ async function executeProjectorInvocation(
         },
       );
     }
-    /* c8 ignore start -- optional dependency artifacts are purely defensive here */
-    const dependency = nonEmptyString(invocation.depends_on_invocation_id)
-      ? executionMap.get(String(invocation.depends_on_invocation_id))
-      : undefined;
-    const processCatalogPath =
-      ensureList(dependency?.artifacts?.process_catalog_files)
-        .map((entry) => nonEmptyString(entry))
-        .filter((entry): entry is string => Boolean(entry))[0] ?? null;
-    /* c8 ignore stop */
-    const sourceRunDirs = ensureList(dependency?.artifacts?.source_run_dirs)
-      .map((entry) => nonEmptyString(entry))
-      .filter((entry): entry is string => Boolean(entry));
+    const { processCatalogPath, sourceRunDirs } = collectProjectorDependencyArtifacts(
+      invocation,
+      executionMap,
+    );
     projectorRequestPath = writeRequestFile(
       path.join(
         plan.artifacts.invocations_dir,
@@ -1708,12 +1800,26 @@ async function executeProjectorInvocation(
   return result;
 }
 
+function recordInvocationResult(
+  invocation: PlanInvocation,
+  result: InvocationExecutionResult,
+  results: InvocationExecutionResult[],
+  executionMap: Map<string, InvocationExecutionResult>,
+): void {
+  invocation.last_status = result.status;
+  invocation.last_exit_code = result.exit_code;
+  invocation.last_result_file = result.result_file;
+  invocation.artifacts = result.artifacts;
+  results.push(result);
+  executionMap.set(invocation.invocation_id, result);
+}
+
 async function executePlan(
   plan: AssemblyPlan,
   now: Date,
   env: NodeJS.ProcessEnv,
   fetchImpl: FetchLike | undefined,
-): Promise<InvocationExecutionResult[]> {
+): Promise<{ results: InvocationExecutionResult[]; executionSummary: ExecutionSummary }> {
   mkdirSync(plan.artifacts.invocations_dir, { recursive: true });
   const results: InvocationExecutionResult[] = [];
   const executionMap = new Map<string, InvocationExecutionResult>();
@@ -1735,8 +1841,7 @@ async function executePlan(
         result_file: resultFile,
       };
       writeJsonArtifact(resultFile, skipped);
-      results.push(skipped);
-      executionMap.set(invocation.invocation_id, skipped);
+      recordInvocationResult(invocation, skipped, results, executionMap);
       continue;
     }
 
@@ -1753,8 +1858,7 @@ async function executePlan(
           result_file: resultFile,
         };
         writeJsonArtifact(resultFile, blocked);
-        results.push(blocked);
-        executionMap.set(invocation.invocation_id, blocked);
+        recordInvocationResult(invocation, blocked, results, executionMap);
         continue;
       }
     }
@@ -1777,54 +1881,40 @@ async function executePlan(
         );
       }
 
-      results.push(result);
-      executionMap.set(invocation.invocation_id, result);
+      recordInvocationResult(invocation, result, results, executionMap);
     } catch (error) {
+      const failure = normalizeInvocationFailure(error);
       const failed: InvocationExecutionResult = {
         invocation_id: invocation.invocation_id,
         node_id: invocation.node_id,
         kind: invocation.kind,
         status: 'failed',
-        /* c8 ignore next -- current invocation helpers only throw CliError or structured failures */
-        exit_code: error instanceof CliError ? error.exitCode : 1,
+        exit_code: failure.exit_code,
         result_file: resultFile,
-        /* c8 ignore next -- current invocation helpers only throw Error-like objects */
-        error: error instanceof Error ? error.message : String(error),
+        error: failure.error,
       };
       writeJsonArtifact(resultFile, failed);
-      results.push(failed);
-      executionMap.set(invocation.invocation_id, failed);
+      recordInvocationResult(invocation, failed, results, executionMap);
       if (failFast) {
         stopRemaining = true;
       }
     }
   }
 
-  plan.execution_summary = {
+  const executionSummary: ExecutionSummary = {
     executed_at: nowIso(now),
     successful_invocations: results.filter((result) => result.status === 'success').length,
     failed_invocations: results.filter((result) => result.status === 'failed').length,
     blocked_invocations: results.filter((result) => result.status.startsWith('skipped')).length,
     status: results.some((result) => result.status === 'failed') ? 'failed' : 'completed',
   };
+  plan.execution_summary = executionSummary;
   plan.planner_summary = {
     status: 'executed',
     message: 'Scheduled downstream builders were executed and invocation artifacts were recorded.',
   };
-  plan.invocations.forEach((invocation) => {
-    const result = executionMap.get(invocation.invocation_id);
-    /* c8 ignore start -- executionMap is populated for every planned invocation during executePlan */
-    if (!result) {
-      return;
-    }
-    /* c8 ignore stop */
-    invocation.last_status = result.status;
-    invocation.last_exit_code = result.exit_code;
-    invocation.last_result_file = result.result_file;
-    invocation.artifacts = result.artifacts;
-  });
 
-  return results;
+  return { results, executionSummary };
 }
 
 function loadInvocationResults(invocationsDir: string): InvocationExecutionResult[] {
@@ -2088,7 +2178,7 @@ export async function runLifecyclemodelOrchestrate(
     };
   }
 
-  const executionResults = await executePlan(
+  const { results: executionResults, executionSummary } = await executePlan(
     plan,
     now,
     options.env ?? process.env,
@@ -2103,17 +2193,13 @@ export async function runLifecyclemodelOrchestrate(
     schema_version: 1,
     generated_at_utc: nowIso(now),
     action: 'execute',
-    /* c8 ignore next -- executePlan always materializes execution_summary before returning */
-    status: plan.execution_summary?.status ?? 'completed',
+    status: executionSummary.status,
     request_id: plan.request_id,
     out_dir: outDir,
     execution: {
-      /* c8 ignore next -- executePlan always materializes execution_summary before returning */
-      successful_invocations: plan.execution_summary?.successful_invocations ?? 0,
-      /* c8 ignore next -- executePlan always materializes execution_summary before returning */
-      failed_invocations: plan.execution_summary?.failed_invocations ?? 0,
-      /* c8 ignore next -- executePlan always materializes execution_summary before returning */
-      blocked_invocations: plan.execution_summary?.blocked_invocations ?? 0,
+      successful_invocations: executionSummary.successful_invocations,
+      failed_invocations: executionSummary.failed_invocations,
+      blocked_invocations: executionSummary.blocked_invocations,
     },
     files: {
       request_normalized: plan.artifacts.request_normalized,
@@ -2128,16 +2214,22 @@ export async function runLifecyclemodelOrchestrate(
 }
 
 export const __testInternals = {
+  invariant,
+  safeSlug,
   requireObject,
   requireEnum,
   requireBoolean,
   requireInteger,
   resolveInputPath,
   defaultCandidateSources,
+  entityFromRoot,
   normalizeCandidate,
   normalizeCandidateList,
   normalizeRequestedAction,
   normalizeDependsOn,
+  normalizePublishConfig,
+  serializeInvocationConfig,
+  normalizeInvocationFailure,
   normalizeProcessBuilderConfig,
   normalizeSubmodelBuilderConfig,
   normalizeProjectorConfig,
@@ -2156,6 +2248,7 @@ export const __testInternals = {
   requireFile,
   parseInlineJson,
   inferProjectorModelFile,
+  collectProjectorDependencyArtifacts,
   executeProcessBuilderInvocation,
   executeLifecyclemodelBuilderInvocation,
   executeProjectorInvocation,
