@@ -6,8 +6,12 @@ import path from 'node:path';
 import { executeCli } from '../src/cli.js';
 import type { DotEnvLoadResult } from '../src/lib/dotenv.js';
 import type { FetchLike } from '../src/lib/http.js';
+import type { RunFlowReviewedPublishDataOptions } from '../src/lib/flow-publish-reviewed-data.js';
 import type { RunFlowPublishVersionOptions } from '../src/lib/flow-publish-version.js';
-import type { RunFlowRegenProductOptions } from '../src/lib/flow-regen-product.js';
+import type {
+  RunFlowRegenProductOptions,
+  RunFlowValidateProcessesOptions,
+} from '../src/lib/flow-regen-product.js';
 import type { RunFlowRemediateOptions } from '../src/lib/flow-remediate.js';
 import type { RunFlowReviewOptions } from '../src/lib/review-flow.js';
 
@@ -43,7 +47,8 @@ test('executeCli prints main help when no command is given', async () => {
   assert.match(result.stdout, /Planned Surface \(not implemented yet\):/u);
   assert.match(result.stdout, /process\s+get \| auto-build/u);
   assert.match(result.stdout, /process\s+auto-build/u);
-  assert.match(result.stdout, /lifecyclemodel build-resulting-process/u);
+  assert.match(result.stdout, /lifecyclemodel auto-build/u);
+  assert.match(result.stdout, /lifecyclemodel auto-build \| validate-build \| publish-build/u);
   assert.match(result.stdout, /publish-resulting-process/u);
   assert.match(result.stdout, /review\s+process/u);
   assert.match(result.stdout, /exit with code 2/u);
@@ -147,7 +152,10 @@ test('executeCli returns help for publish and validation namespaces', async () =
   assert.match(flowHelp.stdout, /list/u);
   assert.match(flowHelp.stdout, /remediate/u);
   assert.match(flowHelp.stdout, /publish-version/u);
+  assert.match(flowHelp.stdout, /publish-reviewed-data/u);
+  assert.match(flowHelp.stdout, /build-alias-map/u);
   assert.match(flowHelp.stdout, /regen-product/u);
+  assert.match(flowHelp.stdout, /validate-processes/u);
 });
 
 test('executeCli returns help for publish and validation subcommands', async () => {
@@ -193,6 +201,18 @@ test('executeCli returns help for publish and validation subcommands', async () 
   assert.match(flowPublishHelp.stdout, /--commit/u);
   assert.match(flowPublishHelp.stdout, /TIANGONG_LCA_API_BASE_URL/u);
 
+  const flowPublishReviewedHelp = await executeCli(
+    ['flow', 'publish-reviewed-data', '--help'],
+    makeDeps(),
+  );
+  assert.equal(flowPublishReviewedHelp.exitCode, 0);
+  assert.match(
+    flowPublishReviewedHelp.stdout,
+    /tiangong flow publish-reviewed-data --out-dir <dir> \[--flow-rows-file <file>\] \[--process-rows-file <file>\]/u,
+  );
+  assert.match(flowPublishReviewedHelp.stdout, /--flow-publish-policy/u);
+  assert.match(flowPublishReviewedHelp.stdout, /--process-publish-policy/u);
+
   const flowGetHelp = await executeCli(['flow', 'get', '--help'], makeDeps());
   assert.equal(flowGetHelp.exitCode, 0);
   assert.match(flowGetHelp.stdout, /tiangong flow get --id <flow-id>/u);
@@ -216,6 +236,15 @@ test('executeCli returns help for publish and validation subcommands', async () 
   assert.match(flowRegenHelp.stdout, /--auto-patch-policy/u);
   assert.match(flowRegenHelp.stdout, /repair-apply\/ \(only with --apply\)/u);
   assert.doesNotMatch(flowRegenHelp.stdout, /Planned contract:/u);
+
+  const flowValidateHelp = await executeCli(['flow', 'validate-processes', '--help'], makeDeps());
+  assert.equal(flowValidateHelp.exitCode, 0);
+  assert.match(
+    flowValidateHelp.stdout,
+    /tiangong flow validate-processes --original-processes-file <file> --patched-processes-file <file> --scope-flow-file <file> --out-dir <dir>/u,
+  );
+  assert.match(flowValidateHelp.stdout, /--tidas-mode/u);
+  assert.match(flowValidateHelp.stdout, /validation-failures\.jsonl/u);
 });
 
 test('executeCli returns group help for search and admin namespaces', async () => {
@@ -232,8 +261,22 @@ test('executeCli returns help for the lifecyclemodel namespace and implemented s
   const lifecyclemodelHelp = await executeCli(['lifecyclemodel'], makeDeps());
   assert.equal(lifecyclemodelHelp.exitCode, 0);
   assert.match(lifecyclemodelHelp.stdout, /tiangong lifecyclemodel <subcommand>/u);
+  assert.match(lifecyclemodelHelp.stdout, /auto-build/u);
+  assert.match(lifecyclemodelHelp.stdout, /validate-build/u);
+  assert.match(lifecyclemodelHelp.stdout, /publish-build/u);
   assert.match(lifecyclemodelHelp.stdout, /build-resulting-process/u);
   assert.match(lifecyclemodelHelp.stdout, /publish-resulting-process/u);
+  assert.match(lifecyclemodelHelp.stdout, /orchestrate/u);
+
+  const autoBuildHelp = await executeCli(['lifecyclemodel', 'auto-build', '--help'], makeDeps());
+  assert.equal(autoBuildHelp.exitCode, 0);
+  assert.match(autoBuildHelp.stdout, /tiangong lifecyclemodel auto-build --input <file>/u);
+  assert.match(autoBuildHelp.stdout, /"local_runs": \["\/abs\/path\/to\/process-build-run"\]/u);
+  assert.match(
+    autoBuildHelp.stdout,
+    /leaves follow-up validation and publish handoff to the companion validate-build and publish-build commands/u,
+  );
+  assert.doesNotMatch(autoBuildHelp.stdout, /Planned command/u);
 
   const buildHelp = await executeCli(
     ['lifecyclemodel', 'build-resulting-process', '--help'],
@@ -256,6 +299,458 @@ test('executeCli returns help for the lifecyclemodel namespace and implemented s
   );
   assert.match(publishHelp.stdout, /--publish-processes/u);
   assert.doesNotMatch(publishHelp.stdout, /Planned command/u);
+
+  const validateBuildHelp = await executeCli(
+    ['lifecyclemodel', 'validate-build', '--help'],
+    makeDeps(),
+  );
+  assert.equal(validateBuildHelp.exitCode, 0);
+  assert.match(validateBuildHelp.stdout, /tiangong lifecyclemodel validate-build --run-dir <dir>/u);
+  assert.match(validateBuildHelp.stdout, /--engine <mode>/u);
+  assert.doesNotMatch(validateBuildHelp.stdout, /Planned command/u);
+
+  const lifecyclemodelPublishBuildHelp = await executeCli(
+    ['lifecyclemodel', 'publish-build', '--help'],
+    makeDeps(),
+  );
+  assert.equal(lifecyclemodelPublishBuildHelp.exitCode, 0);
+  assert.match(
+    lifecyclemodelPublishBuildHelp.stdout,
+    /tiangong lifecyclemodel publish-build --run-dir <dir>/u,
+  );
+  assert.match(lifecyclemodelPublishBuildHelp.stdout, /publish-bundle\.json/u);
+  assert.doesNotMatch(lifecyclemodelPublishBuildHelp.stdout, /Planned command/u);
+
+  const lifecyclemodelOrchestrateHelp = await executeCli(
+    ['lifecyclemodel', 'orchestrate', '--help'],
+    makeDeps(),
+  );
+  assert.equal(lifecyclemodelOrchestrateHelp.exitCode, 0);
+  assert.match(
+    lifecyclemodelOrchestrateHelp.stdout,
+    /tiangong lifecyclemodel orchestrate <plan\|execute\|publish>/u,
+  );
+  assert.match(lifecyclemodelOrchestrateHelp.stdout, /--allow-process-build/u);
+  assert.match(lifecyclemodelOrchestrateHelp.stdout, /--publish-resulting-process-relations/u);
+  assert.doesNotMatch(lifecyclemodelOrchestrateHelp.stdout, /Planned command/u);
+});
+
+test('executeCli executes lifecyclemodel auto-build with injected implementation', async () => {
+  const dir = mkdtempSync(path.join(os.tmpdir(), 'tg-cli-lifecyclemodel-auto-build-cli-'));
+  const inputPath = path.join(dir, 'request.json');
+  writeFileSync(inputPath, '{"local_runs":["./run-1"]}', 'utf8');
+
+  try {
+    const result = await executeCli(
+      ['lifecyclemodel', 'auto-build', '--json', '--input', inputPath, '--out-dir', './run-root'],
+      {
+        ...makeDeps(),
+        runLifecyclemodelAutoBuildImpl: async (options) => {
+          assert.equal(options.inputPath, inputPath);
+          assert.equal(options.outDir, './run-root');
+          assert.equal(options.cwd, process.cwd());
+          return {
+            schema_version: 1,
+            generated_at_utc: '2026-03-30T00:00:00.000Z',
+            status: 'completed_local_lifecyclemodel_auto_build_run',
+            request_path: inputPath,
+            run_id: 'lifecyclemodel_auto_build_demo_build_20260330T000000Z_id123456',
+            run_root: path.join(dir, 'run-root'),
+            local_run_count: 1,
+            built_model_count: 1,
+            files: {
+              request_snapshot: path.join(
+                dir,
+                'run-root',
+                'request',
+                'lifecyclemodel-auto-build.request.json',
+              ),
+              normalized_request: path.join(dir, 'run-root', 'request', 'request.normalized.json'),
+              run_plan: path.join(dir, 'run-root', 'run-plan.json'),
+              resolved_manifest: path.join(dir, 'run-root', 'resolved-manifest.json'),
+              selection_brief: path.join(dir, 'run-root', 'selection', 'selection-brief.md'),
+              reference_model_summary: path.join(
+                dir,
+                'run-root',
+                'discovery',
+                'reference-model-summary.json',
+              ),
+              invocation_index: path.join(dir, 'run-root', 'manifests', 'invocation-index.json'),
+              run_manifest: path.join(dir, 'run-root', 'manifests', 'run-manifest.json'),
+              report: path.join(
+                dir,
+                'run-root',
+                'reports',
+                'lifecyclemodel-auto-build-report.json',
+              ),
+            },
+            local_build_reports: [
+              {
+                run_dir: path.join(dir, 'run-1'),
+                run_name: 'run-1',
+                model_file: path.join(
+                  dir,
+                  'run-root',
+                  'models',
+                  'run-1',
+                  'tidas_bundle',
+                  'lifecyclemodels',
+                  'lm.json',
+                ),
+                summary_file: path.join(dir, 'run-root', 'models', 'run-1', 'summary.json'),
+                connections_file: path.join(dir, 'run-root', 'models', 'run-1', 'connections.json'),
+                process_catalog_file: path.join(
+                  dir,
+                  'run-root',
+                  'models',
+                  'run-1',
+                  'process-catalog.json',
+                ),
+                summary: {
+                  model_uuid: 'lm-demo',
+                },
+              },
+            ],
+            next_actions: ['inspect: run-plan'],
+          };
+        },
+      },
+    );
+
+    assert.equal(result.exitCode, 0);
+    assert.match(result.stdout, /"status":"completed_local_lifecyclemodel_auto_build_run"/u);
+    assert.match(result.stdout, /"run_plan"/u);
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+test('executeCli executes lifecyclemodel orchestrate with injected implementation', async () => {
+  const dir = mkdtempSync(path.join(os.tmpdir(), 'tg-cli-lifecyclemodel-orchestrate-cli-'));
+  const inputPath = path.join(dir, 'request.json');
+  writeFileSync(
+    inputPath,
+    '{"goal":{"name":"Demo"},"root":{"kind":"lifecyclemodel","lifecyclemodel":{"id":"lm-demo"}},"orchestration":{"mode":"collapsed","max_depth":1,"reuse_resulting_process_first":true,"allow_process_build":true,"allow_submodel_build":true,"pin_child_versions":true,"stop_at_elementary_flow":false},"publish":{"intent":"prepare_only"}}',
+    'utf8',
+  );
+
+  try {
+    const result = await executeCli(
+      [
+        'lifecyclemodel',
+        'orchestrate',
+        'plan',
+        '--json',
+        '--input',
+        inputPath,
+        '--out-dir',
+        './run-root',
+      ],
+      {
+        ...makeDeps(),
+        runLifecyclemodelOrchestrateImpl: async (options) => {
+          assert.equal(options.action, 'plan');
+          assert.equal(options.inputPath, inputPath);
+          assert.equal(options.outDir, './run-root');
+          assert.equal(options.runDir, '');
+          assert.equal(options.allowProcessBuild, false);
+          assert.equal(options.publishLifecyclemodels, false);
+          return {
+            schema_version: 1,
+            generated_at_utc: '2026-03-30T00:00:00.000Z',
+            action: 'plan',
+            status: 'planned',
+            request_id: 'demo-run',
+            out_dir: path.join(dir, 'run-root'),
+            counts: {
+              nodes: 1,
+              edges: 0,
+              invocations: 1,
+              unresolved: 0,
+            },
+            files: {
+              request_normalized: path.join(dir, 'run-root', 'request.normalized.json'),
+              assembly_plan: path.join(dir, 'run-root', 'assembly-plan.json'),
+              graph_manifest: path.join(dir, 'run-root', 'graph-manifest.json'),
+              lineage_manifest: path.join(dir, 'run-root', 'lineage-manifest.json'),
+              boundary_report: path.join(dir, 'run-root', 'boundary-report.json'),
+            },
+            warnings: [],
+          };
+        },
+      },
+    );
+
+    assert.equal(result.exitCode, 0);
+    assert.match(result.stdout, /"action":"plan"/u);
+    assert.match(result.stdout, /"assembly_plan"/u);
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+test('executeCli maps lifecyclemodel orchestrate execute failures to exit code 1', async () => {
+  const dir = mkdtempSync(path.join(os.tmpdir(), 'tg-cli-lifecyclemodel-orchestrate-fail-cli-'));
+  const inputPath = path.join(dir, 'request.json');
+  writeFileSync(
+    inputPath,
+    '{"goal":{"name":"Demo"},"root":{"kind":"lifecyclemodel","lifecyclemodel":{"id":"lm-demo"}},"orchestration":{"mode":"collapsed","max_depth":1,"reuse_resulting_process_first":true,"allow_process_build":true,"allow_submodel_build":true,"pin_child_versions":true,"stop_at_elementary_flow":false},"publish":{"intent":"prepare_only"}}',
+    'utf8',
+  );
+
+  try {
+    const result = await executeCli(
+      [
+        'lifecyclemodel',
+        'orchestrate',
+        'execute',
+        '--json',
+        '--input',
+        inputPath,
+        '--out-dir',
+        './run-root',
+      ],
+      {
+        ...makeDeps(),
+        runLifecyclemodelOrchestrateImpl: async () => ({
+          schema_version: 1,
+          generated_at_utc: '2026-03-30T00:00:00.000Z',
+          action: 'execute',
+          status: 'failed',
+          request_id: 'demo-run',
+          out_dir: path.join(dir, 'run-root'),
+          execution: {
+            successful_invocations: 1,
+            failed_invocations: 1,
+            blocked_invocations: 0,
+          },
+          files: {
+            request_normalized: path.join(dir, 'run-root', 'request.normalized.json'),
+            assembly_plan: path.join(dir, 'run-root', 'assembly-plan.json'),
+            graph_manifest: path.join(dir, 'run-root', 'graph-manifest.json'),
+            lineage_manifest: path.join(dir, 'run-root', 'lineage-manifest.json'),
+            boundary_report: path.join(dir, 'run-root', 'boundary-report.json'),
+            invocations_dir: path.join(dir, 'run-root', 'invocations'),
+          },
+          warnings: [],
+        }),
+      },
+    );
+
+    assert.equal(result.exitCode, 1);
+    assert.match(result.stdout, /"status":"failed"/u);
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+test('executeCli accepts lifecyclemodel orchestrate request alias and explicit run-dir flags', async () => {
+  const result = await executeCli(
+    [
+      'lifecyclemodel',
+      'orchestrate',
+      'publish',
+      '--json',
+      '--request',
+      './request-alias.json',
+      '--run-dir',
+      './run-root',
+    ],
+    {
+      ...makeDeps(),
+      runLifecyclemodelOrchestrateImpl: async (options) => {
+        assert.equal(options.action, 'publish');
+        assert.equal(options.inputPath, './request-alias.json');
+        assert.equal(options.runDir, './run-root');
+        return {
+          schema_version: 1,
+          generated_at_utc: '2026-03-31T00:00:00.000Z',
+          action: 'publish',
+          status: 'prepared_local_publish_bundle',
+          request_id: 'demo-run',
+          run_dir: './run-root',
+          counts: {
+            lifecyclemodels: 0,
+            projected_processes: 0,
+            resulting_process_relations: 0,
+            process_build_runs: 0,
+          },
+          files: {
+            assembly_plan: './run-root/assembly-plan.json',
+            graph_manifest: './run-root/graph-manifest.json',
+            lineage_manifest: './run-root/lineage-manifest.json',
+            publish_bundle: './run-root/publish-bundle.json',
+            publish_summary: './run-root/publish-summary.json',
+          },
+        };
+      },
+    },
+  );
+
+  assert.equal(result.exitCode, 0);
+  assert.match(result.stdout, /"action":"publish"/u);
+  assert.match(result.stdout, /"publish_bundle"/u);
+});
+
+test('executeCli executes lifecyclemodel validate-build with injected implementation', async () => {
+  const dir = mkdtempSync(path.join(os.tmpdir(), 'tg-cli-lifecyclemodel-validate-build-cli-'));
+  const runDir = path.join(dir, 'lm-run');
+
+  try {
+    const result = await executeCli(
+      ['lifecyclemodel', 'validate-build', '--json', '--run-dir', runDir, '--engine', 'all'],
+      {
+        ...makeDeps(),
+        runLifecyclemodelValidateBuildImpl: async (options) => {
+          assert.equal(options.runDir, runDir);
+          assert.equal(options.engine, 'all');
+          return {
+            schema_version: 1,
+            generated_at_utc: '2026-03-30T00:00:00.000Z',
+            status: 'completed_lifecyclemodel_validate_build',
+            run_id: 'lm-run',
+            run_root: runDir,
+            ok: false,
+            engine: 'all',
+            counts: {
+              models: 1,
+              ok: 0,
+              failed: 1,
+            },
+            files: {
+              run_manifest: path.join(runDir, 'manifests', 'run-manifest.json'),
+              invocation_index: path.join(runDir, 'manifests', 'invocation-index.json'),
+              auto_build_report: path.join(
+                runDir,
+                'reports',
+                'lifecyclemodel-auto-build-report.json',
+              ),
+              report: path.join(runDir, 'reports', 'lifecyclemodel-validate-build-report.json'),
+              model_reports_dir: path.join(runDir, 'reports', 'model-validations'),
+            },
+            model_reports: [],
+            next_actions: [],
+          };
+        },
+      },
+    );
+
+    assert.equal(result.exitCode, 1);
+    assert.match(result.stdout, /"status":"completed_lifecyclemodel_validate_build"/u);
+    assert.match(result.stdout, /"ok":false/u);
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+test('executeCli returns exit code 0 when lifecyclemodel validate-build reports ok', async () => {
+  const dir = mkdtempSync(path.join(os.tmpdir(), 'tg-cli-lifecyclemodel-validate-build-cli-ok-'));
+  const runDir = path.join(dir, 'lm-run-ok');
+
+  try {
+    const result = await executeCli(['lifecyclemodel', 'validate-build', '--run-dir', runDir], {
+      ...makeDeps(),
+      runLifecyclemodelValidateBuildImpl: async () => ({
+        schema_version: 1,
+        generated_at_utc: '2026-03-30T00:00:00.000Z',
+        status: 'completed_lifecyclemodel_validate_build',
+        run_id: 'lm-run-ok',
+        run_root: runDir,
+        ok: true,
+        engine: 'auto',
+        counts: {
+          models: 1,
+          ok: 1,
+          failed: 0,
+        },
+        files: {
+          run_manifest: path.join(runDir, 'manifests', 'run-manifest.json'),
+          invocation_index: path.join(runDir, 'manifests', 'invocation-index.json'),
+          auto_build_report: null,
+          report: path.join(runDir, 'reports', 'lifecyclemodel-validate-build-report.json'),
+          model_reports_dir: path.join(runDir, 'reports', 'model-validations'),
+        },
+        model_reports: [],
+        next_actions: [],
+      }),
+    });
+
+    assert.equal(result.exitCode, 0);
+    assert.match(result.stdout, /"ok": true/u);
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+test('executeCli executes lifecyclemodel publish-build with injected implementation', async () => {
+  const dir = mkdtempSync(path.join(os.tmpdir(), 'tg-cli-lifecyclemodel-publish-build-cli-'));
+  const runDir = path.join(dir, 'lm-run');
+
+  try {
+    const result = await executeCli(
+      ['lifecyclemodel', 'publish-build', '--json', '--run-dir', runDir],
+      {
+        ...makeDeps(),
+        runLifecyclemodelPublishBuildImpl: async (options) => {
+          assert.equal(options.runDir, runDir);
+          return {
+            schema_version: 1,
+            generated_at_utc: '2026-03-30T00:00:00.000Z',
+            status: 'prepared_local_lifecyclemodel_publish_bundle',
+            run_id: 'lm-run',
+            run_root: runDir,
+            counts: {
+              lifecyclemodels: 1,
+            },
+            publish_defaults: {
+              commit: false,
+              publish_lifecyclemodels: true,
+              publish_processes: false,
+              publish_sources: false,
+              publish_relations: false,
+              publish_process_build_runs: false,
+              relation_mode: 'local_manifest_only',
+            },
+            validation: {
+              available: false,
+              ok: null,
+              report: null,
+            },
+            files: {
+              run_manifest: path.join(runDir, 'manifests', 'run-manifest.json'),
+              invocation_index: path.join(runDir, 'manifests', 'invocation-index.json'),
+              publish_bundle: path.join(
+                runDir,
+                'stage_outputs',
+                '10_publish',
+                'publish-bundle.json',
+              ),
+              publish_request: path.join(
+                runDir,
+                'stage_outputs',
+                '10_publish',
+                'publish-request.json',
+              ),
+              publish_intent: path.join(
+                runDir,
+                'stage_outputs',
+                '10_publish',
+                'publish-intent.json',
+              ),
+              report: path.join(runDir, 'reports', 'lifecyclemodel-publish-build-report.json'),
+            },
+            next_actions: [],
+          };
+        },
+      },
+    );
+
+    assert.equal(result.exitCode, 0);
+    assert.match(result.stdout, /"status":"prepared_local_lifecyclemodel_publish_bundle"/u);
+    assert.match(result.stdout, /"lifecyclemodels":1/u);
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
 });
 
 test('executeCli returns help for the process namespace and implemented subcommands', async () => {
@@ -1439,7 +1934,7 @@ test('executeCli returns parsing errors for invalid publish and validation flags
   assert.match(reviewResult.stderr, /INVALID_LLM_MAX_PROCESSES/u);
 });
 
-test('executeCli returns parsing errors for invalid lifecyclemodel build, process get/build, resume, publish-build, and batch-build flags', async () => {
+test('executeCli returns parsing errors for invalid lifecyclemodel, process, and publish-build flags', async () => {
   const result = await executeCli(
     ['lifecyclemodel', 'build-resulting-process', '--bad-flag'],
     makeDeps(),
@@ -1448,6 +1943,22 @@ test('executeCli returns parsing errors for invalid lifecyclemodel build, proces
   assert.equal(result.stdout, '');
   assert.match(result.stderr, /INVALID_ARGS/u);
 
+  const validateBuildResult = await executeCli(
+    ['lifecyclemodel', 'validate-build', '--bad-flag'],
+    makeDeps(),
+  );
+  assert.equal(validateBuildResult.exitCode, 2);
+  assert.equal(validateBuildResult.stdout, '');
+  assert.match(validateBuildResult.stderr, /INVALID_ARGS/u);
+
+  const lifecyclemodelPublishBuildResult = await executeCli(
+    ['lifecyclemodel', 'publish-build', '--bad-flag'],
+    makeDeps(),
+  );
+  assert.equal(lifecyclemodelPublishBuildResult.exitCode, 2);
+  assert.equal(lifecyclemodelPublishBuildResult.stdout, '');
+  assert.match(lifecyclemodelPublishBuildResult.stderr, /INVALID_ARGS/u);
+
   const publishResult = await executeCli(
     ['lifecyclemodel', 'publish-resulting-process', '--bad-flag'],
     makeDeps(),
@@ -1455,6 +1966,22 @@ test('executeCli returns parsing errors for invalid lifecyclemodel build, proces
   assert.equal(publishResult.exitCode, 2);
   assert.equal(publishResult.stdout, '');
   assert.match(publishResult.stderr, /INVALID_ARGS/u);
+
+  const orchestrateResult = await executeCli(
+    ['lifecyclemodel', 'orchestrate', '--bad-flag'],
+    makeDeps(),
+  );
+  assert.equal(orchestrateResult.exitCode, 2);
+  assert.equal(orchestrateResult.stdout, '');
+  assert.match(orchestrateResult.stderr, /INVALID_ARGS/u);
+
+  const invalidOrchestrateActionResult = await executeCli(
+    ['lifecyclemodel', 'orchestrate', 'bad-action'],
+    makeDeps(),
+  );
+  assert.equal(invalidOrchestrateActionResult.exitCode, 2);
+  assert.equal(invalidOrchestrateActionResult.stdout, '');
+  assert.match(invalidOrchestrateActionResult.stderr, /INVALID_ARGS/u);
 
   const processGetResult = await executeCli(['process', 'get', '--bad-flag'], makeDeps());
   assert.equal(processGetResult.exitCode, 2);
@@ -1745,13 +2272,6 @@ test('executeCli validates missing required flow regen-product inputs once the c
   assert.match(result.stderr, /FLOW_REGEN_PROCESSES_FILE_REQUIRED/u);
 });
 
-test('executeCli returns planned command message for lifecyclemodel subcommands after help is introduced', async () => {
-  const result = await executeCli(['lifecyclemodel', 'auto-build'], makeDeps());
-  assert.equal(result.exitCode, 2);
-  assert.equal(result.stdout, '');
-  assert.match(result.stderr, /Command 'lifecyclemodel auto-build'/u);
-});
-
 test('executeCli returns planned command message and dedicated help for review lifecyclemodel', async () => {
   const lifecyclemodelResult = await executeCli(['review', 'lifecyclemodel'], makeDeps());
   assert.equal(lifecyclemodelResult.exitCode, 2);
@@ -2030,6 +2550,384 @@ test('executeCli dispatches flow publish-version to the implemented CLI module',
     assert.equal(observedOptions?.maxWorkers, 8);
     assert.equal(observedOptions?.limit, 12);
     assert.equal(observedOptions?.targetUserId, 'user-123');
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+test('executeCli dispatches flow publish-reviewed-data to the implemented CLI module', async () => {
+  const dir = mkdtempSync(path.join(os.tmpdir(), 'tg-cli-flow-publish-reviewed-dispatch-'));
+  const flowRowsFile = path.join(dir, 'reviewed-flows.jsonl');
+  const processRowsFile = path.join(dir, 'reviewed-processes.jsonl');
+  writeFileSync(flowRowsFile, '[]\n', 'utf8');
+  writeFileSync(processRowsFile, '[]\n', 'utf8');
+
+  try {
+    let observedOptions: RunFlowReviewedPublishDataOptions | undefined;
+    const result = await executeCli(
+      [
+        'flow',
+        'publish-reviewed-data',
+        '--flow-rows-file',
+        flowRowsFile,
+        '--original-flow-rows-file',
+        path.join(dir, 'original-flows.jsonl'),
+        '--process-rows-file',
+        processRowsFile,
+        '--flow-publish-policy',
+        'upsert_current_version',
+        '--process-publish-policy',
+        'append_only_bump',
+        '--no-rewrite-process-flow-refs',
+        '--out-dir',
+        path.join(dir, 'publish-reviewed'),
+        '--max-workers',
+        '6',
+        '--target-user-id',
+        'user-456',
+        '--json',
+      ],
+      {
+        ...makeDeps(),
+        runFlowReviewedPublishDataImpl: async (options) => {
+          observedOptions = options;
+          return {
+            schema_version: 1,
+            generated_at_utc: '2026-03-30T16:30:00.000Z',
+            status: 'prepared_flow_publish_reviewed_data',
+            mode: 'dry_run',
+            flow_rows_file: flowRowsFile,
+            process_rows_file: processRowsFile,
+            original_flow_rows_file: path.join(dir, 'original-flows.jsonl'),
+            out_dir: path.join(dir, 'publish-reviewed'),
+            flow_publish_policy: 'upsert_current_version',
+            process_publish_policy: 'append_only_bump',
+            rewrite_process_flow_refs: false,
+            counts: {
+              input_flow_rows: 1,
+              input_process_rows: 1,
+              original_flow_rows: 1,
+              prepared_flow_rows: 1,
+              prepared_process_rows: 1,
+              skipped_unchanged_flow_rows: 0,
+              rewritten_process_flow_refs: 0,
+              flow_publish_reports: 1,
+              process_publish_reports: 1,
+              success_count: 0,
+              failure_count: 0,
+            },
+            max_workers: 6,
+            target_user_id_override: 'user-456',
+            files: {
+              prepared_flow_rows: path.join(dir, 'publish-reviewed', 'prepared-flow-rows.json'),
+              prepared_process_rows: path.join(
+                dir,
+                'publish-reviewed',
+                'prepared-process-rows.json',
+              ),
+              flow_version_map: path.join(dir, 'publish-reviewed', 'flow-version-map.json'),
+              skipped_unchanged_flow_rows: path.join(
+                dir,
+                'publish-reviewed',
+                'skipped-unchanged-flow-rows.json',
+              ),
+              process_ref_rewrite_evidence: path.join(
+                dir,
+                'publish-reviewed',
+                'process-flow-ref-rewrite-evidence.jsonl',
+              ),
+              success_list: path.join(
+                dir,
+                'publish-reviewed',
+                'flows_tidas_sdk_plus_classification_mcp_success_list.json',
+              ),
+              remote_failed: path.join(
+                dir,
+                'publish-reviewed',
+                'flows_tidas_sdk_plus_classification_remote_validation_failed.jsonl',
+              ),
+              flow_publish_version_report: path.join(
+                dir,
+                'publish-reviewed',
+                'flows_tidas_sdk_plus_classification_mcp_sync_report.json',
+              ),
+              report: path.join(dir, 'publish-reviewed', 'publish-report.json'),
+            },
+            flow_reports: [
+              {
+                entity_type: 'flow',
+                id: 'flow-1',
+                name: 'flow-1',
+                original_version: '01.00.001',
+                publish_version: '01.00.001',
+                publish_policy: 'upsert_current_version',
+                version_strategy: 'keep_current',
+                status: 'updated',
+                operation: 'update_existing',
+              },
+            ],
+            process_reports: [],
+            skipped_unchanged_flow_rows: [],
+          };
+        },
+      },
+    );
+
+    assert.equal(result.exitCode, 0);
+    assert.equal(result.stderr, '');
+    assert.equal(JSON.parse(result.stdout).status, 'prepared_flow_publish_reviewed_data');
+    assert.equal(observedOptions?.flowRowsFile, flowRowsFile);
+    assert.equal(observedOptions?.originalFlowRowsFile, path.join(dir, 'original-flows.jsonl'));
+    assert.equal(observedOptions?.processRowsFile, processRowsFile);
+    assert.equal(observedOptions?.outDir, path.join(dir, 'publish-reviewed'));
+    assert.equal(observedOptions?.flowPublishPolicy, 'upsert_current_version');
+    assert.equal(observedOptions?.processPublishPolicy, 'append_only_bump');
+    assert.equal(observedOptions?.rewriteProcessFlowRefs, false);
+    assert.equal(observedOptions?.commit, false);
+    assert.equal(observedOptions?.maxWorkers, 6);
+    assert.equal(observedOptions?.targetUserId, 'user-456');
+    assert.equal(
+      observedOptions?.env?.TIANGONG_LCA_API_BASE_URL,
+      'https://example.com/functions/v1',
+    );
+    assert.equal(observedOptions?.env?.TIANGONG_LCA_API_KEY, 'secret-token');
+    assert.equal(typeof observedOptions?.fetchImpl, 'function');
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+test('executeCli maps flow publish-reviewed-data failures to exit code 1', async () => {
+  const dir = mkdtempSync(path.join(os.tmpdir(), 'tg-cli-flow-publish-reviewed-failure-'));
+  const flowRowsFile = path.join(dir, 'reviewed-flows.jsonl');
+  writeFileSync(flowRowsFile, '[]\n', 'utf8');
+
+  try {
+    const result = await executeCli(
+      [
+        'flow',
+        'publish-reviewed-data',
+        '--flow-rows-file',
+        flowRowsFile,
+        '--out-dir',
+        path.join(dir, 'publish-reviewed'),
+        '--commit',
+        '--json',
+      ],
+      {
+        ...makeDeps(),
+        runFlowReviewedPublishDataImpl: async () => ({
+          schema_version: 1,
+          generated_at_utc: '2026-03-30T16:45:00.000Z',
+          status: 'completed_flow_publish_reviewed_data_with_failures',
+          mode: 'commit',
+          flow_rows_file: flowRowsFile,
+          process_rows_file: null,
+          original_flow_rows_file: null,
+          out_dir: path.join(dir, 'publish-reviewed'),
+          flow_publish_policy: 'append_only_bump',
+          process_publish_policy: 'append_only_bump',
+          rewrite_process_flow_refs: true,
+          counts: {
+            input_flow_rows: 1,
+            input_process_rows: 0,
+            original_flow_rows: 0,
+            prepared_flow_rows: 1,
+            prepared_process_rows: 0,
+            skipped_unchanged_flow_rows: 0,
+            rewritten_process_flow_refs: 0,
+            flow_publish_reports: 1,
+            process_publish_reports: 0,
+            success_count: 0,
+            failure_count: 1,
+          },
+          max_workers: 4,
+          target_user_id_override: null,
+          files: {
+            prepared_flow_rows: path.join(dir, 'publish-reviewed', 'prepared-flow-rows.json'),
+            prepared_process_rows: path.join(dir, 'publish-reviewed', 'prepared-process-rows.json'),
+            flow_version_map: path.join(dir, 'publish-reviewed', 'flow-version-map.json'),
+            skipped_unchanged_flow_rows: path.join(
+              dir,
+              'publish-reviewed',
+              'skipped-unchanged-flow-rows.json',
+            ),
+            process_ref_rewrite_evidence: path.join(
+              dir,
+              'publish-reviewed',
+              'process-flow-ref-rewrite-evidence.jsonl',
+            ),
+            success_list: path.join(
+              dir,
+              'publish-reviewed',
+              'flows_tidas_sdk_plus_classification_mcp_success_list.json',
+            ),
+            remote_failed: path.join(
+              dir,
+              'publish-reviewed',
+              'flows_tidas_sdk_plus_classification_remote_validation_failed.jsonl',
+            ),
+            flow_publish_version_report: path.join(
+              dir,
+              'publish-reviewed',
+              'flows_tidas_sdk_plus_classification_mcp_sync_report.json',
+            ),
+            report: path.join(dir, 'publish-reviewed', 'publish-report.json'),
+          },
+          flow_reports: [
+            {
+              entity_type: 'flow',
+              id: 'flow-1',
+              name: 'flow-1',
+              original_version: '01.00.001',
+              publish_version: '01.00.002',
+              publish_policy: 'append_only_bump',
+              version_strategy: 'bump',
+              status: 'failed',
+              error: [{ code: 'REMOTE_REQUEST_FAILED', message: 'duplicate version' }],
+            },
+          ],
+          process_reports: [],
+          skipped_unchanged_flow_rows: [],
+        }),
+      },
+    );
+
+    assert.equal(result.exitCode, 1);
+    assert.equal(result.stderr, '');
+    assert.equal(
+      JSON.parse(result.stdout).status,
+      'completed_flow_publish_reviewed_data_with_failures',
+    );
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+test('executeCli dispatches flow validate-processes to the implemented CLI module', async () => {
+  const dir = mkdtempSync(path.join(os.tmpdir(), 'tg-cli-flow-validate-processes-dispatch-'));
+  const originalProcessesFile = path.join(dir, 'before.jsonl');
+  const patchedProcessesFile = path.join(dir, 'after.jsonl');
+  const scopeFlowFile = path.join(dir, 'scope.jsonl');
+  writeFileSync(originalProcessesFile, '[]\n', 'utf8');
+  writeFileSync(patchedProcessesFile, '[]\n', 'utf8');
+  writeFileSync(scopeFlowFile, '[]\n', 'utf8');
+
+  try {
+    let observedOptions: RunFlowValidateProcessesOptions | undefined;
+    const result = await executeCli(
+      [
+        'flow',
+        'validate-processes',
+        '--original-processes-file',
+        originalProcessesFile,
+        '--patched-processes-file',
+        patchedProcessesFile,
+        '--scope-flow-file',
+        scopeFlowFile,
+        '--out-dir',
+        path.join(dir, 'validate'),
+        '--tidas-mode',
+        'required',
+        '--json',
+      ],
+      {
+        ...makeDeps(),
+        runFlowValidateProcessesImpl: async (options) => {
+          observedOptions = options;
+          return {
+            schema_version: 1,
+            generated_at_utc: '2026-03-30T19:00:00.000Z',
+            status: 'completed_local_flow_validate_processes',
+            original_processes_file: originalProcessesFile,
+            patched_processes_file: patchedProcessesFile,
+            scope_flow_files: [scopeFlowFile],
+            out_dir: path.join(dir, 'validate'),
+            tidas_mode: 'required',
+            summary: {
+              patched_process_count: 1,
+              passed: 1,
+              failed: 0,
+              tidas_validation: true,
+            },
+            files: {
+              out_dir: path.join(dir, 'validate'),
+              report: path.join(dir, 'validate', 'validation-report.json'),
+              failures: path.join(dir, 'validate', 'validation-failures.jsonl'),
+            },
+            results: [],
+          };
+        },
+      },
+    );
+
+    assert.equal(result.exitCode, 0);
+    assert.equal(result.stderr, '');
+    assert.equal(JSON.parse(result.stdout).status, 'completed_local_flow_validate_processes');
+    assert.equal(observedOptions?.originalProcessesFile, originalProcessesFile);
+    assert.equal(observedOptions?.patchedProcessesFile, patchedProcessesFile);
+    assert.deepEqual(observedOptions?.scopeFlowFiles, [scopeFlowFile]);
+    assert.equal(observedOptions?.tidasMode, 'required');
+    assert.equal(observedOptions?.outDir, path.join(dir, 'validate'));
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+test('executeCli maps flow validate-processes failures to exit code 1', async () => {
+  const dir = mkdtempSync(path.join(os.tmpdir(), 'tg-cli-flow-validate-processes-failure-'));
+  const originalProcessesFile = path.join(dir, 'before.jsonl');
+  const patchedProcessesFile = path.join(dir, 'after.jsonl');
+  const scopeFlowFile = path.join(dir, 'scope.jsonl');
+  writeFileSync(originalProcessesFile, '[]\n', 'utf8');
+  writeFileSync(patchedProcessesFile, '[]\n', 'utf8');
+  writeFileSync(scopeFlowFile, '[]\n', 'utf8');
+
+  try {
+    const result = await executeCli(
+      [
+        'flow',
+        'validate-processes',
+        '--original-processes-file',
+        originalProcessesFile,
+        '--patched-processes-file',
+        patchedProcessesFile,
+        '--scope-flow-file',
+        scopeFlowFile,
+        '--out-dir',
+        path.join(dir, 'validate'),
+        '--json',
+      ],
+      {
+        ...makeDeps(),
+        runFlowValidateProcessesImpl: async () => ({
+          schema_version: 1,
+          generated_at_utc: '2026-03-30T19:05:00.000Z',
+          status: 'completed_local_flow_validate_processes',
+          original_processes_file: originalProcessesFile,
+          patched_processes_file: patchedProcessesFile,
+          scope_flow_files: [scopeFlowFile],
+          out_dir: path.join(dir, 'validate'),
+          tidas_mode: 'auto',
+          summary: {
+            patched_process_count: 1,
+            passed: 0,
+            failed: 1,
+            tidas_validation: false,
+          },
+          files: {
+            out_dir: path.join(dir, 'validate'),
+            report: path.join(dir, 'validate', 'validation-report.json'),
+            failures: path.join(dir, 'validate', 'validation-failures.jsonl'),
+          },
+          results: [],
+        }),
+      },
+    );
+
+    assert.equal(result.exitCode, 1);
+    assert.equal(result.stderr, '');
+    assert.equal(JSON.parse(result.stdout).summary.failed, 1);
   } finally {
     rmSync(dir, { recursive: true, force: true });
   }
@@ -2353,7 +3251,7 @@ test('executeCli maps flow publish-version failure reports to exit code 1', asyn
   }
 });
 
-test('executeCli returns parsing errors for invalid flow get, list, remediate, publish-version, and regen-product flags', async () => {
+test('executeCli returns parsing errors for invalid flow get, list, remediate, publish-version, validate-processes, and regen-product flags', async () => {
   const invalidGetArgsResult = await executeCli(['flow', 'get', '--bad-flag'], makeDeps());
   assert.equal(invalidGetArgsResult.exitCode, 2);
   assert.match(invalidGetArgsResult.stderr, /INVALID_ARGS/u);
@@ -2423,12 +3321,67 @@ test('executeCli returns parsing errors for invalid flow get, list, remediate, p
   assert.equal(invalidLimitResult.exitCode, 2);
   assert.match(invalidLimitResult.stderr, /INVALID_FLOW_PUBLISH_VERSION_LIMIT/u);
 
+  const invalidReviewedArgsResult = await executeCli(
+    ['flow', 'publish-reviewed-data', '--bad-flag'],
+    makeDeps(),
+  );
+  assert.equal(invalidReviewedArgsResult.exitCode, 2);
+  assert.match(invalidReviewedArgsResult.stderr, /INVALID_ARGS/u);
+
+  const invalidReviewedModeResult = await executeCli(
+    ['flow', 'publish-reviewed-data', '--commit', '--dry-run'],
+    makeDeps(),
+  );
+  assert.equal(invalidReviewedModeResult.exitCode, 2);
+  assert.match(invalidReviewedModeResult.stderr, /FLOW_PUBLISH_REVIEWED_MODE_CONFLICT/u);
+
+  const invalidReviewedFlowPolicyResult = await executeCli(
+    ['flow', 'publish-reviewed-data', '--flow-publish-policy', 'bad-policy'],
+    makeDeps(),
+  );
+  assert.equal(invalidReviewedFlowPolicyResult.exitCode, 2);
+  assert.match(
+    invalidReviewedFlowPolicyResult.stderr,
+    /FLOW_PUBLISH_REVIEWED_FLOW_POLICY_INVALID/u,
+  );
+
+  const invalidReviewedProcessPolicyResult = await executeCli(
+    ['flow', 'publish-reviewed-data', '--process-publish-policy', 'bad-policy'],
+    makeDeps(),
+  );
+  assert.equal(invalidReviewedProcessPolicyResult.exitCode, 2);
+  assert.match(
+    invalidReviewedProcessPolicyResult.stderr,
+    /FLOW_PUBLISH_REVIEWED_PROCESS_POLICY_INVALID/u,
+  );
+
+  const invalidReviewedWorkersResult = await executeCli(
+    ['flow', 'publish-reviewed-data', '--max-workers', '0'],
+    makeDeps(),
+  );
+  assert.equal(invalidReviewedWorkersResult.exitCode, 2);
+  assert.match(invalidReviewedWorkersResult.stderr, /INVALID_FLOW_PUBLISH_REVIEWED_MAX_WORKERS/u);
+
   const invalidRegenArgsResult = await executeCli(
     ['flow', 'regen-product', '--bad-flag'],
     makeDeps(),
   );
   assert.equal(invalidRegenArgsResult.exitCode, 2);
   assert.match(invalidRegenArgsResult.stderr, /INVALID_ARGS/u);
+
+  const invalidValidateArgsResult = await executeCli(
+    ['flow', 'validate-processes', '--bad-flag'],
+    makeDeps(),
+  );
+  assert.equal(invalidValidateArgsResult.exitCode, 2);
+  assert.match(invalidValidateArgsResult.stderr, /INVALID_ARGS/u);
+
+  const invalidValidateTidasModeResult = await executeCli(
+    ['flow', 'validate-processes', '--tidas-mode', 'bad-mode'],
+    makeDeps(),
+  );
+  assert.equal(invalidValidateTidasModeResult.exitCode, 2);
+  assert.match(invalidValidateTidasModeResult.stderr, /INVALID_FLOW_VALIDATE_TIDAS_MODE/u);
 
   const invalidRegenPolicyResult = await executeCli(
     ['flow', 'regen-product', '--auto-patch-policy', 'bad-policy'],
@@ -2630,11 +3583,12 @@ test('executeCli returns planned command message for other unimplemented process
   assert.match(flowRegenHelp.stdout, /Apply deterministic patches and run local validation/u);
 });
 
-test('executeCli returns dedicated help for planned lifecyclemodel subcommands', async () => {
-  const result = await executeCli(['lifecyclemodel', 'auto-build', '--help'], makeDeps());
+test('executeCli returns dedicated help for implemented lifecyclemodel validate-build', async () => {
+  const result = await executeCli(['lifecyclemodel', 'validate-build', '--help'], makeDeps());
   assert.equal(result.exitCode, 0);
-  assert.match(result.stdout, /Planned contract:/u);
-  assert.match(result.stdout, /discover candidate processes/u);
+  assert.match(result.stdout, /model validation reports/u);
+  assert.match(result.stdout, /tidas_bundle/u);
+  assert.doesNotMatch(result.stdout, /Planned contract:/u);
   assert.equal(result.stderr, '');
 });
 

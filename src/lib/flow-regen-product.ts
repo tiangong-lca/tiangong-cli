@@ -28,8 +28,8 @@ const EMERGY_TEXT_KEYWORDS = [
   'sej',
 ] as const;
 
-type AutoPatchPolicy = 'disabled' | 'alias-only' | 'alias-or-unique-name';
-type TidasMode = 'auto' | 'required' | 'skip';
+export type AutoPatchPolicy = 'disabled' | 'alias-only' | 'alias-or-unique-name';
+export type TidasMode = 'auto' | 'required' | 'skip';
 type PathPart = string | number;
 
 type LangEntry = {
@@ -85,12 +85,12 @@ type RepairAction = {
   candidate_refs?: Array<Record<string, string>>;
 };
 
-type ProcessPatchValidationIssue = JsonRecord & {
+export type ProcessPatchValidationIssue = JsonRecord & {
   type: string;
   severity: 'error';
 };
 
-type ProcessPatchValidationResult = {
+export type ProcessPatchValidationResult = {
   process_id: string;
   process_version: string;
   process_name: string;
@@ -98,7 +98,7 @@ type ProcessPatchValidationResult = {
   issues: ProcessPatchValidationIssue[];
 };
 
-type ProcessPatchValidationSummary = {
+export type ProcessPatchValidationSummary = {
   patched_process_count: number;
   passed: number;
   failed: number;
@@ -110,7 +110,7 @@ type ProcessPatchValidationReport = {
   results: ProcessPatchValidationResult[];
 };
 
-type ScanStageFiles = {
+export type ScanStageFiles = {
   out_dir: string;
   emergy_excluded_processes: string;
   summary: string;
@@ -118,7 +118,7 @@ type ScanStageFiles = {
   findings_jsonl: string;
 };
 
-type RepairStageFiles = {
+export type RepairStageFiles = {
   out_dir: string;
   plan: string;
   plan_jsonl: string;
@@ -126,15 +126,33 @@ type RepairStageFiles = {
   summary: string;
 };
 
-type ApplyStageFiles = RepairStageFiles & {
+export type ApplyStageFiles = RepairStageFiles & {
   patched_processes: string;
   patch_root: string;
 };
 
-type ValidateStageFiles = {
+export type ValidateStageFiles = {
   out_dir: string;
   report: string;
   failures: string;
+};
+
+export type FlowProcessRefScanSummary = {
+  process_count_before_emergy_exclusion: number;
+  process_count: number;
+  emergy_excluded_process_count: number;
+  exchange_count: number;
+  issue_counts: Record<string, number>;
+  processes_with_issues: number;
+};
+
+export type FlowProcessFlowRepairSummary = {
+  auto_patch_policy: AutoPatchPolicy;
+  process_count: number;
+  repair_item_count: number;
+  decision_counts: Record<string, number>;
+  patched_process_count: number;
+  process_pool_sync?: JsonRecord;
 };
 
 type FlowRegenProductFiles = {
@@ -195,6 +213,99 @@ export type RunFlowRegenProductOptions = {
   tidasMode?: TidasMode;
 };
 
+export type RunFlowValidateProcessesOptions = {
+  originalProcessesFile: string;
+  patchedProcessesFile: string;
+  scopeFlowFiles: string[];
+  outDir: string;
+  tidasMode?: TidasMode;
+};
+
+export type RunFlowScanProcessFlowRefsOptions = {
+  processesFile: string;
+  scopeFlowFiles: string[];
+  catalogFlowFiles?: string[];
+  aliasMapFile?: string | null;
+  excludeEmergy?: boolean;
+  outDir: string;
+};
+
+export type RunFlowPlanProcessFlowRepairsOptions = {
+  processesFile: string;
+  scopeFlowFiles: string[];
+  aliasMapFile?: string | null;
+  scanFindingsFile?: string | null;
+  autoPatchPolicy?: AutoPatchPolicy;
+  outDir: string;
+};
+
+export type RunFlowApplyProcessFlowRepairsOptions = {
+  processesFile: string;
+  scopeFlowFiles: string[];
+  aliasMapFile?: string | null;
+  scanFindingsFile?: string | null;
+  autoPatchPolicy?: AutoPatchPolicy;
+  processPoolFile?: string | null;
+  outDir: string;
+};
+
+export type FlowValidateProcessesReport = {
+  schema_version: 1;
+  generated_at_utc: string;
+  status: 'completed_local_flow_validate_processes';
+  original_processes_file: string;
+  patched_processes_file: string;
+  scope_flow_files: string[];
+  out_dir: string;
+  tidas_mode: TidasMode;
+  summary: ProcessPatchValidationSummary;
+  files: ValidateStageFiles;
+  results: ProcessPatchValidationResult[];
+};
+
+export type FlowScanProcessFlowRefsReport = {
+  schema_version: 1;
+  generated_at_utc: string;
+  status: 'completed_local_flow_scan_process_flow_refs';
+  processes_file: string;
+  scope_flow_files: string[];
+  catalog_flow_files: string[];
+  alias_map_file: string | null;
+  exclude_emergy: boolean;
+  out_dir: string;
+  summary: FlowProcessRefScanSummary;
+  files: ScanStageFiles;
+};
+
+export type FlowPlanProcessFlowRepairsReport = {
+  schema_version: 1;
+  generated_at_utc: string;
+  status: 'completed_local_flow_plan_process_flow_repairs';
+  processes_file: string;
+  scope_flow_files: string[];
+  alias_map_file: string | null;
+  scan_findings_file: string | null;
+  auto_patch_policy: AutoPatchPolicy;
+  out_dir: string;
+  summary: FlowProcessFlowRepairSummary;
+  files: RepairStageFiles;
+};
+
+export type FlowApplyProcessFlowRepairsReport = {
+  schema_version: 1;
+  generated_at_utc: string;
+  status: 'completed_local_flow_apply_process_flow_repairs';
+  processes_file: string;
+  scope_flow_files: string[];
+  alias_map_file: string | null;
+  scan_findings_file: string | null;
+  auto_patch_policy: AutoPatchPolicy;
+  process_pool_file: string | null;
+  out_dir: string;
+  summary: FlowProcessFlowRepairSummary;
+  files: ApplyStageFiles;
+};
+
 type ProcessSdkValidationEntity = {
   validateEnhanced?: () => unknown;
   validate?: () => unknown;
@@ -221,28 +332,14 @@ type ScanStageResult = {
   filteredProcesses: JsonRecord[];
   emergyExcludedProcesses: JsonRecord[];
   findings: ScanFinding[];
-  summary: {
-    process_count_before_emergy_exclusion: number;
-    process_count: number;
-    emergy_excluded_process_count: number;
-    exchange_count: number;
-    issue_counts: Record<string, number>;
-    processes_with_issues: number;
-  };
+  summary: FlowProcessRefScanSummary;
   files: ScanStageFiles;
 };
 
 type RepairStageResult = {
   plan: RepairAction[];
   manualQueue: RepairAction[];
-  summary: {
-    auto_patch_policy: AutoPatchPolicy;
-    process_count: number;
-    repair_item_count: number;
-    decision_counts: Record<string, number>;
-    patched_process_count: number;
-    process_pool_sync?: JsonRecord;
-  };
+  summary: FlowProcessFlowRepairSummary;
   files: RepairStageFiles | ApplyStageFiles;
   patchedRows: JsonRecord[];
 };
@@ -1407,6 +1504,29 @@ function buildValidateStageFiles(outDir: string): ValidateStageFiles {
   };
 }
 
+function loadOptionalScanFindings(
+  scanFindingsFile: string | null,
+  requiredCode: string,
+  missingCode: string,
+): {
+  resolvedFile: string | null;
+  scanFindings: ScanFinding[];
+} {
+  if (!scanFindingsFile) {
+    return {
+      resolvedFile: null,
+      scanFindings: [],
+    };
+  }
+
+  const resolvedFile = assertInputFile(scanFindingsFile, requiredCode, missingCode);
+
+  return {
+    resolvedFile,
+    scanFindings: loadRowsFromFile(resolvedFile) as ScanFinding[],
+  };
+}
+
 function runScanStage(
   processes: JsonRecord[],
   scopeIndex: FlowIndex,
@@ -1610,6 +1730,211 @@ function runValidateStage(options: {
   };
 }
 
+export async function runFlowScanProcessFlowRefs(
+  options: RunFlowScanProcessFlowRefsOptions,
+  deps: FlowRegenProductDeps = {},
+): Promise<FlowScanProcessFlowRefsReport> {
+  const processesFile = assertInputFile(
+    options.processesFile,
+    'FLOW_SCAN_PROCESS_FLOW_REFS_PROCESSES_FILE_REQUIRED',
+    'FLOW_SCAN_PROCESS_FLOW_REFS_PROCESSES_FILE_NOT_FOUND',
+  );
+  const scopeFlowFiles = assertInputFiles(
+    options.scopeFlowFiles ?? [],
+    'FLOW_SCAN_PROCESS_FLOW_REFS_SCOPE_FLOW_FILES_REQUIRED',
+    'FLOW_SCAN_PROCESS_FLOW_REFS_SCOPE_FLOW_FILE_NOT_FOUND',
+  );
+  const catalogFlowFiles =
+    options.catalogFlowFiles && options.catalogFlowFiles.length > 0
+      ? assertInputFiles(
+          options.catalogFlowFiles,
+          'FLOW_SCAN_PROCESS_FLOW_REFS_CATALOG_FLOW_FILES_REQUIRED',
+          'FLOW_SCAN_PROCESS_FLOW_REFS_CATALOG_FLOW_FILE_NOT_FOUND',
+        )
+      : scopeFlowFiles;
+  const aliasMapFile = options.aliasMapFile
+    ? assertInputFile(
+        options.aliasMapFile,
+        'FLOW_SCAN_PROCESS_FLOW_REFS_ALIAS_MAP_REQUIRED',
+        'FLOW_SCAN_PROCESS_FLOW_REFS_ALIAS_MAP_NOT_FOUND',
+      )
+    : null;
+  const outDir = assertOutDir(options.outDir);
+  const now = deps.now ?? (() => new Date());
+
+  const processes = loadRowsFromFile(processesFile);
+  const scopeRows = scopeFlowFiles.flatMap((filePath) => loadRowsFromFile(filePath));
+  const catalogRows = catalogFlowFiles.flatMap((filePath) => loadRowsFromFile(filePath));
+  const aliasMap = aliasMapFile
+    ? readJsonObjectFile(
+        aliasMapFile,
+        'FLOW_SCAN_PROCESS_FLOW_REFS_ALIAS_MAP_REQUIRED',
+        'FLOW_SCAN_PROCESS_FLOW_REFS_ALIAS_MAP_NOT_FOUND',
+        'FLOW_SCAN_PROCESS_FLOW_REFS_ALIAS_MAP_INVALID',
+      )
+    : {};
+  const scopeIndex = buildFlowIndex(scopeRows);
+  const catalogIndex = buildFlowIndex(catalogRows);
+  const scanStage = runScanStage(
+    processes,
+    scopeIndex,
+    catalogIndex,
+    aliasMap,
+    outDir,
+    options.excludeEmergy === true,
+  );
+
+  return {
+    schema_version: 1,
+    generated_at_utc: now().toISOString(),
+    status: 'completed_local_flow_scan_process_flow_refs',
+    processes_file: processesFile,
+    scope_flow_files: scopeFlowFiles,
+    catalog_flow_files: catalogFlowFiles,
+    alias_map_file: aliasMapFile,
+    exclude_emergy: options.excludeEmergy === true,
+    out_dir: outDir,
+    summary: scanStage.summary,
+    files: scanStage.files,
+  };
+}
+
+export async function runFlowPlanProcessFlowRepairs(
+  options: RunFlowPlanProcessFlowRepairsOptions,
+  deps: FlowRegenProductDeps = {},
+): Promise<FlowPlanProcessFlowRepairsReport> {
+  const processesFile = assertInputFile(
+    options.processesFile,
+    'FLOW_PLAN_PROCESS_FLOW_REPAIRS_PROCESSES_FILE_REQUIRED',
+    'FLOW_PLAN_PROCESS_FLOW_REPAIRS_PROCESSES_FILE_NOT_FOUND',
+  );
+  const scopeFlowFiles = assertInputFiles(
+    options.scopeFlowFiles ?? [],
+    'FLOW_PLAN_PROCESS_FLOW_REPAIRS_SCOPE_FLOW_FILES_REQUIRED',
+    'FLOW_PLAN_PROCESS_FLOW_REPAIRS_SCOPE_FLOW_FILE_NOT_FOUND',
+  );
+  const aliasMapFile = options.aliasMapFile
+    ? assertInputFile(
+        options.aliasMapFile,
+        'FLOW_PLAN_PROCESS_FLOW_REPAIRS_ALIAS_MAP_REQUIRED',
+        'FLOW_PLAN_PROCESS_FLOW_REPAIRS_ALIAS_MAP_NOT_FOUND',
+      )
+    : null;
+  const { resolvedFile: scanFindingsFile, scanFindings } = loadOptionalScanFindings(
+    options.scanFindingsFile ?? null,
+    'FLOW_PLAN_PROCESS_FLOW_REPAIRS_SCAN_FINDINGS_REQUIRED',
+    'FLOW_PLAN_PROCESS_FLOW_REPAIRS_SCAN_FINDINGS_NOT_FOUND',
+  );
+  const outDir = assertOutDir(options.outDir);
+  const autoPatchPolicy = options.autoPatchPolicy ?? 'alias-only';
+  const now = deps.now ?? (() => new Date());
+
+  const processes = loadRowsFromFile(processesFile);
+  const scopeRows = scopeFlowFiles.flatMap((filePath) => loadRowsFromFile(filePath));
+  const aliasMap = aliasMapFile
+    ? readJsonObjectFile(
+        aliasMapFile,
+        'FLOW_PLAN_PROCESS_FLOW_REPAIRS_ALIAS_MAP_REQUIRED',
+        'FLOW_PLAN_PROCESS_FLOW_REPAIRS_ALIAS_MAP_NOT_FOUND',
+        'FLOW_PLAN_PROCESS_FLOW_REPAIRS_ALIAS_MAP_INVALID',
+      )
+    : {};
+  const scopeIndex = buildFlowIndex(scopeRows);
+  const repairStage = runRepairStage({
+    processes,
+    scopeIndex,
+    aliasMap,
+    scanFindings,
+    autoPatchPolicy,
+    outDir,
+    apply: false,
+    processPoolFile: null,
+  });
+
+  return {
+    schema_version: 1,
+    generated_at_utc: now().toISOString(),
+    status: 'completed_local_flow_plan_process_flow_repairs',
+    processes_file: processesFile,
+    scope_flow_files: scopeFlowFiles,
+    alias_map_file: aliasMapFile,
+    scan_findings_file: scanFindingsFile,
+    auto_patch_policy: autoPatchPolicy,
+    out_dir: outDir,
+    summary: repairStage.summary,
+    files: repairStage.files as RepairStageFiles,
+  };
+}
+
+export async function runFlowApplyProcessFlowRepairs(
+  options: RunFlowApplyProcessFlowRepairsOptions,
+  deps: FlowRegenProductDeps = {},
+): Promise<FlowApplyProcessFlowRepairsReport> {
+  const processesFile = assertInputFile(
+    options.processesFile,
+    'FLOW_APPLY_PROCESS_FLOW_REPAIRS_PROCESSES_FILE_REQUIRED',
+    'FLOW_APPLY_PROCESS_FLOW_REPAIRS_PROCESSES_FILE_NOT_FOUND',
+  );
+  const scopeFlowFiles = assertInputFiles(
+    options.scopeFlowFiles ?? [],
+    'FLOW_APPLY_PROCESS_FLOW_REPAIRS_SCOPE_FLOW_FILES_REQUIRED',
+    'FLOW_APPLY_PROCESS_FLOW_REPAIRS_SCOPE_FLOW_FILE_NOT_FOUND',
+  );
+  const aliasMapFile = options.aliasMapFile
+    ? assertInputFile(
+        options.aliasMapFile,
+        'FLOW_APPLY_PROCESS_FLOW_REPAIRS_ALIAS_MAP_REQUIRED',
+        'FLOW_APPLY_PROCESS_FLOW_REPAIRS_ALIAS_MAP_NOT_FOUND',
+      )
+    : null;
+  const { resolvedFile: scanFindingsFile, scanFindings } = loadOptionalScanFindings(
+    options.scanFindingsFile ?? null,
+    'FLOW_APPLY_PROCESS_FLOW_REPAIRS_SCAN_FINDINGS_REQUIRED',
+    'FLOW_APPLY_PROCESS_FLOW_REPAIRS_SCAN_FINDINGS_NOT_FOUND',
+  );
+  const outDir = assertOutDir(options.outDir);
+  const autoPatchPolicy = options.autoPatchPolicy ?? 'alias-only';
+  const processPoolFile = options.processPoolFile ? path.resolve(options.processPoolFile) : null;
+  const now = deps.now ?? (() => new Date());
+
+  const processes = loadRowsFromFile(processesFile);
+  const scopeRows = scopeFlowFiles.flatMap((filePath) => loadRowsFromFile(filePath));
+  const aliasMap = aliasMapFile
+    ? readJsonObjectFile(
+        aliasMapFile,
+        'FLOW_APPLY_PROCESS_FLOW_REPAIRS_ALIAS_MAP_REQUIRED',
+        'FLOW_APPLY_PROCESS_FLOW_REPAIRS_ALIAS_MAP_NOT_FOUND',
+        'FLOW_APPLY_PROCESS_FLOW_REPAIRS_ALIAS_MAP_INVALID',
+      )
+    : {};
+  const scopeIndex = buildFlowIndex(scopeRows);
+  const repairStage = runRepairStage({
+    processes,
+    scopeIndex,
+    aliasMap,
+    scanFindings,
+    autoPatchPolicy,
+    outDir,
+    apply: true,
+    processPoolFile,
+  });
+
+  return {
+    schema_version: 1,
+    generated_at_utc: now().toISOString(),
+    status: 'completed_local_flow_apply_process_flow_repairs',
+    processes_file: processesFile,
+    scope_flow_files: scopeFlowFiles,
+    alias_map_file: aliasMapFile,
+    scan_findings_file: scanFindingsFile,
+    auto_patch_policy: autoPatchPolicy,
+    process_pool_file: processPoolFile,
+    out_dir: outDir,
+    summary: repairStage.summary,
+    files: repairStage.files as ApplyStageFiles,
+  };
+}
+
 function buildReportFiles(outDir: string, apply: boolean): FlowRegenProductFiles {
   return {
     report: path.join(outDir, 'flow-regen-product-report.json'),
@@ -1751,6 +2076,57 @@ export async function runFlowRegenProduct(
 
   writeJsonArtifact(files.report, report);
   return report;
+}
+
+export async function runFlowValidateProcesses(
+  options: RunFlowValidateProcessesOptions,
+  deps: FlowRegenProductDeps = {},
+): Promise<FlowValidateProcessesReport> {
+  const originalProcessesFile = assertInputFile(
+    options.originalProcessesFile,
+    'FLOW_VALIDATE_PROCESSES_ORIGINAL_FILE_REQUIRED',
+    'FLOW_VALIDATE_PROCESSES_ORIGINAL_FILE_NOT_FOUND',
+  );
+  const patchedProcessesFile = assertInputFile(
+    options.patchedProcessesFile,
+    'FLOW_VALIDATE_PROCESSES_PATCHED_FILE_REQUIRED',
+    'FLOW_VALIDATE_PROCESSES_PATCHED_FILE_NOT_FOUND',
+  );
+  const scopeFlowFiles = assertInputFiles(
+    options.scopeFlowFiles ?? [],
+    'FLOW_VALIDATE_PROCESSES_SCOPE_FLOW_FILES_REQUIRED',
+    'FLOW_VALIDATE_PROCESSES_SCOPE_FLOW_FILE_NOT_FOUND',
+  );
+  const outDir = assertOutDir(options.outDir);
+  const tidasMode = options.tidasMode ?? 'auto';
+  const now = deps.now ?? (() => new Date());
+
+  const originalRows = loadRowsFromFile(originalProcessesFile);
+  const patchedRows = loadRowsFromFile(patchedProcessesFile);
+  const scopeRows = scopeFlowFiles.flatMap((filePath) => loadRowsFromFile(filePath));
+  const scopeIndex = buildFlowIndex(scopeRows);
+  const validateStage = runValidateStage({
+    originalRows,
+    patchedRows,
+    scopeIndex,
+    outDir,
+    tidasMode,
+    deps,
+  });
+
+  return {
+    schema_version: 1,
+    generated_at_utc: now().toISOString(),
+    status: 'completed_local_flow_validate_processes',
+    original_processes_file: originalProcessesFile,
+    patched_processes_file: patchedProcessesFile,
+    scope_flow_files: scopeFlowFiles,
+    out_dir: outDir,
+    tidas_mode: tidasMode,
+    summary: validateStage.summary,
+    files: validateStage.files,
+    results: validateStage.results,
+  };
 }
 
 export const __testInternals = {

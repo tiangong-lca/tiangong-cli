@@ -1,8 +1,15 @@
 import path from 'node:path';
 import { CliError } from './errors.js';
 import { writeJsonArtifact } from './artifacts.js';
+import type { FetchLike } from './http.js';
 import { readJsonInput } from './io.js';
 import { buildRunId, resolveRunLayout } from './run.js';
+import {
+  hasSupabaseRestRuntime,
+  syncSupabaseJsonOrderedRecord,
+  type SupabaseJsonOrderedTable,
+  type SupabaseJsonOrderedWriteMode,
+} from './supabase-json-ordered-write.js';
 
 type JsonObject = Record<string, unknown>;
 
@@ -271,6 +278,9 @@ export type RunPublishOptions = {
   outDir?: string | null;
   commit?: boolean | null;
   executors?: PublishExecutors;
+  env?: NodeJS.ProcessEnv;
+  fetchImpl?: FetchLike;
+  timeoutMs?: number;
   now?: Date;
 };
 
@@ -297,8 +307,26 @@ type PublishRequestOptions = {
 };
 
 function extract_lifecyclemodel_identity(payload: JsonObject): [string, string] {
-  const datasetId = first_non_empty(payload['@id'], payload.id);
-  const version = first_non_empty(payload['@version'], payload.version, DEFAULT_DATASET_VERSION)!;
+  const root = isRecord(payload.lifeCycleModelDataSet) ? payload.lifeCycleModelDataSet : payload;
+  const lifeCycleModelInformation = isRecord(root.lifeCycleModelInformation)
+    ? root.lifeCycleModelInformation
+    : {};
+  const dataSetInformation = isRecord(lifeCycleModelInformation.dataSetInformation)
+    ? lifeCycleModelInformation.dataSetInformation
+    : {};
+  const administrativeInformation = isRecord(root.administrativeInformation)
+    ? root.administrativeInformation
+    : {};
+  const publicationAndOwnership = isRecord(administrativeInformation.publicationAndOwnership)
+    ? administrativeInformation.publicationAndOwnership
+    : {};
+  const datasetId = first_non_empty(payload['@id'], payload.id, dataSetInformation['common:UUID']);
+  const version = first_non_empty(
+    payload['@version'],
+    payload.version,
+    publicationAndOwnership['common:dataSetVersion'],
+    DEFAULT_DATASET_VERSION,
+  )!;
   if (!datasetId) {
     throw new CliError('Lifecycle model payload missing @id/id.', {
       code: 'PUBLISH_LIFECYCLEMODEL_ID_MISSING',
@@ -747,6 +775,67 @@ function build_relation_manifest(
   };
 }
 
+function table_write_mode_for_publish(): SupabaseJsonOrderedWriteMode {
+  return 'upsert_current_version';
+}
+
+function build_default_dataset_executor(options: {
+  table: SupabaseJsonOrderedTable;
+  env: NodeJS.ProcessEnv;
+  fetchImpl: FetchLike;
+  timeoutMs?: number;
+}) {
+  return async (args: DatasetPublishExecutorArgs): Promise<unknown> =>
+    syncSupabaseJsonOrderedRecord({
+      table: options.table,
+      id: args.id,
+      version: args.version,
+      payload: args.payload,
+      writeMode: table_write_mode_for_publish(),
+      env: options.env,
+      fetchImpl: options.fetchImpl,
+      timeoutMs: options.timeoutMs,
+    });
+}
+
+function resolve_dataset_executors(options: RunPublishOptions): PublishExecutors {
+  const explicit = options.executors ?? {};
+  const env = options.env;
+  const fetchImpl = options.fetchImpl;
+
+  if (!env || !fetchImpl || !hasSupabaseRestRuntime(env)) {
+    return explicit;
+  }
+
+  return {
+    lifecyclemodels:
+      explicit.lifecyclemodels ??
+      build_default_dataset_executor({
+        table: 'lifecyclemodels',
+        env,
+        fetchImpl,
+        timeoutMs: options.timeoutMs,
+      }),
+    processes:
+      explicit.processes ??
+      build_default_dataset_executor({
+        table: 'processes',
+        env,
+        fetchImpl,
+        timeoutMs: options.timeoutMs,
+      }),
+    sources:
+      explicit.sources ??
+      build_default_dataset_executor({
+        table: 'sources',
+        env,
+        fetchImpl,
+        timeoutMs: options.timeoutMs,
+      }),
+    process_build_runs: explicit.process_build_runs,
+  };
+}
+
 export async function runPublish(options: RunPublishOptions): Promise<PublishReport> {
   const requestPath = path.resolve(options.inputPath);
   const requestDir = path.dirname(requestPath);
@@ -760,6 +849,7 @@ export async function runPublish(options: RunPublishOptions): Promise<PublishRep
   const collected = collectPublishInputs(normalized, requestDir);
   const now = options.now ?? new Date();
   const outDir = normalized.out_dir;
+  const executors = resolve_dataset_executors(options);
 
   const files = {
     normalized_request: path.join(outDir, 'normalized-request.json'),
@@ -774,28 +864,28 @@ export async function runPublish(options: RunPublishOptions): Promise<PublishRep
   const lifecyclemodels = normalized.publish.publish_lifecyclemodels
     ? await publish_lifecyclemodels(collected.lifecyclemodels, {
         commit: normalized.publish.commit,
-        executor: options.executors?.lifecyclemodels,
+        executor: executors.lifecyclemodels,
         publish: normalized.publish,
       })
     : [];
   const processes = normalized.publish.publish_processes
     ? await publish_processes(collected.processes, {
         commit: normalized.publish.commit,
-        executor: options.executors?.processes,
+        executor: executors.processes,
         publish: normalized.publish,
       })
     : [];
   const sources = normalized.publish.publish_sources
     ? await publish_sources(collected.sources, {
         commit: normalized.publish.commit,
-        executor: options.executors?.sources,
+        executor: executors.sources,
         publish: normalized.publish,
       })
     : [];
   const processBuildRuns = normalized.publish.publish_process_build_runs
     ? await publish_process_build_runs(collected.process_build_runs, {
         commit: normalized.publish.commit,
-        executor: options.executors?.process_build_runs,
+        executor: executors.process_build_runs,
         publish: normalized.publish,
       })
     : [];
