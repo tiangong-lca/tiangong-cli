@@ -342,7 +342,7 @@ npm start -- admin embedding-run --input ./jobs.json --dry-run
 - 输出 `lifecyclemodel_review_timing.md`
 - 输出 `lifecyclemodel_review_report.json`
 
-这个命令当前保持本地 artifact-first，不引入 Python、LangGraph 或 skill 私有 review runtime。`tiangong validation run` 中 `engine=tools -> uv run tidas-validate` 的 fallback 仍然保留，作为后续单独跟踪项。
+这个命令当前保持本地 artifact-first，不引入 Python、LangGraph 或 skill 私有 review runtime。本地 validation 边界也已经收口到 `tidas-sdk` parity validator，不再依赖 `uv run tidas-validate` 这类外部 fallback。
 
 `tiangong flow get` 现在已经承担 flow governance 的只读详情切片，负责：
 
@@ -486,10 +486,8 @@ npm start -- admin embedding-run --input ./jobs.json --dry-run
 
 `tiangong validation run` 负责把本地 TIDAS 包校验统一收口到 CLI：
 
-- `--engine auto`：优先使用本地 `tidas-sdk` parity validator，找不到时回退到 `uv run tidas-validate --format json`
+- `--engine auto`：走本地 `tidas-sdk` parity validator 的默认路径
 - `--engine sdk`：只跑 `tidas-sdk`
-- `--engine tools`：只跑 `tidas-tools`
-- `--engine all`：两边都跑，并给出结构化 comparison
 
 这两个命令都不需要新增 `TIANGONG_LCA_*` 之外的环境变量。
 

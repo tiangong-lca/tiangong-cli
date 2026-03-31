@@ -106,7 +106,7 @@ tiangong
 | `tiangong review process` | 本地 process review、artifact-first 报告输出、可选 CLI LLM 语义审核 |
 | `tiangong review flow` | 本地 flow governance review、rows-file 物化、artifact-first 报告输出、可选 CLI LLM 语义审核 |
 | `tiangong publish run` | 本地 publish 契约归一化、dry-run/commit、report 输出 |
-| `tiangong validation run` | 本地 `tidas-sdk` / `tidas-tools` 校验收口 |
+| `tiangong validation run` | 本地 `tidas-sdk` parity 校验收口 |
 | `tiangong admin embedding-run` | `embedding_ft` |
 
 此外，CLI 现在已经正式引入 `tiangong lifecyclemodel ...` 一级命名空间，其中：
@@ -183,7 +183,7 @@ tiangong
 - 已实现的 `flow apply-process-flow-repairs` 把治理链中的独立 deterministic repair apply 切片收口到 CLI，固定与 planning 相同的输入契约，直接写出 `patched-processes.json` / `process-patches/**`，并可在 `--process-pool-file` 下同步本地 pool
 - 已实现的 `flow regen-product` 把治理后的 process-side 再生产物链收口到 CLI，在一个命令下固定 `scan -> repair plan -> optional apply -> optional validate` 契约，并把退出码 `1` 保留给 `--apply` 之后的本地校验失败
 - 已实现的 `flow validate-processes` 把治理后 patched process rows 的独立校验切片收口到 CLI，固定 original/patched/scope 三类输入契约，并直接写出 `validation-report.json` / `validation-failures.jsonl`
-- 当前仍然保留的迁移尾巴主要在 `validation run` 的 tools-engine fallback；其余 review / build / publish CLI 面已经进入可执行状态，未迁移子命令只剩 `auth` / `job` 这类 placeholder surface
+- 现有命令族里已经没有残留的 Python / shell validation fallback；其余 review / build / publish CLI 面已经进入可执行状态，未迁移子命令只剩 `auth` / `job` 这类 placeholder surface
 - 这样做的目的不是“假装已完成”，而是先固定命令树，再逐个把 workflow 迁入 TypeScript CLI
 
 ### 2.2 已经固定的工程约束
@@ -641,9 +641,8 @@ tiangong admin embedding-run --input ./jobs.json --dry-run
 
 `validation run` 则固定“统一校验报告层”：
 
-- `auto` 模式优先走 `tidas-sdk`
-- 找不到本地 parity validator 时，回退到 `tidas-tools`
-- `all` 模式会给出两个引擎结果和 comparison
+- `auto` 模式走本地 `tidas-sdk` parity validator 的默认路径
+- `sdk` 模式显式固定到同一条 `tidas-sdk` 校验链
 
 这保证后续 workflow 只依赖 `tiangong validation run`，而不需要在 skill 里自己判断到底调哪个校验器。
 
@@ -827,7 +826,6 @@ npm run prepush:gate
 
 ### 后续只保留原生增量，不再叫“遗留迁移”
 
-- `validation run` 中 `engine=tools -> uv run tidas-validate` 何时移除，取决于统一 validation 收口是否完成
 - lifecyclemodel 的 discovery / AI 选择逻辑，只有在产品面确认需要时才继续抽象成新的 CLI 子命令
 - `auth` / `job` 之类 placeholder surface 只有在真实场景出现时才补齐，而不是为了对称性先做
 - 任何新增能力都必须先定义成 `tiangong <noun> <verb>`，再决定是否要进一步服务化

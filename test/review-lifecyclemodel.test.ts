@@ -85,7 +85,7 @@ function createValidationAggregateReport(options: {
     modelFiles: string[];
     reportFile: string;
     issues: JsonRecord[];
-    mode?: 'auto' | 'all';
+    mode?: 'auto' | 'sdk';
     ok?: boolean;
   }>;
 }): JsonRecord {
@@ -96,7 +96,7 @@ function createValidationAggregateReport(options: {
     run_id: path.basename(options.runRoot),
     run_root: options.runRoot,
     ok: options.modelReports.every((entry) => entry.ok !== false && entry.issues.length === 0),
-    engine: 'all',
+    engine: 'sdk',
     counts: {
       models: options.modelReports.length,
       ok: options.modelReports.filter((entry) => entry.ok !== false && entry.issues.length === 0)
@@ -118,79 +118,37 @@ function createValidationAggregateReport(options: {
       report_file: entry.reportFile,
       validation: {
         input_dir: path.join(options.runRoot, 'models', entry.runName, 'tidas_bundle'),
-        mode: entry.mode ?? 'all',
+        mode: entry.mode ?? 'sdk',
         ok: entry.ok ?? entry.issues.length === 0,
         summary: {
-          engine_count: entry.mode === 'auto' ? 1 : 2,
-          ok_count: entry.issues.length === 0 ? (entry.mode === 'auto' ? 1 : 2) : 0,
-          failed_count: entry.issues.length === 0 ? 0 : entry.mode === 'auto' ? 1 : 2,
+          engine_count: 1,
+          ok_count: entry.issues.length === 0 ? 1 : 0,
+          failed_count: entry.issues.length === 0 ? 0 : 1,
         },
         files: {
           report: entry.reportFile,
         },
-        reports:
-          entry.mode === 'auto'
-            ? [
-                {
-                  engine: 'sdk',
-                  ok: entry.issues.length === 0,
-                  duration_ms: 0,
-                  location: '/tmp/sdk.js',
-                  report: {
-                    input_dir: path.join(options.runRoot, 'models', entry.runName, 'tidas_bundle'),
-                    ok: entry.issues.length === 0,
-                    summary: {
-                      category_count: 1,
-                      issue_count: entry.issues.length,
-                      error_count: entry.issues.length,
-                      warning_count: 0,
-                      info_count: 0,
-                    },
-                    categories: [],
-                    issues: entry.issues,
-                  },
-                },
-              ]
-            : [
-                {
-                  engine: 'sdk',
-                  ok: entry.issues.length === 0,
-                  duration_ms: 0,
-                  location: '/tmp/sdk.js',
-                  report: {
-                    input_dir: path.join(options.runRoot, 'models', entry.runName, 'tidas_bundle'),
-                    ok: entry.issues.length === 0,
-                    summary: {
-                      category_count: 1,
-                      issue_count: entry.issues.length,
-                      error_count: entry.issues.length,
-                      warning_count: 0,
-                      info_count: 0,
-                    },
-                    categories: [],
-                    issues: entry.issues,
-                  },
-                },
-                {
-                  engine: 'tools',
-                  ok: entry.issues.length === 0,
-                  duration_ms: 0,
-                  location: '/tmp/tools.py',
-                  report: {
-                    input_dir: path.join(options.runRoot, 'models', entry.runName, 'tidas_bundle'),
-                    ok: entry.issues.length === 0,
-                    summary: {
-                      category_count: 1,
-                      issue_count: entry.issues.length,
-                      error_count: entry.issues.length,
-                      warning_count: 0,
-                      info_count: 0,
-                    },
-                    categories: [],
-                    issues: entry.issues,
-                  },
-                },
-              ],
+        reports: [
+          {
+            engine: 'sdk',
+            ok: entry.issues.length === 0,
+            duration_ms: 0,
+            location: '/tmp/sdk.js',
+            report: {
+              input_dir: path.join(options.runRoot, 'models', entry.runName, 'tidas_bundle'),
+              ok: entry.issues.length === 0,
+              summary: {
+                category_count: 1,
+                issue_count: entry.issues.length,
+                error_count: entry.issues.length,
+                warning_count: 0,
+                info_count: 0,
+              },
+              categories: [],
+              issues: entry.issues,
+            },
+          },
+        ],
         comparison: null,
       },
     })),
@@ -303,8 +261,8 @@ test('runLifecyclemodelReview writes artifact-first outputs and dedupes validati
           runName: 'model-a',
           modelFiles: [modelAFile],
           reportFile: path.join(runRoot, 'reports', 'model-validations', 'model-a.json'),
-          issues: [createValidationIssue(modelAFile)],
-          mode: 'all',
+          issues: [createValidationIssue(modelAFile), createValidationIssue(modelAFile)],
+          mode: 'sdk',
           ok: false,
         },
         {
