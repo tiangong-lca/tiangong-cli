@@ -59,8 +59,6 @@ This prevents reintroducing a generic MCP transport layer into the CLI runtime.
 
 The remaining planned placeholders in the documented surface are now limited to `auth *` and `job *`.
 
-Within the currently implemented command family, the only intentionally deferred migration tail is still inside `tiangong validation run`: `engine=tools` continues to execute `uv run tidas-validate` until that validation fallback is redesigned in a later tracked change.
-
 The stable launcher is `bin/tiangong.js`. It loads the compiled runtime at `dist/src/main.js`, while `npm start -- ...` rebuilds and dogfoods the same launcher path.
 
 ## Quality gate
@@ -262,7 +260,7 @@ The current lifecyclemodel build family intentionally keeps three boundaries out
 
 `tiangong publish run` is the CLI-side publish contract boundary. It normalizes publish requests, ingests upstream `publish-bundle.json` inputs, writes `normalized-request.json`, `collected-inputs.json`, `relation-manifest.json`, and `publish-report.json`, and keeps commit-mode execution behind explicit executors instead of reintroducing MCP-specific logic into the CLI.
 
-`tiangong validation run` is the CLI-side validation boundary. It standardizes local TIDAS package validation through one JSON report shape, supports `--engine auto|sdk|tools|all`, prefers `tidas-sdk` parity validation when available, and falls back to `uv run tidas-validate --format json` when needed.
+`tiangong validation run` is the CLI-side validation boundary. It standardizes local TIDAS package validation through one JSON report shape, supports `--engine auto|sdk`, and keeps the local package-validation path inside the bundled `tidas-sdk` parity validator instead of shelling out to `tidas-tools`.
 
 Run the built artifact directly:
 

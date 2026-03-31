@@ -332,7 +332,7 @@ function renderValidationHelp(): string {
 
 Options:
   --input-dir <dir>    TIDAS package directory
-  --engine <mode>      auto | sdk | tools | all (default: auto)
+  --engine <mode>      auto | sdk (default: auto)
   --report-file <file> Write the structured validation report to a file
   --json               Print compact JSON
   -h, --help
@@ -824,7 +824,7 @@ function renderLifecyclemodelValidateBuildHelp(): string {
 
 Options:
   --run-dir <dir>    Existing lifecyclemodel auto-build run directory
-  --engine <mode>    auto | sdk | tools | all (default: auto)
+  --engine <mode>    auto | sdk (default: auto)
   --json             Print compact JSON
   -h, --help
 

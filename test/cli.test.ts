@@ -613,12 +613,12 @@ test('executeCli executes lifecyclemodel validate-build with injected implementa
 
   try {
     const result = await executeCli(
-      ['lifecyclemodel', 'validate-build', '--json', '--run-dir', runDir, '--engine', 'all'],
+      ['lifecyclemodel', 'validate-build', '--json', '--run-dir', runDir, '--engine', 'sdk'],
       {
         ...makeDeps(),
         runLifecyclemodelValidateBuildImpl: async (options) => {
           assert.equal(options.runDir, runDir);
-          assert.equal(options.engine, 'all');
+          assert.equal(options.engine, 'sdk');
           return {
             schema_version: 1,
             generated_at_utc: '2026-03-30T00:00:00.000Z',
@@ -626,7 +626,7 @@ test('executeCli executes lifecyclemodel validate-build with injected implementa
             run_id: 'lm-run',
             run_root: runDir,
             ok: false,
-            engine: 'all',
+            engine: 'sdk',
             counts: {
               models: 1,
               ok: 0,
@@ -2050,7 +2050,7 @@ test('executeCli executes validation run with injected implementation and report
         '--input-dir',
         dir,
         '--engine',
-        'all',
+        'sdk',
         '--report-file',
         './validation-report.json',
       ],
@@ -2058,33 +2058,29 @@ test('executeCli executes validation run with injected implementation and report
         ...makeDeps(),
         runValidationImpl: async (options) => {
           assert.equal(options.inputDir, dir);
-          assert.equal(options.engine, 'all');
+          assert.equal(options.engine, 'sdk');
           assert.equal(options.reportFile, './validation-report.json');
           return {
             input_dir: dir,
-            mode: 'all',
+            mode: 'sdk',
             ok: false,
             summary: {
-              engine_count: 2,
+              engine_count: 1,
               ok_count: 0,
-              failed_count: 2,
+              failed_count: 1,
             },
             files: {
               report: path.join(dir, 'validation-report.json'),
             },
             reports: [],
-            comparison: {
-              equivalent: false,
-              differences: ['summary'],
-            },
+            comparison: null,
           };
         },
       },
     );
 
     assert.equal(result.exitCode, 1);
-    assert.match(result.stdout, /"mode":"all"/u);
-    assert.match(result.stdout, /"comparison"/u);
+    assert.match(result.stdout, /"mode":"sdk"/u);
   } finally {
     rmSync(dir, { recursive: true, force: true });
   }

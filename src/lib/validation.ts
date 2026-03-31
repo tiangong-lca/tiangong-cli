@@ -1,4 +1,3 @@
-import { spawnSync } from 'node:child_process';
 import { existsSync, statSync } from 'node:fs';
 import { createRequire } from 'node:module';
 import path from 'node:path';
@@ -117,10 +116,10 @@ function normalizeValidationMode(value: string | undefined): ValidationMode {
   if (!value) {
     return 'auto';
   }
-  if (value === 'auto' || value === 'sdk' || value === 'tools' || value === 'all') {
+  if (value === 'auto' || value === 'sdk') {
     return value;
   }
-  throw new CliError('Expected --engine to be one of auto, sdk, tools, or all.', {
+  throw new CliError('Expected --engine to be one of auto or sdk.', {
     code: 'VALIDATION_INVALID_ENGINE',
     exitCode: 2,
     details: value,
@@ -152,36 +151,6 @@ function assert_input_dir(inputDir: string): string {
 
   return resolved;
 }
-
-function buildToolsValidationCommand(inputDir: string): string[] {
-  return ['uv', 'run', 'tidas-validate', '-i', inputDir, '--format', 'json'];
-}
-
-function compareValidationReports(
-  left: PackageValidationReport,
-  right: PackageValidationReport,
-): ValidationComparison {
-  const differences: string[] = [];
-
-  if (left.ok !== right.ok) {
-    differences.push('ok');
-  }
-  if (JSON.stringify(left.summary) !== JSON.stringify(right.summary)) {
-    differences.push('summary');
-  }
-  if (JSON.stringify(left.categories) !== JSON.stringify(right.categories)) {
-    differences.push('categories');
-  }
-  if (JSON.stringify(left.issues) !== JSON.stringify(right.issues)) {
-    differences.push('issues');
-  }
-
-  return {
-    equivalent: differences.length === 0,
-    differences,
-  };
-}
-
 export type ValidationSeverity = 'error' | 'warning' | 'info';
 
 export type ValidationIssue = {
@@ -216,8 +185,8 @@ export type PackageValidationReport = {
   issues: ValidationIssue[];
 };
 
-export type ValidationEngine = 'sdk' | 'tools';
-export type ValidationMode = 'auto' | 'sdk' | 'tools' | 'all';
+export type ValidationEngine = 'sdk';
+export type ValidationMode = 'auto' | 'sdk';
 
 export type ValidationExecutionReport = {
   engine: ValidationEngine;
@@ -260,12 +229,6 @@ export type ValidationDeps = {
   loadSdkModule?: () => {
     location: string;
     validatePackageDir: (inputDir: string, emitLogs?: boolean) => unknown;
-  };
-  runToolsCommand?: (command: string[]) => {
-    status: number | null;
-    stdout: string;
-    stderr: string;
-    error?: Error | null;
   };
 };
 
@@ -310,27 +273,6 @@ export function resolveLocalSdkModule(): {
   return resolveSdkModuleFromCandidates(createRequire(import.meta.url), build_sdk_candidates());
 }
 
-export function runCommandCapture(
-  command: string[],
-  spawnSyncImpl: typeof spawnSync = spawnSync,
-): {
-  status: number | null;
-  stdout: string;
-  stderr: string;
-  error?: Error | null;
-} {
-  const result = spawnSyncImpl(command[0], command.slice(1), {
-    encoding: 'utf8',
-  });
-
-  return {
-    status: result.status,
-    stdout: result.stdout ?? '',
-    stderr: result.stderr ?? '',
-    error: result.error,
-  };
-}
-
 async function runSdkValidation(
   inputDir: string,
   deps: ValidationDeps,
@@ -348,91 +290,13 @@ async function runSdkValidation(
   };
 }
 
-async function runToolsValidation(
-  inputDir: string,
-  deps: ValidationDeps,
-): Promise<ValidationExecutionReport> {
-  const startedAt = Date.now();
-  const command = buildToolsValidationCommand(inputDir);
-  const result = (deps.runToolsCommand ?? runCommandCapture)(command);
-
-  if (result.error) {
-    throw new CliError('Failed to run tidas-tools validation command.', {
-      code: 'VALIDATION_TOOLS_EXEC_FAILED',
-      exitCode: 1,
-      details: result.error.message,
-    });
-  }
-
-  const stdout = result.stdout.trim();
-  if (!stdout) {
-    throw new CliError('tidas-tools validation did not return JSON output.', {
-      code: 'VALIDATION_TOOLS_EMPTY_OUTPUT',
-      exitCode: 1,
-      details: {
-        stderr: result.stderr,
-        status: result.status,
-      },
-    });
-  }
-
-  let parsed: unknown;
-  try {
-    parsed = JSON.parse(stdout);
-  } catch (error) {
-    throw new CliError('tidas-tools validation did not return valid JSON.', {
-      code: 'VALIDATION_TOOLS_INVALID_JSON',
-      exitCode: 1,
-      details: {
-        stdout,
-        stderr: result.stderr,
-        status: result.status,
-        error: error instanceof Error ? error.message : String(error),
-      },
-    });
-  }
-
-  const report = normalizePackageReport(parsed, inputDir);
-
-  return {
-    engine: 'tools',
-    ok: report.ok,
-    duration_ms: Date.now() - startedAt,
-    location: 'uv run tidas-validate',
-    report,
-    command,
-    command_exit_code: result.status,
-  };
-}
-
 export async function runValidation(
   options: RunValidationOptions,
   deps: ValidationDeps = {},
 ): Promise<ValidationRunReport> {
   const inputDir = assert_input_dir(options.inputDir);
   const mode = normalizeValidationMode(options.engine);
-  const reports: ValidationExecutionReport[] = [];
-
-  if (mode === 'sdk') {
-    reports.push(await runSdkValidation(inputDir, deps));
-  } else if (mode === 'tools') {
-    reports.push(await runToolsValidation(inputDir, deps));
-  } else if (mode === 'all') {
-    reports.push(await runSdkValidation(inputDir, deps));
-    reports.push(await runToolsValidation(inputDir, deps));
-  } else {
-    try {
-      reports.push(await runSdkValidation(inputDir, deps));
-    } catch (error) {
-      if (!(error instanceof CliError) || error.code !== 'VALIDATION_SDK_UNAVAILABLE') {
-        throw error;
-      }
-      reports.push(await runToolsValidation(inputDir, deps));
-    }
-  }
-
-  const comparison =
-    reports.length === 2 ? compareValidationReports(reports[0].report, reports[1].report) : null;
+  const reports: ValidationExecutionReport[] = [await runSdkValidation(inputDir, deps)];
   const reportFile = options.reportFile ? path.resolve(options.reportFile) : null;
   const finalReport: ValidationRunReport = {
     input_dir: inputDir,
@@ -447,7 +311,7 @@ export async function runValidation(
       report: reportFile,
     },
     reports,
-    comparison,
+    comparison: null,
   };
 
   if (reportFile) {

@@ -100,7 +100,7 @@ function makeValidationRunReport(
     mode,
     ok,
     summary: {
-      engine_count: mode === 'all' ? 2 : 1,
+      engine_count: 1,
       ok_count: ok ? 1 : 0,
       failed_count: ok ? 0 : 1,
     },
@@ -154,7 +154,7 @@ test('runLifecyclemodelValidateBuild validates all local model bundles and write
     const report = await runLifecyclemodelValidateBuild(
       {
         runDir: runRoot,
-        engine: 'all',
+        engine: 'sdk',
         now: new Date('2026-03-30T00:00:00.000Z'),
         cwd: '/tmp/lifecyclemodel-validate',
       },
@@ -162,7 +162,7 @@ test('runLifecyclemodelValidateBuild validates all local model bundles and write
         runValidationImpl: async (options) => {
           const ok = !options.inputDir.includes('model-b');
           const reportFile = path.resolve(options.reportFile as string);
-          const result = makeValidationRunReport(options.inputDir, ok, reportFile, 'all');
+          const result = makeValidationRunReport(options.inputDir, ok, reportFile, 'sdk');
           writeJson(reportFile, result);
           return result;
         },
@@ -172,7 +172,7 @@ test('runLifecyclemodelValidateBuild validates all local model bundles and write
     assert.equal(report.status, 'completed_lifecyclemodel_validate_build');
     assert.equal(report.run_id, 'lm-run-1');
     assert.equal(report.ok, false);
-    assert.equal(report.engine, 'all');
+    assert.equal(report.engine, 'sdk');
     assert.deepEqual(report.counts, {
       models: 2,
       ok: 1,
@@ -197,7 +197,7 @@ test('runLifecyclemodelValidateBuild validates all local model bundles and write
       '--run-dir',
       runRoot,
       '--engine',
-      'all',
+      'sdk',
     ]);
     assert.equal(invocationIndex.invocations[0]?.cwd, '/tmp/lifecyclemodel-validate');
   } finally {
@@ -400,13 +400,13 @@ test('lifecyclemodel validate-build internals cover layout, invocation index, an
               layout.modelsDir,
               true,
               path.join(layout.reportsDir, 'model-a.json'),
-              'tools',
+              'sdk',
             ),
           },
         ],
         'sdk',
       ),
-      'tools',
+      'sdk',
     );
     assert.equal(__testInternals.resolveReportEngine([], 'sdk'), 'sdk');
     assert.equal(__testInternals.resolveReportEngine([], undefined), 'auto');

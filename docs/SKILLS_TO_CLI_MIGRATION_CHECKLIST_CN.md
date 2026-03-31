@@ -62,7 +62,7 @@ MCP 替代策略也已经固定，不再反复讨论：
 
 继续作为库层存在：
 
-- CLI 调用这些库
+- CLI 直接消费 `tidas-sdk` 的本地 validation/parity 能力，并按需保留 `tidas-tools` 的其他库层职责
 - skills 不再重复实现一遍
 - CLI 不手抄 schema / validation / export 逻辑
 
@@ -115,7 +115,7 @@ MCP 替代策略也已经固定，不再反复讨论：
 - [x] `kb-search` 模块：作为 CLI 内部预备模块存在，但还没有公开命令消费它
 - [x] `unstructured` 模块：作为 CLI 内部预备模块存在，但还没有公开命令消费它
 - [x] `publish` 模块：统一 dry-run / commit / publish report
-- [x] `validation` 模块：统一 `tidas-sdk` / `tidas-tools` 调用
+- [x] `validation` 模块：统一本地校验收口，并固定 SDK-owned validation boundary
 
 ### Phase 4：迁 resulting-process builder
 
@@ -131,7 +131,7 @@ MCP 替代策略也已经固定，不再反复讨论：
 - [x] 所有 publish handoff 统一收口到 `tiangong publish run`
 - [x] `lca-publish-executor` 已收口成 CLI wrapper
 - [x] relation manifest / deferred publish / dry-run / commit 的唯一语义已写进 CLI 文档
-- [x] skills 不再自行判断使用 `tidas-sdk` 还是 `tidas-tools`
+- [x] skills 不再自行判断使用哪个校验器
 
 ### Phase 6：迁 `process-automated-builder`
 
@@ -155,7 +155,7 @@ MCP 替代策略也已经固定，不再反复讨论：
 - [x] `tiangong lifecyclemodel validate-build`
 - [x] `tiangong lifecyclemodel publish-build`
 - [x] 本地 `json_ordered` 组装改为 TS
-- [x] 本地校验统一改为 CLI 调用 `tidas-sdk` / `tidas-tools`
+- [x] 本地校验统一改为 CLI 调用 `tidas-sdk`
 - [x] publish handoff 改为统一 publish 模块
 - [x] canonical skill 入口切为原生 Node `.mjs` -> CLI
 - [x] 不再保留 shell 兼容壳或 Python / MCP runtime
@@ -245,7 +245,6 @@ MCP 替代策略也已经固定，不再反复讨论：
 
 下面这些可以做，但它们已经不是“清遗留”的待办，而是新的产品能力：
 
-- `validation run` 的 tools-engine fallback（当前仍会执行 `uv run tidas-validate`）
 - lifecyclemodel 的 discovery / AI 选择逻辑
 - `auth` / `job` 等只有在真实场景出现时才应该补齐的命令面
 - 更深的 KB / TianGong unstructured 能力，前提是先形成稳定的 CLI 业务动作
