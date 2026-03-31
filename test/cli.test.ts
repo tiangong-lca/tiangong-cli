@@ -142,6 +142,8 @@ test('executeCli returns help for publish and validation namespaces', async () =
   const flowHelp = await executeCli(['flow', '--help'], makeDeps());
   assert.equal(flowHelp.exitCode, 0);
   assert.match(flowHelp.stdout, /tiangong flow <subcommand>/u);
+  assert.match(flowHelp.stdout, /get/u);
+  assert.match(flowHelp.stdout, /list/u);
   assert.match(flowHelp.stdout, /remediate/u);
   assert.match(flowHelp.stdout, /publish-version/u);
 });
@@ -188,6 +190,20 @@ test('executeCli returns help for publish and validation subcommands', async () 
   );
   assert.match(flowPublishHelp.stdout, /--commit/u);
   assert.match(flowPublishHelp.stdout, /TIANGONG_LCA_API_BASE_URL/u);
+
+  const flowGetHelp = await executeCli(['flow', 'get', '--help'], makeDeps());
+  assert.equal(flowGetHelp.exitCode, 0);
+  assert.match(flowGetHelp.stdout, /tiangong flow get --id <flow-id>/u);
+  assert.match(flowGetHelp.stdout, /--user-id/u);
+  assert.match(flowGetHelp.stdout, /TIANGONG_LCA_API_KEY/u);
+  assert.doesNotMatch(flowGetHelp.stdout, /Planned command/u);
+
+  const flowListHelp = await executeCli(['flow', 'list', '--help'], makeDeps());
+  assert.equal(flowListHelp.exitCode, 0);
+  assert.match(flowListHelp.stdout, /tiangong flow list \[options\]/u);
+  assert.match(flowListHelp.stdout, /--type-of-dataset/u);
+  assert.match(flowListHelp.stdout, /--page-size/u);
+  assert.doesNotMatch(flowListHelp.stdout, /Planned command/u);
 });
 
 test('executeCli returns group help for search and admin namespaces', async () => {
@@ -372,6 +388,230 @@ test('executeCli executes process get with injected implementation', async () =>
 
   assert.equal(result.exitCode, 0);
   assert.match(result.stdout, /"status": "resolved_remote_process"/u);
+  assert.equal(result.stderr, '');
+});
+
+test('executeCli executes flow get with injected implementation', async () => {
+  const deps = makeDeps({
+    TIANGONG_LCA_API_BASE_URL: 'https://supabase.example/functions/v1',
+    TIANGONG_LCA_API_KEY: 'supabase-api-key',
+  });
+
+  const result = await executeCli(
+    [
+      'flow',
+      'get',
+      '--id',
+      'flow-1',
+      '--version',
+      '00.00.001',
+      '--user-id',
+      'user-1',
+      '--state-code',
+      '100',
+    ],
+    {
+      ...deps,
+      runFlowGetImpl: async (options) => {
+        assert.equal(options.flowId, 'flow-1');
+        assert.equal(options.version, '00.00.001');
+        assert.equal(options.userId, 'user-1');
+        assert.equal(options.stateCode, 100);
+        assert.equal(options.env, deps.env);
+        assert.equal(options.fetchImpl, deps.fetchImpl);
+        return {
+          schema_version: 1,
+          generated_at_utc: '2026-03-30T00:00:00.000Z',
+          status: 'resolved_remote_flow',
+          flow_id: 'flow-1',
+          requested_version: '00.00.001',
+          requested_user_id: 'user-1',
+          requested_state_code: 100,
+          resolved_version: '00.00.001',
+          resolution: 'remote_supabase_exact',
+          source_url: 'https://supabase.example/rest/v1/flows?id=eq.flow-1',
+          modified_at: null,
+          user_id: 'user-1',
+          state_code: 100,
+          flow: { flowDataSet: { id: 'flow-1' } },
+        };
+      },
+    },
+  );
+
+  assert.equal(result.exitCode, 0);
+  assert.match(result.stdout, /"status": "resolved_remote_flow"/u);
+  assert.equal(result.stderr, '');
+});
+
+test('executeCli executes flow list with injected implementation', async () => {
+  const deps = makeDeps({
+    TIANGONG_LCA_API_BASE_URL: 'https://supabase.example/functions/v1',
+    TIANGONG_LCA_API_KEY: 'supabase-api-key',
+  });
+
+  const result = await executeCli(
+    [
+      'flow',
+      'list',
+      '--id',
+      'flow-1',
+      '--id',
+      'flow-2',
+      '--version',
+      '00.00.001',
+      '--user-id',
+      'user-1',
+      '--state-code',
+      '0',
+      '--state-code',
+      '100',
+      '--type-of-dataset',
+      'Product flow',
+      '--type',
+      'Waste flow',
+      '--all',
+      '--page-size',
+      '5',
+      '--order',
+      'id.asc,version.asc',
+    ],
+    {
+      ...deps,
+      runFlowListImpl: async (options) => {
+        assert.deepEqual(options.ids, ['flow-1', 'flow-2']);
+        assert.equal(options.version, '00.00.001');
+        assert.equal(options.userId, 'user-1');
+        assert.deepEqual(options.stateCodes, [0, 100]);
+        assert.deepEqual(options.typeOfDataset, ['Product flow', 'Waste flow']);
+        assert.equal(options.all, true);
+        assert.equal(options.pageSize, 5);
+        assert.equal(options.order, 'id.asc,version.asc');
+        assert.equal(options.env, deps.env);
+        assert.equal(options.fetchImpl, deps.fetchImpl);
+        return {
+          schema_version: 1,
+          generated_at_utc: '2026-03-30T00:00:00.000Z',
+          status: 'listed_remote_flows',
+          filters: {
+            ids: ['flow-1', 'flow-2'],
+            requested_version: '00.00.001',
+            requested_user_id: 'user-1',
+            requested_state_codes: [0, 100],
+            requested_type_of_dataset: ['Product flow', 'Waste flow'],
+            order: 'id.asc,version.asc',
+            all: true,
+            limit: null,
+            offset: 0,
+            page_size: 5,
+          },
+          count: 1,
+          source_urls: ['https://supabase.example/rest/v1/flows'],
+          rows: [
+            {
+              id: 'flow-1',
+              version: '00.00.001',
+              user_id: 'user-1',
+              state_code: 100,
+              modified_at: null,
+              flow: { flowDataSet: { id: 'flow-1' } },
+            },
+          ],
+        };
+      },
+    },
+  );
+
+  assert.equal(result.exitCode, 0);
+  assert.match(result.stdout, /"status": "listed_remote_flows"/u);
+  assert.equal(result.stderr, '');
+});
+
+test('executeCli parses non-all flow list pagination flags', async () => {
+  const deps = makeDeps({
+    TIANGONG_LCA_API_BASE_URL: 'https://supabase.example/functions/v1',
+    TIANGONG_LCA_API_KEY: 'supabase-api-key',
+  });
+
+  const result = await executeCli(
+    ['flow', 'list', '--id', 'flow-1', '--limit', '3', '--offset', '1'],
+    {
+      ...deps,
+      runFlowListImpl: async (options) => {
+        assert.deepEqual(options.ids, ['flow-1']);
+        assert.equal(options.limit, 3);
+        assert.equal(options.offset, 1);
+        assert.equal(options.all, false);
+        return {
+          schema_version: 1,
+          generated_at_utc: '2026-03-30T00:00:00.000Z',
+          status: 'listed_remote_flows',
+          filters: {
+            ids: ['flow-1'],
+            requested_version: null,
+            requested_user_id: null,
+            requested_state_codes: [],
+            requested_type_of_dataset: [],
+            order: 'id.asc,version.asc',
+            all: false,
+            limit: 3,
+            offset: 1,
+            page_size: null,
+          },
+          count: 0,
+          source_urls: ['https://supabase.example/rest/v1/flows'],
+          rows: [],
+        };
+      },
+    },
+  );
+
+  assert.equal(result.exitCode, 0);
+  assert.equal(result.stderr, '');
+  assert.equal(JSON.parse(result.stdout).filters.offset, 1);
+});
+
+test('executeCli executes flow list with explicit limit and offset', async () => {
+  const deps = makeDeps({
+    TIANGONG_LCA_API_BASE_URL: 'https://supabase.example/functions/v1',
+    TIANGONG_LCA_API_KEY: 'supabase-api-key',
+  });
+
+  const result = await executeCli(
+    ['flow', 'list', '--id', 'flow-1', '--limit', '7', '--offset', '3', '--json'],
+    {
+      ...deps,
+      runFlowListImpl: async (options) => {
+        assert.deepEqual(options.ids, ['flow-1']);
+        assert.equal(options.limit, 7);
+        assert.equal(options.offset, 3);
+        assert.equal(options.all, false);
+        return {
+          schema_version: 1,
+          generated_at_utc: '2026-03-30T00:00:00.000Z',
+          status: 'listed_remote_flows',
+          filters: {
+            ids: ['flow-1'],
+            requested_version: null,
+            requested_user_id: null,
+            requested_state_codes: [],
+            requested_type_of_dataset: [],
+            order: 'id.asc,version.asc',
+            all: false,
+            limit: 7,
+            offset: 3,
+            page_size: null,
+          },
+          count: 0,
+          source_urls: ['https://supabase.example/rest/v1/flows'],
+          rows: [],
+        };
+      },
+    },
+  );
+
+  assert.equal(result.exitCode, 0);
+  assert.match(result.stdout, /"offset":3/u);
   assert.equal(result.stderr, '');
 });
 
@@ -1487,7 +1727,7 @@ test('executeCli prints main help for the explicit help command', async () => {
 });
 
 test('executeCli returns planned command message for unimplemented command', async () => {
-  const result = await executeCli(['flow', 'get'], makeDeps());
+  const result = await executeCli(['flow', 'regen-product'], makeDeps());
   assert.equal(result.exitCode, 2);
   assert.equal(result.stdout, '');
   assert.match(result.stderr, /not implemented yet/u);
@@ -1845,7 +2085,44 @@ test('executeCli maps flow publish-version failure reports to exit code 1', asyn
   }
 });
 
-test('executeCli returns parsing errors for invalid flow remediate and publish-version flags', async () => {
+test('executeCli returns parsing errors for invalid flow get, list, remediate, and publish-version flags', async () => {
+  const invalidGetArgsResult = await executeCli(['flow', 'get', '--bad-flag'], makeDeps());
+  assert.equal(invalidGetArgsResult.exitCode, 2);
+  assert.match(invalidGetArgsResult.stderr, /INVALID_ARGS/u);
+
+  const invalidGetStateCodeResult = await executeCli(
+    ['flow', 'get', '--state-code=-1'],
+    makeDeps(),
+  );
+  assert.equal(invalidGetStateCodeResult.exitCode, 2);
+  assert.match(invalidGetStateCodeResult.stderr, /INVALID_FLOW_GET_STATE_CODE/u);
+
+  const invalidListArgsResult = await executeCli(['flow', 'list', '--bad-flag'], makeDeps());
+  assert.equal(invalidListArgsResult.exitCode, 2);
+  assert.match(invalidListArgsResult.stderr, /INVALID_ARGS/u);
+
+  const invalidListPageSizeResult = await executeCli(
+    ['flow', 'list', '--page-size', '10'],
+    makeDeps(),
+  );
+  assert.equal(invalidListPageSizeResult.exitCode, 2);
+  assert.match(invalidListPageSizeResult.stderr, /FLOW_LIST_PAGE_SIZE_REQUIRES_ALL/u);
+
+  const invalidListStateCodeResult = await executeCli(
+    ['flow', 'list', '--state-code=-1'],
+    makeDeps(),
+  );
+  assert.equal(invalidListStateCodeResult.exitCode, 2);
+  assert.match(invalidListStateCodeResult.stderr, /INVALID_FLOW_LIST_STATE_CODE/u);
+
+  const invalidListLimitResult = await executeCli(['flow', 'list', '--limit=0'], makeDeps());
+  assert.equal(invalidListLimitResult.exitCode, 2);
+  assert.match(invalidListLimitResult.stderr, /INVALID_FLOW_LIST_LIMIT/u);
+
+  const invalidListOffsetResult = await executeCli(['flow', 'list', '--offset=-1'], makeDeps());
+  assert.equal(invalidListOffsetResult.exitCode, 2);
+  assert.match(invalidListOffsetResult.stderr, /INVALID_FLOW_LIST_OFFSET/u);
+
   const result = await executeCli(['flow', 'remediate', '--bad-flag'], makeDeps());
   assert.equal(result.exitCode, 2);
   assert.match(result.stderr, /INVALID_ARGS/u);
@@ -2051,10 +2328,10 @@ test('executeCli returns planned command message for other unimplemented process
   assert.equal(result.stdout, '');
   assert.match(result.stderr, /Command 'process list'/u);
 
-  const flowGetHelp = await executeCli(['flow', 'get', '--help'], makeDeps());
-  assert.equal(flowGetHelp.exitCode, 0);
-  assert.match(flowGetHelp.stdout, /Planned contract:/u);
-  assert.match(flowGetHelp.stdout, /canonical flow/u);
+  const flowRegenHelp = await executeCli(['flow', 'regen-product', '--help'], makeDeps());
+  assert.equal(flowRegenHelp.exitCode, 0);
+  assert.match(flowRegenHelp.stdout, /Planned contract:/u);
+  assert.match(flowRegenHelp.stdout, /product-side artifacts/u);
 });
 
 test('executeCli returns dedicated help for planned lifecyclemodel subcommands', async () => {

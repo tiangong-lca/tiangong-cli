@@ -38,6 +38,8 @@ tiangong
     process
     lifecyclemodel
   flow
+    get
+    list
     remediate
     publish-version
   process
@@ -68,6 +70,8 @@ tiangong
 | `tiangong search flow` | `flow_hybrid_search` |
 | `tiangong search process` | `process_hybrid_search` |
 | `tiangong search lifecyclemodel` | `lifecyclemodel_hybrid_search` |
+| `tiangong flow get` | 统一 CLI 持有的只读 flow 详情读取面；从 `TIANGONG_LCA_API_BASE_URL` 推导 Supabase REST 路径并按 `id/version/user/state` 读取 |
+| `tiangong flow list` | 统一 CLI 持有的只读 flow 枚举面；从 `TIANGONG_LCA_API_BASE_URL` 推导 Supabase REST 路径并提供稳定过滤/排序/分页 |
 | `tiangong flow remediate` | 本地 flow governance round1 deterministic remediation、artifact-first 输出 |
 | `tiangong flow publish-version` | 统一 CLI 持有的 remediated-flow publish/update 入口；从 `TIANGONG_LCA_API_BASE_URL` 推导 Supabase REST 路径并写出稳定 success/failure artifacts |
 | `tiangong process get` | 统一 CLI 持有的只读 process 详情读取面；从 `TIANGONG_LCA_API_BASE_URL` 推导 Supabase REST 路径并按 `id/version` 读取 |
@@ -97,9 +101,11 @@ tiangong
 
 `tiangong flow ...` 也已经开始承接 flow-governance 主链迁移，其中：
 
+- `tiangong flow get` 已可执行
+- `tiangong flow list` 已可执行
 - `tiangong flow remediate` 已可执行
 - `tiangong flow publish-version` 已可执行
-- `get`、`list`、`regen-product` 仍处于 planned 状态
+- `regen-product` 仍处于 planned 状态
 
 `tiangong process ...` 也已经开始承接 `process_from_flow` 主链迁移，其中：
 
@@ -126,6 +132,8 @@ tiangong
 - 已实现的 `review process` 保留本地 artifact-first review contract，把规则核查、报告输出和可选 LLM 语义审核统一收口到 CLI；语义审核只使用 `TIANGONG_LCA_LLM_*`，不再透出 `OPENAI_*`
 - 已实现的 `review flow` 保留本地 artifact-first governance review contract，把 flow 摘要、相似对、规则 findings、可选 LLM findings 和双语 markdown 报告统一收口到 CLI；语义审核同样只使用 `TIANGONG_LCA_LLM_*`
 - `review flow` 当前明确不支持 `--with-reference-context`，也还没有接入本地 registry enrichment；这部分仍需后续迁移切片单独落地
+- 已实现的 `flow get` 保留 deterministic direct-read 边界，支持 `id` + 可选 `version/user_id/state_code` 读取；若精确版本 miss，则回退到最新可见版本；若出现多个同版本可见候选，则直接报 ambiguous
+- 已实现的 `flow list` 保留 deterministic direct-read 边界，支持稳定 `id/state_code/type_of_dataset` 过滤、显式 `order=id.asc,version.asc` 默认值，以及 `--all --page-size` 的 offset 分页
 - 已实现的 `flow remediate` 保留旧 invalid-flow 输入与 round1 artifact 契约，但运行时已经收口到 CLI，不再需要 skill 私有 Python remediation 入口
 - 已实现的 `flow publish-version` 直接从 `TIANGONG_LCA_API_BASE_URL` 推导 `/rest/v1/flows` 写入路径，支持 dry-run/commit，并保留 `mcp_success_list`、`remote_validation_failed`、`mcp_sync_report` 这些历史文件名
 - 其余未实现的 `lifecyclemodel` / `process` 子命令仍只提供 help 和固定命名
@@ -342,6 +350,41 @@ tiangong admin embedding-run --input ./jobs.json --dry-run
 - 本地 registry enrichment
 - 任何 skill 私有的 `OPENAI_*` 或 MCP review runtime
 
+`flow get` 现在固定的是“deterministic direct-read detail 契约层”。
+
+它负责：
+
+- 从 `TIANGONG_LCA_API_BASE_URL` 推导 Supabase `/rest/v1/flows` 路径
+- 按 `id` 读取单个 flow row
+- 可选叠加 `version`、`user_id`、`state_code` 过滤
+- 若显式提供 `version` 且精确版本 miss，则回退到同一 `id` 的最新可见版本
+- 若最新版本或精确版本存在多个同版本可见候选，则直接报 ambiguous
+
+它现在还不负责：
+
+- 任意 flow 搜索或语义检索
+- 远端 publish/write
+- remediation / regen-product
+- 任何 skill 私有 MCP 读路径
+
+`flow list` 现在固定的是“deterministic direct-read list 契约层”。
+
+它负责：
+
+- 从 `TIANGONG_LCA_API_BASE_URL` 推导 Supabase `/rest/v1/flows` 路径
+- 支持 `id`、`version`、`user_id`、`state_code`、`type_of_dataset` 过滤
+- 默认使用 `order=id.asc,version.asc`
+- 支持显式 `limit` / `offset`
+- 支持 `--all --page-size <n>` 的 offset 分页汇总
+- 输出稳定的结构化 JSON 报告
+
+它现在还不负责：
+
+- 任意修复或 publish
+- `regen-product`
+- skill 私有 transport / env parsing
+- MCP-only list/runtime
+
 `flow remediate` 现在固定的是“本地 deterministic remediation 契约层”。
 
 它负责：
@@ -354,7 +397,7 @@ tiangong admin embedding-run --input ./jobs.json --dry-run
 
 - 任何远端 publish/write
 - round2 remote-validation retry
-- flow get/list/regen-product
+- regen-product
 - 任何 skill 私有 Python remediation runtime
 
 `flow publish-version` 现在固定的是“remediated-flow remote publish/update 契约层”。
@@ -372,7 +415,6 @@ tiangong admin embedding-run --input ./jobs.json --dry-run
 
 - round2 remote-validation retry
 - reviewed-data publish contract
-- flow get/list discovery
 - regen-product 或其他治理后处理
 - 任何 MCP transport
 
@@ -445,6 +487,8 @@ TIANGONG_LCA_LLM_MODEL=
 | `lifecyclemodel publish-resulting-process` | 无 |
 | `review process` | 纯规则 review 默认无；若显式开启 `--enable-llm`，则需要 `TIANGONG_LCA_LLM_BASE_URL`、`TIANGONG_LCA_LLM_API_KEY`、`TIANGONG_LCA_LLM_MODEL` |
 | `review flow` | 纯规则 review 默认无；若显式开启 `--enable-llm`，则需要 `TIANGONG_LCA_LLM_BASE_URL`、`TIANGONG_LCA_LLM_API_KEY`、`TIANGONG_LCA_LLM_MODEL` |
+| `flow get` | `TIANGONG_LCA_API_BASE_URL`、`TIANGONG_LCA_API_KEY` |
+| `flow list` | `TIANGONG_LCA_API_BASE_URL`、`TIANGONG_LCA_API_KEY` |
 | `flow remediate` | 无 |
 | `flow publish-version` | `TIANGONG_LCA_API_BASE_URL`、`TIANGONG_LCA_API_KEY` |
 | `publish run` | 无 |
@@ -512,9 +556,11 @@ npm run prepush:gate
   - `review lifecyclemodel` 仍处于 planned 状态
 - `flow-governance-review`
   - 已落地 `tiangong review flow`（覆盖 `review-flows` slice）
+  - 已落地 `tiangong flow get`（覆盖治理链中的 deterministic direct-read detail slice）
+  - 已落地 `tiangong flow list`（覆盖治理链中的 deterministic direct-read list slice）
   - 已落地 `tiangong flow remediate`（覆盖 `remediate-flows` / round1 deterministic remediation slice）
   - 已落地 `tiangong flow publish-version`（覆盖 remediated-flow publish/update slice，并保留历史 sync artifacts）
-  - `tiangong flow get|list|regen-product|...` 仍处于 planned 状态
+  - `tiangong flow regen-product|...` 仍处于 planned 状态
 - 其他重型 Python workflow
 
 更合理的路径是：
