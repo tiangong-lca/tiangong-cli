@@ -8,6 +8,7 @@ import {
   runLifecyclemodelOrchestrate,
 } from '../src/lib/lifecyclemodel-orchestrate.js';
 import { CliError } from '../src/lib/errors.js';
+import { resolveTidasSdkPath } from './helpers/tidas-sdk-path.js';
 
 type JsonRecord = Record<string, unknown>;
 
@@ -295,7 +296,7 @@ function createStaticProjectorRequestFixture(rootDir: string): string {
 }
 
 function flowFixturePath(): string {
-  return path.resolve(process.cwd(), '../tidas-sdk/test-data/tidas-example-flow.json');
+  return resolveTidasSdkPath('test-data', 'tidas-example-flow.json');
 }
 
 test('lifecyclemodel orchestrate internals normalize plans, warnings, and projector policy', () => {

@@ -8,6 +8,7 @@ import {
   normalizeProcessAutoBuildRequest,
   runProcessAutoBuild,
 } from '../src/lib/process-auto-build.js';
+import { resolveTidasSdkPath } from './helpers/tidas-sdk-path.js';
 
 function writeJson(filePath: string, value: unknown): void {
   writeFileSync(filePath, `${JSON.stringify(value, null, 2)}\n`, 'utf8');
@@ -18,9 +19,10 @@ function readJson(filePath: string): Record<string, unknown> {
 }
 
 function bundledFlowPayload(): Record<string, unknown> {
-  return readJson(
-    path.resolve(process.cwd(), '../tidas-sdk/test-data/tidas-example-flow.json'),
-  ) as Record<string, unknown>;
+  return readJson(resolveTidasSdkPath('test-data', 'tidas-example-flow.json')) as Record<
+    string,
+    unknown
+  >;
 }
 
 function writeFlowFixture(

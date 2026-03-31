@@ -100,15 +100,25 @@ export function resolveRepoRootFrom(startDir: string): string {
   }
 }
 
+export function resolveTidasSdkRoot(repoRoot: string): string {
+  const explicitRoot = process.env.TIANGONG_LCA_TIDAS_SDK_DIR?.trim();
+  if (explicitRoot) {
+    return path.resolve(explicitRoot);
+  }
+
+  return path.join(repoRoot, '..', 'tidas-sdk');
+}
+
 function resolve_cli_repo_root(): string {
   return resolveRepoRootFrom(path.dirname(fileURLToPath(import.meta.url)));
 }
 
 function build_sdk_candidates(): string[] {
   const repoRoot = resolve_cli_repo_root();
+  const sdkRoot = resolveTidasSdkRoot(repoRoot);
   return [
     '@tiangong-lca/tidas-sdk/parity',
-    path.join(repoRoot, '..', 'tidas-sdk', 'sdks', 'typescript', 'dist', 'parity', 'index.js'),
+    path.join(sdkRoot, 'sdks', 'typescript', 'dist', 'parity', 'index.js'),
   ];
 }
 

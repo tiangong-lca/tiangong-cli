@@ -9,6 +9,7 @@ import {
   resolveLocalSdkModule,
   resolveRepoRootFrom,
   resolveSdkModuleFromCandidates,
+  resolveTidasSdkRoot,
   runValidation,
 } from '../src/lib/validation.js';
 
@@ -91,6 +92,25 @@ test('runValidation uses sdk validation in auto mode', async () => {
     assert.equal(report.comparison, null);
   } finally {
     rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+test('resolveTidasSdkRoot honors explicit env override and sibling fallback', () => {
+  const repoRoot = path.resolve('/tmp', 'tiangong-cli');
+  const previousRoot = process.env.TIANGONG_LCA_TIDAS_SDK_DIR;
+
+  try {
+    delete process.env.TIANGONG_LCA_TIDAS_SDK_DIR;
+    assert.equal(resolveTidasSdkRoot(repoRoot), path.join(repoRoot, '..', 'tidas-sdk'));
+
+    process.env.TIANGONG_LCA_TIDAS_SDK_DIR = '  /tmp/custom-tidas-sdk  ';
+    assert.equal(resolveTidasSdkRoot(repoRoot), path.resolve('/tmp/custom-tidas-sdk'));
+  } finally {
+    if (previousRoot === undefined) {
+      delete process.env.TIANGONG_LCA_TIDAS_SDK_DIR;
+    } else {
+      process.env.TIANGONG_LCA_TIDAS_SDK_DIR = previousRoot;
+    }
   }
 });
 

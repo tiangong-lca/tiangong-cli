@@ -12,6 +12,7 @@ import os from 'node:os';
 import path from 'node:path';
 import test from 'node:test';
 import { __testInternals, runProcessBatchBuild } from '../src/lib/process-batch-build.js';
+import { resolveTidasSdkPath } from './helpers/tidas-sdk-path.js';
 
 function writeJson(filePath: string, value: unknown): void {
   writeFileSync(filePath, `${JSON.stringify(value, null, 2)}\n`, 'utf8');
@@ -22,9 +23,10 @@ function readJson<T = Record<string, unknown>>(filePath: string): T {
 }
 
 function bundledFlowPayload(): Record<string, unknown> {
-  return readJson(
-    path.resolve(process.cwd(), '../tidas-sdk/test-data/tidas-example-flow.json'),
-  ) as Record<string, unknown>;
+  return readJson(resolveTidasSdkPath('test-data', 'tidas-example-flow.json')) as Record<
+    string,
+    unknown
+  >;
 }
 
 function writeFlowFixture(dir: string): string {

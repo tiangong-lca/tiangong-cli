@@ -12,7 +12,7 @@ import {
   normalizeText,
   type JsonRecord,
 } from './flow-governance.js';
-import { resolveRepoRootFrom } from './validation.js';
+import { resolveRepoRootFrom, resolveTidasSdkRoot } from './validation.js';
 
 const CONTACT_UUID = 'f4b4c314-8c4c-4c83-968f-5b3c7724f6a8';
 const CONTACT_VERSION = '01.00.000';
@@ -149,9 +149,10 @@ function resolve_cli_repo_root(): string {
 
 function build_sdk_candidates(): string[] {
   const repoRoot = resolve_cli_repo_root();
+  const sdkRoot = resolveTidasSdkRoot(repoRoot);
   return [
     '@tiangong-lca/tidas-sdk/core',
-    path.join(repoRoot, '..', 'tidas-sdk', 'sdks', 'typescript', 'dist', 'core', 'index.js'),
+    path.join(sdkRoot, 'sdks', 'typescript', 'dist', 'core', 'index.js'),
   ];
 }
 

@@ -17,7 +17,7 @@ import {
   type FlowRecord,
   type JsonRecord,
 } from './flow-governance.js';
-import { resolveRepoRootFrom } from './validation.js';
+import { resolveRepoRootFrom, resolveTidasSdkRoot } from './validation.js';
 
 const EMERGY_TEXT_KEYWORDS = [
   'emergy',
@@ -357,9 +357,10 @@ function resolveCliRepoRoot(): string {
 
 function buildSdkCandidates(): string[] {
   const repoRoot = resolveCliRepoRoot();
+  const sdkRoot = resolveTidasSdkRoot(repoRoot);
   return [
     '@tiangong-lca/tidas-sdk/core',
-    path.join(repoRoot, '..', 'tidas-sdk', 'sdks', 'typescript', 'dist', 'core', 'index.js'),
+    path.join(sdkRoot, 'sdks', 'typescript', 'dist', 'core', 'index.js'),
   ];
 }
 

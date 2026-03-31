@@ -15,15 +15,32 @@ jobs:
         os:
           - ubuntu-latest
           - windows-latest
+    env:
+      TIANGONG_LCA_TIDAS_SDK_DIR: ${{ github.workspace }}/.ci/tidas-sdk
     steps:
       - name: Checkout
         uses: actions/checkout@v4
+
+      - name: Checkout tidas-sdk
+        uses: actions/checkout@v4
+        with:
+          repository: tiangong-lca/tidas-sdk
+          path: .ci/tidas-sdk
 
       - name: Setup Node 24
         uses: actions/setup-node@v4
         with:
           node-version: '24'
           cache: npm
+          cache-dependency-path: |
+            package-lock.json
+            .ci/tidas-sdk/package-lock.json
+
+      - name: Install and build tidas-sdk
+        working-directory: .ci/tidas-sdk
+        run: |
+          npm ci
+          npm run build:typescript
 
       - name: Install dependencies
         run: npm ci
