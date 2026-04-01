@@ -8,16 +8,16 @@ import type { FetchLike } from './http.js';
 import { readJsonArtifact, writeJsonArtifact, writeJsonLinesArtifact } from './artifacts.js';
 
 export const LLM_ENV_KEYS = {
-  baseUrl: 'TIANGONG_LCA_LLM_BASE_URL',
-  apiKey: 'TIANGONG_LCA_LLM_API_KEY',
-  model: 'TIANGONG_LCA_LLM_MODEL',
+  baseUrl: 'TIANGONG_LCA_REVIEW_LLM_BASE_URL',
+  apiKey: 'TIANGONG_LCA_REVIEW_LLM_API_KEY',
+  model: 'TIANGONG_LCA_REVIEW_LLM_MODEL',
 } as const;
 
 export const LLM_ENV_SPECS: EnvSpec[] = [
   {
     key: LLM_ENV_KEYS.baseUrl,
     required: true,
-    description: 'LLM responses API base URL',
+    description: 'Review LLM OpenAI-compatible Responses API base URL',
   },
   {
     key: LLM_ENV_KEYS.apiKey,

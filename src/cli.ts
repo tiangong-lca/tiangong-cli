@@ -665,8 +665,8 @@ Options:
   --start-ts <iso>          Optional run start timestamp
   --end-ts <iso>            Optional run end timestamp
   --logic-version <name>    Review logic version label (default: v2.1)
-  --enable-llm              Enable optional semantic review via the CLI LLM client
-  --llm-model <name>        Override TIANGONG_LCA_LLM_MODEL for this command
+  --enable-llm              Enable optional review-only semantic review via the CLI LLM client
+  --llm-model <name>        Override TIANGONG_LCA_REVIEW_LLM_MODEL for this review command
   --llm-max-processes <n>   Cap how many process summaries are sent to the LLM (default: 8)
   --json                    Print compact JSON
   -h, --help
@@ -686,8 +686,8 @@ Options:
   --start-ts <iso>          Optional run start timestamp
   --end-ts <iso>            Optional run end timestamp
   --logic-version <name>    Review logic version label (default: flow-v1.0-cli)
-  --enable-llm              Enable optional semantic review via the CLI LLM client
-  --llm-model <name>        Override TIANGONG_LCA_LLM_MODEL for this command
+  --enable-llm              Enable optional review-only semantic review via the CLI LLM client
+  --llm-model <name>        Override TIANGONG_LCA_REVIEW_LLM_MODEL for this review command
   --llm-max-flows <n>       Cap how many flow summaries are sent to the LLM (default: 120)
   --llm-batch-size <n>      Cap how many flow summaries each LLM batch sends (default: 20)
   --similarity-threshold <n> Similarity threshold for duplicate-candidate warnings (default: 0.92)

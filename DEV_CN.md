@@ -80,12 +80,12 @@ TIANGONG_LCA_API_KEY=
 TIANGONG_LCA_REGION=us-east-1
 ```
 
-此外，只有在显式启用 `tiangong review process --enable-llm` 或 `tiangong review flow --enable-llm` 时，才会额外使用这一组可选变量：
+此外，只有在显式启用 `tiangong review process --enable-llm` 或 `tiangong review flow --enable-llm` 时，才会额外使用这一组可选变量。这一整组配置默认都是 optional；只有打开 review LLM 模式时才需要填写。`TIANGONG_LCA_REVIEW_LLM_BASE_URL` 应指向一个 OpenAI-compatible Responses API 根地址，CLI 会向 `<base_url>/responses` 发请求：
 
 ```bash
-TIANGONG_LCA_LLM_BASE_URL=
-TIANGONG_LCA_LLM_API_KEY=
-TIANGONG_LCA_LLM_MODEL=
+TIANGONG_LCA_REVIEW_LLM_BASE_URL=
+TIANGONG_LCA_REVIEW_LLM_API_KEY=
+TIANGONG_LCA_REVIEW_LLM_MODEL=
 ```
 
 仓库里还已经存在一组 internal/preparatory env 归一化入口，但当前没有任何公开 `tiangong` 命令消费它们：
@@ -110,7 +110,7 @@ TIANGONG_LCA_UNSTRUCTURED_RETURN_TXT=true
 原因很直接：
 
 - 当前 CLI 已实现命令只直连 TianGong LCA 的 REST / Edge Functions
-- `review process` / `review flow` 的可选语义审核统一走 `TIANGONG_LCA_LLM_*`，不再使用 `OPENAI_*`
+- `review process` / `review flow` 的可选语义审核统一走 review-only 的 `TIANGONG_LCA_REVIEW_LLM_*`，不再使用 `OPENAI_*`
 - `publish run` / `validation run` 只做本地契约和执行收口，不新增远程 env
 - CLI 仓库内部虽然已经有 `kb-search` / `unstructured` 模块，但当前没有任何公开命令消费这些 env
 - `.env.example` 会把这类 key 标成 internal/preparatory，防止代码和文档脱节，也防止调用方误认为它们已经是稳定公开 contract
@@ -127,8 +127,8 @@ TIANGONG_LCA_UNSTRUCTURED_RETURN_TXT=true
 | `lifecyclemodel auto-build | validate-build | publish-build | orchestrate` | 无 |
 | `lifecyclemodel build-resulting-process` | 本地运行默认无；若 request 打开 `process_sources.allow_remote_lookup=true`，则需要 `TIANGONG_LCA_API_BASE_URL`、`TIANGONG_LCA_API_KEY` |
 | `lifecyclemodel publish-resulting-process` | 无 |
-| `review process` | 纯规则 review 默认无；若显式启用 `--enable-llm`，则需要 `TIANGONG_LCA_LLM_BASE_URL`、`TIANGONG_LCA_LLM_API_KEY`、`TIANGONG_LCA_LLM_MODEL` |
-| `review flow` | 纯规则 review 默认无；若显式启用 `--enable-llm`，则需要 `TIANGONG_LCA_LLM_BASE_URL`、`TIANGONG_LCA_LLM_API_KEY`、`TIANGONG_LCA_LLM_MODEL` |
+| `review process` | 纯规则 review 默认无；若显式启用 `--enable-llm`，则需要 `TIANGONG_LCA_REVIEW_LLM_BASE_URL`、`TIANGONG_LCA_REVIEW_LLM_API_KEY`、`TIANGONG_LCA_REVIEW_LLM_MODEL` |
+| `review flow` | 纯规则 review 默认无；若显式启用 `--enable-llm`，则需要 `TIANGONG_LCA_REVIEW_LLM_BASE_URL`、`TIANGONG_LCA_REVIEW_LLM_API_KEY`、`TIANGONG_LCA_REVIEW_LLM_MODEL` |
 | `review lifecyclemodel` | 无 |
 | `flow get` | `TIANGONG_LCA_API_BASE_URL`、`TIANGONG_LCA_API_KEY` |
 | `flow list` | `TIANGONG_LCA_API_BASE_URL`、`TIANGONG_LCA_API_KEY` |
@@ -327,7 +327,7 @@ npm exec tiangong -- admin embedding-run --input ./jobs.json --dry-run
 - 输出 `review_summary_v2_1.json`
 - 输出 `process-review-report.json`
 
-这个命令当前保持本地 artifact-first。若显式传入 `--enable-llm`，则通过 CLI 内部统一的 `TIANGONG_LCA_LLM_*` 运行时做可选语义审核；即使 LLM 失败，也不会影响规则层 review 主流程。
+这个命令当前保持本地 artifact-first。若显式传入 `--enable-llm`，则通过 CLI 内部统一的 `TIANGONG_LCA_REVIEW_LLM_*` 运行时做可选语义审核；即使 LLM 失败，也不会影响规则层 review 主流程。
 
 `tiangong review flow` 现在也已经进入可执行状态，负责：
 
@@ -344,7 +344,7 @@ npm exec tiangong -- admin embedding-run --input ./jobs.json --dry-run
 - 输出 `flow_review_timing.md`
 - 输出 `flow_review_report.json`
 
-这个命令同样保持本地 artifact-first。若显式传入 `--enable-llm`，则通过 CLI 内部统一的 `TIANGONG_LCA_LLM_*` 运行时做可选语义审核；当前 CLI 切片明确不支持 `--with-reference-context`，也还没有接入本地 registry enrichment。
+这个命令同样保持本地 artifact-first。若显式传入 `--enable-llm`，则通过 CLI 内部统一的 `TIANGONG_LCA_REVIEW_LLM_*` 运行时做可选语义审核；当前 CLI 切片明确不支持 `--with-reference-context`，也还没有接入本地 registry enrichment。
 
 `tiangong review lifecyclemodel` 现在也已经进入可执行状态，负责：
 

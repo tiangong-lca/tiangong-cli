@@ -8,9 +8,9 @@ import { extractLlmOutput, extractLlmUsage, invokeLlm, readLlmRuntimeEnv } from 
 
 test('readLlmRuntimeEnv returns canonical TianGong LCA LLM env keys', () => {
   const runtime = readLlmRuntimeEnv({
-    TIANGONG_LCA_LLM_BASE_URL: 'https://llm.example/v1',
-    TIANGONG_LCA_LLM_API_KEY: 'secret-token',
-    TIANGONG_LCA_LLM_MODEL: 'gpt-5.4',
+    TIANGONG_LCA_REVIEW_LLM_BASE_URL: 'https://llm.example/v1',
+    TIANGONG_LCA_REVIEW_LLM_API_KEY: 'secret-token',
+    TIANGONG_LCA_REVIEW_LLM_MODEL: 'gpt-5.4',
   });
 
   assert.deepEqual(runtime, {
@@ -486,7 +486,7 @@ test('invokeLlm validates required canonical LLM env values', async () => {
         },
         timeoutMs: 20,
       }),
-    /TIANGONG_LCA_LLM_BASE_URL/u,
+    /TIANGONG_LCA_REVIEW_LLM_BASE_URL/u,
   );
 
   await assert.rejects(
@@ -505,7 +505,7 @@ test('invokeLlm validates required canonical LLM env values', async () => {
         },
         timeoutMs: 20,
       }),
-    /TIANGONG_LCA_LLM_API_KEY/u,
+    /TIANGONG_LCA_REVIEW_LLM_API_KEY/u,
   );
 
   await assert.rejects(
@@ -524,7 +524,7 @@ test('invokeLlm validates required canonical LLM env values', async () => {
         },
         timeoutMs: 20,
       }),
-    /TIANGONG_LCA_LLM_MODEL/u,
+    /TIANGONG_LCA_REVIEW_LLM_MODEL/u,
   );
 });
 
