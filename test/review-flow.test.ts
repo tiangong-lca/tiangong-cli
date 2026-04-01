@@ -261,9 +261,9 @@ test('runFlowReview supports flows-dir input and CLI-owned LLM semantic review',
       llmMaxFlows: 1,
       methodologyId: 'custom-method',
       env: {
-        TIANGONG_LCA_LLM_BASE_URL: 'https://llm.example/v1',
-        TIANGONG_LCA_LLM_API_KEY: 'llm-key',
-        TIANGONG_LCA_LLM_MODEL: 'gpt-5.4-mini',
+        TIANGONG_LCA_REVIEW_LLM_BASE_URL: 'https://llm.example/v1',
+        TIANGONG_LCA_REVIEW_LLM_API_KEY: 'llm-key',
+        TIANGONG_LCA_REVIEW_LLM_MODEL: 'gpt-5.4-mini',
       } as NodeJS.ProcessEnv,
       fetchImpl: createLlmFetch(
         JSON.stringify({
@@ -975,9 +975,9 @@ test('review-flow internal llm helpers cover disabled, fallback, invalid-json, a
     llmMaxFlows: 10,
     llmBatchSize: 2,
     env: {
-      TIANGONG_LCA_LLM_BASE_URL: 'https://llm.example/v1',
-      TIANGONG_LCA_LLM_API_KEY: 'llm-key',
-      TIANGONG_LCA_LLM_MODEL: 'gpt-5.4-mini',
+      TIANGONG_LCA_REVIEW_LLM_BASE_URL: 'https://llm.example/v1',
+      TIANGONG_LCA_REVIEW_LLM_API_KEY: 'llm-key',
+      TIANGONG_LCA_REVIEW_LLM_MODEL: 'gpt-5.4-mini',
     } as NodeJS.ProcessEnv,
     fetchImpl: createLlmFetch('not-json-response'),
     outDir: dir,
@@ -996,9 +996,9 @@ test('review-flow internal llm helpers cover disabled, fallback, invalid-json, a
       llmMaxFlows: 10,
       llmBatchSize: 2,
       env: {
-        TIANGONG_LCA_LLM_BASE_URL: 'https://llm.example/v1',
-        TIANGONG_LCA_LLM_API_KEY: 'llm-key',
-        TIANGONG_LCA_LLM_MODEL: 'gpt-5.4-mini',
+        TIANGONG_LCA_REVIEW_LLM_BASE_URL: 'https://llm.example/v1',
+        TIANGONG_LCA_REVIEW_LLM_API_KEY: 'llm-key',
+        TIANGONG_LCA_REVIEW_LLM_MODEL: 'gpt-5.4-mini',
       } as NodeJS.ProcessEnv,
       outDir: path.join(dir, 'failure-run'),
       runId: 'failure',
@@ -1261,9 +1261,9 @@ test('review-flow LLM review deduplicates fallback findings from single-item bat
       llmMaxFlows: 1,
       llmBatchSize: 1,
       env: {
-        TIANGONG_LCA_LLM_BASE_URL: 'https://llm.example/v1',
-        TIANGONG_LCA_LLM_API_KEY: 'llm-key',
-        TIANGONG_LCA_LLM_MODEL: 'gpt-5.4-mini',
+        TIANGONG_LCA_REVIEW_LLM_BASE_URL: 'https://llm.example/v1',
+        TIANGONG_LCA_REVIEW_LLM_API_KEY: 'llm-key',
+        TIANGONG_LCA_REVIEW_LLM_MODEL: 'gpt-5.4-mini',
       } as NodeJS.ProcessEnv,
       fetchImpl: createLlmFetch(
         JSON.stringify({
@@ -1398,9 +1398,9 @@ test('review-flow direct runtime helpers cover materialization, non-array findin
       llmMaxFlows: 0,
       llmBatchSize: 2,
       env: {
-        TIANGONG_LCA_LLM_BASE_URL: 'https://llm.example/v1',
-        TIANGONG_LCA_LLM_API_KEY: 'llm-key',
-        TIANGONG_LCA_LLM_MODEL: 'gpt-5.4-mini',
+        TIANGONG_LCA_REVIEW_LLM_BASE_URL: 'https://llm.example/v1',
+        TIANGONG_LCA_REVIEW_LLM_API_KEY: 'llm-key',
+        TIANGONG_LCA_REVIEW_LLM_MODEL: 'gpt-5.4-mini',
       } as NodeJS.ProcessEnv,
       fetchImpl: createLlmFetch(JSON.stringify({ findings: { not: 'an-array' } })),
       outDir: path.join(dir, 'no-array'),
@@ -1415,9 +1415,9 @@ test('review-flow direct runtime helpers cover materialization, non-array findin
       llmMaxFlows: 2,
       llmBatchSize: 2,
       env: {
-        TIANGONG_LCA_LLM_BASE_URL: 'https://llm.example/v1',
-        TIANGONG_LCA_LLM_API_KEY: 'llm-key',
-        TIANGONG_LCA_LLM_MODEL: 'gpt-5.4-mini',
+        TIANGONG_LCA_REVIEW_LLM_BASE_URL: 'https://llm.example/v1',
+        TIANGONG_LCA_REVIEW_LLM_API_KEY: 'llm-key',
+        TIANGONG_LCA_REVIEW_LLM_MODEL: 'gpt-5.4-mini',
       } as NodeJS.ProcessEnv,
       fetchImpl: createLlmFetch(
         JSON.stringify({
@@ -1445,9 +1445,9 @@ test('review-flow direct runtime helpers cover materialization, non-array findin
       llmMaxFlows: 2,
       llmBatchSize: 2,
       env: {
-        TIANGONG_LCA_LLM_BASE_URL: 'https://llm.example/v1',
-        TIANGONG_LCA_LLM_API_KEY: 'llm-key',
-        TIANGONG_LCA_LLM_MODEL: 'gpt-5.4-mini',
+        TIANGONG_LCA_REVIEW_LLM_BASE_URL: 'https://llm.example/v1',
+        TIANGONG_LCA_REVIEW_LLM_API_KEY: 'llm-key',
+        TIANGONG_LCA_REVIEW_LLM_MODEL: 'gpt-5.4-mini',
       } as NodeJS.ProcessEnv,
       fetchImpl: (async () => {
         throw 'string failure';

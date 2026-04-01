@@ -169,8 +169,8 @@ tiangong
 - `publish-resulting-process` 当前负责生成本地 publish handoff 产物，还没有把提交语义直接并入 `publish run`
 - 已实现的 `lifecyclemodel orchestrate` 把递归装配的 `plan | execute | publish` 三个动作统一收口到 CLI，并直接复用原生 `process auto-build`、`lifecyclemodel auto-build`、`lifecyclemodel build-resulting-process` slices
 - `lifecyclemodel orchestrate` 的 `process_builder` request schema 已删除旧 builder 控制项，只保留 CLI-native 本地构建字段，并在归一化阶段拒绝额外键；不再保留任何 Python fallback 配置面
-- 已实现的 `review process` 保留本地 artifact-first review contract，把规则核查、报告输出和可选 LLM 语义审核统一收口到 CLI；语义审核只使用 `TIANGONG_LCA_LLM_*`，不再透出 `OPENAI_*`
-- 已实现的 `review flow` 保留本地 artifact-first governance review contract，把 flow 摘要、相似对、规则 findings、可选 LLM findings 和双语 markdown 报告统一收口到 CLI；语义审核同样只使用 `TIANGONG_LCA_LLM_*`
+- 已实现的 `review process` 保留本地 artifact-first review contract，把规则核查、报告输出和可选 LLM 语义审核统一收口到 CLI；语义审核只使用 `TIANGONG_LCA_REVIEW_LLM_*`，不再透出 `OPENAI_*`
+- 已实现的 `review flow` 保留本地 artifact-first governance review contract，把 flow 摘要、相似对、规则 findings、可选 LLM findings 和双语 markdown 报告统一收口到 CLI；语义审核同样只使用 `TIANGONG_LCA_REVIEW_LLM_*`
 - `review flow` 当前明确不支持 `--with-reference-context`，也还没有接入本地 registry enrichment；这部分仍需后续迁移切片单独落地
 - 已实现的 `flow get` 保留 deterministic direct-read 边界，但内部执行已经收口到原生 `@supabase/supabase-js`；支持 `id` + 可选 `version/user_id/state_code` 读取；若精确版本 miss，则回退到最新可见版本；若出现多个同版本可见候选，则直接报 ambiguous
 - 已实现的 `flow list` 保留 deterministic direct-read 边界，但内部执行已经收口到原生 `@supabase/supabase-js`；支持稳定 `id/state_code/type_of_dataset` 过滤、显式 `order=id.asc,version.asc` 默认值，以及 `--all --page-size` 的 offset 分页
@@ -424,7 +424,7 @@ tiangong admin embedding-run --input ./jobs.json --dry-run
 - 从 `--run-root` 读取 `exports/processes/*.json`
 - 延续现有 v2.1 review 规则做基础信息核查、物料平衡核查和单位疑似问题记录
 - 写出中英文 markdown review、timing、unit issue log、summary 和 report
-- 在显式启用 `--enable-llm` 时，通过 CLI 的 `TIANGONG_LCA_LLM_*` 运行时做可选语义审核
+- 在显式启用 `--enable-llm` 时，通过 CLI 的 `TIANGONG_LCA_REVIEW_LLM_*` 运行时做可选语义审核
 
 它现在还不负责：
 
@@ -443,7 +443,7 @@ tiangong admin embedding-run --input ./jobs.json --dry-run
 - 输出 `flow_summaries.jsonl`、`similarity_pairs.jsonl`
 - 输出 `flow_review_summary.json`、`flow_review_zh.md`、`flow_review_en.md`、`flow_review_timing.md`
 - 输出 `flow_review_report.json`
-- 在显式启用 `--enable-llm` 时，通过 CLI 的 `TIANGONG_LCA_LLM_*` 运行时做可选语义审核
+- 在显式启用 `--enable-llm` 时，通过 CLI 的 `TIANGONG_LCA_REVIEW_LLM_*` 运行时做可选语义审核
 
 它现在还不负责：
 
@@ -658,12 +658,12 @@ TIANGONG_LCA_API_KEY=
 TIANGONG_LCA_REGION=us-east-1
 ```
 
-按需启用的可选变量：
+按需启用的可选 review-only 变量：只有显式启用 `tiangong review process --enable-llm` 或 `tiangong review flow --enable-llm` 时才需要配置。`TIANGONG_LCA_REVIEW_LLM_BASE_URL` 应指向 OpenAI-compatible Responses API 根地址，CLI 会向 `<base_url>/responses` 发请求。
 
 ```bash
-TIANGONG_LCA_LLM_BASE_URL=
-TIANGONG_LCA_LLM_API_KEY=
-TIANGONG_LCA_LLM_MODEL=
+TIANGONG_LCA_REVIEW_LLM_BASE_URL=
+TIANGONG_LCA_REVIEW_LLM_API_KEY=
+TIANGONG_LCA_REVIEW_LLM_MODEL=
 ```
 
 仓库中已归一化、但当前没有任何公开 `tiangong` 命令消费的 internal/preparatory 变量：
@@ -693,8 +693,8 @@ TIANGONG_LCA_COVERAGE=0
 - internal/preparatory 和 test-only env 也要在 `.env.example` 里显式列出，避免代码与文档脱节
 - 不为了历史实现或未来猜测保留 alias
 - 不引入 `SUPABASE_URL`、`SUPABASE_KEY`、`TIANGONG_LCA_TIDAS_SDK_DIR` 这类额外兼容层；原生 Supabase client 一律从 `TIANGONG_LCA_API_*` 派生，`@tiangong-lca/tidas-sdk` 一律走直接依赖
-- `review process` 的可选语义审核统一走 `TIANGONG_LCA_LLM_*`，不再引入 `OPENAI_*`
-- `review flow` 的可选语义审核也统一走 `TIANGONG_LCA_LLM_*`，不再引入 `OPENAI_*`
+- `review process` 的可选语义审核统一走 review-only 的 `TIANGONG_LCA_REVIEW_LLM_*`，不再引入 `OPENAI_*`
+- `review flow` 的可选语义审核也统一走 review-only 的 `TIANGONG_LCA_REVIEW_LLM_*`，不再引入 `OPENAI_*`
 - `publish run` / `validation run` 都是本地契约与执行收口，不新增远程 env
 - `TIANGONG_LCA_KB_SEARCH_*` 与 `TIANGONG_LCA_UNSTRUCTURED_*` 目前只属于 internal/preparatory 层，不属于公开命令契约
 
@@ -710,8 +710,8 @@ TIANGONG_LCA_COVERAGE=0
 | `lifecyclemodel auto-build | validate-build | publish-build | orchestrate` | 无 |
 | `lifecyclemodel build-resulting-process` | 本地运行默认无；若 request 开启 `process_sources.allow_remote_lookup=true`，则需要 `TIANGONG_LCA_API_BASE_URL`、`TIANGONG_LCA_API_KEY` |
 | `lifecyclemodel publish-resulting-process` | 无 |
-| `review process` | 纯规则 review 默认无；若显式开启 `--enable-llm`，则需要 `TIANGONG_LCA_LLM_BASE_URL`、`TIANGONG_LCA_LLM_API_KEY`、`TIANGONG_LCA_LLM_MODEL` |
-| `review flow` | 纯规则 review 默认无；若显式开启 `--enable-llm`，则需要 `TIANGONG_LCA_LLM_BASE_URL`、`TIANGONG_LCA_LLM_API_KEY`、`TIANGONG_LCA_LLM_MODEL` |
+| `review process` | 纯规则 review 默认无；若显式开启 `--enable-llm`，则需要 `TIANGONG_LCA_REVIEW_LLM_BASE_URL`、`TIANGONG_LCA_REVIEW_LLM_API_KEY`、`TIANGONG_LCA_REVIEW_LLM_MODEL` |
+| `review flow` | 纯规则 review 默认无；若显式开启 `--enable-llm`，则需要 `TIANGONG_LCA_REVIEW_LLM_BASE_URL`、`TIANGONG_LCA_REVIEW_LLM_API_KEY`、`TIANGONG_LCA_REVIEW_LLM_MODEL` |
 | `review lifecyclemodel` | 无 |
 | `flow get` | `TIANGONG_LCA_API_BASE_URL`、`TIANGONG_LCA_API_KEY` |
 | `flow list` | `TIANGONG_LCA_API_BASE_URL`、`TIANGONG_LCA_API_KEY` |

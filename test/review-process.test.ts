@@ -227,9 +227,9 @@ test('runProcessReview can invoke the CLI LLM client and persist semantic review
       enableLlm: true,
       llmMaxProcesses: 2,
       env: {
-        TIANGONG_LCA_LLM_BASE_URL: 'https://llm.example/v1',
-        TIANGONG_LCA_LLM_API_KEY: 'llm-key',
-        TIANGONG_LCA_LLM_MODEL: 'gpt-5.4',
+        TIANGONG_LCA_REVIEW_LLM_BASE_URL: 'https://llm.example/v1',
+        TIANGONG_LCA_REVIEW_LLM_API_KEY: 'llm-key',
+        TIANGONG_LCA_REVIEW_LLM_MODEL: 'gpt-5.4',
       } as NodeJS.ProcessEnv,
       fetchImpl: createLlmFetch(
         JSON.stringify({
@@ -689,9 +689,9 @@ test('review-process internals cover helper branches and rendering fallbacks', a
     enableLlm: true,
     llmModel: 'override-model',
     env: {
-      TIANGONG_LCA_LLM_BASE_URL: 'https://llm.example/v1',
-      TIANGONG_LCA_LLM_API_KEY: 'llm-key',
-      TIANGONG_LCA_LLM_MODEL: 'gpt-5.4',
+      TIANGONG_LCA_REVIEW_LLM_BASE_URL: 'https://llm.example/v1',
+      TIANGONG_LCA_REVIEW_LLM_API_KEY: 'llm-key',
+      TIANGONG_LCA_REVIEW_LLM_MODEL: 'gpt-5.4',
     } as NodeJS.ProcessEnv,
     fetchImpl: createLlmFetch('not json'),
     outDir: path.join(os.tmpdir(), 'tg-cli-review-process-internals-2'),
@@ -705,9 +705,9 @@ test('review-process internals cover helper branches and rendering fallbacks', a
     enableLlm: true,
     llmModel: undefined,
     env: {
-      TIANGONG_LCA_LLM_BASE_URL: 'https://llm.example/v1',
-      TIANGONG_LCA_LLM_API_KEY: 'llm-key',
-      TIANGONG_LCA_LLM_MODEL: 'gpt-5.4',
+      TIANGONG_LCA_REVIEW_LLM_BASE_URL: 'https://llm.example/v1',
+      TIANGONG_LCA_REVIEW_LLM_API_KEY: 'llm-key',
+      TIANGONG_LCA_REVIEW_LLM_MODEL: 'gpt-5.4',
     } as NodeJS.ProcessEnv,
     fetchImpl: (async () => {
       throw 'boom';

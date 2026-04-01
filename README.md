@@ -115,12 +115,12 @@ TIANGONG_LCA_API_KEY=
 TIANGONG_LCA_REGION=us-east-1
 ```
 
-Optional env that only applies to implemented commands which opt into semantic review:
+Optional review-only env block: ignore it unless `tiangong review process --enable-llm` or `tiangong review flow --enable-llm` is enabled. `TIANGONG_LCA_REVIEW_LLM_BASE_URL` must point to an OpenAI-compatible Responses API base URL; the CLI calls `<base_url>/responses`.
 
 ```bash
-TIANGONG_LCA_LLM_BASE_URL=
-TIANGONG_LCA_LLM_API_KEY=
-TIANGONG_LCA_LLM_MODEL=
+TIANGONG_LCA_REVIEW_LLM_BASE_URL=
+TIANGONG_LCA_REVIEW_LLM_API_KEY=
+TIANGONG_LCA_REVIEW_LLM_MODEL=
 ```
 
 Internal/preparatory env surface already normalized in the repo, but not consumed by any current public `tiangong` command:
@@ -158,8 +158,8 @@ Command-level env reality:
 | `lifecyclemodel orchestrate` | none |
 | `lifecyclemodel build-resulting-process` | none for local-only runs; `TIANGONG_LCA_API_BASE_URL` and `TIANGONG_LCA_API_KEY` when `process_sources.allow_remote_lookup=true` |
 | `lifecyclemodel publish-resulting-process` | none |
-| `review process` | none for rule-only review; optional `TIANGONG_LCA_LLM_BASE_URL`, `TIANGONG_LCA_LLM_API_KEY`, and `TIANGONG_LCA_LLM_MODEL` when `--enable-llm` is set |
-| `review flow` | none for rule-only review; optional `TIANGONG_LCA_LLM_BASE_URL`, `TIANGONG_LCA_LLM_API_KEY`, and `TIANGONG_LCA_LLM_MODEL` when `--enable-llm` is set |
+| `review process` | none for rule-only review; optional `TIANGONG_LCA_REVIEW_LLM_BASE_URL`, `TIANGONG_LCA_REVIEW_LLM_API_KEY`, and `TIANGONG_LCA_REVIEW_LLM_MODEL` when `--enable-llm` is set |
+| `review flow` | none for rule-only review; optional `TIANGONG_LCA_REVIEW_LLM_BASE_URL`, `TIANGONG_LCA_REVIEW_LLM_API_KEY`, and `TIANGONG_LCA_REVIEW_LLM_MODEL` when `--enable-llm` is set |
 | `review lifecyclemodel` | none |
 | `flow get` | `TIANGONG_LCA_API_BASE_URL`, `TIANGONG_LCA_API_KEY` |
 | `flow list` | `TIANGONG_LCA_API_BASE_URL`, `TIANGONG_LCA_API_KEY` |
@@ -175,7 +175,7 @@ Command-level env reality:
 | `publish run` | none |
 | `validation run` | none |
 
-This CLI does not currently require KB, TianGong unstructured service, MCP, or `OPENAI_*` env keys for any public command. Optional semantic review now goes through the canonical `TIANGONG_LCA_LLM_*` keys instead of legacy provider-specific names. The repo already contains internal helper modules for KB and TianGong unstructured integrations; their env keys are listed in `.env.example` as internal/preparatory only, not as a public command contract.
+This CLI does not currently require KB, TianGong unstructured service, MCP, or `OPENAI_*` env keys for any public command. Optional semantic review now goes through the review-only `TIANGONG_LCA_REVIEW_LLM_*` keys instead of legacy provider-specific names. Those variables are optional as a block and only apply when `--enable-llm` is set on supported review commands. The repo already contains internal helper modules for KB and TianGong unstructured integrations; their env keys are listed in `.env.example` as internal/preparatory only, not as a public command contract.
 
 Run the CLI:
 
@@ -248,9 +248,9 @@ The current lifecyclemodel build family intentionally keeps three boundaries out
 
 `tiangong lifecyclemodel orchestrate` is the native recursive assembly command for multi-node product-system runs. `plan` writes `assembly-plan.json`, `graph-manifest.json`, `lineage-manifest.json`, and `boundary-report.json`; `execute` invokes only native CLI-backed builder slices and records per-invocation results under `invocations/`; `publish` reopens one orchestrator run and prepares `publish-bundle.json` plus `publish-summary.json` from prior local artifacts. The `process_builder` request surface is now intentionally narrow: only CLI-native local-build fields are accepted, and extra builder knobs are rejected during request normalization.
 
-`tiangong review process` is the first migrated review slice. It reopens one local `process_from_flow` run under `exports/processes/`, replays the existing artifact-first review contract, writes bilingual markdown findings plus structured JSON reports, and keeps optional semantic review behind the CLI-owned `TIANGONG_LCA_LLM_*` abstraction instead of direct `OPENAI_*` calls in a skill script.
+`tiangong review process` is the first migrated review slice. It reopens one local `process_from_flow` run under `exports/processes/`, replays the existing artifact-first review contract, writes bilingual markdown findings plus structured JSON reports, and keeps optional semantic review behind the CLI-owned `TIANGONG_LCA_REVIEW_LLM_*` abstraction instead of direct `OPENAI_*` calls in a skill script.
 
-`tiangong review flow` is the flow-side local governance review slice. It accepts exactly one of `--rows-file`, `--flows-dir`, or `--run-root`, materializes explicit local flow snapshots when needed, writes `rule_findings.jsonl`, `llm_findings.jsonl`, `findings.jsonl`, `flow_summaries.jsonl`, `similarity_pairs.jsonl`, `flow_review_summary.json`, `flow_review_zh.md`, `flow_review_en.md`, `flow_review_timing.md`, and `flow_review_report.json`, and keeps optional semantic review behind the same CLI-owned `TIANGONG_LCA_LLM_*` abstraction. The current CLI slice is intentionally local-first and does not implement `--with-reference-context` or local registry enrichment yet.
+`tiangong review flow` is the flow-side local governance review slice. It accepts exactly one of `--rows-file`, `--flows-dir`, or `--run-root`, materializes explicit local flow snapshots when needed, writes `rule_findings.jsonl`, `llm_findings.jsonl`, `findings.jsonl`, `flow_summaries.jsonl`, `similarity_pairs.jsonl`, `flow_review_summary.json`, `flow_review_zh.md`, `flow_review_en.md`, `flow_review_timing.md`, and `flow_review_report.json`, and keeps optional semantic review behind the same CLI-owned `TIANGONG_LCA_REVIEW_LLM_*` abstraction. The current CLI slice is intentionally local-first and does not implement `--with-reference-context` or local registry enrichment yet.
 
 `tiangong review lifecyclemodel` is the lifecyclemodel-side local review slice. It reopens one existing lifecyclemodel build run by `--run-dir`, scans `models/*/tidas_bundle/lifecyclemodels/*.json`, reuses `summary.json`, `connections.json`, `process-catalog.json`, and the aggregate `reports/lifecyclemodel-validate-build-report.json` when present, writes `model_summaries.jsonl`, `findings.jsonl`, `lifecyclemodel_review_summary.json`, `lifecyclemodel_review_zh.md`, `lifecyclemodel_review_en.md`, `lifecyclemodel_review_timing.md`, and `lifecyclemodel_review_report.json`, and stays local-first without introducing Python, LangGraph, or skill-local review runtimes.
 
