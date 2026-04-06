@@ -27,6 +27,7 @@ import { makeSupabaseAuthResponse } from './helpers/supabase-auth.js';
 
 const require = createRequire(import.meta.url);
 const mutableFs = require('node:fs') as typeof import('node:fs');
+const mutableOs = require('node:os') as typeof import('node:os');
 
 function clearSessionState(): void {
   __testInternals.SESSION_MEMORY_CACHE.clear();
@@ -186,6 +187,45 @@ test('path resolution helpers cover xdg, home, platform fallbacks, and explicit 
     ),
     null,
   );
+});
+
+test('resolveSessionFilePath falls back to cwd session file on Windows when env paths are unavailable', () => {
+  clearSessionState();
+
+  if (process.platform !== 'win32') {
+    return;
+  }
+
+  const originalHomedir = mutableOs.homedir;
+  const originalLocalAppData = process.env.LOCALAPPDATA;
+  const originalXdgStateHome = process.env.XDG_STATE_HOME;
+
+  try {
+    mutableOs.homedir = (() => '') as typeof mutableOs.homedir;
+    syncBuiltinESMExports();
+    delete process.env.LOCALAPPDATA;
+    delete process.env.XDG_STATE_HOME;
+
+    assert.equal(
+      __testInternals.resolveSessionFilePath(makeRuntime()),
+      path.resolve('.tiangong-lca-session.json'),
+    );
+  } finally {
+    mutableOs.homedir = originalHomedir;
+    syncBuiltinESMExports();
+
+    if (originalLocalAppData === undefined) {
+      delete process.env.LOCALAPPDATA;
+    } else {
+      process.env.LOCALAPPDATA = originalLocalAppData;
+    }
+
+    if (originalXdgStateHome === undefined) {
+      delete process.env.XDG_STATE_HOME;
+    } else {
+      process.env.XDG_STATE_HOME = originalXdgStateHome;
+    }
+  }
 });
 
 test('session record helpers parse, persist, fingerprint, and clean up memoized state', async () => {

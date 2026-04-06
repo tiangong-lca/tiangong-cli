@@ -38,6 +38,20 @@ function makeValidationReport(inputDir: string, issueCode = 'schema_error') {
   };
 }
 
+function makeSchemaSdkExports() {
+  const success = () => ({ success: true as const });
+  return {
+    ContactSchema: { safeParse: success },
+    FlowPropertySchema: { safeParse: success },
+    FlowSchema: { safeParse: success },
+    LCIAMethodSchema: { safeParse: success },
+    LifeCycleModelSchema: { safeParse: success },
+    ProcessSchema: { safeParse: success },
+    SourceSchema: { safeParse: success },
+    UnitGroupSchema: { safeParse: success },
+  };
+}
+
 test('runValidation uses sdk mode, normalizes the report, and writes the report file', async () => {
   const dir = mkdtempSync(path.join(os.tmpdir(), 'tg-cli-validation-sdk-'));
   const reportFile = path.join(dir, 'report.json');
@@ -123,6 +137,14 @@ test('runValidation resolves sdk candidates and surfaces resolution failures', a
       ['/tmp/fake-sdk.js'],
     );
     assert.equal(resolved.location, '/tmp/fake-sdk.js');
+
+    const synthesized = resolveSdkModuleFromCandidates(
+      () => makeSchemaSdkExports(),
+      ['/tmp/schema-only-sdk.js'],
+    );
+    const synthesizedReport = synthesized.validatePackageDir(dir, false) as { ok: boolean };
+    assert.equal(synthesized.location, '/tmp/schema-only-sdk.js');
+    assert.equal(synthesizedReport.ok, true);
 
     assert.throws(
       () =>
