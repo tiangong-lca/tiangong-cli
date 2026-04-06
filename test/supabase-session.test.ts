@@ -132,7 +132,7 @@ test('path resolution helpers cover xdg, home, platform fallbacks, and explicit 
       xdgStateHome: '/tmp/xdg',
       localAppData: null,
     }),
-    '/tmp/xdg/tiangong-lca-cli/session.json',
+    path.join('/tmp/xdg', 'tiangong-lca-cli', 'session.json'),
   );
   assert.equal(
     __testInternals.resolveDefaultSessionFilePath({
@@ -141,7 +141,7 @@ test('path resolution helpers cover xdg, home, platform fallbacks, and explicit 
       xdgStateHome: null,
       localAppData: null,
     }),
-    '/Users/demo/.local/state/tiangong-lca-cli/session.json',
+    path.join('/Users/demo', '.local', 'state', 'tiangong-lca-cli', 'session.json'),
   );
   assert.equal(
     __testInternals.resolveDefaultSessionFilePath({
