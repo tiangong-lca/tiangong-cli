@@ -1,8 +1,6 @@
 # TianGong LCA CLI
 
-Package: `@tiangong-lca/cli`
-Executable: `tiangong`
-Node: `24.x`
+Package: `@tiangong-lca/cli` Executable: `tiangong` Node: `24.x`
 
 ## Run
 
