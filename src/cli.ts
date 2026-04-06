@@ -80,6 +80,16 @@ import {
   type FlowRemediationReport,
   type RunFlowRemediateOptions,
 } from './lib/flow-remediate.js';
+import {
+  runFlowFetchRows,
+  type FlowFetchRowsReport,
+  type RunFlowFetchRowsOptions,
+} from './lib/flow-fetch-rows.js';
+import {
+  runFlowMaterializeDecisions,
+  type FlowMaterializeDecisionsReport,
+  type RunFlowMaterializeDecisionsOptions,
+} from './lib/flow-materialize-decisions.js';
 import { runFlowGet, type FlowGetReport, type RunFlowGetOptions } from './lib/flow-get.js';
 import { runFlowList, type FlowListReport, type RunFlowListOptions } from './lib/flow-list.js';
 import {
@@ -164,6 +174,10 @@ export type CliDeps = {
     options: RunLifecyclemodelReviewOptions,
   ) => Promise<LifecyclemodelReviewReport>;
   runFlowRemediateImpl?: (options: RunFlowRemediateOptions) => Promise<FlowRemediationReport>;
+  runFlowFetchRowsImpl?: (options: RunFlowFetchRowsOptions) => Promise<FlowFetchRowsReport>;
+  runFlowMaterializeDecisionsImpl?: (
+    options: RunFlowMaterializeDecisionsOptions,
+  ) => Promise<FlowMaterializeDecisionsReport>;
   runFlowGetImpl?: (options: RunFlowGetOptions) => Promise<FlowGetReport>;
   runFlowListImpl?: (options: RunFlowListOptions) => Promise<FlowListReport>;
   runFlowPublishVersionImpl?: (
@@ -222,7 +236,7 @@ Implemented Commands:
   doctor     show environment diagnostics
   search     flow | process | lifecyclemodel
   process    get | auto-build | resume-build | publish-build | batch-build
-  flow       get | list | remediate | publish-version | publish-reviewed-data | build-alias-map | scan-process-flow-refs | plan-process-flow-repairs | apply-process-flow-repairs | regen-product | validate-processes
+  flow       get | list | fetch-rows | materialize-decisions | remediate | publish-version | publish-reviewed-data | build-alias-map | scan-process-flow-refs | plan-process-flow-repairs | apply-process-flow-repairs | regen-product | validate-processes
   lifecyclemodel auto-build | validate-build | publish-build | build-resulting-process | publish-resulting-process | orchestrate
   review     process | flow | lifecyclemodel
   publish    run
@@ -250,6 +264,8 @@ Examples:
   tiangong lifecyclemodel orchestrate plan --input ./lifecyclemodel-orchestrate.request.json --out-dir ./artifacts/lifecyclemodel_recursive/run-001
   tiangong flow get --id <flow-id> --version <version>
   tiangong flow list --id <flow-id> --state-code 100 --limit 20
+  tiangong flow fetch-rows --refs-file ./flow-refs.json --out-dir ./flow-fetch
+  tiangong flow materialize-decisions --decision-file ./approved-decisions.json --flow-rows-file ./review-input-rows.jsonl --out-dir ./flow-decisions
   tiangong flow remediate --input-file ./invalid-flows.jsonl --out-dir ./flow-remediation
   tiangong flow publish-version --input-file ./ready-flows.jsonl --out-dir ./flow-publish --commit
   tiangong flow publish-reviewed-data --flow-rows-file ./reviewed-flows.jsonl --original-flow-rows-file ./original-flows.jsonl --out-dir ./flow-publish-review
@@ -365,6 +381,8 @@ function renderFlowHelp(): string {
 Implemented Subcommands:
   get          Load one flow dataset by identifier through direct Supabase access
   list         Enumerate flow datasets through direct Supabase access with deterministic filters
+  fetch-rows   Materialize real DB flow refs into local review-input rows and fetch artifacts
+  materialize-decisions Materialize approved merge decisions into canonical-map, rewrite-plan, and seed artifacts
   remediate    Deterministically repair invalid local flow rows and emit artifact-first outputs
   publish-version Publish remediated flow versions through the unified CLI surface
   publish-reviewed-data Prepare reviewed flow rows, skip unchanged snapshots, and optionally publish the resulting versions
@@ -379,6 +397,8 @@ Examples:
   tiangong flow --help
   tiangong flow get --help
   tiangong flow list --help
+  tiangong flow fetch-rows --help
+  tiangong flow materialize-decisions --help
   tiangong flow remediate --help
   tiangong flow publish-version --help
   tiangong flow publish-reviewed-data --help
@@ -460,6 +480,52 @@ Outputs written under --out-dir:
   - flows_tidas_sdk_plus_classification_remediation_audit.jsonl
   - flows_tidas_sdk_plus_classification_remediation_report.json
   - flows_tidas_sdk_plus_classification_residual_manual_queue_prompt.md
+`.trim();
+}
+
+function renderFlowFetchRowsHelp(): string {
+  return `Usage:
+  tiangong flow fetch-rows --refs-file <file> --out-dir <dir> [options]
+
+Options:
+  --refs-file <file>         Flow refs as JSON or JSONL
+  --out-dir <dir>            Output directory for fetch artifacts
+  --no-latest-fallback       Do not fall back to the latest visible version when --version misses
+  --fail-on-missing          Return exit code 1 when any ref is missing or ambiguous
+  --json                     Print compact JSON
+  -h, --help
+
+Required env:
+  TIANGONG_LCA_API_BASE_URL
+  TIANGONG_LCA_API_KEY
+  TIANGONG_LCA_SUPABASE_PUBLISHABLE_KEY
+
+Outputs written under --out-dir:
+  - resolved-flow-rows.jsonl
+  - review-input-rows.jsonl
+  - fetch-summary.json
+  - missing-flow-refs.jsonl
+  - ambiguous-flow-refs.jsonl
+`.trim();
+}
+
+function renderFlowMaterializeDecisionsHelp(): string {
+  return `Usage:
+  tiangong flow materialize-decisions --decision-file <file> --flow-rows-file <file> --out-dir <dir> [options]
+
+Options:
+  --decision-file <file>     Approved cluster decisions as JSON or JSONL
+  --flow-rows-file <file>    Real DB flow rows as JSON or JSONL
+  --out-dir <dir>            Output directory for decision materialization artifacts
+  --json                     Print compact JSON
+  -h, --help
+
+Outputs written under --out-dir:
+  - flow-dedup-canonical-map.json
+  - flow-dedup-rewrite-plan.json
+  - manual-semantic-merge-seed.current.json
+  - decision-summary.json
+  - blocked-clusters.json
 `.trim();
 }
 
@@ -1917,6 +1983,83 @@ function parseFlowGetFlags(args: string[]): {
   };
 }
 
+function parseFlowFetchRowsFlags(args: string[]): {
+  help: boolean;
+  json: boolean;
+  refsFile: string;
+  outDir: string;
+  allowLatestFallback: boolean;
+  failOnMissing: boolean;
+} {
+  let values: ReturnType<typeof parseArgs>['values'];
+  try {
+    ({ values } = parseArgs({
+      args,
+      allowPositionals: false,
+      strict: true,
+      options: {
+        help: { type: 'boolean', short: 'h' },
+        json: { type: 'boolean' },
+        'refs-file': { type: 'string' },
+        'out-dir': { type: 'string' },
+        'no-latest-fallback': { type: 'boolean' },
+        'fail-on-missing': { type: 'boolean' },
+      },
+    }));
+  } catch (error) {
+    throw new CliError(String(error), {
+      code: 'INVALID_ARGS',
+      exitCode: 2,
+    });
+  }
+
+  return {
+    help: Boolean(values.help),
+    json: Boolean(values.json),
+    refsFile: typeof values['refs-file'] === 'string' ? values['refs-file'] : '',
+    outDir: typeof values['out-dir'] === 'string' ? values['out-dir'] : '',
+    allowLatestFallback: values['no-latest-fallback'] !== true,
+    failOnMissing: values['fail-on-missing'] === true,
+  };
+}
+
+function parseFlowMaterializeDecisionsFlags(args: string[]): {
+  help: boolean;
+  json: boolean;
+  decisionFile: string;
+  flowRowsFile: string;
+  outDir: string;
+} {
+  let values: ReturnType<typeof parseArgs>['values'];
+  try {
+    ({ values } = parseArgs({
+      args,
+      allowPositionals: false,
+      strict: true,
+      options: {
+        help: { type: 'boolean', short: 'h' },
+        json: { type: 'boolean' },
+        'decision-file': { type: 'string' },
+        'flow-rows-file': { type: 'string' },
+        'out-dir': { type: 'string' },
+      },
+    }));
+  } catch (error) {
+    throw new CliError(String(error), {
+      code: 'INVALID_ARGS',
+      exitCode: 2,
+    });
+  }
+
+  return {
+    help: Boolean(values.help),
+    json: Boolean(values.json),
+    decisionFile: typeof values['decision-file'] === 'string' ? values['decision-file'] : '',
+    flowRowsFile: typeof values['flow-rows-file'] === 'string' ? values['flow-rows-file'] : '',
+    outDir: typeof values['out-dir'] === 'string' ? values['out-dir'] : '',
+  };
+}
+
 function parseFlowListFlags(args: string[]): {
   help: boolean;
   json: boolean;
@@ -2678,6 +2821,9 @@ export async function executeCli(argv: string[], deps: CliDeps): Promise<CliResu
     const flowReviewImpl = deps.runFlowReviewImpl ?? runFlowReview;
     const lifecyclemodelReviewImpl = deps.runLifecyclemodelReviewImpl ?? runLifecyclemodelReview;
     const flowRemediateImpl = deps.runFlowRemediateImpl ?? runFlowRemediate;
+    const flowFetchRowsImpl = deps.runFlowFetchRowsImpl ?? runFlowFetchRows;
+    const flowMaterializeDecisionsImpl =
+      deps.runFlowMaterializeDecisionsImpl ?? runFlowMaterializeDecisions;
     const flowGetImpl = deps.runFlowGetImpl ?? runFlowGet;
     const flowListImpl = deps.runFlowListImpl ?? runFlowList;
     const flowPublishVersionImpl = deps.runFlowPublishVersionImpl ?? runFlowPublishVersion;
@@ -3081,6 +3227,54 @@ export async function executeCli(argv: string[], deps: CliDeps): Promise<CliResu
 
       const report = await flowRemediateImpl({
         inputFile: flowFlags.inputFile,
+        outDir: flowFlags.outDir,
+      });
+
+      return {
+        exitCode: 0,
+        stdout: stringifyJson(report, flowFlags.json),
+        stderr: '',
+      };
+    }
+
+    if (command === 'flow' && subcommand === 'fetch-rows') {
+      const flowFlags = parseFlowFetchRowsFlags(commandArgs);
+      if (flowFlags.help) {
+        return { exitCode: 0, stdout: `${renderFlowFetchRowsHelp()}\n`, stderr: '' };
+      }
+
+      const report = await flowFetchRowsImpl({
+        refsFile: flowFlags.refsFile,
+        outDir: flowFlags.outDir,
+        allowLatestFallback: flowFlags.allowLatestFallback,
+        env: deps.env,
+        fetchImpl: deps.fetchImpl,
+      });
+
+      return {
+        exitCode:
+          flowFlags.failOnMissing &&
+          report.status === 'completed_flow_row_materialization_with_gaps'
+            ? 1
+            : 0,
+        stdout: stringifyJson(report, flowFlags.json),
+        stderr: '',
+      };
+    }
+
+    if (command === 'flow' && subcommand === 'materialize-decisions') {
+      const flowFlags = parseFlowMaterializeDecisionsFlags(commandArgs);
+      if (flowFlags.help) {
+        return {
+          exitCode: 0,
+          stdout: `${renderFlowMaterializeDecisionsHelp()}\n`,
+          stderr: '',
+        };
+      }
+
+      const report = await flowMaterializeDecisionsImpl({
+        decisionFile: flowFlags.decisionFile,
+        flowRowsFile: flowFlags.flowRowsFile,
         outDir: flowFlags.outDir,
       });
 

@@ -284,6 +284,73 @@ tiangong admin embedding-run --input ./jobs.json --dry-run
 
 而不是长自然语言参数和不稳定的 shell 拼接。
 
+### 4.3.1 `search flow` 的最小 contract
+
+`tiangong search flow` 现在固定的是“CLI 持有的 edge-function 请求转发契约层”。
+
+它负责：
+
+- 从 `--input` 读取一个 JSON 请求体
+- 用 `TIANGONG_LCA_API_KEY` 换取 user session/access token
+- 把请求体原样转发到 `flow_hybrid_search`
+- 原样返回 edge-function 的 JSON 响应，而不是在 CLI 里做本地 UI 映射
+
+最小请求体：
+
+```json
+{
+  "query": "soda lime glass",
+  "filter": {
+    "flowType": "Product flow"
+  }
+}
+```
+
+更完整的请求体示例：
+
+```json
+{
+  "query": "methylbutane",
+  "filter": {
+    "flowType": "Elementary flow",
+    "asInput": false,
+    "flowDataSet": {
+      "flowInformation": {
+        "dataSetInformation": {
+          "CASNumber": "541-28-6"
+        }
+      }
+    }
+  }
+}
+```
+
+当前已确认的请求要点：
+
+- `query` 必填
+- `filter` 可选
+- `filter.flowType` 是最常用的 real-DB review 过滤项
+- `filter.asInput` 会被原样透传
+- `filter.flowDataSet...` 这种嵌套条件也会被原样透传
+
+当前已确认的返回要点：
+
+- 非空结果通常是 `{ "data": [...] }`
+- `data` 中的原始 row 常见字段包括 `id`、`version`、`modified_at`、`json`
+- 某些部署还可能带出额外字段，例如 `team_id`
+- 空结果当前可能直接返回裸 JSON 数组 `[]`
+- `400` 常见于缺少可用 `query`
+- `500` 常见于 embedding 或 `hybrid_search_flows` RPC 失败
+
+它现在还不负责：
+
+- 把搜索结果直接物化为 `review flow` 的本地 rows 输入
+- 对 edge-function 返回做本地字段重命名或 UI 适配
+- 用搜索结果替代 deterministic `flow get` / `flow list` 详情读取
+- 任何 “synthetic rows” 自动补位
+
+因此，当任务要求“基于真实 DB flow 做 review 判断”时，`search flow` 只能负责找候选 refs，后续仍应进入 CLI 的真实 row 物化链路，而不是直接手工拼接 review 输入。
+
 ### 4.4 process / review / publish / validation 的当前边界
 
 `process auto-build` 现在固定的是“本地 process-from-flow intake 与 scaffold 契约层”。

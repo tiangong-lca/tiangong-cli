@@ -8,6 +8,8 @@ import type { DotEnvLoadResult } from '../src/lib/dotenv.js';
 import type { FetchLike } from '../src/lib/http.js';
 import type { RunFlowReviewedPublishDataOptions } from '../src/lib/flow-publish-reviewed-data.js';
 import type { RunFlowPublishVersionOptions } from '../src/lib/flow-publish-version.js';
+import type { RunFlowFetchRowsOptions } from '../src/lib/flow-fetch-rows.js';
+import type { RunFlowMaterializeDecisionsOptions } from '../src/lib/flow-materialize-decisions.js';
 import type {
   RunFlowRegenProductOptions,
   RunFlowValidateProcessesOptions,
@@ -161,6 +163,8 @@ test('executeCli returns help for publish and validation namespaces', async () =
   assert.match(flowHelp.stdout, /tiangong flow <subcommand>/u);
   assert.match(flowHelp.stdout, /get/u);
   assert.match(flowHelp.stdout, /list/u);
+  assert.match(flowHelp.stdout, /fetch-rows/u);
+  assert.match(flowHelp.stdout, /materialize-decisions/u);
   assert.match(flowHelp.stdout, /remediate/u);
   assert.match(flowHelp.stdout, /publish-version/u);
   assert.match(flowHelp.stdout, /publish-reviewed-data/u);
@@ -251,6 +255,26 @@ test('executeCli returns help for publish and validation subcommands', async () 
   assert.match(flowListHelp.stdout, /--type-of-dataset/u);
   assert.match(flowListHelp.stdout, /--page-size/u);
   assert.doesNotMatch(flowListHelp.stdout, /Planned command/u);
+
+  const flowFetchRowsHelp = await executeCli(['flow', 'fetch-rows', '--help'], makeDeps());
+  assert.equal(flowFetchRowsHelp.exitCode, 0);
+  assert.match(flowFetchRowsHelp.stdout, /tiangong flow fetch-rows --refs-file <file>/u);
+  assert.match(flowFetchRowsHelp.stdout, /--no-latest-fallback/u);
+  assert.match(flowFetchRowsHelp.stdout, /review-input-rows\.jsonl/u);
+  assert.doesNotMatch(flowFetchRowsHelp.stdout, /Planned command/u);
+
+  const flowMaterializeDecisionsHelp = await executeCli(
+    ['flow', 'materialize-decisions', '--help'],
+    makeDeps(),
+  );
+  assert.equal(flowMaterializeDecisionsHelp.exitCode, 0);
+  assert.match(
+    flowMaterializeDecisionsHelp.stdout,
+    /tiangong flow materialize-decisions --decision-file <file>/u,
+  );
+  assert.match(flowMaterializeDecisionsHelp.stdout, /manual-semantic-merge-seed\.current\.json/u);
+  assert.match(flowMaterializeDecisionsHelp.stdout, /blocked-clusters\.json/u);
+  assert.doesNotMatch(flowMaterializeDecisionsHelp.stdout, /Planned command/u);
 
   const flowRegenHelp = await executeCli(['flow', 'regen-product', '--help'], makeDeps());
   assert.equal(flowRegenHelp.exitCode, 0);
@@ -448,6 +472,117 @@ test('executeCli executes lifecyclemodel auto-build with injected implementation
   } finally {
     rmSync(dir, { recursive: true, force: true });
   }
+});
+
+test('executeCli executes flow fetch-rows with injected implementation', async () => {
+  const result = await executeCli(
+    [
+      'flow',
+      'fetch-rows',
+      '--json',
+      '--refs-file',
+      './refs.json',
+      '--out-dir',
+      './out',
+      '--no-latest-fallback',
+      '--fail-on-missing',
+    ],
+    {
+      ...makeDeps(),
+      runFlowFetchRowsImpl: async (options: RunFlowFetchRowsOptions) => {
+        assert.equal(options.refsFile, './refs.json');
+        assert.equal(options.outDir, './out');
+        assert.equal(options.allowLatestFallback, false);
+        return {
+          schema_version: 1,
+          generated_at_utc: '2026-04-06T00:00:00.000Z',
+          status: 'completed_flow_row_materialization_with_gaps',
+          refs_file: '/tmp/refs.json',
+          out_dir: '/tmp/out',
+          allow_latest_fallback: false,
+          requested_ref_count: 2,
+          resolved_ref_count: 1,
+          review_input_row_count: 1,
+          duplicate_review_input_rows_collapsed: 0,
+          missing_ref_count: 1,
+          ambiguous_ref_count: 0,
+          resolution_counts: {
+            remote_supabase_exact: 1,
+            remote_supabase_latest: 0,
+            remote_supabase_latest_fallback: 0,
+          },
+          files: {
+            resolved_flow_rows: '/tmp/out/resolved-flow-rows.jsonl',
+            review_input_rows: '/tmp/out/review-input-rows.jsonl',
+            fetch_summary: '/tmp/out/fetch-summary.json',
+            missing_flow_refs: '/tmp/out/missing-flow-refs.jsonl',
+            ambiguous_flow_refs: '/tmp/out/ambiguous-flow-refs.jsonl',
+          },
+        };
+      },
+    },
+  );
+
+  assert.equal(result.exitCode, 1);
+  assert.match(result.stdout, /"status":"completed_flow_row_materialization_with_gaps"/u);
+  assert.match(result.stdout, /"review_input_row_count":1/u);
+});
+
+test('executeCli executes flow materialize-decisions with injected implementation', async () => {
+  const result = await executeCli(
+    [
+      'flow',
+      'materialize-decisions',
+      '--json',
+      '--decision-file',
+      './decisions.json',
+      '--flow-rows-file',
+      './flow-rows.jsonl',
+      '--out-dir',
+      './out',
+    ],
+    {
+      ...makeDeps(),
+      runFlowMaterializeDecisionsImpl: async (options: RunFlowMaterializeDecisionsOptions) => {
+        assert.equal(options.decisionFile, './decisions.json');
+        assert.equal(options.flowRowsFile, './flow-rows.jsonl');
+        assert.equal(options.outDir, './out');
+        return {
+          schema_version: 1,
+          generated_at_utc: '2026-04-06T00:00:00.000Z',
+          status: 'completed_local_flow_decision_materialization',
+          decision_file: '/tmp/decisions.json',
+          flow_rows_file: '/tmp/flow-rows.jsonl',
+          out_dir: '/tmp/out',
+          counts: {
+            input_decisions: 1,
+            materialized_clusters: 1,
+            blocked_clusters: 0,
+            canonical_map_entries: 2,
+            rewrite_actions: 1,
+            seed_alias_entries: 1,
+            decision_counts: {
+              merge_keep_one: 1,
+              keep_distinct: 0,
+              blocked_missing_db_flow: 0,
+            },
+            blocked_reason_counts: {},
+          },
+          files: {
+            canonical_map: '/tmp/out/flow-dedup-canonical-map.json',
+            rewrite_plan: '/tmp/out/flow-dedup-rewrite-plan.json',
+            semantic_merge_seed: '/tmp/out/manual-semantic-merge-seed.current.json',
+            summary: '/tmp/out/decision-summary.json',
+            blocked_clusters: '/tmp/out/blocked-clusters.json',
+          },
+        };
+      },
+    },
+  );
+
+  assert.equal(result.exitCode, 0);
+  assert.match(result.stdout, /"status":"completed_local_flow_decision_materialization"/u);
+  assert.match(result.stdout, /"rewrite_actions":1/u);
 });
 
 test('executeCli executes lifecyclemodel orchestrate with injected implementation', async () => {
