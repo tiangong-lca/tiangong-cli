@@ -9,8 +9,7 @@ Use this document for:
 - post-merge release verification
 - workspace follow-up
 
-Do not use this document for one-time repository or npm registry setup.
-For one-time setup, see [release-setup.md](./release-setup.md).
+Do not use this document for one-time repository or npm registry setup. For one-time setup, see [release-setup.md](./release-setup.md).
 
 ## Preconditions
 
