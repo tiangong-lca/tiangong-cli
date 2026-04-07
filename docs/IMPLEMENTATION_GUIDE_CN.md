@@ -844,6 +844,8 @@ CLI 现在额外有一条独立于质量门的 npm 发布链路：
 - 合并到 `main` 后，`tag-release-from-merge.yml` 自动创建 `cli-vX.Y.Z`
 - `publish.yml` 从该 tag 触发 npm Trusted Publishing
 
+每次发版的 operator runbook 见 [release-runbook.md](./release-runbook.md)。
+
 一次性的仓库 secret 和 npm Trusted Publisher 配置见 [release-setup.md](./release-setup.md)。
 
 ## 7. 与 `tiangong-lca-skills` 的关系

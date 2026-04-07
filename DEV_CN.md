@@ -77,6 +77,8 @@ npm run build
 - PR 合并后，`.github/workflows/tag-release-from-merge.yml` 自动创建 `cli-vX.Y.Z`
 - `.github/workflows/publish.yml` 再从这个不可变 tag 通过 npm Trusted Publishing 发布
 
+值班发布步骤见 [docs/release-runbook.md](./docs/release-runbook.md)。
+
 一次性的仓库 secret、workflow 文件名和 npm Trusted Publisher 配置见 [docs/release-setup.md](./docs/release-setup.md)。
 
 发布到 npm 之后，可直接安装：

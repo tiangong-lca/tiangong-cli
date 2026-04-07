@@ -2,6 +2,8 @@
 
 This document captures the one-time repository and registry configuration required for the `tiangong-lca-cli` npm release workflows.
 
+For the repeatable per-release operator steps, see [release-runbook.md](./release-runbook.md).
+
 Recommended model:
 
 - maintainers open a normal release-prep PR from `main`
