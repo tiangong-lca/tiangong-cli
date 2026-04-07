@@ -286,12 +286,13 @@ test('flow materialize decision helpers validate refs, dedupe keys, and reject d
       { id: 'flow-b', version: '01.00.000' },
     ],
   );
-  assert.deepEqual(flowMaterializeDecisionInternals.buildOutputFiles('/tmp/out'), {
-    canonical_map: '/tmp/out/flow-dedup-canonical-map.json',
-    rewrite_plan: '/tmp/out/flow-dedup-rewrite-plan.json',
-    semantic_merge_seed: '/tmp/out/manual-semantic-merge-seed.current.json',
-    summary: '/tmp/out/decision-summary.json',
-    blocked_clusters: '/tmp/out/blocked-clusters.json',
+  const outRoot = path.join(path.sep, 'tmp', 'out');
+  assert.deepEqual(flowMaterializeDecisionInternals.buildOutputFiles(outRoot), {
+    canonical_map: path.join(outRoot, 'flow-dedup-canonical-map.json'),
+    rewrite_plan: path.join(outRoot, 'flow-dedup-rewrite-plan.json'),
+    semantic_merge_seed: path.join(outRoot, 'manual-semantic-merge-seed.current.json'),
+    summary: path.join(outRoot, 'decision-summary.json'),
+    blocked_clusters: path.join(outRoot, 'blocked-clusters.json'),
   });
 
   assert.throws(
