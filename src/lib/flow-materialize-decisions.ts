@@ -78,8 +78,7 @@ type BlockedCluster = {
     | 'decision_keep_distinct'
     | 'blocked_missing_db_flow'
     | 'merge_canonical_flow_missing'
-    | 'flow_row_missing'
-    | 'cluster_members_insufficient';
+    | 'flow_row_missing';
   reason: string | null;
   canonical_flow: FlowRef | null;
   cluster_members: FlowRef[];
@@ -479,20 +478,6 @@ export async function runFlowMaterializeDecisions(
         missing_flow_keys: [...new Set(missingFlowKeys)].sort(),
       });
       incrementCount(blockedReasonCounts, 'flow_row_missing');
-      return;
-    }
-
-    if (decision.memberRefs.length < 2) {
-      blockedClusters.push({
-        cluster_id: decision.clusterId,
-        decision: decision.decision,
-        blocker_code: 'cluster_members_insufficient',
-        reason: decision.reason,
-        canonical_flow: canonicalRef,
-        cluster_members: decision.memberRefs,
-        missing_flow_keys: [],
-      });
-      incrementCount(blockedReasonCounts, 'cluster_members_insufficient');
       return;
     }
 

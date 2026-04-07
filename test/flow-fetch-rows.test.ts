@@ -4,7 +4,10 @@ import { mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import { CliError } from '../src/lib/errors.js';
-import { runFlowFetchRows } from '../src/lib/flow-fetch-rows.js';
+import {
+  __testInternals as flowFetchRowsInternals,
+  runFlowFetchRows,
+} from '../src/lib/flow-fetch-rows.js';
 import type { FetchLike } from '../src/lib/http.js';
 import {
   buildSupabaseTestEnv,
@@ -280,6 +283,271 @@ test('runFlowFetchRows rejects ref rows without ids', async () => {
           fetchImpl: jsonFetch([[]]),
         }),
       (error) => error instanceof CliError && error.code === 'FLOW_FETCH_ROWS_REF_ID_REQUIRED',
+    );
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+test('flow fetch row helpers normalize tokens, parse integers, and reject invalid refs', () => {
+  assert.equal(flowFetchRowsInternals.normalizeToken(null), null);
+  assert.equal(flowFetchRowsInternals.normalizeToken('   '), null);
+  assert.equal(
+    flowFetchRowsInternals.normalizeOptionalNonNegativeInteger(
+      '7',
+      'flow ref state_code',
+      'FLOW_FETCH_ROWS_INVALID_STATE_CODE',
+    ),
+    7,
+  );
+
+  assert.deepEqual(
+    flowFetchRowsInternals.normalizeFlowFetchRef(
+      {
+        id: ' flow-a ',
+        userId: ' user-1 ',
+        clusterId: ' cluster-1 ',
+        source: ' search-flow ',
+        stateCode: '0',
+      },
+      0,
+    ),
+    {
+      id: 'flow-a',
+      version: null,
+      userId: 'user-1',
+      stateCode: 0,
+      clusterId: 'cluster-1',
+      source: 'search-flow',
+    },
+  );
+
+  assert.throws(
+    () =>
+      flowFetchRowsInternals.normalizeOptionalNonNegativeInteger(
+        'oops',
+        'flow ref state_code',
+        'FLOW_FETCH_ROWS_INVALID_STATE_CODE',
+      ),
+    (error) => error instanceof CliError && error.code === 'FLOW_FETCH_ROWS_INVALID_STATE_CODE',
+  );
+  assert.throws(
+    () => flowFetchRowsInternals.normalizeFlowFetchRef({ id: '   ' }, 0),
+    (error) => error instanceof CliError && error.code === 'FLOW_FETCH_ROWS_REF_ID_REQUIRED',
+  );
+});
+
+test(
+  'runFlowFetchRows can use process.env and global fetch and completes without gaps',
+  { concurrency: false },
+  async () => {
+    const dir = mkdtempSync(path.join(os.tmpdir(), 'tg-cli-flow-fetch-rows-global-'));
+    const refsFile = path.join(dir, 'refs.json');
+    const outDir = path.join(dir, 'out');
+    const observedUrls: string[] = [];
+    const originalFetch = globalThis.fetch;
+    const originalEnv = {
+      TIANGONG_LCA_API_BASE_URL: process.env.TIANGONG_LCA_API_BASE_URL,
+      TIANGONG_LCA_API_KEY: process.env.TIANGONG_LCA_API_KEY,
+      TIANGONG_LCA_SUPABASE_PUBLISHABLE_KEY: process.env.TIANGONG_LCA_SUPABASE_PUBLISHABLE_KEY,
+    };
+
+    writeJson(refsFile, [
+      {
+        id: 'flow-global',
+        version: '01.00.001',
+        state_code: 100,
+      },
+    ]);
+
+    try {
+      Object.assign(
+        process.env,
+        buildSupabaseTestEnv({
+          TIANGONG_LCA_API_BASE_URL: 'https://example.supabase.co/functions/v1',
+        }),
+      );
+
+      globalThis.fetch = (async (input) => {
+        if (isSupabaseAuthTokenUrl(String(input))) {
+          return makeSupabaseAuthResponse();
+        }
+
+        observedUrls.push(String(input));
+        return {
+          ok: true,
+          status: 200,
+          headers: {
+            get: () => 'application/json',
+          },
+          text: async () =>
+            JSON.stringify([
+              {
+                id: '',
+                version: '',
+                user_id: 'user-global',
+                state_code: 100,
+                modified_at: null,
+                json: { flowDataSet: { id: 'flow-global', version: '01.00.001' } },
+              },
+            ]),
+        };
+      }) as typeof fetch;
+
+      const report = await runFlowFetchRows({
+        refsFile,
+        outDir,
+        now: new Date('2026-04-06T14:00:00.000Z'),
+      });
+
+      assert.equal(report.status, 'completed_flow_row_materialization');
+      assert.equal(report.resolved_ref_count, 1);
+      assert.equal(report.missing_ref_count, 0);
+      assert.equal(report.ambiguous_ref_count, 0);
+      assert.deepEqual(report.resolution_counts, {
+        remote_supabase_exact: 1,
+        remote_supabase_latest: 0,
+        remote_supabase_latest_fallback: 0,
+      });
+      assert.equal(observedUrls.length, 1);
+
+      const reviewInputRows = readJsonLines(report.files.review_input_rows);
+      assert.equal(reviewInputRows.length, 1);
+      assert.equal(reviewInputRows[0]?.id, 'flow-global');
+      assert.equal(reviewInputRows[0]?.version, '01.00.001');
+      assert.equal(
+        ((reviewInputRows[0]?._materialization as JsonRecord).flow_key as string) ?? '',
+        'flow-global@01.00.001',
+      );
+    } finally {
+      globalThis.fetch = originalFetch;
+
+      Object.entries(originalEnv).forEach(([key, value]) => {
+        if (typeof value === 'string') {
+          process.env[key] = value;
+        } else {
+          delete process.env[key];
+        }
+      });
+
+      rmSync(dir, { recursive: true, force: true });
+    }
+  },
+);
+
+test('runFlowFetchRows validates required flags and rethrows non-ambiguous lookup failures', async () => {
+  const dir = mkdtempSync(path.join(os.tmpdir(), 'tg-cli-flow-fetch-rows-required-'));
+  const refsFile = path.join(dir, 'refs.json');
+
+  writeJson(refsFile, [{ id: 'flow-a', version: '01.00.001' }]);
+
+  try {
+    await assert.rejects(
+      () =>
+        runFlowFetchRows({
+          refsFile: '',
+          outDir: path.join(dir, 'out'),
+        }),
+      (error) => error instanceof CliError && error.code === 'FLOW_FETCH_ROWS_REFS_FILE_REQUIRED',
+    );
+    await assert.rejects(
+      () =>
+        runFlowFetchRows({
+          refsFile,
+          outDir: '',
+        }),
+      (error) => error instanceof CliError && error.code === 'FLOW_FETCH_ROWS_OUT_DIR_REQUIRED',
+    );
+    await assert.rejects(
+      () =>
+        runFlowFetchRows({
+          refsFile,
+          outDir: path.join(dir, 'out'),
+          env: buildSupabaseTestEnv({
+            TIANGONG_LCA_API_BASE_URL: 'https://example.supabase.co/functions/v1',
+          }),
+          fetchImpl: (async (input) => {
+            if (isSupabaseAuthTokenUrl(String(input))) {
+              return makeSupabaseAuthResponse();
+            }
+
+            throw new Error('network boom');
+          }) as FetchLike,
+        }),
+      (error) =>
+        error instanceof CliError &&
+        error.code === 'REMOTE_REQUEST_FAILED' &&
+        /HTTP 0 returned/u.test(error.message),
+    );
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+test('runFlowFetchRows records a missing ref message when no version is requested', async () => {
+  const dir = mkdtempSync(path.join(os.tmpdir(), 'tg-cli-flow-fetch-rows-latest-miss-'));
+  const refsFile = path.join(dir, 'refs.json');
+  const outDir = path.join(dir, 'out');
+
+  writeJson(refsFile, [{ id: 'flow-missing' }]);
+
+  try {
+    const report = await runFlowFetchRows({
+      refsFile,
+      outDir,
+      env: buildSupabaseTestEnv({
+        TIANGONG_LCA_API_BASE_URL: 'https://example.supabase.co/functions/v1',
+      }),
+      fetchImpl: jsonFetch([[]]),
+    });
+
+    assert.equal(report.status, 'completed_flow_row_materialization_with_gaps');
+    const missingRefs = readJsonLines(report.files.missing_flow_refs);
+    assert.equal(missingRefs.length, 1);
+    assert.equal(missingRefs[0]?.message, 'Could not resolve flow dataset for flow-missing.');
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+test('runFlowFetchRows can materialize a ref with an empty resolved version when neither side provides one', async () => {
+  const dir = mkdtempSync(path.join(os.tmpdir(), 'tg-cli-flow-fetch-rows-empty-version-'));
+  const refsFile = path.join(dir, 'refs.json');
+  const outDir = path.join(dir, 'out');
+
+  writeJson(refsFile, [{ id: 'flow-no-version' }]);
+
+  try {
+    const report = await runFlowFetchRows({
+      refsFile,
+      outDir,
+      env: buildSupabaseTestEnv({
+        TIANGONG_LCA_API_BASE_URL: 'https://example.supabase.co/functions/v1',
+      }),
+      fetchImpl: jsonFetch([
+        [
+          {
+            id: '',
+            version: '',
+            user_id: 'user-empty-version',
+            state_code: 100,
+            modified_at: null,
+            json: { flowDataSet: { id: 'flow-no-version' } },
+          },
+        ],
+      ]),
+    });
+
+    assert.equal(report.status, 'completed_flow_row_materialization');
+    const resolvedRows = readJsonLines(report.files.resolved_flow_rows);
+    assert.equal(resolvedRows[0]?.id, 'flow-no-version');
+    assert.equal(resolvedRows[0]?.version, '');
+
+    const reviewRows = readJsonLines(report.files.review_input_rows);
+    assert.equal(reviewRows[0]?.version, '');
+    assert.equal(
+      ((reviewRows[0]?._materialization as JsonRecord).flow_key as string) ?? '',
+      'flow-no-version@',
     );
   } finally {
     rmSync(dir, { recursive: true, force: true });

@@ -528,6 +528,44 @@ test('executeCli executes flow fetch-rows with injected implementation', async (
   assert.match(result.stdout, /"review_input_row_count":1/u);
 });
 
+test('executeCli keeps exit code 0 for flow fetch-rows gaps unless --fail-on-missing is enabled', async () => {
+  const result = await executeCli(
+    ['flow', 'fetch-rows', '--json', '--refs-file', './refs.json', '--out-dir', './out'],
+    {
+      ...makeDeps(),
+      runFlowFetchRowsImpl: async () => ({
+        schema_version: 1,
+        generated_at_utc: '2026-04-07T00:00:00.000Z',
+        status: 'completed_flow_row_materialization_with_gaps',
+        refs_file: '/tmp/refs.json',
+        out_dir: '/tmp/out',
+        allow_latest_fallback: true,
+        requested_ref_count: 1,
+        resolved_ref_count: 0,
+        review_input_row_count: 0,
+        duplicate_review_input_rows_collapsed: 0,
+        missing_ref_count: 1,
+        ambiguous_ref_count: 0,
+        resolution_counts: {
+          remote_supabase_exact: 0,
+          remote_supabase_latest: 0,
+          remote_supabase_latest_fallback: 0,
+        },
+        files: {
+          resolved_flow_rows: '/tmp/out/resolved-flow-rows.jsonl',
+          review_input_rows: '/tmp/out/review-input-rows.jsonl',
+          fetch_summary: '/tmp/out/fetch-summary.json',
+          missing_flow_refs: '/tmp/out/missing-flow-refs.jsonl',
+          ambiguous_flow_refs: '/tmp/out/ambiguous-flow-refs.jsonl',
+        },
+      }),
+    },
+  );
+
+  assert.equal(result.exitCode, 0);
+  assert.match(result.stdout, /"missing_ref_count":1/u);
+});
+
 test('executeCli executes flow materialize-decisions with injected implementation', async () => {
   const result = await executeCli(
     [
@@ -583,6 +621,19 @@ test('executeCli executes flow materialize-decisions with injected implementatio
   assert.equal(result.exitCode, 0);
   assert.match(result.stdout, /"status":"completed_local_flow_decision_materialization"/u);
   assert.match(result.stdout, /"rewrite_actions":1/u);
+});
+
+test('executeCli returns parsing errors for invalid flow fetch-rows and materialize-decisions flags', async () => {
+  const fetchRowsResult = await executeCli(['flow', 'fetch-rows', '--wat'], makeDeps());
+  assert.equal(fetchRowsResult.exitCode, 2);
+  assert.match(fetchRowsResult.stderr, /Unknown option '--wat'/u);
+
+  const materializeResult = await executeCli(
+    ['flow', 'materialize-decisions', '--wat'],
+    makeDeps(),
+  );
+  assert.equal(materializeResult.exitCode, 2);
+  assert.match(materializeResult.stderr, /Unknown option '--wat'/u);
 });
 
 test('executeCli executes lifecyclemodel orchestrate with injected implementation', async () => {

@@ -250,7 +250,7 @@ export async function runFlowFetchRows(
           requested_ref: requestedRef,
           code: error.code,
           message: error.message,
-          details: error.details ?? null,
+          details: error.details,
         });
         continue;
       }
