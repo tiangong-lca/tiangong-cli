@@ -21,6 +21,12 @@ jobs:
         with:
           fetch-depth: 0
 
+      - name: Install stable Rust toolchain
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Install docpact
+        run: cargo install docpact --version 0.1.9 --force
+
       - name: Set up Node.js
         uses: actions/setup-node@v6
         with:
@@ -32,6 +38,17 @@ jobs:
             echo "error: missing TIANGONG_CLI_RELEASE_AUTOMATION_TOKEN secret" >&2
             exit 1
           fi
+
+      - name: Run docpact release gate before tag
+        env:
+          BASE_REF: ${{ github.event.before }}
+          HEAD_REF: ${{ github.sha }}
+        run: |
+          set -euo pipefail
+          if [ "$BASE_REF" = "0000000000000000000000000000000000000000" ]; then
+            BASE_REF="${HEAD_REF}^"
+          fi
+          scripts/docpact-gate.sh --base "$BASE_REF" --head "$HEAD_REF"
 
       - name: Detect release version changes
         id: release

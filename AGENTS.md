@@ -97,7 +97,7 @@ Route those tasks to:
 
 ## Runtime Facts
 
-- Repo-local documentation governance is encoded in `.docpact/config.yaml` and enforced by `.github/workflows/ai-doc-lint.yml` through `docpact`.
+- Repo-local documentation governance is encoded in `.docpact/config.yaml` and enforced locally by the pre-push docpact gate; `.github/workflows/ai-doc-lint.yml` is manual-dispatch fallback.
 - Package manager: `npm`
 - Node baseline: `>=24 <25`
 - Runtime style: TypeScript source, Node-native CLI, direct REST and Edge Function access only
