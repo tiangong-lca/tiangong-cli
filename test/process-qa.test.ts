@@ -5,7 +5,7 @@ import os from 'node:os';
 import path from 'node:path';
 import { CliError } from '../src/lib/errors.js';
 import type { FetchLike } from '../src/lib/http.js';
-import { __testInternals, runProcessReview } from '../src/lib/review-process.js';
+import { __testInternals, runProcessQa } from '../src/lib/process-qa.js';
 
 type JsonRecord = Record<string, unknown>;
 
@@ -130,8 +130,8 @@ function createLlmFetch(outputText: string, observedBodies: unknown[] = []): Fet
   }) as FetchLike;
 }
 
-test('runProcessReview writes artifact-first local review outputs without LLM', async () => {
-  const dir = mkdtempSync(path.join(os.tmpdir(), 'tg-cli-review-process-'));
+test('runProcessQa writes artifact-first local QA outputs without LLM', async () => {
+  const dir = mkdtempSync(path.join(os.tmpdir(), 'tg-cli-process-qa-'));
   const runRoot = path.join(dir, 'run-root');
   const processDir = path.join(runRoot, 'exports', 'processes');
   const outDir = path.join(dir, 'review');
@@ -169,14 +169,14 @@ test('runProcessReview writes artifact-first local review outputs without LLM', 
   );
 
   try {
-    const report = await runProcessReview({
+    const report = await runProcessQa({
       runRoot,
       outDir,
       logicVersion: 'v2.1',
       now: () => new Date('2026-03-30T00:00:00.000Z'),
     });
 
-    assert.equal(report.status, 'completed_local_process_review');
+    assert.equal(report.status, 'completed_local_process_qa');
     assert.equal(report.run_id, 'run-root');
     assert.equal(report.run_root, runRoot);
     assert.equal(report.rows_file, '');
@@ -192,17 +192,19 @@ test('runProcessReview writes artifact-first local review outputs without LLM', 
     assert.equal(report.totals.relative_deviation, 0);
     assert.equal(report.ruleset_id, 'process-authoring/strict');
     assert.equal(report.ruleset_version, '1');
-    assert.equal(report.ruleset_gate?.status, 'blocked');
+    assert.equal(report.ruleset_gate?.status, 'needs_review');
     assert.equal(report.rule_finding_count, 1);
-    assert.equal(report.blocker_count, 1);
+    assert.equal(report.blocker_count, 0);
+    assert.equal(report.policy_decision_owner, 'foundry');
+    assert.equal(report.qa_mode, 'deterministic_qa_report');
     assert.equal(report.generated_at_utc, '2026-03-30T00:00:00.000Z');
-    assert.ok(existsSync(report.files.review_zh));
-    assert.ok(existsSync(report.files.review_en));
+    assert.ok(existsSync(report.files.qa_zh));
+    assert.ok(existsSync(report.files.qa_en));
     assert.ok(existsSync(report.files.timing));
     assert.ok(existsSync(report.files.unit_issue_log));
     assert.ok(existsSync(report.files.rule_findings ?? ''));
     assert.ok(existsSync(report.files.ruleset_gate ?? ''));
-    assert.ok(existsSync(report.files.review_input_summary));
+    assert.ok(existsSync(report.files.qa_input_summary));
     assert.ok(existsSync(report.files.summary));
     assert.ok(existsSync(report.files.report));
     assert.equal(report.files.materialization_summary, null);
@@ -211,7 +213,7 @@ test('runProcessReview writes artifact-first local review outputs without LLM', 
     assert.equal(summary.process_count, 1);
     assert.equal((summary.llm as JsonRecord).enabled, false);
 
-    const zhReview = readFileSync(report.files.review_zh, 'utf8');
+    const zhReview = readFileSync(report.files.qa_zh, 'utf8');
     assert.match(zhReview, /基础信息核查/u);
     assert.match(zhReview, /LLM 语义审核层/u);
 
@@ -229,8 +231,8 @@ test('runProcessReview writes artifact-first local review outputs without LLM', 
   }
 });
 
-test('runProcessReview materializes rows-file and full process-list reports before reviewing', async () => {
-  const dir = mkdtempSync(path.join(os.tmpdir(), 'tg-cli-review-process-rows-'));
+test('runProcessQa materializes rows-file and full process-list reports before reviewing', async () => {
+  const dir = mkdtempSync(path.join(os.tmpdir(), 'tg-cli-process-qa-rows-'));
   const rowsFile = path.join(dir, 'process-list-report.json');
   const outDir = path.join(dir, 'review');
 
@@ -250,7 +252,7 @@ test('runProcessReview materializes rows-file and full process-list reports befo
   });
 
   try {
-    const report = await runProcessReview({
+    const report = await runProcessQa({
       rowsFile,
       outDir,
       now: () => new Date('2026-03-30T00:00:00.000Z'),
@@ -262,7 +264,7 @@ test('runProcessReview materializes rows-file and full process-list reports befo
     assert.equal(report.run_id, 'process-list-report');
     assert.equal(report.process_count, 1);
     assert.ok(report.files.materialization_summary);
-    assert.ok(existsSync(report.files.review_input_summary));
+    assert.ok(existsSync(report.files.qa_input_summary));
     assert.ok(existsSync(report.files.materialization_summary as string));
 
     const materialization = JSON.parse(
@@ -276,8 +278,8 @@ test('runProcessReview materializes rows-file and full process-list reports befo
   }
 });
 
-test('runProcessReview accepts direct rows arrays and falls back to row identity defaults', async () => {
-  const dir = mkdtempSync(path.join(os.tmpdir(), 'tg-cli-review-process-array-'));
+test('runProcessQa accepts direct rows arrays and falls back to row identity defaults', async () => {
+  const dir = mkdtempSync(path.join(os.tmpdir(), 'tg-cli-process-qa-array-'));
   const rowsFile = path.join(dir, 'rows.json');
   const outDir = path.join(dir, 'review');
 
@@ -295,7 +297,7 @@ test('runProcessReview accepts direct rows arrays and falls back to row identity
   ]);
 
   try {
-    const report = await runProcessReview({
+    const report = await runProcessQa({
       rowsFile,
       outDir,
       now: () => new Date('2026-03-30T00:05:00.000Z'),
@@ -317,8 +319,8 @@ test('runProcessReview accepts direct rows arrays and falls back to row identity
   }
 });
 
-test('runProcessReview accepts JSONL rows-file inputs and trims explicit run ids', async () => {
-  const dir = mkdtempSync(path.join(os.tmpdir(), 'tg-cli-review-process-jsonl-'));
+test('runProcessQa accepts JSONL rows-file inputs and trims explicit run ids', async () => {
+  const dir = mkdtempSync(path.join(os.tmpdir(), 'tg-cli-process-qa-jsonl-'));
   const rowsFile = path.join(dir, 'rows.jsonl');
   const outDir = path.join(dir, 'review');
 
@@ -333,7 +335,7 @@ test('runProcessReview accepts JSONL rows-file inputs and trims explicit run ids
   );
 
   try {
-    const report = await runProcessReview({
+    const report = await runProcessQa({
       rowsFile,
       runId: '  explicit-run-id  ',
       outDir,
@@ -348,8 +350,8 @@ test('runProcessReview accepts JSONL rows-file inputs and trims explicit run ids
   }
 });
 
-test('runProcessReview can invoke the CLI LLM client and persist semantic review traces', async () => {
-  const dir = mkdtempSync(path.join(os.tmpdir(), 'tg-cli-review-process-llm-'));
+test('runProcessQa treats process LLM review as a Foundry curation concern', async () => {
+  const dir = mkdtempSync(path.join(os.tmpdir(), 'tg-cli-process-qa-llm-'));
   const runRoot = path.join(dir, 'run-root');
   const processDir = path.join(runRoot, 'exports', 'processes');
   const outDir = path.join(dir, 'review');
@@ -358,7 +360,7 @@ test('runProcessReview can invoke the CLI LLM client and persist semantic review
   writeJson(path.join(processDir, 'proc-a.json'), createProcessPayload());
 
   try {
-    const report = await runProcessReview({
+    const report = await runProcessQa({
       runRoot,
       runId: 'run-llm',
       outDir,
@@ -376,7 +378,7 @@ test('runProcessReview can invoke the CLI LLM client and persist semantic review
               process_file: 'proc-a.json',
               severity: 'medium',
               fixability: 'review-needed',
-              evidence: 'missing bilingual route qualifiers',
+              evidence: 'missing source-language route qualifiers',
               action: 'add route qualifier',
             },
           ],
@@ -385,29 +387,19 @@ test('runProcessReview can invoke the CLI LLM client and persist semantic review
       ),
     });
 
-    assert.equal(report.llm.enabled, true);
-    assert.equal(report.llm.ok, true);
-    assert.deepEqual((report.llm.result.findings as JsonRecord[])[0], {
-      process_file: 'proc-a.json',
-      severity: 'medium',
-      fixability: 'review-needed',
-      evidence: 'missing bilingual route qualifiers',
-      action: 'add route qualifier',
-    });
-    assert.equal(observedBodies.length, 1);
-    assert.equal((observedBodies[0] as JsonRecord).model, 'gpt-5.4');
-    assert.ok(existsSync(path.join(outDir, 'llm-trace.jsonl')));
-    assert.ok(existsSync(path.join(outDir, '.llm-cache')));
+    assert.equal(report.llm.enabled, false);
+    assert.equal(report.llm.reason, 'moved_to_foundry_process_curation');
+    assert.equal(observedBodies.length, 0);
 
-    const zhReview = readFileSync(report.files.review_zh, 'utf8');
-    assert.match(zhReview, /missing bilingual route qualifiers/u);
+    const zhReview = readFileSync(report.files.qa_zh, 'utf8');
+    assert.match(zhReview, /moved_to_foundry_process_curation/u);
   } finally {
     rmSync(dir, { recursive: true, force: true });
   }
 });
 
-test('runProcessReview records non-fatal LLM runtime failures and validates timestamps', async () => {
-  const dir = mkdtempSync(path.join(os.tmpdir(), 'tg-cli-review-process-errors-'));
+test('runProcessQa records non-fatal LLM runtime failures and validates timestamps', async () => {
+  const dir = mkdtempSync(path.join(os.tmpdir(), 'tg-cli-process-qa-errors-'));
   const runRoot = path.join(dir, 'run-root');
   const processDir = path.join(runRoot, 'exports', 'processes');
   const outDir = path.join(dir, 'review');
@@ -415,7 +407,7 @@ test('runProcessReview records non-fatal LLM runtime failures and validates time
   writeJson(path.join(processDir, 'proc-a.json'), createProcessPayload());
 
   try {
-    const missingEnvReport = await runProcessReview({
+    const missingEnvReport = await runProcessQa({
       runRoot,
       runId: 'run-missing-env',
       outDir,
@@ -423,12 +415,11 @@ test('runProcessReview records non-fatal LLM runtime failures and validates time
       env: {} as NodeJS.ProcessEnv,
     });
 
-    assert.equal(missingEnvReport.llm.enabled, true);
-    assert.equal(missingEnvReport.llm.ok, false);
-    assert.match(missingEnvReport.llm.reason, /Missing LLM base URL/u);
+    assert.equal(missingEnvReport.llm.enabled, false);
+    assert.equal(missingEnvReport.llm.reason, 'moved_to_foundry_process_curation');
 
     await assert.rejects(
-      runProcessReview({
+      runProcessQa({
         runRoot,
         runId: 'run-invalid-ts',
         outDir: path.join(dir, 'review-invalid'),
@@ -437,31 +428,31 @@ test('runProcessReview records non-fatal LLM runtime failures and validates time
       }),
       (error) => {
         assert.ok(error instanceof CliError);
-        assert.equal(error.code, 'PROCESS_REVIEW_INVALID_TIMESTAMP');
+        assert.equal(error.code, 'PROCESS_QA_INVALID_TIMESTAMP');
         return true;
       },
     );
 
     await assert.rejects(
-      runProcessReview({
+      runProcessQa({
         runRoot: path.join(dir, 'missing-run-root'),
         runId: 'run-missing-root',
         outDir,
       }),
       (error) => {
         assert.ok(error instanceof CliError);
-        assert.equal(error.code, 'PROCESS_REVIEW_EXPORTS_NOT_FOUND');
+        assert.equal(error.code, 'PROCESS_QA_EXPORTS_NOT_FOUND');
         return true;
       },
     );
 
     await assert.rejects(
-      runProcessReview({
+      runProcessQa({
         outDir: path.join(dir, 'review-missing-input'),
       }),
       (error) => {
         assert.ok(error instanceof CliError);
-        assert.equal(error.code, 'PROCESS_REVIEW_INPUT_MODE_REQUIRED');
+        assert.equal(error.code, 'PROCESS_QA_INPUT_MODE_REQUIRED');
         return true;
       },
     );
@@ -470,8 +461,8 @@ test('runProcessReview records non-fatal LLM runtime failures and validates time
   }
 });
 
-test('runProcessReview validates malformed rows-file inputs', async () => {
-  const dir = mkdtempSync(path.join(os.tmpdir(), 'tg-cli-review-process-invalid-rows-'));
+test('runProcessQa validates malformed rows-file inputs', async () => {
+  const dir = mkdtempSync(path.join(os.tmpdir(), 'tg-cli-process-qa-invalid-rows-'));
   const invalidJsonlPath = path.join(dir, 'rows.jsonl');
   const invalidJsonlRowPath = path.join(dir, 'rows-scalar.jsonl');
   const invalidJsonPath = path.join(dir, 'rows.json');
@@ -484,50 +475,50 @@ test('runProcessReview validates malformed rows-file inputs', async () => {
 
   try {
     await assert.rejects(
-      runProcessReview({
+      runProcessQa({
         rowsFile: invalidJsonlPath,
         outDir: path.join(dir, 'review-jsonl'),
       }),
       (error) => {
         assert.ok(error instanceof CliError);
-        assert.equal(error.code, 'PROCESS_REVIEW_ROWS_INVALID_JSONL');
+        assert.equal(error.code, 'PROCESS_QA_ROWS_INVALID_JSONL');
         return true;
       },
     );
 
     await assert.rejects(
-      runProcessReview({
+      runProcessQa({
         rowsFile: invalidJsonlRowPath,
         outDir: path.join(dir, 'review-jsonl-row'),
       }),
       (error) => {
         assert.ok(error instanceof CliError);
-        assert.equal(error.code, 'PROCESS_REVIEW_ROWS_INVALID_JSONL_ROW');
+        assert.equal(error.code, 'PROCESS_QA_ROWS_INVALID_JSONL_ROW');
         return true;
       },
     );
 
     await assert.rejects(
-      runProcessReview({
+      runProcessQa({
         rowsFile: invalidJsonPath,
         outDir: path.join(dir, 'review-json'),
       }),
       (error) => {
         assert.ok(error instanceof CliError);
-        assert.equal(error.code, 'PROCESS_REVIEW_ROWS_INVALID_JSON');
+        assert.equal(error.code, 'PROCESS_QA_ROWS_INVALID_JSON');
         assert.match(error.message, /not valid JSON/u);
         return true;
       },
     );
 
     await assert.rejects(
-      runProcessReview({
+      runProcessQa({
         rowsFile: invalidShapePath,
         outDir: path.join(dir, 'review-shape'),
       }),
       (error) => {
         assert.ok(error instanceof CliError);
-        assert.equal(error.code, 'PROCESS_REVIEW_ROWS_INVALID_JSON');
+        assert.equal(error.code, 'PROCESS_QA_ROWS_INVALID_JSON');
         assert.match(error.message, /rows\[\]/u);
         return true;
       },
@@ -537,8 +528,8 @@ test('runProcessReview validates malformed rows-file inputs', async () => {
   }
 });
 
-test('runProcessReview covers exchange-object fallback, empty exchanges, and zero-input totals', async () => {
-  const dir = mkdtempSync(path.join(os.tmpdir(), 'tg-cli-review-process-zero-'));
+test('runProcessQa covers exchange-object fallback, empty exchanges, and zero-input totals', async () => {
+  const dir = mkdtempSync(path.join(os.tmpdir(), 'tg-cli-process-qa-zero-'));
   const runRoot = path.join(dir, 'run-root');
   const processDir = path.join(runRoot, 'exports', 'processes');
   const outDir = path.join(dir, 'review');
@@ -630,7 +621,7 @@ test('runProcessReview covers exchange-object fallback, empty exchanges, and zer
   );
 
   try {
-    const report = await runProcessReview({
+    const report = await runProcessQa({
       runRoot,
       runId: 'run-zero',
       outDir,
@@ -640,13 +631,13 @@ test('runProcessReview covers exchange-object fallback, empty exchanges, and zer
     assert.equal(report.totals.raw_input, 20);
     assert.equal(Number(report.totals.relative_deviation?.toFixed(2)), 0.33);
     assert.equal(report.totals.product_plus_byproduct_plus_waste, 13.4);
-    assert.equal(report.ruleset_gate?.status, 'blocked');
+    assert.equal(report.ruleset_gate?.status, 'needs_review');
   } finally {
     rmSync(dir, { recursive: true, force: true });
   }
 });
 
-test('review-process internals cover helper branches and rendering fallbacks', async () => {
+test('process-qa internals cover helper branches and rendering fallbacks', async () => {
   assert.equal(__testInternals.requiredNonEmpty(' value ', '--x', 'ERR'), 'value');
   assert.throws(() => __testInternals.requiredNonEmpty('', '--x', 'ERR'), /Missing required/u);
 
@@ -678,7 +669,7 @@ test('review-process internals cover helper branches and rendering fallbacks', a
         names: [{ '#text': 'name zh-ish' }, { '#text': 'name en-ish' }],
       }),
     ),
-    [true, true, ['name zh-ish', 'name en-ish']],
+    [true, ['name zh-ish', 'name en-ish']],
   );
   assert.deepEqual(
     __testInternals.extractBaseNames(
@@ -688,7 +679,7 @@ test('review-process internals cover helper branches and rendering fallbacks', a
         },
       }),
     ),
-    [false, false, ['single name entry']],
+    [true, ['single name entry']],
   );
   assert.deepEqual(
     __testInternals.extractBaseNames({
@@ -698,7 +689,7 @@ test('review-process internals cover helper branches and rendering fallbacks', a
         },
       },
     }),
-    [false, false, []],
+    [false, []],
   );
   assert.deepEqual(
     __testInternals.extractBaseNames(
@@ -706,7 +697,7 @@ test('review-process internals cover helper branches and rendering fallbacks', a
         names: [{ '@xml:lang': 'en' }],
       }),
     ),
-    [false, false, []],
+    [false, []],
   );
   assert.deepEqual(
     __testInternals.extractBaseNames({
@@ -718,7 +709,7 @@ test('review-process internals cover helper branches and rendering fallbacks', a
         },
       },
     }),
-    [false, false, []],
+    [false, []],
   );
   assert.deepEqual(
     __testInternals.extractBaseNames(
@@ -726,7 +717,7 @@ test('review-process internals cover helper branches and rendering fallbacks', a
         names: [1, { '@xml:lang': 'en', '#text': '' }],
       }),
     ),
-    [false, false, []],
+    [false, []],
   );
 
   assert.equal(
@@ -913,19 +904,32 @@ test('review-process internals cover helper branches and rendering fallbacks', a
       administrativeInformation: {},
     }),
   );
-  assert.equal(minimalBase.name_zh_en_ok, false);
-  assert.equal(minimalBase.completeness_score, 0);
+  assert.equal(minimalBase.source_name_ok, true);
+  assert.equal(minimalBase.completeness_score, 1);
 
   const baseFindings = __testInternals.reviewFindingsForBase('proc.json', minimalBase);
-  assert.ok(baseFindings.some((finding) => finding.code === 'process_missing_bilingual_base_name'));
+  assert.ok(!baseFindings.some((finding) => finding.code === 'process_missing_source_base_name'));
   assert.ok(baseFindings.some((finding) => finding.code === 'process_missing_functional_unit'));
+
+  const missingSourceNameBase = __testInternals.baseInfoCheck(
+    createProcessPayload({
+      names: [],
+      functionalUnit: '1 kg',
+    }),
+  );
+  assert.equal(missingSourceNameBase.source_name_ok, false);
+  assert.ok(
+    __testInternals
+      .reviewFindingsForBase('proc-no-name.json', missingSourceNameBase)
+      .some((finding) => finding.code === 'process_missing_source_base_name'),
+  );
   assert.equal(__testInternals.hasNumericAmount({ meanAmount: '0' }), true);
   assert.equal(__testInternals.hasNumericAmount({ resultingAmount: 0 }), true);
   assert.equal(__testInternals.hasNumericAmount({ meanAmount: 'bad' }), false);
   assert.equal(__testInternals.processRulesetGate([]).status, 'passed');
   assert.equal(
     __testInternals.processRulesetGate([
-      __testInternals.createProcessReviewFinding({
+      __testInternals.createProcessQaFinding({
         processFile: 'proc.json',
         severity: 'warning',
         code: 'unknown_warning',
@@ -973,7 +977,7 @@ test('review-process internals cover helper branches and rendering fallbacks', a
   );
   assert.throws(
     () => __testInternals.unwrapProcessPayload([], '/tmp/proc.json'),
-    /Expected process review file/u,
+    /Expected process QA file/u,
   );
   assert.throws(
     () => __testInternals.unwrapProcessPayload({}, '/tmp/proc.json'),
@@ -989,7 +993,7 @@ test('review-process internals cover helper branches and rendering fallbacks', a
     llmModel: undefined,
     env: {} as NodeJS.ProcessEnv,
     fetchImpl: createLlmFetch('{}'),
-    outDir: path.join(os.tmpdir(), 'tg-cli-review-process-internals'),
+    outDir: path.join(os.tmpdir(), 'tg-cli-process-qa-internals'),
   });
   assert.deepEqual(llmDisabled, {
     enabled: false,
@@ -1005,12 +1009,10 @@ test('review-process internals cover helper branches and rendering fallbacks', a
       TIANGONG_LCA_REVIEW_LLM_MODEL: 'gpt-5.4',
     } as NodeJS.ProcessEnv,
     fetchImpl: createLlmFetch('not json'),
-    outDir: path.join(os.tmpdir(), 'tg-cli-review-process-internals-2'),
+    outDir: path.join(os.tmpdir(), 'tg-cli-process-qa-internals-2'),
   });
-  assert.equal(llmNonJson.enabled, true);
-  assert.equal(llmNonJson.ok, false);
-  assert.equal(llmNonJson.reason, 'llm_non_json_output');
-  assert.equal(llmNonJson.raw, 'not json');
+  assert.equal(llmNonJson.enabled, false);
+  assert.equal(llmNonJson.reason, 'moved_to_foundry_process_curation');
 
   const llmThrownString = await __testInternals.runOptionalLlmReview([], {
     enableLlm: true,
@@ -1023,11 +1025,10 @@ test('review-process internals cover helper branches and rendering fallbacks', a
     fetchImpl: (async () => {
       throw 'boom';
     }) as FetchLike,
-    outDir: path.join(os.tmpdir(), 'tg-cli-review-process-internals-3'),
+    outDir: path.join(os.tmpdir(), 'tg-cli-process-qa-internals-3'),
   });
-  assert.equal(llmThrownString.enabled, true);
-  assert.equal(llmThrownString.ok, false);
-  assert.equal(llmThrownString.reason, 'boom');
+  assert.equal(llmThrownString.enabled, false);
+  assert.equal(llmThrownString.reason, 'moved_to_foundry_process_curation');
 
   const timing = __testInternals.renderTiming({
     runId: 'run-1',
@@ -1087,7 +1088,7 @@ test('review-process internals cover helper branches and rendering fallbacks', a
       [
         'proc-a.json',
         {
-          name_zh_en_ok: false,
+          source_name_ok: false,
           functional_unit_ok: false,
           system_boundary_ok: false,
           time_ok: false,
@@ -1185,7 +1186,7 @@ test('review-process internals cover helper branches and rendering fallbacks', a
       [
         'proc-a.json',
         {
-          name_zh_en_ok: false,
+          source_name_ok: false,
           functional_unit_ok: false,
           system_boundary_ok: false,
           time_ok: false,

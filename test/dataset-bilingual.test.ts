@@ -13,8 +13,8 @@ import {
 } from '../src/lib/dataset-bilingual.js';
 import type { DatasetValidateReport } from '../src/lib/dataset-validate.js';
 import type { DotEnvLoadResult } from '../src/lib/dotenv.js';
-import type { FlowReviewReport } from '../src/lib/review-flow.js';
-import type { ProcessReviewReport } from '../src/lib/review-process.js';
+import type { FlowQaReport } from '../src/lib/flow-qa.js';
+import type { ProcessQaReport } from '../src/lib/process-qa.js';
 
 const dotEnvStatus: DotEnvLoadResult = {
   loaded: false,
@@ -133,11 +133,11 @@ function validDatasetReport(
   };
 }
 
-function processReviewReport(reportFile: string): ProcessReviewReport {
+function processQaReport(reportFile: string): ProcessQaReport {
   return {
     schema_version: 1,
     generated_at_utc: '2026-05-23T00:00:00.000Z',
-    status: 'completed_local_process_review',
+    status: 'completed_local_process_qa',
     run_id: 'test',
     run_root: path.dirname(reportFile),
     rows_file: reportFile,
@@ -158,10 +158,10 @@ function processReviewReport(reportFile: string): ProcessReviewReport {
       reason: 'disabled',
     },
     files: {
-      review_input_summary: reportFile,
+      qa_input_summary: reportFile,
       materialization_summary: null,
-      review_zh: reportFile,
-      review_en: reportFile,
+      qa_zh: reportFile,
+      qa_en: reportFile,
       timing: reportFile,
       unit_issue_log: reportFile,
       summary: reportFile,
@@ -170,11 +170,11 @@ function processReviewReport(reportFile: string): ProcessReviewReport {
   };
 }
 
-function flowReviewReport(reportFile: string): FlowReviewReport {
+function flowQaReport(reportFile: string): FlowQaReport {
   return {
     schema_version: 1,
     generated_at_utc: '2026-05-23T00:00:00.000Z',
-    status: 'completed_local_flow_review',
+    status: 'completed_local_flow_qa',
     run_id: 'test',
     out_dir: path.dirname(reportFile),
     input_mode: 'rows_file',
@@ -198,7 +198,7 @@ function flowReviewReport(reportFile: string): FlowReviewReport {
       batch_results: [],
     },
     files: {
-      review_input_summary: reportFile,
+      qa_input_summary: reportFile,
       materialization_summary: null,
       rule_findings: reportFile,
       llm_findings: reportFile,
@@ -206,8 +206,8 @@ function flowReviewReport(reportFile: string): FlowReviewReport {
       flow_summaries: reportFile,
       similarity_pairs: reportFile,
       summary: reportFile,
-      review_zh: reportFile,
-      review_en: reportFile,
+      qa_zh: reportFile,
+      qa_en: reportFile,
       timing: reportFile,
       report: reportFile,
     },
@@ -301,7 +301,7 @@ test('dataset bilingual apply writes translated rows and evidence', async () => 
   }
 });
 
-test('dataset bilingual validate combines scans with schema and review gates', async () => {
+test('dataset bilingual validate combines scans with schema and QA gates', async () => {
   const dir = mkdtempSync(path.join(os.tmpdir(), 'tg-cli-bilingual-validate-'));
   const inputPath = path.join(dir, 'processes.jsonl');
   const outDir = path.join(dir, 'out');
@@ -317,16 +317,16 @@ test('dataset bilingual validate combines scans with schema and review gates', a
       type: 'process',
       now: new Date('2026-05-23T00:00:00.000Z'),
       datasetValidateImpl: async (options) => validDatasetReport(options.inputPath, null),
-      processReviewImpl: async (options) =>
-        processReviewReport(path.join(options.outDir, 'review-report.json')),
-      flowReviewImpl: async (options) => flowReviewReport(path.join(options.outDir, 'report.json')),
+      processQaImpl: async (options) =>
+        processQaReport(path.join(options.outDir, 'qa-report.json')),
+      flowQaImpl: async (options) => flowQaReport(path.join(options.outDir, 'report.json')),
     });
 
     assert.equal(report.status, 'blocked');
     assert.equal(report.scan.blocker_count, 2);
     assert.equal(report.scan.warning_count, 1);
     assert.equal(report.schema_gate.invalid, 0);
-    assert.equal(report.review_gate.status, 'completed');
+    assert.equal(report.qa_gate.status, 'completed');
     assert.equal(existsSync(report.files.report ?? ''), true);
     assert.equal(readJsonl(report.files.findings ?? '').length, 3);
   } finally {
@@ -459,14 +459,14 @@ test('dataset bilingual covers local-only extraction, apply blockers, and flow r
       outDir: path.join(dir, 'validate-flow'),
       type: 'flow',
       datasetValidateImpl: async (options) => validDatasetReport(options.inputPath, null, 'flow'),
-      processReviewImpl: async (options) =>
-        processReviewReport(path.join(options.outDir, 'report.json')),
-      flowReviewImpl: async (options) => flowReviewReport(path.join(options.outDir, 'report.json')),
+      processQaImpl: async (options) =>
+        processQaReport(path.join(options.outDir, 'report.json')),
+      flowQaImpl: async (options) => flowQaReport(path.join(options.outDir, 'report.json')),
       now: new Date('2026-05-23T00:00:00.000Z'),
     });
     assert.equal(flowValidateReport.status, 'completed');
-    assert.equal(flowValidateReport.review_gate.status, 'completed');
-    assert.match(flowValidateReport.review_gate.flow_report_file ?? '', /review[\\/]flow/u);
+    assert.equal(flowValidateReport.qa_gate.status, 'completed');
+    assert.match(flowValidateReport.qa_gate.flow_report_file ?? '', /qa[\\/]flow/u);
 
     const localValidateReport = await runDatasetBilingualValidate({
       inputPath,
@@ -475,7 +475,7 @@ test('dataset bilingual covers local-only extraction, apply blockers, and flow r
       datasetValidateImpl: async (options) => validDatasetReport(options.inputPath, null),
     });
     assert.equal(localValidateReport.files.report, null);
-    assert.equal(localValidateReport.review_gate.status, 'not_run');
+    assert.equal(localValidateReport.qa_gate.status, 'not_run');
 
     const schemaBlockedReport = await runDatasetBilingualValidate({
       inputPath,
@@ -494,23 +494,23 @@ test('dataset bilingual covers local-only extraction, apply blockers, and flow r
     });
     assert.equal(schemaBlockedReport.status, 'blocked');
 
-    const defaultReviewReport = await runDatasetBilingualValidate({
+    const defaultQaReport = await runDatasetBilingualValidate({
       inputPath,
       rawInput: { rows: [sampleFlowRow()] },
-      outDir: path.join(dir, 'default-flow-review'),
+      outDir: path.join(dir, 'default-flow-qa'),
       type: 'flow',
       datasetValidateImpl: async (options) => validDatasetReport(options.inputPath, null, 'flow'),
     });
-    assert.equal(defaultReviewReport.review_gate.status, 'completed');
+    assert.equal(defaultQaReport.qa_gate.status, 'completed');
 
-    const defaultProcessReviewReport = await runDatasetBilingualValidate({
+    const defaultProcessQaReport = await runDatasetBilingualValidate({
       inputPath,
       rawInput: { rows: [sampleProcessRow()] },
-      outDir: path.join(dir, 'default-process-review'),
+      outDir: path.join(dir, 'default-process-qa'),
       type: 'process',
       datasetValidateImpl: async (options) => validDatasetReport(options.inputPath, null),
     });
-    assert.equal(defaultProcessReviewReport.review_gate.status, 'completed');
+    assert.equal(defaultProcessQaReport.qa_gate.status, 'completed');
 
     const defaultSchemaGateReport = await runDatasetBilingualValidate({
       inputPath: 'memory',
@@ -887,7 +887,7 @@ test('executeCli dispatches dataset bilingual subcommands', async () => {
             invalid: 0,
             report_file: null,
           },
-          review_gate: {
+          qa_gate: {
             status: 'not_run',
             process_report_file: null,
             flow_report_file: null,
@@ -930,7 +930,7 @@ test('executeCli dispatches dataset bilingual subcommands', async () => {
           invalid: 0,
           report_file: null,
         },
-        review_gate: {
+        qa_gate: {
           status: 'not_run',
           process_report_file: null,
           flow_report_file: null,

@@ -61,14 +61,14 @@ export type FlowFetchRowsReport = {
   allow_latest_fallback: boolean;
   requested_ref_count: number;
   resolved_ref_count: number;
-  review_input_row_count: number;
-  duplicate_review_input_rows_collapsed: number;
+  qa_input_row_count: number;
+  duplicate_qa_input_rows_collapsed: number;
   missing_ref_count: number;
   ambiguous_ref_count: number;
   resolution_counts: Record<SupabaseFlowLookup['resolution'], number>;
   files: {
     resolved_flow_rows: string;
-    review_input_rows: string;
+    qa_input_rows: string;
     fetch_summary: string;
     missing_flow_refs: string;
     ambiguous_flow_refs: string;
@@ -162,7 +162,7 @@ function buildMaterializedRow(
   };
 }
 
-function buildReviewInputRow(
+function buildQaInputRow(
   row: JsonRecord,
   flowKey: string,
   contexts: FlowFetchMaterializationContext[],
@@ -217,7 +217,7 @@ export async function runFlowFetchRows(
   const resolvedRowArtifacts: JsonRecord[] = [];
   const missingRefs: JsonRecord[] = [];
   const ambiguousRefs: JsonRecord[] = [];
-  const reviewInputByKey = new Map<
+  const qaInputByKey = new Map<
     string,
     { row: JsonRecord; contexts: FlowFetchMaterializationContext[] }
   >();
@@ -284,22 +284,22 @@ export async function runFlowFetchRows(
     resolvedRowArtifacts.push(materializedRow);
 
     const flowKey = `${resolvedFlowId}@${resolvedVersion}`;
-    const existing = reviewInputByKey.get(flowKey);
+    const existing = qaInputByKey.get(flowKey);
     if (existing) {
       existing.contexts.push(context);
     } else {
-      reviewInputByKey.set(flowKey, {
+      qaInputByKey.set(flowKey, {
         row: materializedRow,
         contexts: [context],
       });
     }
   }
 
-  const reviewInputRows = [...reviewInputByKey.entries()]
+  const qaInputRows = [...qaInputByKey.entries()]
     .sort(([left], [right]) => left.localeCompare(right))
-    .map(([flowKey, entry]) => buildReviewInputRow(entry.row, flowKey, entry.contexts));
+    .map(([flowKey, entry]) => buildQaInputRow(entry.row, flowKey, entry.contexts));
 
-  const duplicateReviewInputRowsCollapsed = resolvedRowArtifacts.length - reviewInputRows.length;
+  const duplicateQaInputRowsCollapsed = resolvedRowArtifacts.length - qaInputRows.length;
   const unresolvedRefCount = missingRefs.length + ambiguousRefs.length;
   const status: FlowFetchSummaryStatus =
     unresolvedRefCount > 0
@@ -307,13 +307,13 @@ export async function runFlowFetchRows(
       : 'completed_flow_row_materialization';
 
   const resolvedRowsPath = path.join(resolvedOutDir, 'resolved-flow-rows.jsonl');
-  const reviewInputRowsPath = path.join(resolvedOutDir, 'review-input-rows.jsonl');
+  const qaInputRowsPath = path.join(resolvedOutDir, 'qa-input-rows.jsonl');
   const missingRefsPath = path.join(resolvedOutDir, 'missing-flow-refs.jsonl');
   const ambiguousRefsPath = path.join(resolvedOutDir, 'ambiguous-flow-refs.jsonl');
   const summaryPath = path.join(resolvedOutDir, 'fetch-summary.json');
 
   writeJsonLinesArtifact(resolvedRowsPath, resolvedRowArtifacts);
-  writeJsonLinesArtifact(reviewInputRowsPath, reviewInputRows);
+  writeJsonLinesArtifact(qaInputRowsPath, qaInputRows);
   writeJsonLinesArtifact(missingRefsPath, missingRefs);
   writeJsonLinesArtifact(ambiguousRefsPath, ambiguousRefs);
 
@@ -326,14 +326,14 @@ export async function runFlowFetchRows(
     allow_latest_fallback: allowLatestFallback,
     requested_ref_count: rows.length,
     resolved_ref_count: resolvedRowArtifacts.length,
-    review_input_row_count: reviewInputRows.length,
-    duplicate_review_input_rows_collapsed: duplicateReviewInputRowsCollapsed,
+    qa_input_row_count: qaInputRows.length,
+    duplicate_qa_input_rows_collapsed: duplicateQaInputRowsCollapsed,
     missing_ref_count: missingRefs.length,
     ambiguous_ref_count: ambiguousRefs.length,
     resolution_counts: resolutionCounts,
     files: {
       resolved_flow_rows: resolvedRowsPath,
-      review_input_rows: reviewInputRowsPath,
+      qa_input_rows: qaInputRowsPath,
       fetch_summary: summaryPath,
       missing_flow_refs: missingRefsPath,
       ambiguous_flow_refs: ambiguousRefsPath,

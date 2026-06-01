@@ -103,7 +103,7 @@ type FlowSimilarityPair = {
   right_name_en: string;
 };
 
-type FlowReviewLlmBatchResult = {
+type FlowQaLlmBatchResult = {
   batch_index: number;
   batch_size: number;
   enabled: boolean;
@@ -112,17 +112,17 @@ type FlowReviewLlmBatchResult = {
   raw_preview?: string;
 };
 
-export type FlowReviewLlmResult = {
+export type FlowQaLlmResult = {
   enabled: boolean;
   ok?: boolean;
   reason?: string;
   batch_count: number;
   reviewed_flow_count: number;
   truncated: boolean;
-  batch_results: FlowReviewLlmBatchResult[];
+  batch_results: FlowQaLlmBatchResult[];
 };
 
-type FlowReviewLlmRunResult = FlowReviewLlmResult & {
+type FlowQaLlmRunResult = FlowQaLlmResult & {
   llmFindings: FlowRuleFinding[];
 };
 
@@ -140,10 +140,10 @@ type FlowRulesetGate = {
   next_action: 'continue' | 'review_findings' | 'fix_blockers';
 };
 
-export type FlowReviewReport = {
+export type FlowQaReport = {
   schema_version: 1;
   generated_at_utc: string;
-  status: 'completed_local_flow_review';
+  status: 'completed_local_flow_qa';
   run_id: string;
   out_dir: string;
   input_mode: 'rows_file' | 'flows_dir' | 'run_root';
@@ -166,9 +166,9 @@ export type FlowReviewReport = {
   rule_counts: Record<string, number>;
   methodology_rule_counts?: Record<string, number>;
   ruleset_gate?: FlowRulesetGate;
-  llm: FlowReviewLlmResult;
+  llm: FlowQaLlmResult;
   files: {
-    review_input_summary: string;
+    qa_input_summary: string;
     materialization_summary: string | null;
     rule_findings: string;
     llm_findings: string;
@@ -177,14 +177,14 @@ export type FlowReviewReport = {
     flow_summaries: string;
     similarity_pairs: string;
     summary: string;
-    review_zh: string;
-    review_en: string;
+    qa_zh: string;
+    qa_en: string;
     timing: string;
     report: string;
   };
 };
 
-export type RunFlowReviewOptions = {
+export type RunFlowQaOptions = {
   rowsFile?: string;
   flowsDir?: string;
   runRoot?: string;
@@ -746,7 +746,7 @@ function buildFlowSummaryAndRuleFindings(
         flowUuidValue,
         baseVersion,
         'warning',
-        'elementary_flow_in_flow_review',
+        'elementary_flow_in_flow_qa',
         'Flow type is Elementary flow; check whether this batch should exclude it.',
         {
           fixability: 'review-needed',
@@ -1059,7 +1059,7 @@ async function runOptionalLlmReview(
     outDir: string;
     runId: string;
   },
-): Promise<FlowReviewLlmRunResult> {
+): Promise<FlowQaLlmRunResult> {
   if (!options.enableLlm) {
     return {
       enabled: false,
@@ -1090,7 +1090,7 @@ async function runOptionalLlmReview(
   const summaryByUuid = Object.fromEntries(
     summaries.map((summary) => [summary.flow_uuid, summary]),
   );
-  const batchResults: FlowReviewLlmBatchResult[] = [];
+  const batchResults: FlowQaLlmBatchResult[] = [];
   const llmFindings: FlowRuleFinding[] = [];
 
   for (let index = 0; index < batches.length; index += 1) {
@@ -1114,7 +1114,7 @@ async function runOptionalLlmReview(
         timeoutMs: 45_000,
         cacheDir: path.join(options.outDir, '.llm-cache'),
         tracePath: path.join(options.outDir, 'llm-trace.jsonl'),
-        module: 'review-flow',
+        module: 'flow-qa',
         stage: `semantic-review-${index + 1}`,
         runId: options.runId,
       });
@@ -1230,7 +1230,7 @@ function readJsonObject(filePath: string): JsonRecord {
     const parsed = JSON.parse(readFileSync(filePath, 'utf8')) as unknown;
     if (!isRecord(parsed)) {
       throw new CliError(`Expected JSON object in flow file: ${filePath}`, {
-        code: 'FLOW_REVIEW_INVALID_FLOW_FILE',
+        code: 'FLOW_QA_INVALID_FLOW_FILE',
         exitCode: 2,
       });
     }
@@ -1240,7 +1240,7 @@ function readJsonObject(filePath: string): JsonRecord {
       throw error;
     }
     throw new CliError(`Invalid flow JSON file: ${filePath}`, {
-      code: 'FLOW_REVIEW_INVALID_FLOW_FILE',
+      code: 'FLOW_QA_INVALID_FLOW_FILE',
       exitCode: 2,
       details: String(error),
     });
@@ -1252,7 +1252,7 @@ function materializeRowsFile(
   outDir: string,
 ): { flowsDir: string; summaryPath: string } {
   const rows = loadRowsFromFile(rowsFile);
-  const targetDir = path.join(outDir, 'review-input', 'flows');
+  const targetDir = path.join(outDir, 'qa-input', 'flows');
   mkdirSync(targetDir, { recursive: true });
 
   const byKey: Record<string, JsonRecord> = {};
@@ -1285,7 +1285,7 @@ function materializeRowsFile(
       });
     });
 
-  const summaryPath = path.join(outDir, 'review-input', 'materialization-summary.json');
+  const summaryPath = path.join(outDir, 'qa-input', 'materialization-summary.json');
   writeJsonArtifact(summaryPath, {
     source_rows_file: path.resolve(rowsFile),
     input_row_count: rows.length,
@@ -1301,7 +1301,7 @@ function materializeRowsFile(
   };
 }
 
-function resolveReviewInput(options: RunFlowReviewOptions): {
+function resolveReviewInput(options: RunFlowQaOptions): {
   inputMode: 'rows_file' | 'flows_dir' | 'run_root';
   effectiveFlowsDir: string;
   materializationSummaryPath: string | null;
@@ -1315,9 +1315,9 @@ function resolveReviewInput(options: RunFlowReviewOptions): {
   ].filter(Boolean);
   if (declaredModes.length !== 1) {
     throw new CliError(
-      'Flow review requires exactly one of --rows-file, --flows-dir, or --run-root.',
+      'Flow QA requires exactly one of --rows-file, --flows-dir, or --run-root.',
       {
-        code: 'FLOW_REVIEW_INPUT_MODE_REQUIRED',
+        code: 'FLOW_QA_INPUT_MODE_REQUIRED',
         exitCode: 2,
       },
     );
@@ -1380,8 +1380,8 @@ function resolveReviewInput(options: RunFlowReviewOptions): {
 
 function listFlowFiles(flowsDir: string): string[] {
   if (!existsSync(flowsDir) || !statSync(flowsDir).isDirectory()) {
-    throw new CliError(`Flow review directory not found: ${flowsDir}`, {
-      code: 'FLOW_REVIEW_DIR_NOT_FOUND',
+    throw new CliError(`Flow QA directory not found: ${flowsDir}`, {
+      code: 'FLOW_QA_DIR_NOT_FOUND',
       exitCode: 2,
     });
   }
@@ -1408,12 +1408,12 @@ function renderZhReview(options: {
   flowSummaries: JsonRecord[];
   ruleFindings: FlowRuleFinding[];
   llmFindings: FlowRuleFinding[];
-  llmResult: FlowReviewLlmResult;
+  llmResult: FlowQaLlmResult;
   mergedFindings: FlowRuleFinding[];
-  summary: FlowReviewReport;
+  summary: FlowQaReport;
 }): string {
   const lines = [
-    '# flow_review_zh\n',
+    '# flow_qa_zh\n',
     `- run_id: \`${options.runId}\`\n`,
     `- logic_version: \`${options.logicVersion}\`\n`,
     `- flows_dir: \`${options.flowsDir}\`\n`,
@@ -1469,7 +1469,7 @@ function renderZhReview(options: {
 
   lines.push(
     '\n## 说明\n',
-    '- 当前 CLI 版本保持 local-first / artifact-first，不在 review flow 阶段接入 MCP。\n',
+    '- 当前 CLI 版本保持 local-first / artifact-first，不在 qa flow 阶段接入 MCP。\n',
     '- flow property / unitgroup 的额外本地 registry 丰富暂未接入 CLI，本轮 summary 中统一标记为 disabled。\n',
   );
 
@@ -1483,11 +1483,11 @@ function renderEnReview(options: {
   flowCount: number;
   ruleFindingCount: number;
   llmFindingCount: number;
-  llmResult: FlowReviewLlmResult;
+  llmResult: FlowQaLlmResult;
   methodologyRuleSource: string;
 }): string {
   const lines = [
-    '# flow_review_en\n',
+    '# flow_qa_en\n',
     `- run_id: \`${options.runId}\`\n`,
     `- logic_version: \`${options.logicVersion}\`\n`,
     `- flows_dir: \`${options.flowsDir}\`\n`,
@@ -1518,7 +1518,7 @@ function renderTimingReview(options: {
   endTs?: string;
   flowCount: number;
 }): string {
-  const lines = ['# flow_review_timing\n', `- run_id: \`${options.runId}\`\n`];
+  const lines = ['# flow_qa_timing\n', `- run_id: \`${options.runId}\`\n`];
   if (options.startTs) {
     lines.push(`- start: \`${options.startTs}\`\n`);
   }
@@ -1539,10 +1539,10 @@ function renderTimingReview(options: {
   return lines.join('');
 }
 
-export async function runFlowReview(options: RunFlowReviewOptions): Promise<FlowReviewReport> {
+export async function runFlowQa(options: RunFlowQaOptions): Promise<FlowQaReport> {
   if (!options.outDir.trim()) {
     throw new CliError('Missing required --out-dir value.', {
-      code: 'FLOW_REVIEW_OUT_DIR_REQUIRED',
+      code: 'FLOW_QA_OUT_DIR_REQUIRED',
       exitCode: 2,
     });
   }
@@ -1557,7 +1557,7 @@ export async function runFlowReview(options: RunFlowReviewOptions): Promise<Flow
   const flowFiles = listFlowFiles(resolvedInput.effectiveFlowsDir);
   if (!flowFiles.length) {
     throw new CliError(`No flow JSON files found in ${resolvedInput.effectiveFlowsDir}`, {
-      code: 'FLOW_REVIEW_NO_FLOW_FILES',
+      code: 'FLOW_QA_NO_FLOW_FILES',
       exitCode: 2,
     });
   }
@@ -1609,7 +1609,7 @@ export async function runFlowReview(options: RunFlowReviewOptions): Promise<Flow
     runId: resolvedInput.runId,
   });
 
-  const llmResult: FlowReviewLlmResult = {
+  const llmResult: FlowQaLlmResult = {
     enabled: llmRun.enabled,
     ...(llmRun.ok === undefined ? {} : { ok: llmRun.ok }),
     ...(llmRun.reason ? { reason: llmRun.reason } : {}),
@@ -1623,18 +1623,18 @@ export async function runFlowReview(options: RunFlowReviewOptions): Promise<Flow
   const savedSummaries = flowSummaries.map((summary) => stripInternalSummaryFields(summary));
   const now = options.now ?? (() => new Date());
 
-  const reviewInputSummaryPath = path.join(outDir, 'review-input-summary.json');
+  const reviewInputSummaryPath = path.join(outDir, 'qa-input-summary.json');
   const ruleFindingsPath = path.join(outDir, 'rule_findings.jsonl');
   const llmFindingsPath = path.join(outDir, 'llm_findings.jsonl');
   const findingsPath = path.join(outDir, 'findings.jsonl');
-  const rulesetGatePath = path.join(outDir, 'flow-review-ruleset-gate.json');
+  const rulesetGatePath = path.join(outDir, 'flow-qa-ruleset-gate.json');
   const flowSummariesPath = path.join(outDir, 'flow_summaries.jsonl');
   const similarityPairsPath = path.join(outDir, 'similarity_pairs.jsonl');
-  const summaryPath = path.join(outDir, 'flow_review_summary.json');
-  const reviewZhPath = path.join(outDir, 'flow_review_zh.md');
-  const reviewEnPath = path.join(outDir, 'flow_review_en.md');
-  const timingPath = path.join(outDir, 'flow_review_timing.md');
-  const reportPath = path.join(outDir, 'flow_review_report.json');
+  const summaryPath = path.join(outDir, 'flow_qa_summary.json');
+  const reviewZhPath = path.join(outDir, 'flow_qa_zh.md');
+  const reviewEnPath = path.join(outDir, 'flow_qa_en.md');
+  const timingPath = path.join(outDir, 'flow_qa_timing.md');
+  const reportPath = path.join(outDir, 'flow_qa_report.json');
 
   writeJsonArtifact(reviewInputSummaryPath, resolvedInput.reviewInputSummary);
   writeJsonLinesArtifact(ruleFindingsPath, ruleFindings);
@@ -1644,10 +1644,10 @@ export async function runFlowReview(options: RunFlowReviewOptions): Promise<Flow
   writeJsonLinesArtifact(flowSummariesPath, savedSummaries);
   writeJsonLinesArtifact(similarityPairsPath, similarity.pairs);
 
-  const report: FlowReviewReport = {
+  const report: FlowQaReport = {
     schema_version: 1,
     generated_at_utc: now().toISOString(),
-    status: 'completed_local_flow_review',
+    status: 'completed_local_flow_qa',
     run_id: resolvedInput.runId,
     out_dir: outDir,
     input_mode: resolvedInput.inputMode,
@@ -1672,7 +1672,7 @@ export async function runFlowReview(options: RunFlowReviewOptions): Promise<Flow
     ruleset_gate: rulesetGate,
     llm: llmResult,
     files: {
-      review_input_summary: reviewInputSummaryPath,
+      qa_input_summary: reviewInputSummaryPath,
       materialization_summary: resolvedInput.materializationSummaryPath,
       rule_findings: ruleFindingsPath,
       llm_findings: llmFindingsPath,
@@ -1681,8 +1681,8 @@ export async function runFlowReview(options: RunFlowReviewOptions): Promise<Flow
       flow_summaries: flowSummariesPath,
       similarity_pairs: similarityPairsPath,
       summary: summaryPath,
-      review_zh: reviewZhPath,
-      review_en: reviewEnPath,
+      qa_zh: reviewZhPath,
+      qa_en: reviewEnPath,
       timing: timingPath,
       report: reportPath,
     },

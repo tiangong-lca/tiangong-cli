@@ -3,7 +3,7 @@ import { existsSync, mkdtempSync, mkdirSync, readFileSync, rmSync, writeFileSync
 import os from 'node:os';
 import path from 'node:path';
 import test from 'node:test';
-import { __testInternals, runLifecyclemodelReview } from '../src/lib/review-lifecyclemodel.js';
+import { __testInternals, runLifecyclemodelQa } from '../src/lib/lifecyclemodel-qa.js';
 
 type JsonRecord = Record<string, unknown>;
 
@@ -180,8 +180,8 @@ function writeLifecyclemodelBundle(
   return modelFile;
 }
 
-test('runLifecyclemodelReview writes artifact-first outputs and dedupes validation findings', async () => {
-  const dir = mkdtempSync(path.join(os.tmpdir(), 'tg-cli-review-lifecyclemodel-'));
+test('runLifecyclemodelQa writes artifact-first outputs and dedupes validation findings', async () => {
+  const dir = mkdtempSync(path.join(os.tmpdir(), 'tg-cli-lifecyclemodel-qa-'));
   const runRoot = path.join(dir, 'lm-run-1');
   const outDir = path.join(dir, 'review');
 
@@ -278,17 +278,17 @@ test('runLifecyclemodelReview writes artifact-first outputs and dedupes validati
   );
 
   try {
-    const report = await runLifecyclemodelReview({
+    const report = await runLifecyclemodelQa({
       runDir: runRoot,
       outDir,
       logicVersion: 'review-v1',
       startTs: '2026-03-30T00:00:00.000Z',
       endTs: '2026-03-30T00:10:00.000Z',
       now: () => new Date('2026-03-30T00:11:00.000Z'),
-      cwd: '/tmp/lifecyclemodel-review',
+      cwd: '/tmp/lifecyclemodel-qa',
     });
 
-    assert.equal(report.status, 'completed_local_lifecyclemodel_review');
+    assert.equal(report.status, 'completed_local_lifecyclemodel_qa');
     assert.equal(report.logic_version, 'review-v1');
     assert.equal(report.model_count, 2);
     assert.equal(report.finding_count, 11);
@@ -306,8 +306,8 @@ test('runLifecyclemodelReview writes artifact-first outputs and dedupes validati
     assert.ok(existsSync(report.files.model_summaries));
     assert.ok(existsSync(report.files.findings));
     assert.ok(existsSync(report.files.summary));
-    assert.ok(existsSync(report.files.review_zh));
-    assert.ok(existsSync(report.files.review_en));
+    assert.ok(existsSync(report.files.qa_zh));
+    assert.ok(existsSync(report.files.qa_en));
     assert.ok(existsSync(report.files.timing));
     assert.ok(existsSync(report.files.report));
 
@@ -348,7 +348,7 @@ test('runLifecyclemodelReview writes artifact-first outputs and dedupes validati
       report: path.join(runRoot, 'reports', 'lifecyclemodel-validate-build-report.json'),
     });
 
-    const zhReview = readFileSync(report.files.review_zh, 'utf8');
+    const zhReview = readFileSync(report.files.qa_zh, 'utf8');
     assert.match(zhReview, /模型摘要/u);
     assert.match(zhReview, /当前命令不引入 Python、LangGraph/u);
 
@@ -360,8 +360,8 @@ test('runLifecyclemodelReview writes artifact-first outputs and dedupes validati
     );
     assert.equal(invocationIndex.invocations.length, 1);
     assert.deepEqual(invocationIndex.invocations[0]?.command, [
-      'review',
-      'lifecyclemodel',
+      'qa',
+        'lifecyclemodel',
       '--run-dir',
       runRoot,
       '--out-dir',
@@ -373,14 +373,14 @@ test('runLifecyclemodelReview writes artifact-first outputs and dedupes validati
       '--end-ts',
       '2026-03-30T00:10:00.000Z',
     ]);
-    assert.equal(invocationIndex.invocations[0]?.cwd, '/tmp/lifecyclemodel-review');
+    assert.equal(invocationIndex.invocations[0]?.cwd, '/tmp/lifecyclemodel-qa');
   } finally {
     rmSync(dir, { recursive: true, force: true });
   }
 });
 
-test('runLifecyclemodelReview supports missing validation reports and consistent single-model bundles', async () => {
-  const dir = mkdtempSync(path.join(os.tmpdir(), 'tg-cli-review-lifecyclemodel-ok-'));
+test('runLifecyclemodelQa supports missing validation reports and consistent single-model bundles', async () => {
+  const dir = mkdtempSync(path.join(os.tmpdir(), 'tg-cli-lifecyclemodel-qa-ok-'));
   const runRoot = path.join(dir, 'lm-run-2');
   const outDir = path.join(dir, 'review');
 
@@ -426,7 +426,7 @@ test('runLifecyclemodelReview supports missing validation reports and consistent
   ]);
 
   try {
-    const report = await runLifecyclemodelReview({
+    const report = await runLifecyclemodelQa({
       runDir: runRoot,
       outDir,
       now: () => new Date('2026-03-30T00:00:00.000Z'),
@@ -452,8 +452,8 @@ test('runLifecyclemodelReview supports missing validation reports and consistent
   }
 });
 
-test('runLifecyclemodelReview rejects invalid inputs, missing runs, and malformed timestamps', async () => {
-  const dir = mkdtempSync(path.join(os.tmpdir(), 'tg-cli-review-lifecyclemodel-errors-'));
+test('runLifecyclemodelQa rejects invalid inputs, missing runs, and malformed timestamps', async () => {
+  const dir = mkdtempSync(path.join(os.tmpdir(), 'tg-cli-lifecyclemodel-qa-errors-'));
   const invalidRunRoot = path.join(dir, 'lm-run-invalid');
   const noModelsRunRoot = path.join(dir, 'lm-run-no-models');
   const badTimestampRunRoot = path.join(dir, 'lm-run-bad-ts');
@@ -504,7 +504,7 @@ test('runLifecyclemodelReview rejects invalid inputs, missing runs, and malforme
   try {
     await assert.rejects(
       async () =>
-        runLifecyclemodelReview({
+        runLifecyclemodelQa({
           runDir: '',
           outDir,
         }),
@@ -513,7 +513,7 @@ test('runLifecyclemodelReview rejects invalid inputs, missing runs, and malforme
 
     await assert.rejects(
       async () =>
-        runLifecyclemodelReview({
+        runLifecyclemodelQa({
           runDir: path.join(dir, 'missing'),
           outDir,
         }),
@@ -522,7 +522,7 @@ test('runLifecyclemodelReview rejects invalid inputs, missing runs, and malforme
 
     await assert.rejects(
       async () =>
-        runLifecyclemodelReview({
+        runLifecyclemodelQa({
           runDir: invalidRunRoot,
           outDir,
         }),
@@ -531,7 +531,7 @@ test('runLifecyclemodelReview rejects invalid inputs, missing runs, and malforme
 
     await assert.rejects(
       async () =>
-        runLifecyclemodelReview({
+        runLifecyclemodelQa({
           runDir: noModelsRunRoot,
           outDir,
         }),
@@ -540,7 +540,7 @@ test('runLifecyclemodelReview rejects invalid inputs, missing runs, and malforme
 
     await assert.rejects(
       async () =>
-        runLifecyclemodelReview({
+        runLifecyclemodelQa({
           runDir: badTimestampRunRoot,
           outDir,
           startTs: 'bad-start',
@@ -553,8 +553,8 @@ test('runLifecyclemodelReview rejects invalid inputs, missing runs, and malforme
   }
 });
 
-test('review lifecyclemodel internals cover invocation index and model discovery edge cases', () => {
-  const dir = mkdtempSync(path.join(os.tmpdir(), 'tg-cli-review-lifecyclemodel-internals-'));
+test('qa lifecyclemodel internals cover invocation index and model discovery edge cases', () => {
+  const dir = mkdtempSync(path.join(os.tmpdir(), 'tg-cli-lifecyclemodel-qa-internals-'));
   const runRoot = path.join(dir, 'lm-run-internals');
   const outDir = path.join(dir, 'review');
   const layout = __testInternals.buildLayout(runRoot, outDir);
@@ -620,8 +620,8 @@ test('review lifecyclemodel internals cover invocation index and model discovery
   }
 });
 
-test('review lifecyclemodel validation helpers cover invalid report shapes and normalization fallbacks', () => {
-  const dir = mkdtempSync(path.join(os.tmpdir(), 'tg-cli-review-lifecyclemodel-validation-'));
+test('qa lifecyclemodel validation helpers cover invalid report shapes and normalization fallbacks', () => {
+  const dir = mkdtempSync(path.join(os.tmpdir(), 'tg-cli-lifecyclemodel-qa-validation-'));
   const runRoot = path.join(dir, 'lm-run-validation');
   const outDir = path.join(dir, 'review');
   const layout = __testInternals.buildLayout(runRoot, outDir);
@@ -751,7 +751,7 @@ test('review lifecyclemodel validation helpers cover invalid report shapes and n
     assert.equal(invocationIndex.schema_version, 1);
     assert.deepEqual(invocationIndex.invocations, [
       {
-        command: ['review', 'lifecyclemodel', '--run-dir', runRoot, '--out-dir', outDir],
+        command: ['qa', 'lifecyclemodel', '--run-dir', runRoot, '--out-dir', outDir],
         cwd: process.cwd(),
         created_at: '2026-03-30T00:00:00.000Z',
         run_id: 'lm-run-validation',
@@ -764,8 +764,8 @@ test('review lifecyclemodel validation helpers cover invalid report shapes and n
   }
 });
 
-test('review lifecyclemodel model helpers cover direct payload roots, fallbacks, and invalid artifacts', () => {
-  const dir = mkdtempSync(path.join(os.tmpdir(), 'tg-cli-review-lifecyclemodel-model-'));
+test('qa lifecyclemodel model helpers cover direct payload roots, fallbacks, and invalid artifacts', () => {
+  const dir = mkdtempSync(path.join(os.tmpdir(), 'tg-cli-lifecyclemodel-qa-model-'));
 
   try {
     const directModelPath = path.join(dir, 'direct-model.json');
@@ -955,8 +955,8 @@ test('review lifecyclemodel model helpers cover direct payload roots, fallbacks,
   }
 });
 
-test('runLifecyclemodelReview rejects missing run manifests and mismatched run ids', async () => {
-  const dir = mkdtempSync(path.join(os.tmpdir(), 'tg-cli-review-lifecyclemodel-manifest-'));
+test('runLifecyclemodelQa rejects missing run manifests and mismatched run ids', async () => {
+  const dir = mkdtempSync(path.join(os.tmpdir(), 'tg-cli-lifecyclemodel-qa-manifest-'));
   const missingManifestRunRoot = path.join(dir, 'lm-run-missing-manifest');
   const mismatchRunRoot = path.join(dir, 'lm-run-mismatch');
   const outDir = path.join(dir, 'review');
@@ -967,7 +967,7 @@ test('runLifecyclemodelReview rejects missing run manifests and mismatched run i
   try {
     await assert.rejects(
       async () =>
-        runLifecyclemodelReview({
+        runLifecyclemodelQa({
           runDir: missingManifestRunRoot,
           outDir,
         }),
@@ -976,7 +976,7 @@ test('runLifecyclemodelReview rejects missing run manifests and mismatched run i
 
     await assert.rejects(
       async () =>
-        runLifecyclemodelReview({
+        runLifecyclemodelQa({
           runDir: mismatchRunRoot,
           outDir,
         }),

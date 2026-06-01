@@ -97,9 +97,10 @@ tiangong-lca
     build-resulting-process
     publish-resulting-process
     orchestrate
-  review
+  qa
     process
     flow
+    lifecyclemodel
   publish
     run
   validation
@@ -146,8 +147,8 @@ tiangong-lca
 | `tiangong-lca lifecyclemodel build-resulting-process` | 本地 lifecycle model resulting process 聚合、内部 flow 抵消、artifact 输出 |
 | `tiangong-lca lifecyclemodel publish-resulting-process` | 读取 resulting-process run，生成 `publish-bundle.json` / `publish-intent.json` 本地交付物 |
 | `tiangong-lca lifecyclemodel orchestrate` | 递归装配的 plan / execute / publish-handoff 命令；写出 graph/lineage/publish bundle 工件，并只调用原生 CLI builder slices |
-| `tiangong-lca review process` | 本地 process review、artifact-first 报告输出、可选 CLI LLM 语义审核 |
-| `tiangong-lca review flow` | 本地 flow governance review、rows-file 物化、artifact-first 报告输出、可选 CLI LLM 语义审核 |
+| `tiangong-lca qa process` | 本地 process QA、artifact-first 报告输出、可选 CLI LLM 语义审核 |
+| `tiangong-lca qa flow` | 本地 flow governance QA、rows-file 物化、artifact-first 报告输出、可选 CLI LLM 语义审核 |
 | `tiangong-lca publish run` | 本地 publish 契约归一化、dry-run/commit、`verification-report.json` 与 `publish-report.json` 输出；当提供 Supabase runtime 时默认通过共享 dataset command executor 提交 `lifecyclemodels` / `processes` / `sources` |
 | `tiangong-lca validation run` | 本地 `@tiangong-lca/tidas-sdk` 直接依赖校验收口 |
 | `tiangong-lca admin embedding-run` | `embedding_ft` |
@@ -163,11 +164,11 @@ tiangong-lca
 - `tiangong-lca lifecyclemodel publish-resulting-process` 已可执行
 - `tiangong-lca lifecyclemodel orchestrate` 已可执行
 
-`tiangong-lca review ...` 也已经开始进入统一命令树，其中：
+`tiangong-lca qa ...` 也已经开始进入统一命令树，其中：
 
-- `tiangong-lca review process` 已可执行
-- `tiangong-lca review flow` 已可执行
-- `tiangong-lca review lifecyclemodel` 已可执行
+- `tiangong-lca qa process` 已可执行
+- `tiangong-lca qa flow` 已可执行
+- `tiangong-lca qa lifecyclemodel` 已可执行
 
 `tiangong-lca flow ...` 也已经开始承接 flow-governance 主链迁移，其中：
 
@@ -204,7 +205,7 @@ tiangong-lca
 - 已实现的 `process identity-preflight` 是本地只读、artifact-first 的生成前 gate；输入为 target + embedded candidates，并可通过 repeatable `--candidate-input` 读取 JSON/JSONL 文件或递归扫描本地目录。需要查正式库时，输入可设置 `remote_candidate_search`，CLI 也可传 `--remote-candidates --remote-query ... --remote-limit ...`，通过 `process_hybrid_search` 拉取远程候选并合并进入同一套 identity / exchange fingerprint 判定。输出 `identity-decision.json` / `identity-candidates.jsonl` / `identity-candidate-sources.json`；当 exact exchange fingerprint 与 reference/geography 等身份上下文同时命中时输出 `block_duplicate`，只有 inventory-only 弱命中时才进入 `manual_review`。
 - 已实现的 `process build-plan` 是 identity preflight 后、payload 生成前的本地 gate；输入为 BuildPlan，输出 `build-plan-gate-report.json`，并在 `materialize` 时输出 canonical `materialized-process.json`。如果 plan 内已提供 canonical payload，则直接校验该 payload；如果没有 payload，则从 name plan、quantitative reference、exchange plan、source evidence、modelling/admin 字段确定性生成 `processDataSet`。`annualSupplyOrProductionVolume` 使用 build plan/evidence 的显式源语言值；缺失时不再按 reference flow 自动伪造，必须回到证据或 AI 修复环节补齐后再入库。
 - 已实现的 `process auto-build` 在调用方显式提供的 run root 内保留旧 `cache/process_from_flow_state.json`、`cache/agent_handoff_summary.json` 等运行布局，不再推断 repo 本地 `./artifacts/...` 默认路径
-- `process auto-build` 当前只负责本地 request intake、flow 归一化、run scaffold、初始 `manifests/process-build-plan.json` 和 manifest/report 预写，不继续执行后续阶段。该 build plan 是 scaffold_only，后续必须由 identity preflight、evidence replacement、build-plan validate/materialize、schema/review gate 决定是否可写入。
+- `process auto-build` 当前只负责本地 request intake、flow 归一化、run scaffold、初始 `manifests/process-build-plan.json` 和 manifest/report 预写，不继续执行后续阶段。该 build plan 是 scaffold_only，后续必须由 identity preflight、evidence replacement、build-plan validate/materialize、schema/QA gate 决定是否可写入。
 - 已实现的 `process resume-build` 保留同一套 run 布局，并把本地 state-lock、run-manifest 校验、resume metadata/history、invocation index 更新统一收口到 CLI
 - `process resume-build` 当前只负责本地 resume handoff，不直接执行 route / split / exchange / QA / publish 阶段
 - 已实现的 `process publish-build` 继续保留同一套 run 布局，并把本地 publish-bundle/request/intent、state/invocation/handoff 更新统一收口到 CLI
@@ -227,10 +228,10 @@ tiangong-lca
 - `publish-resulting-process` 当前负责生成本地 publish handoff 产物，还没有把提交语义直接并入 `publish run`
 - 已实现的 `lifecyclemodel orchestrate` 把递归装配的 `plan | execute | publish` 三个动作统一收口到 CLI，并直接复用原生 `process auto-build`、`lifecyclemodel auto-build`、`lifecyclemodel build-resulting-process` slices
 - `lifecyclemodel orchestrate` 的 `process_builder` request schema 已删除旧 builder 控制项，只保留 CLI-native 本地构建字段，并在归一化阶段拒绝额外键；不再保留任何 Python fallback 配置面
-- 已实现的 `review process` 保留本地 artifact-first review contract，把规则核查、报告输出和可选 LLM 语义审核统一收口到 CLI；语义审核只使用 `TIANGONG_LCA_REVIEW_LLM_*`，不再透出 `OPENAI_*`
-- 已实现的 `review flow` 保留本地 artifact-first governance review contract，把 flow 摘要、相似对、规则 findings、可选 LLM findings 和双语 markdown 报告统一收口到 CLI；语义审核同样只使用 `TIANGONG_LCA_REVIEW_LLM_*`
+- 已实现的 `qa process` 保留本地 artifact-first QA contract，把规则核查、报告输出和可选 LLM 语义审核统一收口到 CLI；语义审核只使用 `TIANGONG_LCA_REVIEW_LLM_*`，不再透出 `OPENAI_*`
+- 已实现的 `qa flow` 保留本地 artifact-first governance QA contract，把 flow 摘要、相似对、规则 findings、可选 LLM findings 和双语 markdown 报告统一收口到 CLI；语义审核同样只使用 `TIANGONG_LCA_REVIEW_LLM_*`
 - review / dedup / publish 相关 gate 现在统一通过 `src/lib/runtime-rulesets.ts` 映射稳定 ruleset id、methodology rule id、severity 与 blocker 语义，供 Foundry / UI / publish handoff 不解析本地实现细节也能识别阻断原因
-- `review flow` 当前明确不支持 `--with-reference-context`，也还没有接入本地 registry enrichment；这部分仍需后续迁移切片单独落地
+- `qa flow` 当前明确不支持 `--with-reference-context`，也还没有接入本地 registry enrichment；这部分仍需后续迁移切片单独落地
 - 已实现的 `flow get` 保留 deterministic direct-read 边界，但内部执行已经收口到原生 `@supabase/supabase-js`；支持 `id` + 可选 `version/user_id/state_code` 读取；若精确版本 miss，则回退到最新可见版本；若出现多个同版本可见候选，则直接报 ambiguous
 - 已实现的 `flow list` 保留 deterministic direct-read 边界，但内部执行已经收口到原生 `@supabase/supabase-js`；支持稳定 `id/state_code/type_of_dataset` 过滤、显式 `order=id.asc,version.asc` 默认值，以及 `--all --page-size` 的 offset 分页
 - 已实现的 `flow identity-preflight` 是本地只读、artifact-first 的生成前 gate；输入为 target + embedded candidates，并可通过 repeatable `--candidate-input` 读取 JSON/JSONL 文件或递归扫描本地目录。需要查正式库时，输入可设置 `remote_candidate_search`，CLI 也可传 `--remote-candidates --remote-query ... --remote-limit ...`，通过 `flow_hybrid_search` 拉取远程候选；若 target 有 flow type，CLI 会作为 remote filter 写入请求。输出 `identity-decision.json` / `identity-candidates.jsonl` / `identity-candidate-sources.json`；对 type、reference property、unit、CAS/category 和 alias/name 等价的 flow 输出 `block_duplicate`，避免 process 引用新建同义 flow。
@@ -450,7 +451,7 @@ outputs/evidence-search-declaration.json
 
 它现在还不负责：
 
-- 把搜索结果直接物化为 `review flow` 的本地 rows 输入
+- 把搜索结果直接物化为 `qa flow` 的本地 rows 输入
 - 对 edge-function 返回做本地字段重命名或 UI 适配
 - 用搜索结果替代 deterministic `flow get` / `flow list` 详情读取
 - 任何 “synthetic rows” 自动补位
@@ -592,32 +593,32 @@ outputs/evidence-search-declaration.json
 - 重新实现历史 MCP transport
 - reference-model discovery
 
-`review process` 现在固定的是“本地 process review 契约层”。
+`qa process` 现在固定的是“本地 process QA 契约层”。
 
 它负责：
 
 - 从 `--run-root` 读取 `exports/processes/*.json`
-- 延续现有 v2.1 review 规则做基础信息核查、物料平衡核查和单位疑似问题记录
+- 延续现有 v2.1 QA 规则做基础信息核查、物料平衡核查和单位疑似问题记录
 - 写出中英文 markdown review、timing、unit issue log、summary 和 report
 - 在显式启用 `--enable-llm` 时，通过 CLI 的 `TIANGONG_LCA_REVIEW_LLM_*` 运行时做可选语义审核
 
 它现在还不负责：
 
-- flow governance review
-- lifecycle model review
+- flow governance QA
+- lifecycle model QA
 - 远端 remediation / publish
 - 任何 skill 私有的 `OPENAI_*` 调用路径
 
-`review flow` 现在固定的是“本地 flow governance review 契约层”。
+`qa flow` 现在固定的是“本地 flow governance QA 契约层”。
 
 它负责：
 
 - 接受且只接受一种输入模式：`--rows-file`、`--flows-dir`、`--run-root`
-- 在 `--rows-file` 模式下物化 `review-input/flows/*.json` 与 `review-input/materialization-summary.json`
+- 在 `--rows-file` 模式下物化 `qa-input/flows/*.json` 与 `qa-input/materialization-summary.json`
 - 输出 `rule_findings.jsonl`、`llm_findings.jsonl`、`findings.jsonl`
 - 输出 `flow_summaries.jsonl`、`similarity_pairs.jsonl`
-- 输出 `flow_review_summary.json`、`flow_review_zh.md`、`flow_review_en.md`、`flow_review_timing.md`
-- 输出 `flow_review_report.json`
+- 输出 `flow_qa_summary.json`、`flow_qa_zh.md`、`flow_qa_en.md`、`flow_qa_timing.md`
+- 输出 `flow_qa_report.json`
 - 在显式启用 `--enable-llm` 时，通过 CLI 的 `TIANGONG_LCA_REVIEW_LLM_*` 运行时做可选语义审核
 
 它现在还不负责：
@@ -851,7 +852,7 @@ TIANGONG_LCA_FORCE_REAUTH=false
 - `TIANGONG_LCA_SUPABASE_PUBLISHABLE_KEY` 是 authenticated CLI 命令的必需项
 - `TIANGONG_LCA_SESSION_FILE`、`TIANGONG_LCA_DISABLE_SESSION_CACHE`、`TIANGONG_LCA_FORCE_REAUTH` 是可选 session cache 控制项
 
-按需启用的可选 review-only 变量：只有显式启用 `tiangong-lca review process --enable-llm` 或 `tiangong-lca review flow --enable-llm` 时才需要配置。`TIANGONG_LCA_REVIEW_LLM_BASE_URL` 应指向 OpenAI-compatible Responses API 根地址，CLI 会向 `<base_url>/responses` 发请求。
+按需启用的可选 QA-only 变量：只有显式启用 `tiangong-lca qa process --enable-llm` 或 `tiangong-lca qa flow --enable-llm` 时才需要配置。`TIANGONG_LCA_REVIEW_LLM_BASE_URL` 应指向 OpenAI-compatible Responses API 根地址，CLI 会向 `<base_url>/responses` 发请求。
 
 ```bash
 TIANGONG_LCA_REVIEW_LLM_BASE_URL=
@@ -886,8 +887,8 @@ TIANGONG_LCA_COVERAGE=0
 - internal/preparatory 和 test-only env 也要在 `.env.example` 里显式列出，避免代码与文档脱节
 - 不为了历史实现或未来猜测保留 alias
 - 不引入 `SUPABASE_URL`、`SUPABASE_KEY`、`TIANGONG_LCA_TIDAS_SDK_DIR` 这类额外兼容层；原生 Supabase client 一律从 `TIANGONG_LCA_API_BASE_URL` 派生，用户 session 一律从 `TIANGONG_LCA_API_KEY + TIANGONG_LCA_SUPABASE_PUBLISHABLE_KEY` 换取，`@tiangong-lca/tidas-sdk` 一律走直接依赖
-- `review process` 的可选语义审核统一走 review-only 的 `TIANGONG_LCA_REVIEW_LLM_*`，不再引入 `OPENAI_*`
-- `review flow` 的可选语义审核也统一走 review-only 的 `TIANGONG_LCA_REVIEW_LLM_*`，不再引入 `OPENAI_*`
+- `qa process` 的可选语义审核统一走 QA-only 的 `TIANGONG_LCA_REVIEW_LLM_*`，不再引入 `OPENAI_*`
+- `qa flow` 的可选语义审核也统一走 QA-only 的 `TIANGONG_LCA_REVIEW_LLM_*`，不再引入 `OPENAI_*`
 - `publish run` / `validation run` 都是本地契约与执行收口，不新增远程 env
 - `TIANGONG_LCA_KB_SEARCH_*` 与 `TIANGONG_LCA_UNSTRUCTURED_*` 目前只属于 internal/preparatory 层，不属于公开命令契约
 
@@ -906,9 +907,9 @@ TIANGONG_LCA_COVERAGE=0
 | `lifecyclemodel auto-build | validate-build | publish-build | orchestrate` | 无 |
 | `lifecyclemodel build-resulting-process` | 本地运行默认无；若 request 开启 `process_sources.allow_remote_lookup=true`，则需要 `TIANGONG_LCA_API_BASE_URL`、`TIANGONG_LCA_API_KEY`、`TIANGONG_LCA_SUPABASE_PUBLISHABLE_KEY` |
 | `lifecyclemodel publish-resulting-process` | 无 |
-| `review process` | 纯规则 review 默认无；若显式开启 `--enable-llm`，则需要 `TIANGONG_LCA_REVIEW_LLM_BASE_URL`、`TIANGONG_LCA_REVIEW_LLM_API_KEY`、`TIANGONG_LCA_REVIEW_LLM_MODEL` |
-| `review flow` | 纯规则 review 默认无；若显式开启 `--enable-llm`，则需要 `TIANGONG_LCA_REVIEW_LLM_BASE_URL`、`TIANGONG_LCA_REVIEW_LLM_API_KEY`、`TIANGONG_LCA_REVIEW_LLM_MODEL` |
-| `review lifecyclemodel` | 无 |
+| `qa process` | 纯规则 QA 默认无；若显式开启 `--enable-llm`，则需要 `TIANGONG_LCA_REVIEW_LLM_BASE_URL`、`TIANGONG_LCA_REVIEW_LLM_API_KEY`、`TIANGONG_LCA_REVIEW_LLM_MODEL` |
+| `qa flow` | 纯规则 QA 默认无；若显式开启 `--enable-llm`，则需要 `TIANGONG_LCA_REVIEW_LLM_BASE_URL`、`TIANGONG_LCA_REVIEW_LLM_API_KEY`、`TIANGONG_LCA_REVIEW_LLM_MODEL` |
+| `qa lifecyclemodel` | 无 |
 | `flow get` | `TIANGONG_LCA_API_BASE_URL`、`TIANGONG_LCA_API_KEY`、`TIANGONG_LCA_SUPABASE_PUBLISHABLE_KEY` |
 | `flow list` | `TIANGONG_LCA_API_BASE_URL`、`TIANGONG_LCA_API_KEY`、`TIANGONG_LCA_SUPABASE_PUBLISHABLE_KEY` |
 | `flow identity-preflight` | 默认无；若启用 `--remote-candidates` 或输入 `remote_candidate_search.enabled=true`，则需要 `TIANGONG_LCA_API_BASE_URL`、`TIANGONG_LCA_API_KEY`、`TIANGONG_LCA_SUPABASE_PUBLISHABLE_KEY`（`TIANGONG_LCA_REGION` 可选） |
@@ -1001,10 +1002,10 @@ CLI 现在额外有一条独立于质量门的 npm 发布链路：
   - `tiangong-lca lifecyclemodel publish-build`
   - skill 侧不再保留 shell 兼容壳或 Python / MCP runtime
 - `lifecycleinventory-review`
-  - `tiangong-lca review process`
-  - `tiangong-lca review lifecyclemodel`
+  - `tiangong-lca qa process`
+  - `tiangong-lca qa lifecyclemodel`
 - `flow-governance-review`
-  - `tiangong-lca review flow`
+  - `tiangong-lca qa flow`
   - `tiangong-lca flow get`
   - `tiangong-lca flow list`
   - `tiangong-lca flow remediate`

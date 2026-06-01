@@ -16,12 +16,12 @@ import {
   type DatasetValidateReport,
   type RunDatasetValidateOptions,
 } from './dataset-validate.js';
-import { runFlowReview, type FlowReviewReport, type RunFlowReviewOptions } from './review-flow.js';
+import { runFlowQa, type FlowQaReport, type RunFlowQaOptions } from './flow-qa.js';
 import {
-  runProcessReview,
-  type ProcessReviewReport,
-  type RunProcessReviewOptions,
-} from './review-process.js';
+  runProcessQa,
+  type ProcessQaReport,
+  type RunProcessQaOptions,
+} from './process-qa.js';
 
 type BilingualDatasetType = 'auto' | DatasetKind;
 type BilingualStatus = 'completed' | 'blocked';
@@ -128,7 +128,7 @@ export type DatasetBilingualValidateReport = {
     invalid: number;
     report_file: string | null;
   };
-  review_gate: {
+  qa_gate: {
     status: 'completed' | 'not_run';
     process_report_file: string | null;
     flow_report_file: string | null;
@@ -167,8 +167,8 @@ export type RunDatasetBilingualValidateOptions = {
   rawInput?: unknown;
   now?: Date;
   datasetValidateImpl?: (options: RunDatasetValidateOptions) => Promise<DatasetValidateReport>;
-  processReviewImpl?: (options: RunProcessReviewOptions) => Promise<ProcessReviewReport>;
-  flowReviewImpl?: (options: RunFlowReviewOptions) => Promise<FlowReviewReport>;
+  processQaImpl?: (options: RunProcessQaOptions) => Promise<ProcessQaReport>;
+  flowQaImpl?: (options: RunFlowQaOptions) => Promise<FlowQaReport>;
   schemas?: RunDatasetValidateOptions['schemas'];
 };
 
@@ -779,19 +779,19 @@ export async function runDatasetBilingualValidate(
     schemas: options.schemas,
   });
 
-  let processReport: ProcessReviewReport | null = null;
-  let flowReport: FlowReviewReport | null = null;
+  let processReport: ProcessQaReport | null = null;
+  let flowReport: FlowQaReport | null = null;
   if (options.outDir && (requestedType === 'process' || requestedType === 'auto')) {
     const processRows = rows.filter((row) => row.kind === 'process').map((row) => row.row);
     if (processRows.length > 0) {
       const processRowsFile = path.join(
         path.resolve(options.outDir),
-        'review-input-processes.jsonl',
+        'qa-input-processes.jsonl',
       );
       writeJsonLinesArtifact(processRowsFile, processRows);
-      processReport = await (options.processReviewImpl ?? runProcessReview)({
+      processReport = await (options.processQaImpl ?? runProcessQa)({
         rowsFile: processRowsFile,
-        outDir: path.join(path.resolve(options.outDir), 'review', 'process'),
+        outDir: path.join(path.resolve(options.outDir), 'qa', 'process'),
         now: () => options.now ?? new Date(),
       });
     }
@@ -799,11 +799,11 @@ export async function runDatasetBilingualValidate(
   if (options.outDir && (requestedType === 'flow' || requestedType === 'auto')) {
     const flowRows = rows.filter((row) => row.kind === 'flow').map((row) => row.row);
     if (flowRows.length > 0) {
-      const flowRowsFile = path.join(path.resolve(options.outDir), 'review-input-flows.jsonl');
+      const flowRowsFile = path.join(path.resolve(options.outDir), 'qa-input-flows.jsonl');
       writeJsonLinesArtifact(flowRowsFile, flowRows);
-      flowReport = await (options.flowReviewImpl ?? runFlowReview)({
+      flowReport = await (options.flowQaImpl ?? runFlowQa)({
         rowsFile: flowRowsFile,
-        outDir: path.join(path.resolve(options.outDir), 'review', 'flow'),
+        outDir: path.join(path.resolve(options.outDir), 'qa', 'flow'),
         now: () => options.now ?? new Date(),
       });
     }
@@ -830,7 +830,7 @@ export async function runDatasetBilingualValidate(
       invalid: schemaReport.counts.invalid,
       report_file: schemaReport.files.report,
     },
-    review_gate: {
+    qa_gate: {
       status: processReport || flowReport ? 'completed' : 'not_run',
       process_report_file: processReport?.files.report ?? null,
       flow_report_file: flowReport?.files.report ?? null,

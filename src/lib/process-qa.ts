@@ -4,12 +4,7 @@ import { writeJsonArtifact, writeJsonLinesArtifact, writeTextArtifact } from './
 import { CliError } from './errors.js';
 import type { FetchLike } from './http.js';
 import { readJsonInput } from './io.js';
-import { invokeLlm, readLlmRuntimeEnv, type LlmRuntimeEnv } from './llm.js';
-import {
-  getRuntimeRuleset,
-  isRuntimeRuleBlocker,
-  resolveRuntimeRuleId,
-} from './runtime-rulesets.js';
+import { getRuntimeRuleset, resolveRuntimeRuleId } from './runtime-rulesets.js';
 
 type JsonRecord = Record<string, unknown>;
 
@@ -50,7 +45,7 @@ const BYP_WORDS = ['by-product', 'co-product', '副产品', '联产'] as const;
 const WASTE_WORDS = ['waste', '废', 'residue', 'sludge'] as const;
 
 type BaseInfoCheck = {
-  name_zh_en_ok: boolean;
+  source_name_ok: boolean;
   functional_unit_ok: boolean;
   system_boundary_ok: boolean;
   time_ok: boolean;
@@ -74,6 +69,9 @@ type ClassifiedExchange = {
   kinds: string[];
   uoms: string[];
   blob: string;
+  source_input_group: string | null;
+  source_output_group: string | null;
+  reference_flow: boolean;
 };
 
 type UnitIssue = {
@@ -84,7 +82,7 @@ type UnitIssue = {
   confidence: string;
 };
 
-type ProcessReviewRow = {
+type ProcessQaRow = {
   process_file: string;
   raw_input: number;
   product: number;
@@ -95,7 +93,7 @@ type ProcessReviewRow = {
   relative_deviation: number | null;
 };
 
-type ProcessReviewTotals = {
+type ProcessQaTotals = {
   raw_input: number;
   product_plus_byproduct_plus_waste: number;
   delta: number;
@@ -103,7 +101,7 @@ type ProcessReviewTotals = {
   energy_excluded: number;
 };
 
-type ProcessReviewFinding = {
+type ProcessQaFinding = {
   process_file: string;
   severity: 'info' | 'warning' | 'blocker';
   code: string;
@@ -123,15 +121,15 @@ type ProcessRulesetGate = {
     findings: number;
     blockers: number;
   };
-  blockers: ProcessReviewFinding[];
-  next_action: 'continue' | 'review_findings' | 'fix_blockers';
+  blockers: ProcessQaFinding[];
+  next_action: 'continue' | 'review_findings_in_foundry' | 'fix_blockers';
 };
 
 type ProcessSummaryForLlm = {
   process_file: string;
   base_names: string[];
   base_checks: {
-    name_zh_en_ok: boolean;
+    source_name_ok: boolean;
     functional_unit_ok: boolean;
     system_boundary_ok: boolean;
     time_ok: boolean;
@@ -149,7 +147,7 @@ type ProcessSummaryForLlm = {
   };
 };
 
-export type ProcessReviewLlmResult =
+export type ProcessQaLlmResult =
   | {
       enabled: false;
       reason: string;
@@ -166,19 +164,21 @@ export type ProcessReviewLlmResult =
       raw?: string;
     };
 
-export type ProcessReviewSummary = {
+export type ProcessQaSummary = {
   run_id: string;
   logic_version: string;
   process_count: number;
-  totals: ProcessReviewTotals;
+  totals: ProcessQaTotals;
   ruleset_gate?: ProcessRulesetGate;
-  llm: ProcessReviewLlmResult;
+  llm: ProcessQaLlmResult;
+  policy_decision_owner: 'foundry';
+  qa_mode: 'deterministic_qa_report';
 };
 
-export type ProcessReviewReport = {
+export type ProcessQaReport = {
   schema_version: 1;
   generated_at_utc: string;
-  status: 'completed_local_process_review';
+  status: 'completed_local_process_qa';
   run_id: string;
   run_root: string;
   rows_file: string;
@@ -191,26 +191,28 @@ export type ProcessReviewReport = {
   ruleset_source_version?: string;
   ruleset_rule_ids?: string[];
   process_count: number;
-  totals: ProcessReviewTotals;
+  totals: ProcessQaTotals;
   rule_finding_count?: number;
   blocker_count?: number;
   ruleset_gate?: ProcessRulesetGate;
+  policy_decision_owner: 'foundry';
+  qa_mode: 'deterministic_qa_report';
   files: {
-    review_input_summary: string;
+    qa_input_summary: string;
     materialization_summary: string | null;
     rule_findings?: string;
     ruleset_gate?: string;
-    review_zh: string;
-    review_en: string;
+    qa_zh: string;
+    qa_en: string;
     timing: string;
     unit_issue_log: string;
     summary: string;
     report: string;
   };
-  llm: ProcessReviewLlmResult;
+  llm: ProcessQaLlmResult;
 };
 
-export type RunProcessReviewOptions = {
+export type RunProcessQaOptions = {
   rowsFile?: string;
   runRoot?: string;
   runId?: string;
@@ -308,7 +310,7 @@ function hasNonEmpty(value: unknown): boolean {
   return true;
 }
 
-function extractBaseNames(processPayload: JsonRecord): [boolean, boolean, string[]] {
+function extractBaseNames(processPayload: JsonRecord): [boolean, string[]] {
   const base = deepGet(processPayload, [
     'processDataSet',
     'processInformation',
@@ -317,37 +319,42 @@ function extractBaseNames(processPayload: JsonRecord): [boolean, boolean, string
     'baseName',
   ]);
   const items = Array.isArray(base) ? base : base ? [base] : [];
-  let zh = false;
-  let en = false;
   const values: string[] = [];
 
   items.forEach((item) => {
     if (!isRecord(item)) {
       return;
     }
-    const lang = String(item['@xml:lang'] ?? '').toLowerCase();
     const text = String(item['#text'] ?? '').trim();
     if (!text) {
       return;
     }
     values.push(text);
-    if (lang.startsWith('zh')) {
-      zh = true;
-    }
-    if (lang.startsWith('en')) {
-      en = true;
-    }
   });
 
-  if (!(zh && en) && values.length >= 2) {
-    zh = zh || true;
-    en = en || true;
-  }
-
-  return [zh, en, values];
+  return [values.length > 0, values];
 }
 
-function classifyExchange(exchange: JsonRecord): ClassifiedExchange {
+function sourceTracePayload(exchange: JsonRecord): JsonRecord | null {
+  const payload = deepGet(exchange, ['common:other', 'tidasimport:sourceTrace', 'payload']);
+  if (!isRecord(payload)) {
+    return null;
+  }
+  return isRecord(payload.sourceTrace) ? payload.sourceTrace : payload;
+}
+
+function sourceClassification(exchange: JsonRecord): JsonRecord {
+  const payload = sourceTracePayload(exchange);
+  return payload && isRecord(payload.sourceClassification) ? payload.sourceClassification : {};
+}
+
+function sourceGroup(exchange: JsonRecord, groupName: 'inputGroup' | 'outputGroup'): string | null {
+  const value = sourceClassification(exchange)[groupName];
+  const text = String(value ?? '').trim();
+  return text || null;
+}
+
+function classifyExchange(exchange: JsonRecord, referenceFlowId: string | null = null): ClassifiedExchange {
   const comments =
     `${textFromValue(exchange.commonComment)} ${textFromValue(exchange.generalComment)}`.toLowerCase();
   const flowDescription = textFromValue(
@@ -360,40 +367,60 @@ function classifyExchange(exchange: JsonRecord): ClassifiedExchange {
   const kindSet = new Set(kinds);
   const uoms = Array.from(blob.matchAll(UOM_RE), (match) => match[1].toLowerCase());
   const direction = String(exchange.exchangeDirection ?? '').toLowerCase();
+  const inputGroup = sourceGroup(exchange, 'inputGroup');
+  const outputGroup = sourceGroup(exchange, 'outputGroup');
+  const internalId = String(exchange['@dataSetInternalID'] ?? '').trim();
+  const isReferenceFlow = Boolean(referenceFlowId && internalId === referenceFlowId);
+  const meta = {
+    kinds,
+    uoms,
+    blob,
+    source_input_group: inputGroup,
+    source_output_group: outputGroup,
+    reference_flow: isReferenceFlow,
+  };
   const isEnergy =
     ENERGY_WORDS.some((word) => blob.includes(word)) ||
     uoms.some((uom) => uom === 'kwh' || uom === 'mj' || uom === 'gj');
 
   if (direction === 'input') {
     if (kindSet.has('energy') || isEnergy) {
-      return { classification: 'energy_input', kinds, uoms, blob };
+      return { classification: 'energy_input', ...meta };
     }
     if (kindSet.has('waste')) {
-      return { classification: 'other_input', kinds, uoms, blob };
+      return { classification: 'other_input', ...meta };
     }
-    if (kindSet.has('raw_material') || kindSet.has('resource')) {
-      return { classification: 'raw_material_input', kinds, uoms, blob };
+    if (inputGroup === '4' || kindSet.has('raw_material') || kindSet.has('resource')) {
+      return { classification: 'raw_material_input', ...meta };
     }
     if (kindSet.has('product') || RAW_WORDS.some((word) => blob.includes(word))) {
-      return { classification: 'raw_material_input', kinds, uoms, blob };
+      return { classification: 'raw_material_input', ...meta };
     }
-    return { classification: 'other_input', kinds, uoms, blob };
+    return { classification: 'other_input', ...meta };
   }
 
   if (direction === 'output') {
-    if (kindSet.has('waste') || WASTE_WORDS.some((word) => blob.includes(word))) {
-      return { classification: 'waste_output', kinds, uoms, blob };
+    if (isReferenceFlow || outputGroup === '0') {
+      return { classification: 'product_output', ...meta };
+    }
+    if (
+      kindSet.has('waste') ||
+      outputGroup === '4' ||
+      outputGroup === '5' ||
+      WASTE_WORDS.some((word) => blob.includes(word))
+    ) {
+      return { classification: 'waste_output', ...meta };
     }
     if (BYP_WORDS.some((word) => blob.includes(word))) {
-      return { classification: 'byproduct_output', kinds, uoms, blob };
+      return { classification: 'byproduct_output', ...meta };
     }
     if (kindSet.has('product')) {
-      return { classification: 'product_output', kinds, uoms, blob };
+      return { classification: 'product_output', ...meta };
     }
-    return { classification: 'other_output', kinds, uoms, blob };
+    return { classification: 'other_output', ...meta };
   }
 
-  return { classification: 'other', kinds, uoms, blob };
+  return { classification: 'other', ...meta };
 }
 
 function unitIssueCheck(exchange: JsonRecord, uoms: string[], blob: string): UnitIssue[] {
@@ -470,13 +497,13 @@ function hasNumericAmount(exchange: JsonRecord): boolean {
   return false;
 }
 
-function createProcessReviewFinding(options: {
+function createProcessQaFinding(options: {
   processFile: string;
-  severity: ProcessReviewFinding['severity'];
+  severity: ProcessQaFinding['severity'];
   code: string;
   message: string;
   evidence?: JsonRecord;
-}): ProcessReviewFinding {
+}): ProcessQaFinding {
   const methodologyRuleId = resolveRuntimeRuleId('process-authoring/strict', options.code);
   return {
     process_file: options.processFile,
@@ -489,26 +516,26 @@ function createProcessReviewFinding(options: {
   };
 }
 
-function reviewFindingsForBase(processFile: string, base: BaseInfoCheck): ProcessReviewFinding[] {
-  const findings: ProcessReviewFinding[] = [];
-  if (!base.name_zh_en_ok) {
+function reviewFindingsForBase(processFile: string, base: BaseInfoCheck): ProcessQaFinding[] {
+  const findings: ProcessQaFinding[] = [];
+  if (!base.source_name_ok) {
     findings.push(
-      createProcessReviewFinding({
+      createProcessQaFinding({
         processFile,
-        severity: 'blocker',
-        code: 'process_missing_bilingual_base_name',
-        message: 'Process baseName must include usable Chinese and English entries.',
+        severity: 'warning',
+        code: 'process_missing_source_base_name',
+        message: 'Process baseName should include a usable source-language entry before Foundry authoring is complete.',
         evidence: { base_names: base.base_names },
       }),
     );
   }
   if (!base.functional_unit_ok) {
     findings.push(
-      createProcessReviewFinding({
+      createProcessQaFinding({
         processFile,
-        severity: 'blocker',
+        severity: 'warning',
         code: 'process_missing_functional_unit',
-        message: 'Process quantitative reference functionalUnitOrOther is missing.',
+        message: 'Process quantitative reference functionalUnitOrOther is missing and should be curated by Foundry.',
       }),
     );
   }
@@ -529,7 +556,7 @@ function reviewFindingsForBase(processFile: string, base: BaseInfoCheck): Proces
   ] as const) {
     if (!ok) {
       findings.push(
-        createProcessReviewFinding({
+        createProcessQaFinding({
           processFile,
           severity: 'warning',
           code,
@@ -541,12 +568,9 @@ function reviewFindingsForBase(processFile: string, base: BaseInfoCheck): Proces
   return findings;
 }
 
-function processRulesetGate(findings: ProcessReviewFinding[]): ProcessRulesetGate {
+function processRulesetGate(findings: ProcessQaFinding[]): ProcessRulesetGate {
   const ruleset = getRuntimeRuleset('process-authoring/strict');
-  const blockers = findings.filter(
-    (finding) =>
-      finding.severity === 'blocker' || isRuntimeRuleBlocker(finding.methodology_rule_id),
-  );
+  const blockers = findings.filter((finding) => finding.severity === 'blocker');
   const status = blockers.length > 0 ? 'blocked' : findings.length > 0 ? 'needs_review' : 'passed';
   return {
     status,
@@ -563,13 +587,13 @@ function processRulesetGate(findings: ProcessReviewFinding[]): ProcessRulesetGat
       status === 'blocked'
         ? 'fix_blockers'
         : status === 'needs_review'
-          ? 'review_findings'
+          ? 'review_findings_in_foundry'
           : 'continue',
   };
 }
 
 function baseInfoCheck(processPayload: JsonRecord): BaseInfoCheck {
-  const [zhOk, enOk, values] = extractBaseNames(processPayload);
+  const [sourceNameOk, values] = extractBaseNames(processPayload);
   const functionalUnit = deepGet(processPayload, [
     'processDataSet',
     'processInformation',
@@ -596,7 +620,6 @@ function baseInfoCheck(processPayload: JsonRecord): BaseInfoCheck {
     'administrativeInformation',
   ]);
 
-  const nameOk = zhOk && enOk;
   const functionalUnitOk = hasNonEmpty(functionalUnit);
   const systemBoundaryOk = hasNonEmpty(mixAndLocation) || hasNonEmpty(route);
   const timeOk = hasNonEmpty(time);
@@ -604,7 +627,7 @@ function baseInfoCheck(processPayload: JsonRecord): BaseInfoCheck {
   const technologyOk = hasNonEmpty(technology);
   const administrativeOk = hasNonEmpty(administrativeInformation);
   const completenessScore = [
-    nameOk,
+    sourceNameOk,
     functionalUnitOk,
     systemBoundaryOk,
     timeOk,
@@ -614,7 +637,7 @@ function baseInfoCheck(processPayload: JsonRecord): BaseInfoCheck {
   ].filter(Boolean).length;
 
   return {
-    name_zh_en_ok: nameOk,
+    source_name_ok: sourceNameOk,
     functional_unit_ok: functionalUnitOk,
     system_boundary_ok: systemBoundaryOk,
     time_ok: timeOk,
@@ -628,8 +651,8 @@ function baseInfoCheck(processPayload: JsonRecord): BaseInfoCheck {
 
 function unwrapProcessPayload(value: unknown, filePath: string): JsonRecord {
   if (!isRecord(value)) {
-    throw new CliError(`Expected process review file to contain a JSON object: ${filePath}`, {
-      code: 'PROCESS_REVIEW_INPUT_INVALID',
+    throw new CliError(`Expected process QA file to contain a JSON object: ${filePath}`, {
+      code: 'PROCESS_QA_INPUT_INVALID',
       exitCode: 2,
     });
   }
@@ -642,8 +665,8 @@ function unwrapProcessPayload(value: unknown, filePath: string): JsonRecord {
     value;
 
   if (!isRecord(candidate.processDataSet)) {
-    throw new CliError(`Process review file is missing processDataSet: ${filePath}`, {
-      code: 'PROCESS_REVIEW_INPUT_INVALID',
+    throw new CliError(`Process QA file is missing processDataSet: ${filePath}`, {
+      code: 'PROCESS_QA_INPUT_INVALID',
       exitCode: 2,
     });
   }
@@ -689,7 +712,7 @@ function loadReviewRows(rowsFile: string): JsonRecord[] {
           const parsed = JSON.parse(line) as unknown;
           if (!isRecord(parsed)) {
             throw new CliError(`Expected JSON object rows in JSONL file: ${resolved}`, {
-              code: 'PROCESS_REVIEW_ROWS_INVALID_JSONL_ROW',
+              code: 'PROCESS_QA_ROWS_INVALID_JSONL_ROW',
               exitCode: 2,
             });
           }
@@ -699,9 +722,9 @@ function loadReviewRows(rowsFile: string): JsonRecord[] {
             throw error;
           }
           throw new CliError(
-            `Process review rows file contains invalid JSONL at line ${index + 1}.`,
+            `Process QA rows file contains invalid JSONL at line ${index + 1}.`,
             {
-              code: 'PROCESS_REVIEW_ROWS_INVALID_JSONL',
+              code: 'PROCESS_QA_ROWS_INVALID_JSONL',
               exitCode: 2,
               details: String(error),
             },
@@ -714,8 +737,8 @@ function loadReviewRows(rowsFile: string): JsonRecord[] {
   try {
     parsed = JSON.parse(text) as unknown;
   } catch (error) {
-    throw new CliError(`Process review rows file is not valid JSON: ${resolved}`, {
-      code: 'PROCESS_REVIEW_ROWS_INVALID_JSON',
+    throw new CliError(`Process QA rows file is not valid JSON: ${resolved}`, {
+      code: 'PROCESS_QA_ROWS_INVALID_JSON',
       exitCode: 2,
       details: String(error),
     });
@@ -729,7 +752,7 @@ function loadReviewRows(rowsFile: string): JsonRecord[] {
   }
 
   throw new CliError(`Expected JSON array of objects or a report object with rows[]: ${resolved}`, {
-    code: 'PROCESS_REVIEW_ROWS_INVALID_JSON',
+    code: 'PROCESS_QA_ROWS_INVALID_JSON',
     exitCode: 2,
   });
 }
@@ -739,7 +762,7 @@ function materializeRowsFile(
   outDir: string,
 ): { processesDir: string; summaryPath: string } {
   const rows = loadReviewRows(rowsFile);
-  const targetDir = path.join(outDir, 'review-input', 'processes');
+  const targetDir = path.join(outDir, 'qa-input', 'processes');
   mkdirSync(targetDir, { recursive: true });
 
   const byKey: Record<string, JsonRecord> = {};
@@ -768,7 +791,7 @@ function materializeRowsFile(
       });
     });
 
-  const summaryPath = path.join(outDir, 'review-input', 'materialization-summary.json');
+  const summaryPath = path.join(outDir, 'qa-input', 'materialization-summary.json');
   writeJsonArtifact(summaryPath, {
     source_rows_file: path.resolve(rowsFile),
     input_row_count: rows.length,
@@ -800,8 +823,8 @@ function resolveReviewInput(options: {
 } {
   const declaredModes = [Boolean(options.rowsFile), Boolean(options.runRoot)].filter(Boolean);
   if (declaredModes.length !== 1) {
-    throw new CliError('Process review requires exactly one of --rows-file or --run-root.', {
-      code: 'PROCESS_REVIEW_INPUT_MODE_REQUIRED',
+    throw new CliError('Process QA requires exactly one of --rows-file or --run-root.', {
+      code: 'PROCESS_QA_INPUT_MODE_REQUIRED',
       exitCode: 2,
     });
   }
@@ -846,8 +869,8 @@ function resolveReviewInput(options: {
 
 function readProcessFiles(processDir: string): string[] {
   if (!existsSync(processDir) || !statSync(processDir).isDirectory()) {
-    throw new CliError(`Process review directory not found: ${processDir}`, {
-      code: 'PROCESS_REVIEW_EXPORTS_NOT_FOUND',
+    throw new CliError(`Process QA directory not found: ${processDir}`, {
+      code: 'PROCESS_QA_EXPORTS_NOT_FOUND',
       exitCode: 2,
     });
   }
@@ -860,7 +883,7 @@ function readProcessFiles(processDir: string): string[] {
 
 function buildPrompt(processSummaries: ProcessSummaryForLlm[]): string {
   return [
-    '请基于以下 process 摘要做语义一致性审核（中英名称一致性、边界表达、修订建议）。',
+    '请基于以下 process 摘要做语义一致性审核（源语言名称、边界表达、修订建议）。',
     '要求：',
     '1) 只根据给定摘要；',
     '2) 证据不足必须明确标注；',
@@ -892,7 +915,12 @@ async function runOptionalLlmReview(
     fetchImpl: FetchLike;
     outDir: string;
   },
-): Promise<ProcessReviewLlmResult> {
+): Promise<ProcessQaLlmResult> {
+  void processSummaries;
+  void options.env;
+  void options.fetchImpl;
+  void options.outDir;
+
   if (!options.enableLlm) {
     return {
       enabled: false,
@@ -900,52 +928,10 @@ async function runOptionalLlmReview(
     };
   }
 
-  let env = readLlmRuntimeEnv(options.env);
-  if (options.llmModel) {
-    env = {
-      ...env,
-      model: options.llmModel,
-    } satisfies LlmRuntimeEnv;
-  }
-
-  try {
-    const response = await invokeLlm({
-      env,
-      input: {
-        prompt: '你是严谨的LCA审核助手。只给基于输入证据的判断，不得臆造。输出必须是JSON对象。',
-        context: buildPrompt(processSummaries),
-      },
-      fetchImpl: options.fetchImpl,
-      timeoutMs: 45_000,
-      cacheDir: path.join(options.outDir, '.llm-cache'),
-      tracePath: path.join(options.outDir, 'llm-trace.jsonl'),
-      module: 'review-process',
-      stage: 'semantic-review',
-      runId: 'review-process',
-    });
-
-    const parsed = parseLlmJsonOutput(response.output);
-    if (!parsed) {
-      return {
-        enabled: true,
-        ok: false,
-        reason: 'llm_non_json_output',
-        raw: response.output.slice(0, 8_000),
-      };
-    }
-
-    return {
-      enabled: true,
-      ok: true,
-      result: parsed,
-    };
-  } catch (error) {
-    return {
-      enabled: true,
-      ok: false,
-      reason: error instanceof Error ? error.message : String(error),
-    };
-  }
+  return {
+    enabled: false,
+    reason: 'moved_to_foundry_process_curation',
+  };
 }
 
 function formatPercent(value: number | null): string {
@@ -956,24 +942,24 @@ function renderZhReview(options: {
   runId: string;
   logicVersion: string;
   baseRows: Array<[string, BaseInfoCheck]>;
-  rows: ProcessReviewRow[];
-  totals: ProcessReviewTotals;
-  llmResult: ProcessReviewLlmResult;
+  rows: ProcessQaRow[];
+  totals: ProcessQaTotals;
+  llmResult: ProcessQaLlmResult;
   evidenceStrong: string[];
   evidenceWeak: string[];
 }): string {
   const lines = [
-    '# one_flow_rerun_review_v2_1_zh\n',
+    '# one_flow_rerun_qa_v2_1_zh\n',
     `- run_id: \`${options.runId}\`\n`,
     `- logic_version: \`${options.logicVersion}\`\n`,
     '\n## 2.1 基础信息核查\n',
-    '|process file|中英名称|功能单位|系统边界|时间|地理|技术|管理元数据|完整性得分(0-7)|\n',
+    '|process file|源语言名称|功能单位|系统边界|时间|地理|技术|管理元数据|完整性得分(0-7)|\n',
     '|---|---|---|---|---|---|---|---|---:|\n',
   ];
 
   options.baseRows.forEach(([fileName, base]) => {
     lines.push(
-      `|${fileName}|${base.name_zh_en_ok ? '✅' : '❌'}|${base.functional_unit_ok ? '✅' : '❌'}|${base.system_boundary_ok ? '✅' : '❌'}|${base.time_ok ? '✅' : '❌'}|${base.geo_ok ? '✅' : '❌'}|${base.tech_ok ? '✅' : '❌'}|${base.admin_ok ? '✅' : '❌'}|${base.completeness_score}|\n`,
+      `|${fileName}|${base.source_name_ok ? '✅' : '❌'}|${base.functional_unit_ok ? '✅' : '❌'}|${base.system_boundary_ok ? '✅' : '❌'}|${base.time_ok ? '✅' : '❌'}|${base.geo_ok ? '✅' : '❌'}|${base.tech_ok ? '✅' : '❌'}|${base.admin_ok ? '✅' : '❌'}|${base.completeness_score}|\n`,
     );
   });
 
@@ -1031,23 +1017,23 @@ function renderEnReview(options: {
   runId: string;
   logicVersion: string;
   baseRows: Array<[string, BaseInfoCheck]>;
-  rows: ProcessReviewRow[];
-  totals: ProcessReviewTotals;
+  rows: ProcessQaRow[];
+  totals: ProcessQaTotals;
   evidenceStrong: string[];
   evidenceWeak: string[];
 }): string {
   const lines = [
-    '# one_flow_rerun_review_v2_1_en\n',
+    '# one_flow_rerun_qa_v2_1_en\n',
     `- run_id: \`${options.runId}\`\n`,
     `- logic_version: \`${options.logicVersion}\`\n`,
     '\n## 2.1 Basic info checks\n',
-    '|process file|zh+en names|functional unit|system boundary|time|geo|tech|admin metadata|completeness(0-7)|\n',
+    '|process file|source-language name|functional unit|system boundary|time|geo|tech|admin metadata|completeness(0-7)|\n',
     '|---|---|---|---|---|---|---|---|---:|\n',
   ];
 
   options.baseRows.forEach(([fileName, base]) => {
     lines.push(
-      `|${fileName}|${base.name_zh_en_ok ? '✅' : '❌'}|${base.functional_unit_ok ? '✅' : '❌'}|${base.system_boundary_ok ? '✅' : '❌'}|${base.time_ok ? '✅' : '❌'}|${base.geo_ok ? '✅' : '❌'}|${base.tech_ok ? '✅' : '❌'}|${base.admin_ok ? '✅' : '❌'}|${base.completeness_score}|\n`,
+      `|${fileName}|${base.source_name_ok ? '✅' : '❌'}|${base.functional_unit_ok ? '✅' : '❌'}|${base.system_boundary_ok ? '✅' : '❌'}|${base.time_ok ? '✅' : '❌'}|${base.geo_ok ? '✅' : '❌'}|${base.tech_ok ? '✅' : '❌'}|${base.admin_ok ? '✅' : '❌'}|${base.completeness_score}|\n`,
     );
   });
 
@@ -1090,7 +1076,7 @@ function renderTiming(options: {
     const end = new Date(options.endTs);
     if (Number.isNaN(start.getTime()) || Number.isNaN(end.getTime())) {
       throw new CliError('Expected --start-ts and --end-ts to be valid ISO timestamps.', {
-        code: 'PROCESS_REVIEW_INVALID_TIMESTAMP',
+        code: 'PROCESS_QA_INVALID_TIMESTAMP',
         exitCode: 2,
       });
     }
@@ -1135,11 +1121,11 @@ function renderUnitIssues(runId: string, unitIssues: UnitIssue[]): string {
   return lines.join('');
 }
 
-export async function runProcessReview(
-  options: RunProcessReviewOptions,
-): Promise<ProcessReviewReport> {
+export async function runProcessQa(
+  options: RunProcessQaOptions,
+): Promise<ProcessQaReport> {
   const outDir = path.resolve(
-    requiredNonEmpty(options.outDir, '--out-dir', 'PROCESS_REVIEW_OUT_DIR_REQUIRED'),
+    requiredNonEmpty(options.outDir, '--out-dir', 'PROCESS_QA_OUT_DIR_REQUIRED'),
   );
   const resolvedInput = resolveReviewInput({
     rowsFile: options.rowsFile,
@@ -1147,7 +1133,7 @@ export async function runProcessReview(
     runId: options.runId,
     outDir,
   });
-  const runId = requiredNonEmpty(resolvedInput.runId, '--run-id', 'PROCESS_REVIEW_RUN_ID_REQUIRED');
+  const runId = requiredNonEmpty(resolvedInput.runId, '--run-id', 'PROCESS_QA_RUN_ID_REQUIRED');
   const logicVersion = options.logicVersion?.trim() || 'v2.1';
   const fetchImpl = options.fetchImpl ?? (fetch as FetchLike);
   const env = options.env ?? process.env;
@@ -1159,9 +1145,9 @@ export async function runProcessReview(
       : 8;
   const processFiles = readProcessFiles(resolvedInput.effectiveProcessesDir);
   const baseRows: Array<[string, BaseInfoCheck]> = [];
-  const rows: ProcessReviewRow[] = [];
+  const rows: ProcessQaRow[] = [];
   const unitIssues: UnitIssue[] = [];
-  const ruleFindings: ProcessReviewFinding[] = [];
+  const ruleFindings: ProcessQaFinding[] = [];
   const processSummariesForLlm: ProcessSummaryForLlm[] = [];
 
   let totalRaw = 0;
@@ -1178,6 +1164,15 @@ export async function runProcessReview(
       : isRecord(exchangesValue)
         ? [exchangesValue]
         : [];
+    const referenceFlowId =
+      String(
+        deepGet(processPayload, [
+          'processDataSet',
+          'processInformation',
+          'quantitativeReference',
+          'referenceToReferenceFlow',
+        ]) ?? '',
+      ).trim() || null;
     const base = baseInfoCheck(processPayload);
     const fileName = path.basename(filePath);
     baseRows.push([fileName, base]);
@@ -1190,14 +1185,15 @@ export async function runProcessReview(
     let energyExcluded = 0;
 
     exchanges.forEach((exchange) => {
-      const classified = classifyExchange(exchange);
+      const classified = classifyExchange(exchange, referenceFlowId);
       if (!hasNumericAmount(exchange)) {
         ruleFindings.push(
-          createProcessReviewFinding({
+          createProcessQaFinding({
             processFile: fileName,
-            severity: 'blocker',
+            severity: 'warning',
             code: 'process_missing_exchange_amount',
-            message: 'Process exchange is missing both numeric meanAmount and resultingAmount.',
+            message:
+              'Process exchange is missing both numeric meanAmount and resultingAmount and should be curated by Foundry.',
             evidence: {
               exchange_internal_id: String(exchange['@dataSetInternalID'] ?? ''),
               direction: String(exchange.exchangeDirection ?? ''),
@@ -1221,7 +1217,7 @@ export async function runProcessReview(
       unitIssues.push(...currentUnitIssues);
       currentUnitIssues.forEach((issue) => {
         ruleFindings.push(
-          createProcessReviewFinding({
+          createProcessQaFinding({
             processFile: fileName,
             severity: 'warning',
             code: 'process_exchange_unit_semantic_mismatch',
@@ -1249,18 +1245,19 @@ export async function runProcessReview(
 
     if (relativeDeviation !== null && relativeDeviation > 0.05) {
       ruleFindings.push(
-        createProcessReviewFinding({
+        createProcessQaFinding({
           processFile: fileName,
-          severity: relativeDeviation > 0.1 ? 'blocker' : 'warning',
+          severity: 'warning',
           code: 'process_material_balance_deviation',
           message:
-            'Material balance deviation exceeds the review threshold for raw inputs versus product/by-product/waste outputs.',
+            'Material balance deviation exceeds the QA threshold for raw inputs versus product/by-product/waste outputs.',
           evidence: {
             raw_input: rawInput,
             product,
             byproduct,
             waste,
             relative_deviation: relativeDeviation,
+            policy_decision_owner: 'foundry',
           },
         }),
       );
@@ -1277,7 +1274,7 @@ export async function runProcessReview(
         process_file: fileName,
         base_names: base.base_names.slice(0, 4),
         base_checks: {
-          name_zh_en_ok: base.name_zh_en_ok,
+          source_name_ok: base.source_name_ok,
           functional_unit_ok: base.functional_unit_ok,
           system_boundary_ok: base.system_boundary_ok,
           time_ok: base.time_ok,
@@ -1297,7 +1294,7 @@ export async function runProcessReview(
     }
   });
 
-  const totals: ProcessReviewTotals = {
+  const totals: ProcessQaTotals = {
     raw_input: totalRaw,
     product_plus_byproduct_plus_waste: totalProduct + totalByproduct + totalWaste,
     delta: totalProduct + totalByproduct + totalWaste - totalRaw,
@@ -1309,7 +1306,7 @@ export async function runProcessReview(
   };
 
   const evidenceStrong = [
-    '已基于 exchange 的 comment 标签/描述做口径过滤，仅核算 原材料投入 vs 产品+副产品+废物，能量单列不计入平衡。',
+    '已优先使用 quantitativeReference.referenceToReferenceFlow、EcoSpold inputGroup/outputGroup 和 exchange 标签/描述做口径过滤，仅核算 原材料投入 vs 产品+副产品+废物，能量单列不计入平衡。',
     ...(unitIssues.length > 0
       ? ['发现单位疑似错误时均附带 flow 描述与单位标签的直接矛盾证据。']
       : []),
@@ -1329,29 +1326,31 @@ export async function runProcessReview(
   });
   const rulesetGate = processRulesetGate(ruleFindings);
 
-  const summary: ProcessReviewSummary = {
+  const summary: ProcessQaSummary = {
     run_id: runId,
     logic_version: logicVersion,
     process_count: processFiles.length,
     totals,
     ruleset_gate: rulesetGate,
     llm: llmResult,
+    policy_decision_owner: 'foundry',
+    qa_mode: 'deterministic_qa_report',
   };
   const reviewInputSummaryPath = writeJsonArtifact(
-    path.join(outDir, 'review-input-summary.json'),
+    path.join(outDir, 'qa-input-summary.json'),
     resolvedInput.reviewInputSummary,
   );
   const ruleFindingsPath = writeJsonLinesArtifact(
-    path.join(outDir, 'process-review-rule-findings.jsonl'),
+    path.join(outDir, 'process-qa-rule-findings.jsonl'),
     ruleFindings,
   );
   const rulesetGatePath = writeJsonArtifact(
-    path.join(outDir, 'process-review-ruleset-gate.json'),
+    path.join(outDir, 'process-qa-ruleset-gate.json'),
     rulesetGate,
   );
 
   const reviewZhPath = writeTextArtifact(
-    path.join(outDir, 'one_flow_rerun_review_v2_1_zh.md'),
+    path.join(outDir, 'one_flow_rerun_qa_v2_1_zh.md'),
     renderZhReview({
       runId,
       logicVersion,
@@ -1364,7 +1363,7 @@ export async function runProcessReview(
     }),
   );
   const reviewEnPath = writeTextArtifact(
-    path.join(outDir, 'one_flow_rerun_review_v2_1_en.md'),
+    path.join(outDir, 'one_flow_rerun_qa_v2_1_en.md'),
     renderEnReview({
       runId,
       logicVersion,
@@ -1388,12 +1387,12 @@ export async function runProcessReview(
     path.join(outDir, 'flow_unit_issue_log.md'),
     renderUnitIssues(runId, unitIssues),
   );
-  const summaryPath = writeJsonArtifact(path.join(outDir, 'review_summary_v2_1.json'), summary);
+  const summaryPath = writeJsonArtifact(path.join(outDir, 'qa_summary_v2_1.json'), summary);
 
-  const report: ProcessReviewReport = {
+  const report: ProcessQaReport = {
     schema_version: 1,
     generated_at_utc: (options.now ?? (() => new Date()))().toISOString(),
-    status: 'completed_local_process_review',
+    status: 'completed_local_process_qa',
     run_id: runId,
     run_root: resolvedInput.runRoot,
     rows_file: resolvedInput.rowsFile,
@@ -1410,13 +1409,15 @@ export async function runProcessReview(
     rule_finding_count: ruleFindings.length,
     blocker_count: rulesetGate.counts.blockers,
     ruleset_gate: rulesetGate,
+    policy_decision_owner: 'foundry',
+    qa_mode: 'deterministic_qa_report',
     files: {
-      review_input_summary: reviewInputSummaryPath,
+      qa_input_summary: reviewInputSummaryPath,
       materialization_summary: resolvedInput.materializationSummaryPath,
       rule_findings: ruleFindingsPath,
       ruleset_gate: rulesetGatePath,
-      review_zh: reviewZhPath,
-      review_en: reviewEnPath,
+      qa_zh: reviewZhPath,
+      qa_en: reviewEnPath,
       timing: timingPath,
       unit_issue_log: unitIssuePath,
       summary: summaryPath,
@@ -1425,7 +1426,7 @@ export async function runProcessReview(
     llm: llmResult,
   };
 
-  const reportPath = writeJsonArtifact(path.join(outDir, 'process-review-report.json'), report);
+  const reportPath = writeJsonArtifact(path.join(outDir, 'process-qa-report.json'), report);
   report.files.report = reportPath;
   writeJsonArtifact(reportPath, report);
   return report;
@@ -1441,7 +1442,7 @@ export const __testInternals = {
   classifyExchange,
   unitIssueCheck,
   hasNumericAmount,
-  createProcessReviewFinding,
+  createProcessQaFinding,
   reviewFindingsForBase,
   processRulesetGate,
   baseInfoCheck,

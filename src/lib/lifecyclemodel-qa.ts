@@ -48,17 +48,17 @@ type SeverityCounts = {
   info: number;
 };
 
-export type LifecyclemodelReviewFinding = {
+export type LifecyclemodelQaFinding = {
   run_name: string;
   model_file: string | null;
   severity: 'error' | 'warning' | 'info';
   rule_id: string;
-  source: 'validation' | 'review';
+  source: 'validation' | 'qa';
   message: string;
   evidence: JsonObject;
 };
 
-export type LifecyclemodelReviewModelSummary = {
+export type LifecyclemodelQaModelSummary = {
   run_name: string;
   model_files: string[];
   model_uuids: string[];
@@ -89,10 +89,10 @@ export type LifecyclemodelReviewModelSummary = {
   severity_counts: SeverityCounts;
 };
 
-export type LifecyclemodelReviewReport = {
+export type LifecyclemodelQaReport = {
   schema_version: 1;
   generated_at_utc: string;
-  status: 'completed_local_lifecyclemodel_review';
+  status: 'completed_local_lifecyclemodel_qa';
   run_id: string;
   run_root: string;
   out_dir: string;
@@ -112,16 +112,16 @@ export type LifecyclemodelReviewReport = {
     model_summaries: string;
     findings: string;
     summary: string;
-    review_zh: string;
-    review_en: string;
+    qa_zh: string;
+    qa_en: string;
     timing: string;
     report: string;
   };
-  model_summaries: LifecyclemodelReviewModelSummary[];
+  model_summaries: LifecyclemodelQaModelSummary[];
   next_actions: string[];
 };
 
-export type RunLifecyclemodelReviewOptions = {
+export type RunLifecyclemodelQaOptions = {
   runDir: string;
   outDir: string;
   startTs?: string;
@@ -131,7 +131,7 @@ export type RunLifecyclemodelReviewOptions = {
   cwd?: string;
 };
 
-export type LifecyclemodelReviewLayout = {
+export type LifecyclemodelQaLayout = {
   runId: string;
   runRoot: string;
   outDir: string;
@@ -227,7 +227,7 @@ function emptySeverityCounts(): SeverityCounts {
   };
 }
 
-function severityCounts(findings: LifecyclemodelReviewFinding[]): SeverityCounts {
+function severityCounts(findings: LifecyclemodelQaFinding[]): SeverityCounts {
   return findings.reduce<SeverityCounts>((counts, finding) => {
     counts[finding.severity] += 1;
     return counts;
@@ -302,7 +302,7 @@ function readOptionalJsonArray(
   return value;
 }
 
-function buildLayout(runRoot: string, outDir: string): LifecyclemodelReviewLayout {
+function buildLayout(runRoot: string, outDir: string): LifecyclemodelQaLayout {
   const runId = path.basename(runRoot);
   return {
     runId,
@@ -320,27 +320,27 @@ function buildLayout(runRoot: string, outDir: string): LifecyclemodelReviewLayou
     ),
     modelSummariesPath: path.join(outDir, 'model_summaries.jsonl'),
     findingsPath: path.join(outDir, 'findings.jsonl'),
-    summaryPath: path.join(outDir, 'lifecyclemodel_review_summary.json'),
-    reviewZhPath: path.join(outDir, 'lifecyclemodel_review_zh.md'),
-    reviewEnPath: path.join(outDir, 'lifecyclemodel_review_en.md'),
-    timingPath: path.join(outDir, 'lifecyclemodel_review_timing.md'),
-    reportPath: path.join(outDir, 'lifecyclemodel_review_report.json'),
+    summaryPath: path.join(outDir, 'lifecyclemodel_qa_summary.json'),
+    reviewZhPath: path.join(outDir, 'lifecyclemodel_qa_zh.md'),
+    reviewEnPath: path.join(outDir, 'lifecyclemodel_qa_en.md'),
+    timingPath: path.join(outDir, 'lifecyclemodel_qa_timing.md'),
+    reportPath: path.join(outDir, 'lifecyclemodel_qa_report.json'),
   };
 }
 
-function resolveLayout(options: RunLifecyclemodelReviewOptions): LifecyclemodelReviewLayout {
+function resolveLayout(options: RunLifecyclemodelQaOptions): LifecyclemodelQaLayout {
   const runDir = nonEmptyString(options.runDir);
   if (!runDir) {
-    throw new CliError('Missing required --run-dir for review lifecyclemodel.', {
-      code: 'LIFECYCLEMODEL_REVIEW_RUN_DIR_REQUIRED',
+    throw new CliError('Missing required --run-dir for qa lifecyclemodel.', {
+      code: 'LIFECYCLEMODEL_QA_RUN_DIR_REQUIRED',
       exitCode: 2,
     });
   }
 
   const outDir = nonEmptyString(options.outDir);
   if (!outDir) {
-    throw new CliError('Missing required --out-dir for review lifecyclemodel.', {
-      code: 'LIFECYCLEMODEL_REVIEW_OUT_DIR_REQUIRED',
+    throw new CliError('Missing required --out-dir for qa lifecyclemodel.', {
+      code: 'LIFECYCLEMODEL_QA_OUT_DIR_REQUIRED',
       exitCode: 2,
     });
   }
@@ -348,29 +348,29 @@ function resolveLayout(options: RunLifecyclemodelReviewOptions): LifecyclemodelR
   return buildLayout(path.resolve(runDir), path.resolve(outDir));
 }
 
-function ensureRunRootExists(layout: LifecyclemodelReviewLayout): void {
+function ensureRunRootExists(layout: LifecyclemodelQaLayout): void {
   if (!existsSync(layout.runRoot)) {
-    throw new CliError(`lifecyclemodel review run root not found: ${layout.runRoot}`, {
-      code: 'LIFECYCLEMODEL_REVIEW_RUN_NOT_FOUND',
+    throw new CliError(`lifecyclemodel QA run root not found: ${layout.runRoot}`, {
+      code: 'LIFECYCLEMODEL_QA_RUN_NOT_FOUND',
       exitCode: 2,
     });
   }
 }
 
-function readRequiredRunManifest(layout: LifecyclemodelReviewLayout): JsonObject {
+function readRequiredRunManifest(layout: LifecyclemodelQaLayout): JsonObject {
   const manifest = readRequiredJsonObject(
     layout.runManifestPath,
-    'LIFECYCLEMODEL_REVIEW_RUN_MANIFEST_MISSING',
-    'LIFECYCLEMODEL_REVIEW_RUN_MANIFEST_INVALID',
+    'LIFECYCLEMODEL_QA_RUN_MANIFEST_MISSING',
+    'LIFECYCLEMODEL_QA_RUN_MANIFEST_INVALID',
     'run-manifest',
   );
 
   const manifestRunId = nonEmptyString(manifest.runId);
   if (manifestRunId && manifestRunId !== layout.runId) {
     throw new CliError(
-      `lifecyclemodel review run manifest runId mismatch: ${layout.runManifestPath}`,
+      `lifecyclemodel QA run manifest runId mismatch: ${layout.runManifestPath}`,
       {
-        code: 'LIFECYCLEMODEL_REVIEW_RUN_MANIFEST_MISMATCH',
+        code: 'LIFECYCLEMODEL_QA_RUN_MANIFEST_MISMATCH',
         exitCode: 2,
         details: {
           expected: layout.runId,
@@ -383,7 +383,7 @@ function readRequiredRunManifest(layout: LifecyclemodelReviewLayout): JsonObject
   return manifest;
 }
 
-function readInvocationIndex(layout: LifecyclemodelReviewLayout): JsonObject {
+function readInvocationIndex(layout: LifecyclemodelQaLayout): JsonObject {
   if (!existsSync(layout.invocationIndexPath)) {
     return {
       schema_version: 1,
@@ -394,9 +394,9 @@ function readInvocationIndex(layout: LifecyclemodelReviewLayout): JsonObject {
   const value = readJsonArtifact(layout.invocationIndexPath);
   if (!isRecord(value)) {
     throw new CliError(
-      `Expected lifecyclemodel review invocation index JSON object: ${layout.invocationIndexPath}`,
+      `Expected lifecyclemodel QA invocation index JSON object: ${layout.invocationIndexPath}`,
       {
-        code: 'LIFECYCLEMODEL_REVIEW_INVOCATION_INDEX_INVALID',
+        code: 'LIFECYCLEMODEL_QA_INVOCATION_INDEX_INVALID',
         exitCode: 2,
       },
     );
@@ -411,9 +411,9 @@ function readInvocationIndex(layout: LifecyclemodelReviewLayout): JsonObject {
 
   if (!Array.isArray(value.invocations)) {
     throw new CliError(
-      `Expected lifecyclemodel review invocation index to contain an invocations array: ${layout.invocationIndexPath}`,
+      `Expected lifecyclemodel QA invocation index to contain an invocations array: ${layout.invocationIndexPath}`,
       {
-        code: 'LIFECYCLEMODEL_REVIEW_INVOCATION_INDEX_INVALID',
+        code: 'LIFECYCLEMODEL_QA_INVOCATION_INDEX_INVALID',
         exitCode: 2,
       },
     );
@@ -422,7 +422,7 @@ function readInvocationIndex(layout: LifecyclemodelReviewLayout): JsonObject {
   return value;
 }
 
-function discoverModelEntries(layout: LifecyclemodelReviewLayout): ModelEntry[] {
+function discoverModelEntries(layout: LifecyclemodelQaLayout): ModelEntry[] {
   const runNames = existsSync(layout.modelsDir) ? readdirSync(layout.modelsDir).sort() : [];
   const entries = runNames.flatMap((runName) => {
     const lifecyclemodelsDir = path.join(
@@ -442,9 +442,9 @@ function discoverModelEntries(layout: LifecyclemodelReviewLayout): ModelEntry[] 
 
     if (modelFiles.length === 0) {
       throw new CliError(
-        `lifecyclemodel review found a bundle without lifecyclemodel JSON files: ${lifecyclemodelsDir}`,
+        `lifecyclemodel QA found a bundle without lifecyclemodel JSON files: ${lifecyclemodelsDir}`,
         {
-          code: 'LIFECYCLEMODEL_REVIEW_MODELS_EMPTY',
+          code: 'LIFECYCLEMODEL_QA_MODELS_EMPTY',
           exitCode: 2,
         },
       );
@@ -463,9 +463,9 @@ function discoverModelEntries(layout: LifecyclemodelReviewLayout): ModelEntry[] 
 
   if (entries.length === 0) {
     throw new CliError(
-      `lifecyclemodel review run does not contain any model bundles: ${layout.modelsDir}`,
+      `lifecyclemodel QA run does not contain any model bundles: ${layout.modelsDir}`,
       {
-        code: 'LIFECYCLEMODEL_REVIEW_MODELS_NOT_FOUND',
+        code: 'LIFECYCLEMODEL_QA_MODELS_NOT_FOUND',
         exitCode: 2,
       },
     );
@@ -536,11 +536,11 @@ function collectValidationIssues(validation: JsonObject): ValidationIssue[] {
 }
 
 function readValidationAggregate(
-  layout: LifecyclemodelReviewLayout,
+  layout: LifecyclemodelQaLayout,
 ): LifecyclemodelValidationAggregate {
   const aggregate = readOptionalJsonObject(
     layout.validationReportPath,
-    'LIFECYCLEMODEL_REVIEW_VALIDATION_REPORT_INVALID',
+    'LIFECYCLEMODEL_QA_VALIDATION_REPORT_INVALID',
     'validate-build report',
   );
 
@@ -556,7 +556,7 @@ function readValidationAggregate(
     throw new CliError(
       `Expected lifecyclemodel validate-build report to contain a model_reports array: ${layout.validationReportPath}`,
       {
-        code: 'LIFECYCLEMODEL_REVIEW_VALIDATION_REPORT_INVALID',
+        code: 'LIFECYCLEMODEL_QA_VALIDATION_REPORT_INVALID',
         exitCode: 2,
       },
     );
@@ -568,7 +568,7 @@ function readValidationAggregate(
       throw new CliError(
         `Expected lifecyclemodel validate-build model report entry JSON object: ${layout.validationReportPath}`,
         {
-          code: 'LIFECYCLEMODEL_REVIEW_VALIDATION_REPORT_INVALID',
+          code: 'LIFECYCLEMODEL_QA_VALIDATION_REPORT_INVALID',
           exitCode: 2,
         },
       );
@@ -579,7 +579,7 @@ function readValidationAggregate(
       throw new CliError(
         `Expected lifecyclemodel validate-build model report entry to contain run_name and validation: ${layout.validationReportPath}`,
         {
-          code: 'LIFECYCLEMODEL_REVIEW_VALIDATION_REPORT_INVALID',
+          code: 'LIFECYCLEMODEL_QA_VALIDATION_REPORT_INVALID',
           exitCode: 2,
         },
       );
@@ -611,8 +611,8 @@ function modelRoot(value: JsonObject): JsonObject {
 function readModelFileReviewInfo(filePath: string): ModelFileReviewInfo {
   const payload = readJsonArtifact(filePath);
   if (!isRecord(payload)) {
-    throw new CliError(`Expected lifecyclemodel review payload JSON object: ${filePath}`, {
-      code: 'LIFECYCLEMODEL_REVIEW_MODEL_INVALID',
+    throw new CliError(`Expected lifecyclemodel QA payload JSON object: ${filePath}`, {
+      code: 'LIFECYCLEMODEL_QA_MODEL_INVALID',
       exitCode: 2,
     });
   }
@@ -662,12 +662,12 @@ function readModelFileReviewInfo(filePath: string): ModelFileReviewInfo {
 function makeFinding(
   runName: string,
   modelFile: string | null,
-  severity: LifecyclemodelReviewFinding['severity'],
+  severity: LifecyclemodelQaFinding['severity'],
   ruleId: string,
-  source: LifecyclemodelReviewFinding['source'],
+  source: LifecyclemodelQaFinding['source'],
   message: string,
   evidence: JsonObject,
-): LifecyclemodelReviewFinding {
+): LifecyclemodelQaFinding {
   return {
     run_name: runName,
     model_file: modelFile,
@@ -683,22 +683,22 @@ function buildModelReview(
   entry: ModelEntry,
   validationAggregate: LifecyclemodelValidationAggregate,
 ): {
-  summary: LifecyclemodelReviewModelSummary;
-  findings: LifecyclemodelReviewFinding[];
+  summary: LifecyclemodelQaModelSummary;
+  findings: LifecyclemodelQaFinding[];
 } {
   const summaryArtifact = readOptionalJsonObject(
     entry.summaryPath,
-    'LIFECYCLEMODEL_REVIEW_SUMMARY_INVALID',
+    'LIFECYCLEMODEL_QA_SUMMARY_INVALID',
     'summary',
   );
   const connections = readOptionalJsonArray(
     entry.connectionsPath,
-    'LIFECYCLEMODEL_REVIEW_CONNECTIONS_INVALID',
+    'LIFECYCLEMODEL_QA_CONNECTIONS_INVALID',
     'connections',
   );
   const processCatalog = readOptionalJsonArray(
     entry.processCatalogPath,
-    'LIFECYCLEMODEL_REVIEW_PROCESS_CATALOG_INVALID',
+    'LIFECYCLEMODEL_QA_PROCESS_CATALOG_INVALID',
     'process-catalog',
   );
   const modelFileInfos = entry.modelFiles.map((modelFile) => readModelFileReviewInfo(modelFile));
@@ -709,7 +709,7 @@ function buildModelReview(
     issues: [],
   };
 
-  const findings: LifecyclemodelReviewFinding[] = [];
+  const findings: LifecyclemodelQaFinding[] = [];
   validation.issues.forEach((issue) => {
     findings.push(
       makeFinding(
@@ -763,7 +763,7 @@ function buildModelReview(
         entry.modelFiles[0] ?? null,
         'warning',
         'missing_model_summary',
-        'review',
+        'qa',
         'Model bundle is missing summary.json generated by lifecyclemodel auto-build.',
         {
           summary_path: entry.summaryPath,
@@ -779,7 +779,7 @@ function buildModelReview(
         entry.modelFiles[0] ?? null,
         'warning',
         'missing_connections_artifact',
-        'review',
+        'qa',
         'Model bundle is missing connections.json generated by lifecyclemodel auto-build.',
         {
           connections_path: entry.connectionsPath,
@@ -795,7 +795,7 @@ function buildModelReview(
         entry.modelFiles[0] ?? null,
         'warning',
         'missing_process_catalog',
-        'review',
+        'qa',
         'Model bundle is missing process-catalog.json generated by lifecyclemodel auto-build.',
         {
           process_catalog_path: entry.processCatalogPath,
@@ -811,8 +811,8 @@ function buildModelReview(
         entry.modelFiles[0] ?? null,
         'warning',
         'missing_reference_process_uuid',
-        'review',
-        'Review could not resolve reference_process_uuid from summary.json.',
+        'qa',
+        'QA could not resolve reference_process_uuid from summary.json.',
         {
           summary_path: summaryArtifact ? entry.summaryPath : null,
         },
@@ -827,8 +827,8 @@ function buildModelReview(
         entry.modelFiles[0] ?? null,
         'warning',
         'missing_resulting_process_ref',
-        'review',
-        'Review could not resolve referenceToResultingProcess from the lifecyclemodel payload.',
+        'qa',
+        'QA could not resolve referenceToResultingProcess from the lifecyclemodel payload.',
         {
           model_files: entry.modelFiles,
         },
@@ -843,7 +843,7 @@ function buildModelReview(
         entry.modelFiles[0] ?? null,
         'error',
         'empty_process_instances',
-        'review',
+        'qa',
         'Lifecyclemodel payload does not contain any processInstance entries.',
         {
           model_files: entry.modelFiles,
@@ -859,7 +859,7 @@ function buildModelReview(
         entry.modelFiles[0] ?? null,
         'warning',
         'process_count_mismatch',
-        'review',
+        'qa',
         'summary.json process_count does not match the number of processInstance entries in the payload.',
         {
           summary_process_count: summaryProcessCount,
@@ -876,7 +876,7 @@ function buildModelReview(
         entry.modelFiles[0] ?? null,
         'warning',
         'edge_count_mismatch',
-        'review',
+        'qa',
         'summary.json edge_count does not match the connections.json row count.',
         {
           summary_edge_count: summaryEdgeCount,
@@ -893,7 +893,7 @@ function buildModelReview(
         entry.modelFiles[0] ?? null,
         'warning',
         'process_catalog_count_mismatch',
-        'review',
+        'qa',
         'process-catalog.json row count does not match the number of processInstance entries in the payload.',
         {
           process_catalog_count: processCatalog.length,
@@ -914,7 +914,7 @@ function buildModelReview(
         entry.modelFiles[0] ?? null,
         'warning',
         'multiplication_factor_count_mismatch',
-        'review',
+        'qa',
         'summary.json multiplication_factors count does not match the number of processInstance entries in the payload.',
         {
           multiplication_factor_count: multiplicationFactorCount,
@@ -961,16 +961,16 @@ function buildModelReview(
 }
 
 function buildInvocationIndex(
-  layout: LifecyclemodelReviewLayout,
+  layout: LifecyclemodelQaLayout,
   invocationIndex: JsonObject,
-  options: RunLifecyclemodelReviewOptions,
+  options: RunLifecyclemodelQaOptions,
   now: Date,
 ): JsonObject {
   const priorInvocations = Array.isArray(invocationIndex.invocations)
     ? [...invocationIndex.invocations]
     : [];
   const command = [
-    'review',
+    'qa',
     'lifecyclemodel',
     '--run-dir',
     options.runDir,
@@ -1007,7 +1007,7 @@ function buildInvocationIndex(
 }
 
 function buildNextActions(
-  layout: LifecyclemodelReviewLayout,
+  layout: LifecyclemodelQaLayout,
   validationAggregate: LifecyclemodelValidationAggregate,
 ): string[] {
   return [
@@ -1023,12 +1023,12 @@ function renderZhReview(options: {
   runId: string;
   logicVersion: string;
   runRoot: string;
-  modelSummaries: LifecyclemodelReviewModelSummary[];
-  findings: LifecyclemodelReviewFinding[];
-  validation: LifecyclemodelReviewReport['validation'];
+  modelSummaries: LifecyclemodelQaModelSummary[];
+  findings: LifecyclemodelQaFinding[];
+  validation: LifecyclemodelQaReport['validation'];
 }): string {
   const lines = [
-    '# lifecyclemodel_review_zh\n',
+    '# lifecyclemodel_qa_zh\n',
     `- run_id: \`${options.runId}\`\n`,
     `- logic_version: \`${options.logicVersion}\`\n`,
     `- run_root: \`${options.runRoot}\`\n`,
@@ -1049,7 +1049,7 @@ function renderZhReview(options: {
 
   lines.push('\n## Findings\n');
   if (options.findings.length === 0) {
-    lines.push('- 未发现新的 lifecyclemodel review findings。\n');
+    lines.push('- 未发现新的 lifecyclemodel QA findings。\n');
   } else {
     lines.push('\n|run name|severity|source|rule id|message|\n|---|---|---|---|---|\n');
     options.findings.slice(0, 200).forEach((finding) => {
@@ -1061,8 +1061,8 @@ function renderZhReview(options: {
 
   lines.push(
     '\n## 说明\n',
-    '- 当前 review lifecyclemodel 保持 local-first / artifact-first，只读取现有 build run 与 validate-build 产物。\n',
-    '- 当前命令不引入 Python、LangGraph 或 skill 私有 review runtime。\n',
+    '- 当前 qa lifecyclemodel 保持 local-first / artifact-first，只读取现有 build run 与 validate-build 产物。\n',
+    '- 当前命令不引入 Python、LangGraph 或 skill 私有 QA runtime。\n',
   );
 
   return lines.join('');
@@ -1072,12 +1072,12 @@ function renderEnReview(options: {
   runId: string;
   logicVersion: string;
   runRoot: string;
-  modelSummaries: LifecyclemodelReviewModelSummary[];
-  findings: LifecyclemodelReviewFinding[];
-  validation: LifecyclemodelReviewReport['validation'];
+  modelSummaries: LifecyclemodelQaModelSummary[];
+  findings: LifecyclemodelQaFinding[];
+  validation: LifecyclemodelQaReport['validation'];
 }): string {
   const lines = [
-    '# lifecyclemodel_review_en\n',
+    '# lifecyclemodel_qa_en\n',
     `- run_id: \`${options.runId}\`\n`,
     `- logic_version: \`${options.logicVersion}\`\n`,
     `- run_root: \`${options.runRoot}\`\n`,
@@ -1112,13 +1112,13 @@ function renderTiming(options: {
   endTs?: string;
   modelCount: number;
 }): string {
-  const lines = ['# lifecyclemodel_review_timing\n', `- run_id: \`${options.runId}\`\n`];
+  const lines = ['# lifecyclemodel_qa_timing\n', `- run_id: \`${options.runId}\`\n`];
   if (options.startTs && options.endTs) {
     const started = Date.parse(options.startTs);
     const ended = Date.parse(options.endTs);
     if (!Number.isFinite(started) || !Number.isFinite(ended)) {
       throw new CliError('Expected --start-ts and --end-ts to be valid ISO timestamps.', {
-        code: 'LIFECYCLEMODEL_REVIEW_INVALID_TIMESTAMP',
+        code: 'LIFECYCLEMODEL_QA_INVALID_TIMESTAMP',
         exitCode: 2,
       });
     }
@@ -1135,26 +1135,26 @@ function renderTiming(options: {
   return lines.join('');
 }
 
-export async function runLifecyclemodelReview(
-  options: RunLifecyclemodelReviewOptions,
-): Promise<LifecyclemodelReviewReport> {
+export async function runLifecyclemodelQa(
+  options: RunLifecyclemodelQaOptions,
+): Promise<LifecyclemodelQaReport> {
   const layout = resolveLayout(options);
   ensureRunRootExists(layout);
   readRequiredRunManifest(layout);
   const invocationIndex = readInvocationIndex(layout);
   const validationAggregate = readValidationAggregate(layout);
   const modelEntries = discoverModelEntries(layout);
-  const logicVersion = options.logicVersion?.trim() || 'lifecyclemodel-review-v1.0';
+  const logicVersion = options.logicVersion?.trim() || 'lifecyclemodel-qa-v1.0';
   const now = options.now ?? (() => new Date());
   const generatedAt = now();
 
   const reviewedModels = modelEntries.map((entry) => buildModelReview(entry, validationAggregate));
   const modelSummaries = reviewedModels.map((model) => model.summary);
   const findings = reviewedModels.flatMap((model) => model.findings);
-  const report: LifecyclemodelReviewReport = {
+  const report: LifecyclemodelQaReport = {
     schema_version: 1,
     generated_at_utc: generatedAt.toISOString(),
-    status: 'completed_local_lifecyclemodel_review',
+    status: 'completed_local_lifecyclemodel_qa',
     run_id: layout.runId,
     run_root: layout.runRoot,
     out_dir: layout.outDir,
@@ -1174,8 +1174,8 @@ export async function runLifecyclemodelReview(
       model_summaries: layout.modelSummariesPath,
       findings: layout.findingsPath,
       summary: layout.summaryPath,
-      review_zh: layout.reviewZhPath,
-      review_en: layout.reviewEnPath,
+      qa_zh: layout.reviewZhPath,
+      qa_en: layout.reviewEnPath,
       timing: layout.timingPath,
       report: layout.reportPath,
     },

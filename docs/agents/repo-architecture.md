@@ -85,7 +85,7 @@ The widest feature families currently live in:
 
 - `src/lib/flow-*.ts`
 - `src/lib/dataset-*.ts`
-- `src/lib/review-*.ts`
+- `src/lib/*-qa.ts`
 - `src/lib/process-*.ts`
 - `src/lib/lifecyclemodel-*.ts`
 - `src/lib/publish.ts`
@@ -93,7 +93,7 @@ The widest feature families currently live in:
 
 These files own the public CLI semantics for those workflows.
 
-### Process maintenance and review commands
+### Process maintenance and QA commands
 
 Recent process maintenance commands extend the same native CLI layer instead of introducing a secondary orchestration surface:
 
@@ -105,7 +105,7 @@ Recent process maintenance commands extend the same native CLI layer instead of 
 - `src/lib/process-verify-rows.ts`
 - `src/lib/identity-preflight.ts`
 - `src/lib/process-flow-build-plan.ts`
-- `src/lib/review-process.ts`
+- `src/lib/process-qa.ts`
 - `src/lib/runtime-rulesets.ts`
 
 These modules share one contract:
@@ -116,8 +116,8 @@ These modules share one contract:
 - `process save-draft` validates canonical payloads with `ProcessSchema` before remote writes
 - `flow publish-version` and `process publish-build` validate canonical payloads with `FlowSchema` / `ProcessSchema` before publish planning or handoff artifacts proceed
 - `publish run` writes a deterministic `verification-report.json` next to the final publish report so downstream automation can read blockers without parsing execution details
-- `runtime-rulesets` maps CLI-local review, dedup, and publish findings to stable methodology rule ids so Foundry and UI handoffs can consume one ruleset profile contract
-- maintenance and review commands still emit artifact-first local outputs and remain covered by the strict `src/**/*.ts` coverage gate
+- `runtime-rulesets` maps CLI-local QA, dedup, and publish findings to stable methodology rule ids so Foundry and UI handoffs can consume one ruleset profile contract
+- maintenance and QA commands still emit artifact-first local outputs and remain covered by the strict `src/**/*.ts` coverage gate
 
 ### Dataset and lifecyclemodel governance commands
 

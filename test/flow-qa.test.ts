@@ -5,7 +5,7 @@ import os from 'node:os';
 import path from 'node:path';
 import { CliError } from '../src/lib/errors.js';
 import type { FetchLike } from '../src/lib/http.js';
-import { __testInternals, runFlowReview } from '../src/lib/review-flow.js';
+import { __testInternals, runFlowQa } from '../src/lib/flow-qa.js';
 
 type JsonRecord = Record<string, unknown>;
 
@@ -115,8 +115,8 @@ function createLlmFetch(outputText: string, observedBodies: unknown[] = []): Fet
   }) as FetchLike;
 }
 
-test('runFlowReview materializes rows-file input and writes artifact-first review outputs', async () => {
-  const dir = mkdtempSync(path.join(os.tmpdir(), 'tg-cli-review-flow-'));
+test('runFlowQa materializes rows-file input and writes artifact-first QA outputs', async () => {
+  const dir = mkdtempSync(path.join(os.tmpdir(), 'tg-cli-flow-qa-'));
   const rowsFile = path.join(dir, 'rows.json');
   const outDir = path.join(dir, 'review');
 
@@ -168,7 +168,7 @@ test('runFlowReview materializes rows-file input and writes artifact-first revie
   ]);
 
   try {
-    const report = await runFlowReview({
+    const report = await runFlowQa({
       rowsFile,
       outDir,
       runId: 'flow-run-001',
@@ -177,7 +177,7 @@ test('runFlowReview materializes rows-file input and writes artifact-first revie
       now: () => new Date('2026-03-30T00:11:00.000Z'),
     });
 
-    assert.equal(report.status, 'completed_local_flow_review');
+    assert.equal(report.status, 'completed_local_flow_qa');
     assert.equal(report.run_id, 'flow-run-001');
     assert.equal(report.input_mode, 'rows_file');
     assert.equal(report.flow_count, 2);
@@ -193,7 +193,7 @@ test('runFlowReview materializes rows-file input and writes artifact-first revie
     assert.ok(report.rule_finding_count > 0);
     assert.ok(report.finding_count >= report.rule_finding_count);
     assert.equal(report.generated_at_utc, '2026-03-30T00:11:00.000Z');
-    assert.ok(existsSync(report.files.review_input_summary));
+    assert.ok(existsSync(report.files.qa_input_summary));
     assert.ok(existsSync(report.files.materialization_summary ?? ''));
     assert.ok(existsSync(report.files.rule_findings));
     assert.ok(existsSync(report.files.ruleset_gate ?? ''));
@@ -201,8 +201,8 @@ test('runFlowReview materializes rows-file input and writes artifact-first revie
     assert.ok(existsSync(report.files.flow_summaries));
     assert.ok(existsSync(report.files.similarity_pairs));
     assert.ok(existsSync(report.files.summary));
-    assert.ok(existsSync(report.files.review_zh));
-    assert.ok(existsSync(report.files.review_en));
+    assert.ok(existsSync(report.files.qa_zh));
+    assert.ok(existsSync(report.files.qa_en));
     assert.ok(existsSync(report.files.timing));
     assert.ok(existsSync(report.files.report));
 
@@ -229,7 +229,7 @@ test('runFlowReview materializes rows-file input and writes artifact-first revie
       .map((line) => JSON.parse(line) as JsonRecord);
     assert.equal(pairs.length, 0);
 
-    const zhReview = readFileSync(report.files.review_zh, 'utf8');
+    const zhReview = readFileSync(report.files.qa_zh, 'utf8');
     assert.match(zhReview, /基础统计/u);
     assert.match(zhReview, /LLM 语义复审层/u);
 
@@ -240,8 +240,8 @@ test('runFlowReview materializes rows-file input and writes artifact-first revie
   }
 });
 
-test('runFlowReview supports flows-dir input and CLI-owned LLM semantic review', async () => {
-  const dir = mkdtempSync(path.join(os.tmpdir(), 'tg-cli-review-flow-llm-'));
+test('runFlowQa supports flows-dir input and CLI-owned LLM semantic review', async () => {
+  const dir = mkdtempSync(path.join(os.tmpdir(), 'tg-cli-flow-qa-llm-'));
   const flowsDir = path.join(dir, 'flows');
   const outDir = path.join(dir, 'review');
   const observedBodies: unknown[] = [];
@@ -264,7 +264,7 @@ test('runFlowReview supports flows-dir input and CLI-owned LLM semantic review',
   );
 
   try {
-    const report = await runFlowReview({
+    const report = await runFlowQa({
       flowsDir,
       outDir,
       runId: 'flow-run-llm',
@@ -325,17 +325,17 @@ test('runFlowReview supports flows-dir input and CLI-owned LLM semantic review',
     assert.equal((llmFindings[0].evidence as JsonRecord).text, 'name too generic');
     assert.equal(llmFindings[1].action, 'dedupe me');
 
-    const reviewZh = readFileSync(report.files.review_zh, 'utf8');
+    const reviewZh = readFileSync(report.files.qa_zh, 'utf8');
     assert.match(reviewZh, /仅复审前/u);
-    const reviewEn = readFileSync(report.files.review_en, 'utf8');
+    const reviewEn = readFileSync(report.files.qa_en, 'utf8');
     assert.match(reviewEn, /reviewed only the first/u);
   } finally {
     rmSync(dir, { recursive: true, force: true });
   }
 });
 
-test('review-flow internals handle invalid input modes, fallback run-root resolution, and malformed flow files', async () => {
-  const dir = mkdtempSync(path.join(os.tmpdir(), 'tg-cli-review-flow-internals-'));
+test('flow-qa internals handle invalid input modes, fallback run-root resolution, and malformed flow files', async () => {
+  const dir = mkdtempSync(path.join(os.tmpdir(), 'tg-cli-flow-qa-internals-'));
   const outDir = path.join(dir, 'review');
   const runRoot = path.join(dir, 'run-root');
   const exportsFlowsDir = path.join(runRoot, 'exports', 'flows');
@@ -344,14 +344,14 @@ test('review-flow internals handle invalid input modes, fallback run-root resolu
 
   try {
     await assert.rejects(
-      runFlowReview({
+      runFlowQa({
         rowsFile: path.join(dir, 'rows.json'),
         flowsDir: path.join(dir, 'flows'),
         outDir,
       }),
       (error: unknown) => {
         assert.ok(error instanceof CliError);
-        assert.equal(error.code, 'FLOW_REVIEW_INPUT_MODE_REQUIRED');
+        assert.equal(error.code, 'FLOW_QA_INPUT_MODE_REQUIRED');
         return true;
       },
     );
@@ -444,7 +444,7 @@ test('review-flow internals handle invalid input modes, fallback run-root resolu
       'built_in',
     );
     const rareRuleIds = rareSummary.findings.map((finding) => finding.rule_id);
-    assert.ok(rareRuleIds.includes('elementary_flow_in_flow_review'));
+    assert.ok(rareRuleIds.includes('elementary_flow_in_flow_qa'));
     assert.ok(rareRuleIds.includes('name_contains_emergy'));
     assert.ok(rareRuleIds.includes('invalid_flow_property_reference'));
     assert.ok(rareRuleIds.includes('missing_quantitative_reference'));
@@ -513,19 +513,19 @@ test('review-flow internals handle invalid input modes, fallback run-root resolu
       () => __testInternals.listFlowFiles(missingDir),
       (error: unknown) => {
         assert.ok(error instanceof CliError);
-        assert.equal(error.code, 'FLOW_REVIEW_DIR_NOT_FOUND');
+        assert.equal(error.code, 'FLOW_QA_DIR_NOT_FOUND');
         return true;
       },
     );
 
     await assert.rejects(
-      runFlowReview({
+      runFlowQa({
         flowsDir: exportsFlowsDir,
         outDir,
       }),
       (error: unknown) => {
         assert.ok(error instanceof CliError);
-        assert.equal(error.code, 'FLOW_REVIEW_INVALID_FLOW_FILE');
+        assert.equal(error.code, 'FLOW_QA_INVALID_FLOW_FILE');
         return true;
       },
     );
@@ -535,7 +535,7 @@ test('review-flow internals handle invalid input modes, fallback run-root resolu
       () => __testInternals.readJsonObject(path.join(exportsFlowsDir, 'malformed.json')),
       (error: unknown) => {
         assert.ok(error instanceof CliError);
-        assert.equal(error.code, 'FLOW_REVIEW_INVALID_FLOW_FILE');
+        assert.equal(error.code, 'FLOW_QA_INVALID_FLOW_FILE');
         return true;
       },
     );
@@ -544,7 +544,7 @@ test('review-flow internals handle invalid input modes, fallback run-root resolu
   }
 });
 
-test('review-flow helpers cover methodology fallbacks, similarity sorting, and truncated rendering', () => {
+test('flow-qa helpers cover methodology fallbacks, similarity sorting, and truncated rendering', () => {
   const detailed = __testInternals.buildFlowSummaryAndRuleFindings(
     {
       flowDataSet: {
@@ -668,7 +668,7 @@ test('review-flow helpers cover methodology fallbacks, similarity sorting, and t
   const truncatedSummary = {
     schema_version: 1 as const,
     generated_at_utc: '2026-03-30T00:00:00.000Z',
-    status: 'completed_local_flow_review' as const,
+    status: 'completed_local_flow_qa' as const,
     run_id: 'truncated',
     out_dir: '/tmp/review',
     input_mode: 'flows_dir' as const,
@@ -693,7 +693,7 @@ test('review-flow helpers cover methodology fallbacks, similarity sorting, and t
       batch_results: [],
     },
     files: {
-      review_input_summary: '',
+      qa_input_summary: '',
       materialization_summary: null,
       rule_findings: '',
       llm_findings: '',
@@ -701,8 +701,8 @@ test('review-flow helpers cover methodology fallbacks, similarity sorting, and t
       flow_summaries: '',
       similarity_pairs: '',
       summary: '',
-      review_zh: '',
-      review_en: '',
+      qa_zh: '',
+      qa_en: '',
       timing: '',
       report: '',
     },
@@ -747,7 +747,7 @@ test('review-flow helpers cover methodology fallbacks, similarity sorting, and t
   assert.match(enTruncated, /only the first/u);
 });
 
-test('review-flow direct helpers cover rare fallback branches', () => {
+test('flow-qa direct helpers cover rare fallback branches', () => {
   assert.deepEqual(__testInternals.walkStrings('   '), []);
   assert.deepEqual(__testInternals.walkStrings({ '#text': 'Root|Text', nested: [' Child '] }), [
     'Root|Text',
@@ -940,8 +940,8 @@ test('review-flow direct helpers cover rare fallback branches', () => {
   assert.equal(normalizedWithSuggestion?.action, 'use suggestion field');
 });
 
-test('review-flow internal llm helpers cover disabled, fallback, invalid-json, and failure branches', async () => {
-  const dir = mkdtempSync(path.join(os.tmpdir(), 'tg-cli-review-flow-llm-internals-'));
+test('flow-qa internal llm helpers cover disabled, fallback, invalid-json, and failure branches', async () => {
+  const dir = mkdtempSync(path.join(os.tmpdir(), 'tg-cli-flow-qa-llm-internals-'));
   const summaries = [
     {
       flow_uuid: '88888888-8888-8888-8888-888888888888',
@@ -1081,7 +1081,7 @@ test('review-flow internal llm helpers cover disabled, fallback, invalid-json, a
     summary: {
       schema_version: 1,
       generated_at_utc: '2026-03-30T00:00:00.000Z',
-      status: 'completed_local_flow_review',
+      status: 'completed_local_flow_qa',
       run_id: 'zh-failure',
       out_dir: dir,
       input_mode: 'flows_dir',
@@ -1107,7 +1107,7 @@ test('review-flow internal llm helpers cover disabled, fallback, invalid-json, a
         batch_results: [],
       },
       files: {
-        review_input_summary: '',
+        qa_input_summary: '',
         materialization_summary: null,
         rule_findings: '',
         llm_findings: '',
@@ -1115,8 +1115,8 @@ test('review-flow internal llm helpers cover disabled, fallback, invalid-json, a
         flow_summaries: '',
         similarity_pairs: '',
         summary: '',
-        review_zh: '',
-        review_en: '',
+        qa_zh: '',
+        qa_en: '',
         timing: '',
         report: '',
       },
@@ -1143,7 +1143,7 @@ test('review-flow internal llm helpers cover disabled, fallback, invalid-json, a
     summary: {
       schema_version: 1,
       generated_at_utc: '2026-03-30T00:00:00.000Z',
-      status: 'completed_local_flow_review',
+      status: 'completed_local_flow_qa',
       run_id: 'zh-ok',
       out_dir: dir,
       input_mode: 'flows_dir',
@@ -1168,7 +1168,7 @@ test('review-flow internal llm helpers cover disabled, fallback, invalid-json, a
         batch_results: [],
       },
       files: {
-        review_input_summary: '',
+        qa_input_summary: '',
         materialization_summary: null,
         rule_findings: '',
         llm_findings: '',
@@ -1176,8 +1176,8 @@ test('review-flow internal llm helpers cover disabled, fallback, invalid-json, a
         flow_summaries: '',
         similarity_pairs: '',
         summary: '',
-        review_zh: '',
-        review_en: '',
+        qa_zh: '',
+        qa_en: '',
         timing: '',
         report: '',
       },
@@ -1214,13 +1214,13 @@ test('review-flow internal llm helpers cover disabled, fallback, invalid-json, a
   assert.match(timing, /bad-start/u);
 
   await assert.rejects(
-    runFlowReview({
+    runFlowQa({
       rowsFile: path.join(dir, 'rows.json'),
       outDir: '',
     }),
     (error: unknown) => {
       assert.ok(error instanceof CliError);
-      assert.equal(error.code, 'FLOW_REVIEW_OUT_DIR_REQUIRED');
+      assert.equal(error.code, 'FLOW_QA_OUT_DIR_REQUIRED');
       return true;
     },
   );
@@ -1228,26 +1228,26 @@ test('review-flow internal llm helpers cover disabled, fallback, invalid-json, a
   const emptyFlowDir = path.join(dir, 'empty-flows');
   mkdirSync(emptyFlowDir, { recursive: true });
   await assert.rejects(
-    runFlowReview({
+    runFlowQa({
       flowsDir: emptyFlowDir,
       outDir: path.join(dir, 'empty-review'),
     }),
     (error: unknown) => {
       assert.ok(error instanceof CliError);
-      assert.equal(error.code, 'FLOW_REVIEW_NO_FLOW_FILES');
+      assert.equal(error.code, 'FLOW_QA_NO_FLOW_FILES');
       return true;
     },
   );
 
   const missingDir = path.join(dir, 'not-there');
   await assert.rejects(
-    runFlowReview({
+    runFlowQa({
       flowsDir: missingDir,
       outDir: path.join(dir, 'missing-dir-review'),
     }),
     (error: unknown) => {
       assert.ok(error instanceof CliError);
-      assert.equal(error.code, 'FLOW_REVIEW_DIR_NOT_FOUND');
+      assert.equal(error.code, 'FLOW_QA_DIR_NOT_FOUND');
       return true;
     },
   );
@@ -1255,8 +1255,8 @@ test('review-flow internal llm helpers cover disabled, fallback, invalid-json, a
   rmSync(dir, { recursive: true, force: true });
 });
 
-test('review-flow LLM review deduplicates fallback findings from single-item batches', async () => {
-  const dir = mkdtempSync(path.join(os.tmpdir(), 'tg-cli-review-flow-llm-dedupe-'));
+test('flow-qa LLM review deduplicates fallback findings from single-item batches', async () => {
+  const dir = mkdtempSync(path.join(os.tmpdir(), 'tg-cli-flow-qa-llm-dedupe-'));
   const summaries = [
     {
       flow_uuid: '12121212-3434-5656-7878-909090909090',
@@ -1323,8 +1323,8 @@ test('review-flow LLM review deduplicates fallback findings from single-item bat
   }
 });
 
-test('review-flow direct runtime helpers cover materialization, non-array findings, and rendering defaults', async () => {
-  const dir = mkdtempSync(path.join(os.tmpdir(), 'tg-cli-review-flow-direct-runtime-'));
+test('flow-qa direct runtime helpers cover materialization, non-array findings, and rendering defaults', async () => {
+  const dir = mkdtempSync(path.join(os.tmpdir(), 'tg-cli-flow-qa-direct-runtime-'));
   const rowsFile = path.join(dir, 'rows.json');
   const outDir = path.join(dir, 'review');
   const cacheFlowsDir = path.join(dir, 'run-root', 'cache', 'flows');
@@ -1526,7 +1526,7 @@ test('review-flow direct runtime helpers cover materialization, non-array findin
       summary: {
         schema_version: 1,
         generated_at_utc: '2026-03-30T00:00:00.000Z',
-        status: 'completed_local_flow_review',
+        status: 'completed_local_flow_qa',
         run_id: 'zh-disabled',
         out_dir: dir,
         input_mode: 'flows_dir',
@@ -1550,7 +1550,7 @@ test('review-flow direct runtime helpers cover materialization, non-array findin
           batch_results: [],
         },
         files: {
-          review_input_summary: '',
+          qa_input_summary: '',
           materialization_summary: null,
           rule_findings: '',
           llm_findings: '',
@@ -1558,8 +1558,8 @@ test('review-flow direct runtime helpers cover materialization, non-array findin
           flow_summaries: '',
           similarity_pairs: '',
           summary: '',
-          review_zh: '',
-          review_en: '',
+          qa_zh: '',
+          qa_en: '',
           timing: '',
           report: '',
         },
@@ -1605,7 +1605,7 @@ test('review-flow direct runtime helpers cover materialization, non-array findin
       summary: {
         schema_version: 1,
         generated_at_utc: '2026-03-30T00:00:00.000Z',
-        status: 'completed_local_flow_review',
+        status: 'completed_local_flow_qa',
         run_id: 'zh-uuid-fallback',
         out_dir: dir,
         input_mode: 'flows_dir',
@@ -1629,7 +1629,7 @@ test('review-flow direct runtime helpers cover materialization, non-array findin
           batch_results: [],
         },
         files: {
-          review_input_summary: '',
+          qa_input_summary: '',
           materialization_summary: null,
           rule_findings: '',
           llm_findings: '',
@@ -1637,8 +1637,8 @@ test('review-flow direct runtime helpers cover materialization, non-array findin
           flow_summaries: '',
           similarity_pairs: '',
           summary: '',
-          review_zh: '',
-          review_en: '',
+          qa_zh: '',
+          qa_en: '',
           timing: '',
           report: '',
         },
@@ -1685,7 +1685,7 @@ test('review-flow direct runtime helpers cover materialization, non-array findin
       summary: {
         schema_version: 1,
         generated_at_utc: '2026-03-30T00:00:00.000Z',
-        status: 'completed_local_flow_review',
+        status: 'completed_local_flow_qa',
         run_id: 'zh-pipes',
         out_dir: dir,
         input_mode: 'flows_dir',
@@ -1710,7 +1710,7 @@ test('review-flow direct runtime helpers cover materialization, non-array findin
           batch_results: [],
         },
         files: {
-          review_input_summary: '',
+          qa_input_summary: '',
           materialization_summary: null,
           rule_findings: '',
           llm_findings: '',
@@ -1718,8 +1718,8 @@ test('review-flow direct runtime helpers cover materialization, non-array findin
           flow_summaries: '',
           similarity_pairs: '',
           summary: '',
-          review_zh: '',
-          review_en: '',
+          qa_zh: '',
+          qa_en: '',
           timing: '',
           report: '',
         },
@@ -1747,7 +1747,7 @@ test('review-flow direct runtime helpers cover materialization, non-array findin
       summary: {
         schema_version: 1,
         generated_at_utc: '2026-03-30T00:00:00.000Z',
-        status: 'completed_local_flow_review',
+        status: 'completed_local_flow_qa',
         run_id: 'zh-failure-unknown',
         out_dir: dir,
         input_mode: 'flows_dir',
@@ -1772,7 +1772,7 @@ test('review-flow direct runtime helpers cover materialization, non-array findin
           batch_results: [],
         },
         files: {
-          review_input_summary: '',
+          qa_input_summary: '',
           materialization_summary: null,
           rule_findings: '',
           llm_findings: '',
@@ -1780,8 +1780,8 @@ test('review-flow direct runtime helpers cover materialization, non-array findin
           flow_summaries: '',
           similarity_pairs: '',
           summary: '',
-          review_zh: '',
-          review_en: '',
+          qa_zh: '',
+          qa_en: '',
           timing: '',
           report: '',
         },
@@ -1835,7 +1835,7 @@ test('review-flow direct runtime helpers cover materialization, non-array findin
         nameZh: '显式逻辑流',
       }),
     );
-    const explicitLogicReport = await runFlowReview({
+    const explicitLogicReport = await runFlowQa({
       flowsDir,
       outDir: path.join(dir, 'explicit-logic-review'),
       logicVersion: 'custom-flow-logic',

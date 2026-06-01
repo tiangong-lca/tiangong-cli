@@ -77,7 +77,7 @@ TIANGONG_LCA_DISABLE_SESSION_CACHE=false
 TIANGONG_LCA_FORCE_REAUTH=false
 ```
 
-Optional LLM review env, only for `review process --enable-llm` or `review flow --enable-llm`:
+Optional LLM review env, only for `qa process --enable-llm` or `qa flow --enable-llm`:
 
 ```bash
 TIANGONG_LCA_REVIEW_LLM_BASE_URL=
@@ -177,11 +177,11 @@ Key outputs under `--out-dir`:
 - `outputs/materialized-process.json`
 - `outputs/materialized-flow.json`
 
-## Real DB Flow Review
+## Real DB Flow QA
 
 1. Search or otherwise collect exact flow refs.
-2. Materialize DB rows into local review input.
-3. Review the materialized rows.
+2. Materialize DB rows into local QA input.
+3. Run QA on the materialized rows.
 4. Materialize approved decisions into downstream artifacts.
 
 `flow fetch-rows` input:
@@ -225,19 +225,19 @@ tiangong-lca flow fetch-rows \
   --refs-file ./flow-refs.json \
   --out-dir ./flow-fetch
 
-tiangong-lca review flow \
-  --rows-file ./flow-fetch/review-input-rows.jsonl \
-  --out-dir ./flow-review
+tiangong-lca qa flow \
+  --rows-file ./flow-fetch/qa-input-rows.jsonl \
+  --out-dir ./flow-qa
 
 tiangong-lca flow materialize-decisions \
   --decision-file ./approved-decisions.json \
-  --flow-rows-file ./flow-fetch/review-input-rows.jsonl \
+  --flow-rows-file ./flow-fetch/qa-input-rows.jsonl \
   --out-dir ./flow-decisions
 ```
 
 Key `flow fetch-rows` outputs:
 
-- `review-input-rows.jsonl`
+- `qa-input-rows.jsonl`
 - `fetch-summary.json`
 - `missing-flow-refs.jsonl`
 - `ambiguous-flow-refs.jsonl`
@@ -272,8 +272,8 @@ tiangong-lca lifecyclemodel publish-build --run-dir /abs/path/to/lifecyclemodel-
 tiangong-lca lifecyclemodel save-draft --input ./lifecyclemodels.jsonl --out-dir /abs/path/to/lifecyclemodel-save-draft --dry-run --json
 tiangong-lca lifecyclemodel graph --input ./lifecyclemodels.jsonl --out-dir /abs/path/to/lifecyclemodel-graph --format all --json
 tiangong-lca lifecyclemodel orchestrate plan --input ./lifecyclemodel-orchestrate.request.json --out-dir /abs/path/to/lifecyclemodel-recursive-run --json
-tiangong-lca review process --rows-file ./process-list-report.json --out-dir ./review
-tiangong-lca review process --run-root /abs/path/to/process-run --run-id <run_id> --out-dir ./review
+tiangong-lca qa process --rows-file ./process-list-report.json --out-dir ./process-qa
+tiangong-lca qa process --run-root /abs/path/to/process-run --run-id <run_id> --out-dir ./process-qa
 tiangong-lca process save-draft --input ./patched-processes.jsonl --out-dir /abs/path/to/process-save-draft --dry-run --json
 tiangong-lca process save-draft --input ./patched-processes.jsonl --out-dir /abs/path/to/process-save-draft --commit --json
 tiangong-lca flow publish-version --input-file ./ready-flows.jsonl --out-dir /abs/path/to/flow-publish --dry-run --json
@@ -284,7 +284,7 @@ tiangong-lca doctor --json
 
 For `publish run`, relative `out_dir` values from either the request body or `--out-dir` are resolved against the request file directory, not the shell `cwd`. Use an absolute path when you want a fixed destination independent of the request file location.
 
-For `review process`, `--rows-file` accepts either raw process rows as JSON/JSONL or the full JSON report emitted by `tiangong-lca process list --json`, as long as it contains a `rows` array.
+For `qa process`, `--rows-file` accepts either raw process rows as JSON/JSONL or the full JSON report emitted by `tiangong-lca process list --json`, as long as it contains a `rows` array.
 
 For `process identity-preflight` and `flow identity-preflight`, canonical TIDAS wrappers are schema-checked when present. Loose target objects are accepted for early planning and produce `schema_validation.status: "not_applicable"` until materialization. Candidate rows can be embedded in the request, loaded from repeatable `--candidate-input` local files/directories, or fetched through explicit `--remote-candidates` hybrid search; `identity-candidate-sources.json` records scanned files, remote endpoints, queries, filters, and row counts.
 
@@ -307,15 +307,15 @@ For `dataset references rewrite`, `--commit` executes the state-aware save-draft
 ## More Docs
 
 - `docs/IMPLEMENTATION_GUIDE_CN.md`: maintainer-facing command contract and implementation notes
-- `--help`: the canonical command surface for `tiangong-lca`, `tiangong-lca flow`, `tiangong-lca review`, `tiangong-lca process`, `tiangong-lca lifecyclemodel`, and `tiangong-lca publish`
+- `--help`: the canonical command surface for `tiangong-lca`, `tiangong-lca qa`, `tiangong-lca flow`, `tiangong-lca process`, `tiangong-lca lifecyclemodel`, and `tiangong-lca publish`
 - `tiangong-lca-skills`: use the skill-specific `SKILL.md` and wrapper docs for agent workflows; the CLI README only covers the public invocation contract
 
 ## Help
 
 ```bash
 tiangong-lca --help
+tiangong-lca qa --help
 tiangong-lca flow --help
-tiangong-lca review --help
 tiangong-lca process --help
 tiangong-lca lifecyclemodel --help
 tiangong-lca publish --help

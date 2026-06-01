@@ -127,20 +127,20 @@ import {
 } from './lib/identity-preflight.js';
 import { runPublish, type PublishReport, type RunPublishOptions } from './lib/publish.js';
 import {
-  runProcessReview,
-  type ProcessReviewReport,
-  type RunProcessReviewOptions,
-} from './lib/review-process.js';
+  runProcessQa,
+  type ProcessQaReport,
+  type RunProcessQaOptions,
+} from './lib/process-qa.js';
 import {
-  runFlowReview,
-  type FlowReviewReport,
-  type RunFlowReviewOptions,
-} from './lib/review-flow.js';
+  runFlowQa,
+  type FlowQaReport,
+  type RunFlowQaOptions,
+} from './lib/flow-qa.js';
 import {
-  runLifecyclemodelReview,
-  type LifecyclemodelReviewReport,
-  type RunLifecyclemodelReviewOptions,
-} from './lib/review-lifecyclemodel.js';
+  runLifecyclemodelQa,
+  type LifecyclemodelQaReport,
+  type RunLifecyclemodelQaOptions,
+} from './lib/lifecyclemodel-qa.js';
 import {
   runFlowRemediate,
   type FlowRemediationReport,
@@ -319,11 +319,11 @@ export type CliDeps = {
   runProcessBuildPlanMaterializeImpl?: (
     options: RunProcessBuildPlanMaterializeOptions,
   ) => Promise<ProcessBuildPlanGateReport>;
-  runProcessReviewImpl?: (options: RunProcessReviewOptions) => Promise<ProcessReviewReport>;
-  runFlowReviewImpl?: (options: RunFlowReviewOptions) => Promise<FlowReviewReport>;
-  runLifecyclemodelReviewImpl?: (
-    options: RunLifecyclemodelReviewOptions,
-  ) => Promise<LifecyclemodelReviewReport>;
+  runProcessQaImpl?: (options: RunProcessQaOptions) => Promise<ProcessQaReport>;
+  runFlowQaImpl?: (options: RunFlowQaOptions) => Promise<FlowQaReport>;
+  runLifecyclemodelQaImpl?: (
+    options: RunLifecyclemodelQaOptions,
+  ) => Promise<LifecyclemodelQaReport>;
   runFlowRemediateImpl?: (options: RunFlowRemediateOptions) => Promise<FlowRemediationReport>;
   runFlowFetchRowsImpl?: (options: RunFlowFetchRowsOptions) => Promise<FlowFetchRowsReport>;
   runFlowMaterializeDecisionsImpl?: (
@@ -426,7 +426,7 @@ Implemented Commands:
   dataset    contract get | context-pack | import-lca convert | author | validate | verify-remote | bilingual extract/apply/validate | evidence-search plan/run | references rewrite/refresh-remote
   flow       get | list | identity-preflight | build-plan | fetch-rows | materialize-decisions | remediate | publish-version | publish-reviewed-data | build-alias-map | scan-process-flow-refs | plan-process-flow-repairs | apply-process-flow-repairs | regen-product | validate-processes
   lifecyclemodel auto-build | validate-build | publish-build | save-draft | graph | build-resulting-process | publish-resulting-process | orchestrate
-  review     process | flow | lifecyclemodel
+  qa         process | flow | lifecyclemodel
   publish    run
   validation run
   admin      embedding-run
@@ -478,7 +478,7 @@ Examples:
   tiangong-lca flow identity-preflight --input ./flow-preflight.json --out-dir ./flow-preflight
   tiangong-lca flow build-plan validate --input ./flow-build-plan.json --out-dir ./flow-build-plan
   tiangong-lca flow fetch-rows --refs-file ./flow-refs.json --out-dir ./flow-fetch
-  tiangong-lca flow materialize-decisions --decision-file ./approved-decisions.json --flow-rows-file ./review-input-rows.jsonl --out-dir ./flow-decisions
+  tiangong-lca flow materialize-decisions --decision-file ./approved-decisions.json --flow-rows-file ./qa-input-rows.jsonl --out-dir ./flow-decisions
   tiangong-lca flow remediate --input-file ./invalid-flows.jsonl --out-dir ./flow-remediation
   tiangong-lca flow publish-version --input-file ./ready-flows.jsonl --out-dir ./flow-publish --commit
   tiangong-lca flow publish-reviewed-data --flow-rows-file ./reviewed-flows.jsonl --original-flow-rows-file ./original-flows.jsonl --out-dir ./flow-publish-review
@@ -488,10 +488,10 @@ Examples:
   tiangong-lca flow apply-process-flow-repairs --processes-file ./processes.jsonl --scope-flow-file ./flows.jsonl --out-dir ./flow-repair-apply
   tiangong-lca flow regen-product --processes-file ./processes.jsonl --scope-flow-file ./flows.jsonl --out-dir ./flow-regeneration --apply
   tiangong-lca flow validate-processes --original-processes-file ./before.jsonl --patched-processes-file ./after.jsonl --scope-flow-file ./flows.jsonl --out-dir ./flow-validation
-  tiangong-lca review process --rows-file ./processes.jsonl --out-dir ./review
-  tiangong-lca review process --run-root /abs/path/to/process-run --run-id <run_id> --out-dir ./review
-  tiangong-lca review flow --rows-file ./flows.json --out-dir ./review
-  tiangong-lca review lifecyclemodel --run-dir /abs/path/to/lifecyclemodel-run --out-dir ./lifecyclemodel-review
+  tiangong-lca qa process --rows-file ./processes.jsonl --out-dir ./qa
+  tiangong-lca qa process --run-root /abs/path/to/process-run --run-id <run_id> --out-dir ./qa
+  tiangong-lca qa flow --rows-file ./flows.json --out-dir ./qa
+  tiangong-lca qa lifecyclemodel --run-dir /abs/path/to/lifecyclemodel-run --out-dir ./lifecyclemodel-qa
   tiangong-lca publish run --input ./publish-request.json --dry-run
   tiangong-lca validation run --input-dir ./package --engine auto
   tiangong-lca admin embedding-run --input ./jobs.json
@@ -611,7 +611,7 @@ Implemented Subcommands:
   verify-remote        Verify dataset roots and TIDAS references against remote published versions
   bilingual extract    Extract bilingual translation units from local rows
   bilingual apply      Apply reviewed bilingual translations back to local rows
-  bilingual validate   Validate bilingual rows with deterministic scans and schema/review gates
+  bilingual validate   Validate bilingual rows with deterministic scans and schema/QA gates
   evidence-search      Plan or record field-level public evidence retrieval
   references rewrite   Rewrite flow references in local process and lifecyclemodel rows
   references refresh-remote Refresh local TIDAS reference versions to latest reachable remote rows
@@ -837,7 +837,7 @@ function renderDatasetBilingualValidateHelp(): string {
 Options:
   --input <file>   Local rows as JSON or JSONL
   --type <type>    auto | flow | process | lifecyclemodel (default: auto)
-  --out-dir <dir>  Artifact directory for scan, schema, and review outputs
+  --out-dir <dir>  Artifact directory for scan, schema, and QA outputs
   --json           Print compact JSON
   -h, --help
 
@@ -845,7 +845,7 @@ Outputs written under --out-dir:
   - outputs/bilingual-validate-report.json
   - outputs/bilingual-findings.jsonl
   - schema/outputs/validation-report.json
-  - review/process/... and/or review/flow/... when applicable
+  - qa/process/... and/or qa/flow/... when applicable
 `.trim();
 }
 
@@ -932,7 +932,7 @@ Implemented Subcommands:
   list         Enumerate flow datasets through direct Supabase access with deterministic filters
   identity-preflight Compare one target flow against local candidates before generation
   build-plan  Validate or materialize a flow build plan into gate artifacts
-  fetch-rows   Materialize real DB flow refs into local review-input rows and fetch artifacts
+  fetch-rows   Materialize real DB flow refs into local qa-input rows and fetch artifacts
   materialize-decisions Materialize approved merge decisions into canonical-map, rewrite-plan, and seed artifacts
   remediate    Deterministically repair invalid local flow rows and emit artifact-first outputs
   publish-version Publish remediated flow versions through the unified CLI surface
@@ -1103,7 +1103,7 @@ Required env:
 
 Outputs written under --out-dir:
   - resolved-flow-rows.jsonl
-  - review-input-rows.jsonl
+  - qa-input-rows.jsonl
   - fetch-summary.json
   - missing-flow-refs.jsonl
   - ambiguous-flow-refs.jsonl
@@ -1331,58 +1331,57 @@ Outputs written under --out-dir:
 `.trim();
 }
 
-function renderReviewHelp(): string {
+function renderQaHelp(): string {
   return `Usage:
-  tiangong-lca review <subcommand> [options]
+  tiangong-lca qa <subcommand> [options]
 
 Implemented Subcommands:
-  process      Review process build runs or rows-file snapshots and emit artifact-first findings
-  flow         Review local flow governance snapshots and emit artifact-first findings
-  lifecyclemodel Review one local lifecyclemodel build run and emit artifact-first findings
+  process      Run deterministic process QA for build runs or rows-file snapshots
+  flow         Run deterministic flow QA for local governance snapshots
+  lifecyclemodel Run deterministic lifecyclemodel QA for one local build run
 
 Examples:
-  tiangong-lca review --help
-  tiangong-lca review process --help
-  tiangong-lca review flow --help
-  tiangong-lca review lifecyclemodel --help
+  tiangong-lca qa process --help
+  tiangong-lca qa flow --help
+  tiangong-lca qa lifecyclemodel --help
 `.trim();
 }
 
-function renderReviewProcessHelp(): string {
+function renderQaProcessHelp(): string {
   return `Usage:
-  tiangong-lca review process (--rows-file <file> | --run-root <dir>) --out-dir <dir> [options]
+  tiangong-lca qa process (--rows-file <file> | --run-root <dir>) --out-dir <dir> [options]
 
 Options:
   --rows-file <file>        Process rows JSON/JSONL file; full process list reports with rows[] are also accepted
   --run-root <dir>          Process build run root containing exports/processes
-  --run-id <id>             Optional review run identifier; defaults to the rows-file name or run-root basename
-  --out-dir <dir>           Review artifact output directory
+  --run-id <id>             Optional QA run identifier; defaults to the rows-file name or run-root basename
+  --out-dir <dir>           QA artifact output directory
   --start-ts <iso>          Optional run start timestamp
   --end-ts <iso>            Optional run end timestamp
-  --logic-version <name>    Review logic version label (default: v2.1)
-  --enable-llm              Enable optional review-only semantic review via the CLI LLM client
-  --llm-model <name>        Override TIANGONG_LCA_REVIEW_LLM_MODEL for this review command
-  --llm-max-processes <n>   Cap how many process summaries are sent to the LLM (default: 8)
+  --logic-version <name>    QA logic version label (default: v2.1)
+  --enable-llm              Deprecated no-op; process semantic authoring now belongs in Foundry curation
+  --llm-model <name>        Deprecated no-op kept for older scripts
+  --llm-max-processes <n>   Deprecated no-op kept for older scripts
   --json                    Print compact JSON
   -h, --help
 `.trim();
 }
 
-function renderReviewFlowHelp(): string {
+function renderQaFlowHelp(): string {
   return `Usage:
-  tiangong-lca review flow (--rows-file <file> | --flows-dir <dir> | --run-root <dir>) --out-dir <dir> [options]
+  tiangong-lca qa flow (--rows-file <file> | --flows-dir <dir> | --run-root <dir>) --out-dir <dir> [options]
 
 Options:
-  --rows-file <file>        Flow rows JSON / JSONL file; the CLI materializes review-input/flows automatically
+  --rows-file <file>        Flow rows JSON / JSONL file; the CLI materializes qa-input/flows automatically
   --flows-dir <dir>         Directory containing per-flow JSON files
   --run-root <dir>          Existing run root containing cache/flows or exports/flows
   --run-id <id>             Optional run identifier override
-  --out-dir <dir>           Review artifact output directory
+  --out-dir <dir>           QA artifact output directory
   --start-ts <iso>          Optional run start timestamp
   --end-ts <iso>            Optional run end timestamp
-  --logic-version <name>    Review logic version label (default: flow-v1.0-cli)
-  --enable-llm              Enable optional review-only semantic review via the CLI LLM client
-  --llm-model <name>        Override TIANGONG_LCA_REVIEW_LLM_MODEL for this review command
+  --logic-version <name>    QA logic version label (default: flow-v1.0-cli)
+  --enable-llm              Enable optional QA-only semantic checks via the CLI LLM client
+  --llm-model <name>        Override TIANGONG_LCA_REVIEW_LLM_MODEL for this QA command
   --llm-max-flows <n>       Cap how many flow summaries are sent to the LLM (default: 120)
   --llm-batch-size <n>      Cap how many flow summaries each LLM batch sends (default: 20)
   --similarity-threshold <n> Similarity threshold for duplicate-candidate warnings (default: 0.92)
@@ -1392,23 +1391,23 @@ Options:
 `.trim();
 }
 
-function renderReviewLifecyclemodelHelp(): string {
+function renderQaLifecyclemodelHelp(): string {
   return `Usage:
-  tiangong-lca review lifecyclemodel --run-dir <dir> --out-dir <dir> [options]
+  tiangong-lca qa lifecyclemodel --run-dir <dir> --out-dir <dir> [options]
 
 Options:
   --run-dir <dir>          Existing lifecyclemodel auto-build run directory
-  --out-dir <dir>          Review artifact output directory
+  --out-dir <dir>          QA artifact output directory
   --start-ts <iso>         Optional run start timestamp
   --end-ts <iso>           Optional run end timestamp
-  --logic-version <name>   Review logic version label (default: lifecyclemodel-review-v1.0)
+  --logic-version <name>   QA logic version label (default: lifecyclemodel-qa-v1.0)
   --json                   Print compact JSON
   -h, --help
 
 This command:
   - reads one existing lifecyclemodel build run under models/*/tidas_bundle/lifecyclemodels
   - aggregates validate-build findings when reports/lifecyclemodel-validate-build-report.json is present
-  - emits artifact-first model summaries, findings, markdown review notes, and a structured report
+  - emits artifact-first model summaries, findings, markdown QA notes, and a structured report
 `.trim();
 }
 
@@ -3790,7 +3789,7 @@ function parseFlowListFlags(args: string[]): {
   };
 }
 
-function parseReviewProcessFlags(args: string[]): {
+function parseQaProcessFlags(args: string[]): {
   help: boolean;
   json: boolean;
   rowsFile: string | undefined;
@@ -3863,7 +3862,7 @@ function parseReviewProcessFlags(args: string[]): {
   };
 }
 
-function parseReviewFlowFlags(args: string[]): {
+function parseQaFlowFlags(args: string[]): {
   help: boolean;
   json: boolean;
   rowsFile: string | undefined;
@@ -3974,7 +3973,7 @@ function parseReviewFlowFlags(args: string[]): {
   };
 }
 
-function parseReviewLifecyclemodelFlags(args: string[]): {
+function parseQaLifecyclemodelFlags(args: string[]): {
   help: boolean;
   json: boolean;
   runDir: string;
@@ -4926,6 +4925,16 @@ function plannedCommand(command: string, subcommand?: string): CliResult {
   };
 }
 
+function removedReviewCommand(subcommand?: string): CliResult {
+  const suffix = subcommand ? ` ${subcommand}` : '';
+  const replacement = subcommand ? `qa ${subcommand}` : 'qa';
+  return {
+    exitCode: 2,
+    stdout: '',
+    stderr: `Command 'review${suffix}' was removed. Use 'tiangong-lca ${replacement}' instead.\n`,
+  };
+}
+
 function applyRemoteOverrides(
   env: NodeJS.ProcessEnv,
   overrides: Pick<ReturnType<typeof parseRemoteFlags>, 'apiBaseUrl' | 'apiKey' | 'region'>,
@@ -4981,9 +4990,9 @@ export async function executeCli(argv: string[], deps: CliDeps): Promise<CliResu
       deps.runProcessBuildPlanValidateImpl ?? runProcessBuildPlanValidate;
     const processBuildPlanMaterializeImpl =
       deps.runProcessBuildPlanMaterializeImpl ?? runProcessBuildPlanMaterialize;
-    const processReviewImpl = deps.runProcessReviewImpl ?? runProcessReview;
-    const flowReviewImpl = deps.runFlowReviewImpl ?? runFlowReview;
-    const lifecyclemodelReviewImpl = deps.runLifecyclemodelReviewImpl ?? runLifecyclemodelReview;
+    const processQaImpl = deps.runProcessQaImpl ?? runProcessQa;
+    const flowQaImpl = deps.runFlowQaImpl ?? runFlowQa;
+    const lifecyclemodelQaImpl = deps.runLifecyclemodelQaImpl ?? runLifecyclemodelQa;
     const flowRemediateImpl = deps.runFlowRemediateImpl ?? runFlowRemediate;
     const flowFetchRowsImpl = deps.runFlowFetchRowsImpl ?? runFlowFetchRows;
     const flowMaterializeDecisionsImpl =
@@ -6416,89 +6425,93 @@ export async function executeCli(argv: string[], deps: CliDeps): Promise<CliResu
       };
     }
 
-    if (command === 'review' && !subcommand) {
-      return { exitCode: 0, stdout: `${renderReviewHelp()}\n`, stderr: '' };
+    if (command === 'qa' && !subcommand) {
+      return { exitCode: 0, stdout: `${renderQaHelp()}\n`, stderr: '' };
     }
 
-    if (command === 'review' && subcommand === 'process') {
-      const reviewFlags = parseReviewProcessFlags(commandArgs);
-      if (reviewFlags.help) {
-        return { exitCode: 0, stdout: `${renderReviewProcessHelp()}\n`, stderr: '' };
+    if (command === 'qa' && subcommand === 'process') {
+      const qaFlags = parseQaProcessFlags(commandArgs);
+      if (qaFlags.help) {
+        return { exitCode: 0, stdout: `${renderQaProcessHelp()}\n`, stderr: '' };
       }
 
-      const report = await processReviewImpl({
-        rowsFile: reviewFlags.rowsFile,
-        runRoot: reviewFlags.runRoot,
-        runId: reviewFlags.runId,
-        outDir: reviewFlags.outDir,
-        startTs: reviewFlags.startTs,
-        endTs: reviewFlags.endTs,
-        logicVersion: reviewFlags.logicVersion,
-        enableLlm: reviewFlags.enableLlm,
-        llmModel: reviewFlags.llmModel,
-        llmMaxProcesses: reviewFlags.llmMaxProcesses,
+      const report = await processQaImpl({
+        rowsFile: qaFlags.rowsFile,
+        runRoot: qaFlags.runRoot,
+        runId: qaFlags.runId,
+        outDir: qaFlags.outDir,
+        startTs: qaFlags.startTs,
+        endTs: qaFlags.endTs,
+        logicVersion: qaFlags.logicVersion,
+        enableLlm: qaFlags.enableLlm,
+        llmModel: qaFlags.llmModel,
+        llmMaxProcesses: qaFlags.llmMaxProcesses,
         env: deps.env,
         fetchImpl: deps.fetchImpl,
       });
 
       return {
         exitCode: 0,
-        stdout: stringifyJson(report, reviewFlags.json),
+        stdout: stringifyJson(report, qaFlags.json),
         stderr: '',
       };
     }
 
-    if (command === 'review' && subcommand === 'flow') {
-      const reviewFlags = parseReviewFlowFlags(commandArgs);
-      if (reviewFlags.help) {
-        return { exitCode: 0, stdout: `${renderReviewFlowHelp()}\n`, stderr: '' };
+    if (command === 'qa' && subcommand === 'flow') {
+      const qaFlags = parseQaFlowFlags(commandArgs);
+      if (qaFlags.help) {
+        return { exitCode: 0, stdout: `${renderQaFlowHelp()}\n`, stderr: '' };
       }
 
-      const report = await flowReviewImpl({
-        rowsFile: reviewFlags.rowsFile,
-        flowsDir: reviewFlags.flowsDir,
-        runRoot: reviewFlags.runRoot,
-        runId: reviewFlags.runId,
-        outDir: reviewFlags.outDir,
-        startTs: reviewFlags.startTs,
-        endTs: reviewFlags.endTs,
-        logicVersion: reviewFlags.logicVersion,
-        enableLlm: reviewFlags.enableLlm,
-        llmModel: reviewFlags.llmModel,
-        llmMaxFlows: reviewFlags.llmMaxFlows,
-        llmBatchSize: reviewFlags.llmBatchSize,
-        similarityThreshold: reviewFlags.similarityThreshold,
-        methodologyId: reviewFlags.methodologyId,
+      const report = await flowQaImpl({
+        rowsFile: qaFlags.rowsFile,
+        flowsDir: qaFlags.flowsDir,
+        runRoot: qaFlags.runRoot,
+        runId: qaFlags.runId,
+        outDir: qaFlags.outDir,
+        startTs: qaFlags.startTs,
+        endTs: qaFlags.endTs,
+        logicVersion: qaFlags.logicVersion,
+        enableLlm: qaFlags.enableLlm,
+        llmModel: qaFlags.llmModel,
+        llmMaxFlows: qaFlags.llmMaxFlows,
+        llmBatchSize: qaFlags.llmBatchSize,
+        similarityThreshold: qaFlags.similarityThreshold,
+        methodologyId: qaFlags.methodologyId,
         env: deps.env,
         fetchImpl: deps.fetchImpl,
       });
 
       return {
         exitCode: 0,
-        stdout: stringifyJson(report, reviewFlags.json),
+        stdout: stringifyJson(report, qaFlags.json),
         stderr: '',
       };
     }
 
-    if (command === 'review' && subcommand === 'lifecyclemodel') {
-      const reviewFlags = parseReviewLifecyclemodelFlags(commandArgs);
-      if (reviewFlags.help) {
-        return { exitCode: 0, stdout: `${renderReviewLifecyclemodelHelp()}\n`, stderr: '' };
+    if (command === 'qa' && subcommand === 'lifecyclemodel') {
+      const qaFlags = parseQaLifecyclemodelFlags(commandArgs);
+      if (qaFlags.help) {
+        return { exitCode: 0, stdout: `${renderQaLifecyclemodelHelp()}\n`, stderr: '' };
       }
 
-      const report = await lifecyclemodelReviewImpl({
-        runDir: reviewFlags.runDir,
-        outDir: reviewFlags.outDir,
-        startTs: reviewFlags.startTs,
-        endTs: reviewFlags.endTs,
-        logicVersion: reviewFlags.logicVersion,
+      const report = await lifecyclemodelQaImpl({
+        runDir: qaFlags.runDir,
+        outDir: qaFlags.outDir,
+        startTs: qaFlags.startTs,
+        endTs: qaFlags.endTs,
+        logicVersion: qaFlags.logicVersion,
       });
 
       return {
         exitCode: 0,
-        stdout: stringifyJson(report, reviewFlags.json),
+        stdout: stringifyJson(report, qaFlags.json),
         stderr: '',
       };
+    }
+
+    if (command === 'review') {
+      return removedReviewCommand(subcommand ?? undefined);
     }
 
     return plannedCommand(command, subcommand ?? undefined);

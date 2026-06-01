@@ -15,8 +15,8 @@ import type {
   RunFlowValidateProcessesOptions,
 } from '../src/lib/flow-regen-product.js';
 import type { RunFlowRemediateOptions } from '../src/lib/flow-remediate.js';
-import type { RunFlowReviewOptions } from '../src/lib/review-flow.js';
-import type { RunLifecyclemodelReviewOptions } from '../src/lib/review-lifecyclemodel.js';
+import type { RunFlowQaOptions } from '../src/lib/flow-qa.js';
+import type { RunLifecyclemodelQaOptions } from '../src/lib/lifecyclemodel-qa.js';
 import {
   buildSupabaseTestEnv,
   isSupabaseAuthTokenUrl,
@@ -67,7 +67,7 @@ test('executeCli prints main help when no command is given', async () => {
   assert.match(result.stdout, /lifecyclemodel auto-build/u);
   assert.match(result.stdout, /lifecyclemodel auto-build \| validate-build \| publish-build/u);
   assert.match(result.stdout, /publish-resulting-process/u);
-  assert.match(result.stdout, /review\s+process/u);
+  assert.match(result.stdout, /qa\s+process \| flow \| lifecyclemodel/u);
   assert.match(result.stdout, /exit with code 2/u);
   assert.equal(result.stderr, '');
 });
@@ -163,9 +163,9 @@ test('executeCli returns help for publish and validation namespaces', async () =
   assert.equal(validationHelp.exitCode, 0);
   assert.match(validationHelp.stdout, /tiangong-lca validation run/u);
 
-  const reviewHelp = await executeCli(['review', '--help'], makeDeps());
-  assert.equal(reviewHelp.exitCode, 0);
-  assert.match(reviewHelp.stdout, /tiangong-lca review <subcommand>/u);
+  const qaHelp = await executeCli(['qa', '--help'], makeDeps());
+  assert.equal(qaHelp.exitCode, 0);
+  assert.match(qaHelp.stdout, /tiangong-lca qa <subcommand>/u);
 
   const flowHelp = await executeCli(['flow', '--help'], makeDeps());
   assert.equal(flowHelp.exitCode, 0);
@@ -197,33 +197,33 @@ test('executeCli returns help for publish and validation subcommands', async () 
   assert.equal(validationHelp.exitCode, 0);
   assert.match(validationHelp.stdout, /--report-file/u);
 
-  const reviewHelp = await executeCli(['review', 'process', '--help'], makeDeps());
+  const reviewHelp = await executeCli(['qa', 'process', '--help'], makeDeps());
   assert.equal(reviewHelp.exitCode, 0);
   assert.ok(
     reviewHelp.stdout.includes(
-      'tiangong-lca review process (--rows-file <file> | --run-root <dir>) --out-dir <dir>',
+      'tiangong-lca qa process (--rows-file <file> | --run-root <dir>) --out-dir <dir>',
     ),
   );
   assert.match(reviewHelp.stdout, /full process list reports with rows\[\] are also accepted/u);
   assert.match(reviewHelp.stdout, /--enable-llm/u);
 
-  const reviewFlowHelp = await executeCli(['review', 'flow', '--help'], makeDeps());
+  const reviewFlowHelp = await executeCli(['qa', 'flow', '--help'], makeDeps());
   assert.equal(reviewFlowHelp.exitCode, 0);
   assert.ok(
     reviewFlowHelp.stdout.includes(
-      'tiangong-lca review flow (--rows-file <file> | --flows-dir <dir> | --run-root <dir>) --out-dir <dir>',
+      'tiangong-lca qa flow (--rows-file <file> | --flows-dir <dir> | --run-root <dir>) --out-dir <dir>',
     ),
   );
   assert.match(reviewFlowHelp.stdout, /--similarity-threshold/u);
 
   const reviewLifecyclemodelHelp = await executeCli(
-    ['review', 'lifecyclemodel', '--help'],
+    ['qa', 'lifecyclemodel', '--help'],
     makeDeps(),
   );
   assert.equal(reviewLifecyclemodelHelp.exitCode, 0);
   assert.match(
     reviewLifecyclemodelHelp.stdout,
-    /tiangong-lca review lifecyclemodel --run-dir <dir> --out-dir <dir>/u,
+    /tiangong-lca qa lifecyclemodel --run-dir <dir> --out-dir <dir>/u,
   );
   assert.match(
     reviewLifecyclemodelHelp.stdout,
@@ -303,7 +303,7 @@ test('executeCli returns help for publish and validation subcommands', async () 
   assert.equal(flowFetchRowsHelp.exitCode, 0);
   assert.match(flowFetchRowsHelp.stdout, /tiangong-lca flow fetch-rows --refs-file <file>/u);
   assert.match(flowFetchRowsHelp.stdout, /--no-latest-fallback/u);
-  assert.match(flowFetchRowsHelp.stdout, /review-input-rows\.jsonl/u);
+  assert.match(flowFetchRowsHelp.stdout, /qa-input-rows\.jsonl/u);
   assert.doesNotMatch(flowFetchRowsHelp.stdout, /Planned command/u);
 
   const flowMaterializeDecisionsHelp = await executeCli(
@@ -1106,8 +1106,8 @@ test('executeCli executes flow fetch-rows with injected implementation', async (
           allow_latest_fallback: false,
           requested_ref_count: 2,
           resolved_ref_count: 1,
-          review_input_row_count: 1,
-          duplicate_review_input_rows_collapsed: 0,
+          qa_input_row_count: 1,
+          duplicate_qa_input_rows_collapsed: 0,
           missing_ref_count: 1,
           ambiguous_ref_count: 0,
           resolution_counts: {
@@ -1117,7 +1117,7 @@ test('executeCli executes flow fetch-rows with injected implementation', async (
           },
           files: {
             resolved_flow_rows: '/tmp/out/resolved-flow-rows.jsonl',
-            review_input_rows: '/tmp/out/review-input-rows.jsonl',
+            qa_input_rows: '/tmp/out/qa-input-rows.jsonl',
             fetch_summary: '/tmp/out/fetch-summary.json',
             missing_flow_refs: '/tmp/out/missing-flow-refs.jsonl',
             ambiguous_flow_refs: '/tmp/out/ambiguous-flow-refs.jsonl',
@@ -1129,7 +1129,7 @@ test('executeCli executes flow fetch-rows with injected implementation', async (
 
   assert.equal(result.exitCode, 1);
   assert.match(result.stdout, /"status":"completed_flow_row_materialization_with_gaps"/u);
-  assert.match(result.stdout, /"review_input_row_count":1/u);
+  assert.match(result.stdout, /"qa_input_row_count":1/u);
 });
 
 test('executeCli keeps exit code 0 for flow fetch-rows gaps unless --fail-on-missing is enabled', async () => {
@@ -1146,8 +1146,8 @@ test('executeCli keeps exit code 0 for flow fetch-rows gaps unless --fail-on-mis
         allow_latest_fallback: true,
         requested_ref_count: 1,
         resolved_ref_count: 0,
-        review_input_row_count: 0,
-        duplicate_review_input_rows_collapsed: 0,
+        qa_input_row_count: 0,
+        duplicate_qa_input_rows_collapsed: 0,
         missing_ref_count: 1,
         ambiguous_ref_count: 0,
         resolution_counts: {
@@ -1157,7 +1157,7 @@ test('executeCli keeps exit code 0 for flow fetch-rows gaps unless --fail-on-mis
         },
         files: {
           resolved_flow_rows: '/tmp/out/resolved-flow-rows.jsonl',
-          review_input_rows: '/tmp/out/review-input-rows.jsonl',
+          qa_input_rows: '/tmp/out/qa-input-rows.jsonl',
           fetch_summary: '/tmp/out/fetch-summary.json',
           missing_flow_refs: '/tmp/out/missing-flow-refs.jsonl',
           ambiguous_flow_refs: '/tmp/out/ambiguous-flow-refs.jsonl',
@@ -4104,13 +4104,13 @@ test('executeCli returns parsing errors for invalid publish and validation flags
   assert.equal(validationResult.exitCode, 2);
   assert.match(validationResult.stderr, /INVALID_ARGS/u);
 
-  const reviewFlagResult = await executeCli(['review', 'process', '--bad-flag'], makeDeps());
+  const reviewFlagResult = await executeCli(['qa', 'process', '--bad-flag'], makeDeps());
   assert.equal(reviewFlagResult.exitCode, 2);
   assert.match(reviewFlagResult.stderr, /INVALID_ARGS/u);
 
   const reviewResult = await executeCli(
     [
-      'review',
+      'qa',
       'process',
       '--run-root',
       '/tmp/run',
@@ -4169,7 +4169,7 @@ test('executeCli returns parsing errors for invalid lifecyclemodel, process, and
   assert.match(orchestrateResult.stderr, /INVALID_ARGS/u);
 
   const reviewLifecyclemodelResult = await executeCli(
-    ['review', 'lifecyclemodel', '--bad-flag'],
+    ['qa', 'lifecyclemodel', '--bad-flag'],
     makeDeps(),
   );
   assert.equal(reviewLifecyclemodelResult.exitCode, 2);
@@ -4388,13 +4388,13 @@ test('executeCli executes validation run with injected implementation and report
   }
 });
 
-test('executeCli executes review process with injected implementation', async () => {
+test('executeCli executes qa process with injected implementation', async () => {
   const dir = mkdtempSync(path.join(os.tmpdir(), 'tg-cli-review-cli-'));
 
   try {
     const result = await executeCli(
       [
-        'review',
+        'qa',
         'process',
         '--run-root',
         path.join(dir, 'run-root'),
@@ -4416,7 +4416,7 @@ test('executeCli executes review process with injected implementation', async ()
       ],
       {
         ...makeDeps(),
-        runProcessReviewImpl: async (options) => {
+        runProcessQaImpl: async (options) => {
           assert.equal(options.rowsFile, undefined);
           assert.equal(options.runRoot, path.join(dir, 'run-root'));
           assert.equal(options.runId, 'run-001');
@@ -4428,7 +4428,7 @@ test('executeCli executes review process with injected implementation', async ()
           return {
             schema_version: 1,
             generated_at_utc: '2026-03-30T00:00:00.000Z',
-            status: 'completed_local_process_review',
+            status: 'completed_local_process_qa',
             run_id: options.runId ?? 'run-001',
             run_root: options.runRoot ?? '',
             rows_file: options.rowsFile ?? '',
@@ -4445,10 +4445,10 @@ test('executeCli executes review process with injected implementation', async ()
               energy_excluded: 0,
             },
             files: {
-              review_input_summary: path.join(dir, 'review', 'review-input-summary.json'),
+              qa_input_summary: path.join(dir, 'review', 'qa-input-summary.json'),
               materialization_summary: null,
-              review_zh: path.join(dir, 'review', 'zh.md'),
-              review_en: path.join(dir, 'review', 'en.md'),
+              qa_zh: path.join(dir, 'review', 'zh.md'),
+              qa_en: path.join(dir, 'review', 'en.md'),
               timing: path.join(dir, 'review', 'timing.md'),
               unit_issue_log: path.join(dir, 'review', 'unit.md'),
               summary: path.join(dir, 'review', 'summary.json'),
@@ -4467,7 +4467,7 @@ test('executeCli executes review process with injected implementation', async ()
     );
 
     assert.equal(result.exitCode, 0);
-    assert.match(result.stdout, /"status": "completed_local_process_review"/u);
+    assert.match(result.stdout, /"status": "completed_local_process_qa"/u);
     assert.match(result.stdout, /"run_id": "run-001"/u);
     assert.match(result.stdout, /"logic_version": "v2\.2"/u);
   } finally {
@@ -4475,29 +4475,29 @@ test('executeCli executes review process with injected implementation', async ()
   }
 });
 
-test('executeCli passes rows-file review process input through to the implementation', async () => {
+test('executeCli passes rows-file qa process input through to the implementation', async () => {
   const dir = mkdtempSync(path.join(os.tmpdir(), 'tg-cli-review-cli-rows-'));
   const rowsFile = path.join(dir, 'process-list-report.json');
 
   try {
     const result = await executeCli(
-      ['review', 'process', '--rows-file', rowsFile, '--out-dir', path.join(dir, 'review')],
+      ['qa', 'process', '--rows-file', rowsFile, '--out-dir', path.join(dir, 'review')],
       {
         ...makeDeps(),
-        runProcessReviewImpl: async (options) => {
+        runProcessQaImpl: async (options) => {
           assert.equal(options.rowsFile, rowsFile);
           assert.equal(options.runRoot, undefined);
           assert.equal(options.runId, undefined);
           return {
             schema_version: 1,
             generated_at_utc: '2026-03-30T00:00:00.000Z',
-            status: 'completed_local_process_review',
+            status: 'completed_local_process_qa',
             run_id: 'process-list-report',
             run_root: '',
             rows_file: rowsFile,
             out_dir: options.outDir,
             input_mode: 'rows_file',
-            effective_processes_dir: path.join(dir, 'review', 'review-input', 'processes'),
+            effective_processes_dir: path.join(dir, 'review', 'qa-input', 'processes'),
             logic_version: 'v2.1',
             process_count: 1,
             totals: {
@@ -4508,15 +4508,15 @@ test('executeCli passes rows-file review process input through to the implementa
               energy_excluded: 0,
             },
             files: {
-              review_input_summary: path.join(dir, 'review', 'review-input-summary.json'),
+              qa_input_summary: path.join(dir, 'review', 'qa-input-summary.json'),
               materialization_summary: path.join(
                 dir,
                 'review',
-                'review-input',
+                'qa-input',
                 'materialization-summary.json',
               ),
-              review_zh: path.join(dir, 'review', 'zh.md'),
-              review_en: path.join(dir, 'review', 'en.md'),
+              qa_zh: path.join(dir, 'review', 'zh.md'),
+              qa_en: path.join(dir, 'review', 'en.md'),
               timing: path.join(dir, 'review', 'timing.md'),
               unit_issue_log: path.join(dir, 'review', 'unit.md'),
               summary: path.join(dir, 'review', 'summary.json'),
@@ -4538,13 +4538,13 @@ test('executeCli passes rows-file review process input through to the implementa
   }
 });
 
-test('executeCli executes review process with only required flags', async () => {
+test('executeCli executes qa process with only required flags', async () => {
   const dir = mkdtempSync(path.join(os.tmpdir(), 'tg-cli-review-cli-required-'));
 
   try {
     const result = await executeCli(
       [
-        'review',
+        'qa',
         'process',
         '--run-root',
         path.join(dir, 'run-root'),
@@ -4555,7 +4555,7 @@ test('executeCli executes review process with only required flags', async () => 
       ],
       {
         ...makeDeps(),
-        runProcessReviewImpl: async (options) => {
+        runProcessQaImpl: async (options) => {
           assert.equal(options.rowsFile, undefined);
           assert.equal(options.runRoot, path.join(dir, 'run-root'));
           assert.equal(options.runId, 'run-required');
@@ -4568,7 +4568,7 @@ test('executeCli executes review process with only required flags', async () => 
           return {
             schema_version: 1,
             generated_at_utc: '2026-03-30T00:00:00.000Z',
-            status: 'completed_local_process_review',
+            status: 'completed_local_process_qa',
             run_id: options.runId ?? 'run-required',
             run_root: options.runRoot ?? '',
             rows_file: options.rowsFile ?? '',
@@ -4585,10 +4585,10 @@ test('executeCli executes review process with only required flags', async () => 
               energy_excluded: 0,
             },
             files: {
-              review_input_summary: path.join(dir, 'review', 'review-input-summary.json'),
+              qa_input_summary: path.join(dir, 'review', 'qa-input-summary.json'),
               materialization_summary: null,
-              review_zh: path.join(dir, 'review', 'zh.md'),
-              review_en: path.join(dir, 'review', 'en.md'),
+              qa_zh: path.join(dir, 'review', 'zh.md'),
+              qa_en: path.join(dir, 'review', 'en.md'),
               timing: path.join(dir, 'review', 'timing.md'),
               unit_issue_log: path.join(dir, 'review', 'unit.md'),
               summary: path.join(dir, 'review', 'summary.json'),
@@ -4647,6 +4647,26 @@ test('executeCli rejects unknown root options', async () => {
   assert.match(result.stderr, /UNKNOWN_ROOT_OPTION/u);
 });
 
+test('executeCli rejects removed review command group without aliasing to qa', async () => {
+  const result = await executeCli(['review', 'process', '--help'], makeDeps());
+  assert.equal(result.exitCode, 2);
+  assert.equal(result.stdout, '');
+  assert.match(result.stderr, /Command 'review process' was removed/u);
+  assert.match(result.stderr, /tiangong-lca qa process/u);
+
+  const flowResult = await executeCli(['review', 'flow', '--help'], makeDeps());
+  assert.equal(flowResult.exitCode, 2);
+  assert.equal(flowResult.stdout, '');
+  assert.match(flowResult.stderr, /Command 'review flow' was removed/u);
+  assert.match(flowResult.stderr, /tiangong-lca qa flow/u);
+
+  const lifecyclemodelResult = await executeCli(['review', 'lifecyclemodel', '--help'], makeDeps());
+  assert.equal(lifecyclemodelResult.exitCode, 2);
+  assert.equal(lifecyclemodelResult.stdout, '');
+  assert.match(lifecyclemodelResult.stderr, /Command 'review lifecyclemodel' was removed/u);
+  assert.match(lifecyclemodelResult.stderr, /tiangong-lca qa lifecyclemodel/u);
+});
+
 test('executeCli prints main help when root help appears before the command', async () => {
   const result = await executeCli(['--help', 'search', 'flow'], makeDeps());
   assert.equal(result.exitCode, 0);
@@ -4672,14 +4692,14 @@ test('executeCli validates missing required flow regen-product inputs once the c
   assert.match(result.stderr, /FLOW_REGEN_PROCESSES_FILE_REQUIRED/u);
 });
 
-test('executeCli dispatches review lifecyclemodel to the implemented CLI module', async () => {
-  const dir = mkdtempSync(path.join(os.tmpdir(), 'tg-cli-review-lifecyclemodel-dispatch-'));
+test('executeCli dispatches qa lifecyclemodel to the implemented CLI module', async () => {
+  const dir = mkdtempSync(path.join(os.tmpdir(), 'tg-cli-lifecyclemodel-qa-dispatch-'));
 
   try {
-    let observedOptions: RunLifecyclemodelReviewOptions | undefined;
+    let observedOptions: RunLifecyclemodelQaOptions | undefined;
     const result = await executeCli(
       [
-        'review',
+        'qa',
         'lifecyclemodel',
         '--run-dir',
         path.join(dir, 'run'),
@@ -4695,12 +4715,12 @@ test('executeCli dispatches review lifecyclemodel to the implemented CLI module'
       ],
       {
         ...makeDeps(),
-        runLifecyclemodelReviewImpl: async (options) => {
+        runLifecyclemodelQaImpl: async (options) => {
           observedOptions = options;
           return {
             schema_version: 1,
             generated_at_utc: '2026-03-30T00:06:00.000Z',
-            status: 'completed_local_lifecyclemodel_review',
+            status: 'completed_local_lifecyclemodel_qa',
             run_id: 'lm-run-001',
             run_root: path.join(dir, 'run'),
             out_dir: path.join(dir, 'review'),
@@ -4728,11 +4748,11 @@ test('executeCli dispatches review lifecyclemodel to the implemented CLI module'
               ),
               model_summaries: path.join(dir, 'review', 'model_summaries.jsonl'),
               findings: path.join(dir, 'review', 'findings.jsonl'),
-              summary: path.join(dir, 'review', 'lifecyclemodel_review_summary.json'),
-              review_zh: path.join(dir, 'review', 'lifecyclemodel_review_zh.md'),
-              review_en: path.join(dir, 'review', 'lifecyclemodel_review_en.md'),
-              timing: path.join(dir, 'review', 'lifecyclemodel_review_timing.md'),
-              report: path.join(dir, 'review', 'lifecyclemodel_review_report.json'),
+              summary: path.join(dir, 'review', 'lifecyclemodel_qa_summary.json'),
+              qa_zh: path.join(dir, 'review', 'lifecyclemodel_qa_zh.md'),
+              qa_en: path.join(dir, 'review', 'lifecyclemodel_qa_en.md'),
+              timing: path.join(dir, 'review', 'lifecyclemodel_qa_timing.md'),
+              report: path.join(dir, 'review', 'lifecyclemodel_qa_report.json'),
             },
             model_summaries: [],
             next_actions: ['inspect: findings'],
@@ -4751,7 +4771,7 @@ test('executeCli dispatches review lifecyclemodel to the implemented CLI module'
     });
 
     const payload = JSON.parse(result.stdout) as { status: string; logic_version: string };
-    assert.equal(payload.status, 'completed_local_lifecyclemodel_review');
+    assert.equal(payload.status, 'completed_local_lifecyclemodel_qa');
     assert.equal(payload.logic_version, 'review-v1');
     assert.equal(result.stderr, '');
   } finally {
@@ -4759,16 +4779,16 @@ test('executeCli dispatches review lifecyclemodel to the implemented CLI module'
   }
 });
 
-test('executeCli dispatches review flow to the implemented CLI module', async () => {
-  const dir = mkdtempSync(path.join(os.tmpdir(), 'tg-cli-review-flow-dispatch-'));
+test('executeCli dispatches qa flow to the implemented CLI module', async () => {
+  const dir = mkdtempSync(path.join(os.tmpdir(), 'tg-cli-flow-qa-dispatch-'));
   const rowsFile = path.join(dir, 'flows.json');
   writeFileSync(rowsFile, '[]\n', 'utf8');
 
   try {
-    let observedOptions: RunFlowReviewOptions | undefined;
+    let observedOptions: RunFlowQaOptions | undefined;
     const result = await executeCli(
       [
-        'review',
+        'qa',
         'flow',
         '--rows-file',
         rowsFile,
@@ -4789,16 +4809,16 @@ test('executeCli dispatches review flow to the implemented CLI module', async ()
       ],
       {
         ...makeDeps(),
-        runFlowReviewImpl: async (options) => {
+        runFlowQaImpl: async (options) => {
           observedOptions = options;
           return {
             schema_version: 1,
             generated_at_utc: '2026-03-30T00:00:00.000Z',
-            status: 'completed_local_flow_review',
+            status: 'completed_local_flow_qa',
             run_id: 'flow-run',
             out_dir: path.join(dir, 'review'),
             input_mode: 'rows_file',
-            effective_flows_dir: path.join(dir, 'review-input', 'flows'),
+            effective_flows_dir: path.join(dir, 'qa-input', 'flows'),
             logic_version: 'flow-v1.0-cli',
             flow_count: 1,
             similarity_threshold: 0.9,
@@ -4819,11 +4839,11 @@ test('executeCli dispatches review flow to the implemented CLI module', async ()
               batch_results: [],
             },
             files: {
-              review_input_summary: path.join(dir, 'review', 'review-input-summary.json'),
+              qa_input_summary: path.join(dir, 'review', 'qa-input-summary.json'),
               materialization_summary: path.join(
                 dir,
                 'review',
-                'review-input',
+                'qa-input',
                 'materialization-summary.json',
               ),
               rule_findings: path.join(dir, 'review', 'rule_findings.jsonl'),
@@ -4831,11 +4851,11 @@ test('executeCli dispatches review flow to the implemented CLI module', async ()
               findings: path.join(dir, 'review', 'findings.jsonl'),
               flow_summaries: path.join(dir, 'review', 'flow_summaries.jsonl'),
               similarity_pairs: path.join(dir, 'review', 'similarity_pairs.jsonl'),
-              summary: path.join(dir, 'review', 'flow_review_summary.json'),
-              review_zh: path.join(dir, 'review', 'flow_review_zh.md'),
-              review_en: path.join(dir, 'review', 'flow_review_en.md'),
-              timing: path.join(dir, 'review', 'flow_review_timing.md'),
-              report: path.join(dir, 'review', 'flow_review_report.json'),
+              summary: path.join(dir, 'review', 'flow_qa_summary.json'),
+              qa_zh: path.join(dir, 'review', 'flow_qa_zh.md'),
+              qa_en: path.join(dir, 'review', 'flow_qa_en.md'),
+              timing: path.join(dir, 'review', 'flow_qa_timing.md'),
+              report: path.join(dir, 'review', 'flow_qa_report.json'),
             },
           };
         },
@@ -4844,7 +4864,7 @@ test('executeCli dispatches review flow to the implemented CLI module', async ()
 
     assert.equal(result.exitCode, 0);
     assert.equal(result.stderr, '');
-    assert.equal(JSON.parse(result.stdout).status, 'completed_local_flow_review');
+    assert.equal(JSON.parse(result.stdout).status, 'completed_local_flow_qa');
     assert.equal(observedOptions?.rowsFile, rowsFile);
     assert.equal(observedOptions?.runId, 'flow-run');
     assert.equal(observedOptions?.enableLlm, true);
@@ -5911,15 +5931,15 @@ test('executeCli returns parsing errors for invalid flow get, list, remediate, p
   assert.match(invalidRegenPoolResult.stderr, /FLOW_REGEN_PROCESS_POOL_REQUIRES_APPLY/u);
 });
 
-test('executeCli supports alternate review flow input modes and validates numeric review-flow flags', async () => {
-  const dir = mkdtempSync(path.join(os.tmpdir(), 'tg-cli-review-flow-alt-dispatch-'));
+test('executeCli supports alternate qa flow input modes and validates numeric flow-qa flags', async () => {
+  const dir = mkdtempSync(path.join(os.tmpdir(), 'tg-cli-flow-qa-alt-dispatch-'));
   const rowsFile = path.join(dir, 'flows.json');
-  const observedOptions: RunFlowReviewOptions[] = [];
+  const observedOptions: RunFlowQaOptions[] = [];
 
   writeFileSync(rowsFile, '[]\n', 'utf8');
 
   try {
-    const runFlowReviewImpl = async (options: RunFlowReviewOptions) => {
+    const runFlowQaImpl = async (options: RunFlowQaOptions) => {
       observedOptions.push(options);
       const inputMode: 'flows_dir' | 'run_root' | 'rows_file' = options.flowsDir
         ? 'flows_dir'
@@ -5929,11 +5949,11 @@ test('executeCli supports alternate review flow input modes and validates numeri
       const effectiveFlowsDir =
         options.flowsDir ??
         options.runRoot ??
-        path.join(path.dirname(options.outDir), 'review-input', 'flows');
+        path.join(path.dirname(options.outDir), 'qa-input', 'flows');
       return {
         schema_version: 1 as const,
         generated_at_utc: '2026-03-30T00:00:00.000Z',
-        status: 'completed_local_flow_review' as const,
+        status: 'completed_local_flow_qa' as const,
         run_id: options.runId ?? 'flow-run',
         out_dir: options.outDir,
         input_mode: inputMode,
@@ -5957,28 +5977,28 @@ test('executeCli supports alternate review flow input modes and validates numeri
           batch_results: [],
         },
         files: {
-          review_input_summary: path.join(options.outDir, 'review-input-summary.json'),
+          qa_input_summary: path.join(options.outDir, 'qa-input-summary.json'),
           materialization_summary: null,
           rule_findings: path.join(options.outDir, 'rule_findings.jsonl'),
           llm_findings: path.join(options.outDir, 'llm_findings.jsonl'),
           findings: path.join(options.outDir, 'findings.jsonl'),
           flow_summaries: path.join(options.outDir, 'flow_summaries.jsonl'),
           similarity_pairs: path.join(options.outDir, 'similarity_pairs.jsonl'),
-          summary: path.join(options.outDir, 'flow_review_summary.json'),
-          review_zh: path.join(options.outDir, 'flow_review_zh.md'),
-          review_en: path.join(options.outDir, 'flow_review_en.md'),
-          timing: path.join(options.outDir, 'flow_review_timing.md'),
-          report: path.join(options.outDir, 'flow_review_report.json'),
+          summary: path.join(options.outDir, 'flow_qa_summary.json'),
+          qa_zh: path.join(options.outDir, 'flow_qa_zh.md'),
+          qa_en: path.join(options.outDir, 'flow_qa_en.md'),
+          timing: path.join(options.outDir, 'flow_qa_timing.md'),
+          report: path.join(options.outDir, 'flow_qa_report.json'),
         },
       };
     };
 
     const flowsDir = path.join(dir, 'flows');
     const flowsDirResult = await executeCli(
-      ['review', 'flow', '--flows-dir', flowsDir, '--out-dir', path.join(dir, 'review-flows')],
+      ['qa', 'flow', '--flows-dir', flowsDir, '--out-dir', path.join(dir, 'flow-qas')],
       {
         ...makeDeps(),
-        runFlowReviewImpl,
+        runFlowQaImpl,
       },
     );
     assert.equal(flowsDirResult.exitCode, 0);
@@ -5990,7 +6010,7 @@ test('executeCli supports alternate review flow input modes and validates numeri
     const runRoot = path.join(dir, 'run-root');
     const runRootResult = await executeCli(
       [
-        'review',
+        'qa',
         'flow',
         '--run-root',
         runRoot,
@@ -6009,7 +6029,7 @@ test('executeCli supports alternate review flow input modes and validates numeri
       ],
       {
         ...makeDeps(),
-        runFlowReviewImpl,
+        runFlowQaImpl,
       },
     );
     assert.equal(runRootResult.exitCode, 0);
@@ -6021,13 +6041,13 @@ test('executeCli supports alternate review flow input modes and validates numeri
     assert.equal(observedOptions[1].logicVersion, 'flow-v2');
     assert.equal(observedOptions[1].llmModel, 'gpt-5.4-mini');
 
-    const badFlagResult = await executeCli(['review', 'flow', '--bad-flag'], makeDeps());
+    const badFlagResult = await executeCli(['qa', 'flow', '--bad-flag'], makeDeps());
     assert.equal(badFlagResult.exitCode, 2);
     assert.match(badFlagResult.stderr, /INVALID_ARGS/u);
 
     const invalidMaxFlowsResult = await executeCli(
       [
-        'review',
+        'qa',
         'flow',
         '--rows-file',
         rowsFile,
@@ -6043,7 +6063,7 @@ test('executeCli supports alternate review flow input modes and validates numeri
 
     const invalidBatchSizeResult = await executeCli(
       [
-        'review',
+        'qa',
         'flow',
         '--rows-file',
         rowsFile,
@@ -6059,7 +6079,7 @@ test('executeCli supports alternate review flow input modes and validates numeri
 
     const invalidThresholdResult = await executeCli(
       [
-        'review',
+        'qa',
         'flow',
         '--rows-file',
         rowsFile,

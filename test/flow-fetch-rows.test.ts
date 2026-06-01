@@ -54,7 +54,7 @@ function jsonFetch(responses: unknown[], observedUrls: string[] = []): FetchLike
   }) as FetchLike;
 }
 
-test('runFlowFetchRows materializes real DB refs into review-input rows and gap artifacts', async () => {
+test('runFlowFetchRows materializes real DB refs into qa-input rows and gap artifacts', async () => {
   const dir = mkdtempSync(path.join(os.tmpdir(), 'tg-cli-flow-fetch-rows-'));
   const refsFile = path.join(dir, 'refs.json');
   const outDir = path.join(dir, 'out');
@@ -173,8 +173,8 @@ test('runFlowFetchRows materializes real DB refs into review-input rows and gap 
       allow_latest_fallback: true,
       requested_ref_count: 5,
       resolved_ref_count: 3,
-      review_input_row_count: 2,
-      duplicate_review_input_rows_collapsed: 1,
+      qa_input_row_count: 2,
+      duplicate_qa_input_rows_collapsed: 1,
       missing_ref_count: 1,
       ambiguous_ref_count: 1,
       resolution_counts: {
@@ -184,7 +184,7 @@ test('runFlowFetchRows materializes real DB refs into review-input rows and gap 
       },
       files: {
         resolved_flow_rows: path.join(outDir, 'resolved-flow-rows.jsonl'),
-        review_input_rows: path.join(outDir, 'review-input-rows.jsonl'),
+        qa_input_rows: path.join(outDir, 'qa-input-rows.jsonl'),
         fetch_summary: path.join(outDir, 'fetch-summary.json'),
         missing_flow_refs: path.join(outDir, 'missing-flow-refs.jsonl'),
         ambiguous_flow_refs: path.join(outDir, 'ambiguous-flow-refs.jsonl'),
@@ -200,7 +200,7 @@ test('runFlowFetchRows materializes real DB refs into review-input rows and gap 
       'remote_supabase_latest_fallback',
     );
 
-    const reviewInputRows = readJsonLines(report.files.review_input_rows);
+    const reviewInputRows = readJsonLines(report.files.qa_input_rows);
     assert.equal(reviewInputRows.length, 2);
     const flowAReviewRow = reviewInputRows.find((row) => row.id === 'flow-a') as JsonRecord;
     const flowAMaterialization = flowAReviewRow._materialization as JsonRecord;
@@ -225,7 +225,7 @@ test('runFlowFetchRows materializes real DB refs into review-input rows and gap 
     assert.equal(ambiguousRefs[0]?.code, 'FLOW_GET_AMBIGUOUS');
 
     const summary = readJson(report.files.fetch_summary);
-    assert.equal(summary.review_input_row_count, 2);
+    assert.equal(summary.qa_input_row_count, 2);
     assert.equal(summary.ambiguous_ref_count, 1);
   } finally {
     rmSync(dir, { recursive: true, force: true });
@@ -411,7 +411,7 @@ test(
       });
       assert.equal(observedUrls.length, 1);
 
-      const reviewInputRows = readJsonLines(report.files.review_input_rows);
+      const reviewInputRows = readJsonLines(report.files.qa_input_rows);
       assert.equal(reviewInputRows.length, 1);
       assert.equal(reviewInputRows[0]?.id, 'flow-global');
       assert.equal(reviewInputRows[0]?.version, '01.00.001');
@@ -543,7 +543,7 @@ test('runFlowFetchRows can materialize a ref with an empty resolved version when
     assert.equal(resolvedRows[0]?.id, 'flow-no-version');
     assert.equal(resolvedRows[0]?.version, '');
 
-    const reviewRows = readJsonLines(report.files.review_input_rows);
+    const reviewRows = readJsonLines(report.files.qa_input_rows);
     assert.equal(reviewRows[0]?.version, '');
     assert.equal(
       ((reviewRows[0]?._materialization as JsonRecord).flow_key as string) ?? '',

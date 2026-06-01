@@ -244,7 +244,7 @@ const RULES_BY_ID = Object.fromEntries(RUNTIME_RULES.map((item) => [item.id, ite
 
 const LOCAL_RULE_ID_MAP: Partial<Record<RuntimeRulesetId, Record<string, string>>> = {
   'process-authoring/strict': {
-    process_missing_bilingual_base_name: 'tidas.process.name.base-name.align-reference-flow',
+    process_missing_source_base_name: 'tidas.process.name.base-name.align-reference-flow',
     process_missing_functional_unit: 'tidas.process.quantitative-reference.required',
     process_missing_quantitative_reference: 'tidas.process.quantitative-reference.required',
     process_missing_exchange_amount: 'tidas.process.exchange.amount.required',
@@ -264,7 +264,7 @@ const LOCAL_RULE_ID_MAP: Partial<Record<RuntimeRulesetId, Record<string, string>
   },
   'flow-authoring/strict': {
     missing_type_of_dataset: 'tidas.flow.type.required',
-    elementary_flow_in_flow_review: 'tidas.flow.type.required',
+    elementary_flow_in_flow_qa: 'tidas.flow.type.required',
     methodology_invalid_type_of_dataset: 'tidas.flow.type.required',
     missing_name_text: 'tidas.flow.name.base-name.technical',
     name_contains_emergy: 'tidas.flow.name.base-name.technical',
