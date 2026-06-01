@@ -39,6 +39,8 @@ export type RunDatasetContractOptions = {
   outDir: string | null | undefined;
   mode: DatasetContractMode;
   now?: Date;
+  sdkModule?: Record<string, unknown>;
+  runtimeAssetsRoot?: string;
 };
 
 type ContractPack = {
@@ -111,6 +113,8 @@ export async function runDatasetContract(
     includes,
     profile,
     includeAiContext,
+    sdkModule: options.sdkModule,
+    runtimeAssetsRoot: options.runtimeAssetsRoot,
   });
   const files = buildFiles(outDir, loaded.pack, includeAiContext);
 
@@ -136,7 +140,7 @@ export async function runDatasetContract(
     status: 'completed',
     generated_at_utc: (options.now ?? new Date()).toISOString(),
     mode: options.mode,
-    requested_type: options.type ?? '',
+    requested_type: String(options.type),
     type,
     profile,
     includes,
@@ -235,8 +239,13 @@ async function loadContractPack(options: {
   includes: DatasetContractInclude[];
   profile: DatasetContractProfile;
   includeAiContext: boolean;
+  sdkModule?: Record<string, unknown>;
+  runtimeAssetsRoot?: string;
 }): Promise<{ source: DatasetContractReport['source']; pack: ContractPack }> {
-  const sdkModule = (await import('@tiangong-lca/tidas-sdk')) as Record<string, unknown>;
+  let sdkModule = options.sdkModule;
+  if (!sdkModule) {
+    sdkModule = requireFromHere('@tiangong-lca/tidas-sdk') as Record<string, unknown>;
+  }
   const getTidasContractPack = sdkModule.getTidasContractPack;
   if (typeof getTidasContractPack === 'function') {
     return {
@@ -260,8 +269,9 @@ function loadFallbackContractPack(options: {
   includes: DatasetContractInclude[];
   profile: DatasetContractProfile;
   includeAiContext: boolean;
+  runtimeAssetsRoot?: string;
 }): ContractPack {
-  const runtimeRoot = resolveSdkRuntimeAssetsRoot();
+  const runtimeRoot = options.runtimeAssetsRoot ?? resolveSdkRuntimeAssetsRoot();
   const schemaText = options.includes.includes('schema')
     ? readOptionalText(path.join(runtimeRoot, 'tidas', 'schemas', schemaFiles[options.type]))
     : undefined;
@@ -309,17 +319,25 @@ function loadFallbackContractPack(options: {
   };
 }
 
-function resolveSdkRuntimeAssetsRoot(): string {
-  const sdkEntry = requireFromHere.resolve('@tiangong-lca/tidas-sdk');
-  const distRoot = path.dirname(sdkEntry);
-  const packagedRoot = path.join(distRoot, 'runtime-assets');
-  const cliRepoRoot = resolveCliRepoRoot();
-  const siblingSdkRoot = path.resolve(
-    cliRepoRoot,
-    '../tidas-sdk/sdks/typescript/src/runtime-assets',
-  );
+function resolveSdkRuntimeAssetsRoot(
+  candidatesOverride?: string[],
+  sdkEntryOverride?: string,
+): string {
+  const sdkEntry = sdkEntryOverride ?? requireFromHere.resolve('@tiangong-lca/tidas-sdk');
+  const candidates =
+    candidatesOverride ??
+    (() => {
+      const distRoot = path.dirname(sdkEntry);
+      const packagedRoot = path.join(distRoot, 'runtime-assets');
+      const cliRepoRoot = resolveCliRepoRoot();
+      const siblingSdkRoot = path.resolve(
+        cliRepoRoot,
+        '../tidas-sdk/sdks/typescript/src/runtime-assets',
+      );
+      return [siblingSdkRoot, packagedRoot];
+    })();
 
-  for (const candidate of [siblingSdkRoot, packagedRoot]) {
+  for (const candidate of candidates) {
     if (existsSync(candidate)) {
       return candidate;
     }
@@ -332,9 +350,12 @@ function resolveSdkRuntimeAssetsRoot(): string {
   });
 }
 
-function resolveCliRepoRoot(): string {
+function resolveCliRepoRoot(candidatesOverride?: string[]): string {
   const moduleDir = path.dirname(fileURLToPath(import.meta.url));
-  const candidates = [path.resolve(moduleDir, '../..'), path.resolve(moduleDir, '../../..')];
+  const candidates = candidatesOverride ?? [
+    path.resolve(moduleDir, '../..'),
+    path.resolve(moduleDir, '../../..'),
+  ];
   return (
     candidates.find(
       (candidate) =>
@@ -345,7 +366,10 @@ function resolveCliRepoRoot(): string {
 }
 
 function readOptionalText(filePath: string): string | undefined {
-  return existsSync(filePath) ? readFileSync(filePath, 'utf8') : undefined;
+  if (!existsSync(filePath)) {
+    return undefined;
+  }
+  return readFileSync(filePath, 'utf8');
 }
 
 function filterRuntimeRuleset(
@@ -463,6 +487,12 @@ function isRecord(value: unknown): value is Record<string, unknown> {
 }
 
 export const __testInternals = {
+  filterRuntimeRuleset,
+  loadFallbackContractPack,
+  renderAiContextMarkdown,
+  resolveCliRepoRoot,
+  resolveSdkRuntimeAssetsRoot,
   normalizeIncludes,
+  normalizeProfile,
   normalizeType,
 };

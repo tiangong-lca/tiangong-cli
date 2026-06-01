@@ -75,6 +75,36 @@ test('runDatasetAuthor writes source extract and target context reports', async 
   }
 });
 
+test('runDatasetAuthor can use default parser and contract implementations', async () => {
+  const dir = mkdtempSync(path.join(os.tmpdir(), 'tg-cli-dataset-author-defaults-'));
+  const inputPath = path.join(dir, 'source.pdf');
+  writeFileSync(inputPath, 'source', 'utf8');
+
+  try {
+    const report = await runDatasetAuthor({
+      inputPath,
+      targetTypes: ['process'],
+      outDir: path.join(dir, 'out'),
+      env: {
+        TIANGONG_LCA_UNSTRUCTURED_API_BASE_URL: 'https://unstructured.example',
+        TIANGONG_LCA_UNSTRUCTURED_API_KEY: 'key',
+      },
+      fetchImpl: (async () => ({
+        ok: true,
+        status: 200,
+        headers: { get: () => 'application/json' },
+        text: async () => JSON.stringify({ text: 'parsed source' }),
+      })) as FetchLike,
+    });
+
+    assert.equal(report.status, 'evidence_ready');
+    assert.equal(report.context_packs.length, 1);
+    assert.equal(existsSync(report.context_packs[0]?.report.files.ai_context_markdown ?? ''), true);
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+});
+
 test('executeCli exposes dataset author command', async () => {
   const help = await executeCli(['dataset', 'author', '--help'], {
     env: {},
@@ -94,6 +124,14 @@ test('executeCli exposes dataset author command', async () => {
       'process',
       '--out-dir',
       'out',
+      '--prompt',
+      'make data',
+      '--provider',
+      'vision',
+      '--model',
+      'vision-model',
+      '--timeout-ms',
+      '1234',
       '--json',
     ],
     {
@@ -104,7 +142,7 @@ test('executeCli exposes dataset author command', async () => {
         schema_version: 1,
         status: 'evidence_ready',
         generated_at_utc: '2026-06-01T00:00:00.000Z',
-        input_path: options.inputPath,
+        input_path: `${options.inputPath}:${options.prompt}:${options.provider}:${options.model}:${options.timeoutMs}`,
         target_types: Array.isArray(options.targetTypes) ? options.targetTypes : [],
         files: {
           source_extract: 'out/outputs/source-extract.json',
@@ -116,5 +154,86 @@ test('executeCli exposes dataset author command', async () => {
     },
   );
   assert.equal(result.exitCode, 0);
-  assert.equal(JSON.parse(result.stdout).input_path, 'source.xlsx');
+  assert.equal(
+    JSON.parse(result.stdout).input_path,
+    'source.xlsx:make data:vision:vision-model:1234',
+  );
+
+  const invalidUnknown = await executeCli(['dataset', 'author', '--unknown'], {
+    env: {},
+    dotEnvStatus,
+    fetchImpl,
+  });
+  assert.equal(invalidUnknown.exitCode, 2);
+  assert.match(invalidUnknown.stderr, /INVALID_ARGS/u);
+
+  const invalidTimeout = await executeCli(['dataset', 'author', '--timeout-ms', '0'], {
+    env: {},
+    dotEnvStatus,
+    fetchImpl,
+  });
+  assert.equal(invalidTimeout.exitCode, 2);
+  assert.match(invalidTimeout.stderr, /timeout-ms/u);
+});
+
+test('runDatasetAuthor validates required local inputs before parsing', async () => {
+  const dir = mkdtempSync(path.join(os.tmpdir(), 'tg-cli-dataset-author-required-'));
+  const inputPath = path.join(dir, 'source.xlsx');
+  writeFileSync(inputPath, 'source', 'utf8');
+
+  try {
+    await assert.rejects(
+      () =>
+        runDatasetAuthor({
+          inputPath,
+          targetTypes: 'process',
+          outDir: null,
+          env: {},
+          fetchImpl,
+          parseImpl: async () => ({ text: 'unused' }),
+        }),
+      /Missing required --out-dir/u,
+    );
+
+    await assert.rejects(
+      () =>
+        runDatasetAuthor({
+          inputPath,
+          targetTypes: '',
+          outDir: path.join(dir, 'out'),
+          env: {},
+          fetchImpl,
+          parseImpl: async () => ({ text: 'unused' }),
+        }),
+      /Missing required --target-types/u,
+    );
+
+    await assert.rejects(
+      () =>
+        runDatasetAuthor({
+          inputPath: '',
+          targetTypes: 'process',
+          outDir: path.join(dir, 'out'),
+          env: {},
+          fetchImpl,
+          parseImpl: async () => ({ text: 'unused' }),
+        }),
+      /Missing required --input/u,
+    );
+
+    await assert.rejects(
+      () =>
+        runDatasetAuthor({
+          inputPath: path.join(dir, 'missing.pdf'),
+          targetTypes: 'process',
+          outDir: path.join(dir, 'out'),
+          env: {},
+          fetchImpl,
+          parseImpl: async () => ({ text: 'unused' }),
+        }),
+      /Input file not found/u,
+    );
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
 });

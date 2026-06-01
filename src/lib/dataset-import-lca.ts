@@ -174,13 +174,28 @@ function normalizeTarget(value: string | undefined): DatasetImportLcaTarget {
   });
 }
 
-function resolveTidasToolsRoot(explicitValue: string | undefined, env: NodeJS.ProcessEnv): string {
+function resolveTidasToolsRoot(
+  explicitValue: string | undefined,
+  env: NodeJS.ProcessEnv,
+  defaultCandidate?: string,
+): string {
   const cliRepoRoot = resolveCliRepoRoot();
+  if (explicitValue?.trim()) {
+    const resolved = path.resolve(explicitValue);
+    if (existsSync(path.join(resolved, 'src/tidas_tools/import_lca/cli.py'))) {
+      return resolved;
+    }
+    throw new CliError('Could not resolve a tidas-tools checkout for dataset import.', {
+      code: 'DATASET_IMPORT_LCA_TIDAS_TOOLS_NOT_FOUND',
+      exitCode: 2,
+      details: { candidates: [explicitValue] },
+    });
+  }
+
   const candidates = [
-    explicitValue,
     env.TIDAS_TOOLS_DIR,
     env.TIDAS_TOOLS_PATH,
-    path.resolve(cliRepoRoot, '../tidas-tools'),
+    defaultCandidate ?? path.resolve(cliRepoRoot, '../tidas-tools'),
   ].filter((candidate): candidate is string => Boolean(candidate?.trim()));
 
   for (const candidate of candidates) {
@@ -197,9 +212,12 @@ function resolveTidasToolsRoot(explicitValue: string | undefined, env: NodeJS.Pr
   });
 }
 
-function resolveCliRepoRoot(): string {
+function resolveCliRepoRoot(candidatesOverride?: string[]): string {
   const moduleDir = path.dirname(fileURLToPath(import.meta.url));
-  const candidates = [path.resolve(moduleDir, '../..'), path.resolve(moduleDir, '../../..')];
+  const candidates = candidatesOverride ?? [
+    path.resolve(moduleDir, '../..'),
+    path.resolve(moduleDir, '../../..'),
+  ];
   return (
     candidates.find(
       (candidate) =>
@@ -222,5 +240,6 @@ function readOptionalJson(filePath: string): unknown | null {
 
 export const __testInternals = {
   normalizeTarget,
+  resolveCliRepoRoot,
   resolveTidasToolsRoot,
 };
