@@ -87,10 +87,15 @@ jobs:
           TARGET_SHA: ${{ github.sha }}
         run: |
           set -euo pipefail
-          existing_sha="$(
+          existing_sha=""
+          if existing_sha="$(
             gh api "repos/${GITHUB_REPOSITORY}/git/ref/tags/${TAG_NAME}" \
-              --jq '.object.sha' 2>/dev/null || true
-          )"
+              --jq '.object.sha' 2>/dev/null
+          )"; then
+            :
+          else
+            existing_sha=""
+          fi
 
           if [ -n "$existing_sha" ]; then
             if [ "$existing_sha" = "$TARGET_SHA" ]; then
