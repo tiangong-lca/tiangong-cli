@@ -4434,6 +4434,8 @@ test('executeCli executes qa process with injected implementation', async () => 
             effective_processes_dir: path.join(dir, 'run-root', 'exports', 'processes'),
             logic_version: options.logicVersion ?? 'v2.1',
             process_count: 1,
+            policy_decision_owner: 'foundry',
+            qa_mode: 'deterministic_qa_report',
             totals: {
               raw_input: 1,
               product_plus_byproduct_plus_waste: 1,
@@ -4497,6 +4499,8 @@ test('executeCli passes rows-file qa process input through to the implementation
             effective_processes_dir: path.join(dir, 'review', 'qa-input', 'processes'),
             logic_version: 'v2.1',
             process_count: 1,
+            policy_decision_owner: 'foundry',
+            qa_mode: 'deterministic_qa_report',
             totals: {
               raw_input: 1,
               product_plus_byproduct_plus_waste: 1,
@@ -4574,6 +4578,8 @@ test('executeCli executes qa process with only required flags', async () => {
             effective_processes_dir: path.join(dir, 'run-root', 'exports', 'processes'),
             logic_version: 'v2.1',
             process_count: 0,
+            policy_decision_owner: 'foundry',
+            qa_mode: 'deterministic_qa_report',
             totals: {
               raw_input: 0,
               product_plus_byproduct_plus_waste: 0,

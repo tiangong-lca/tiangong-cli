@@ -146,6 +146,8 @@ function processQaReport(reportFile: string): ProcessQaReport {
     effective_processes_dir: path.dirname(reportFile),
     logic_version: 'test',
     process_count: 1,
+    policy_decision_owner: 'foundry',
+    qa_mode: 'deterministic_qa_report',
     totals: {
       raw_input: 0,
       product_plus_byproduct_plus_waste: 0,
