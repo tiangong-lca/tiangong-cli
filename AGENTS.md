@@ -111,7 +111,7 @@ Route those tasks to:
 - `src/lib/runtime-rulesets.ts` is the CLI-local runtime activation layer for stable ruleset ids, methodology rule ids, severity, and blocker semantics used by review, dedup, and publish gate artifacts.
 - The canonical minimum validation command is `npm run lint`
 - The authoritative full gate is `npm run prepush:gate`; the local pre-push hook runs it after docpact.
-- Release tagging is guarded in `.github/workflows/tag-release-from-merge.yml` so only the upstream repository can execute the merge-tag flow, and it runs the release gate only when a package version change will create a tag.
+- Release tagging is guarded in `.github/workflows/tag-release-from-merge.yml` so only the upstream repository can execute the merge-tag flow, and it runs the release gate only when a package version change will create a `cli-v<version>` tag. `.github/workflows/publish.yml` publishes from that tag and also supports `workflow_dispatch` for existing-tag recovery/backfill.
 - Coverage for `src/**/*.ts` is expected to stay at `100%` statements, branches, functions, and lines
 
 ## Hard Boundaries

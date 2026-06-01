@@ -87,11 +87,35 @@ jobs:
           TARGET_SHA: ${{ github.sha }}
         run: |
           set -euo pipefail
-          if gh api "repos/${GITHUB_REPOSITORY}/git/ref/tags/${TAG_NAME}" >/dev/null 2>&1; then
-            echo "error: tag ${TAG_NAME} already exists" >&2
+          existing_sha="$(
+            gh api "repos/${GITHUB_REPOSITORY}/git/ref/tags/${TAG_NAME}" \
+              --jq '.object.sha' 2>/dev/null || true
+          )"
+
+          if [ -n "$existing_sha" ]; then
+            if [ "$existing_sha" = "$TARGET_SHA" ]; then
+              echo "::notice::Tag ${TAG_NAME} already points to ${TARGET_SHA}; continuing."
+              {
+                echo "### Release tag"
+                echo "- tag: \`${TAG_NAME}\`"
+                echo "- target: \`${TARGET_SHA}\`"
+                echo "- created: \`false\`"
+              } >> "$GITHUB_STEP_SUMMARY"
+              exit 0
+            fi
+
+            echo "error: tag ${TAG_NAME} already points to ${existing_sha}, not ${TARGET_SHA}" >&2
             exit 1
           fi
+
           gh api "repos/${GITHUB_REPOSITORY}/git/refs" \
             --method POST \
             -f ref="refs/tags/${TAG_NAME}" \
             -f sha="${TARGET_SHA}"
+
+          {
+            echo "### Release tag"
+            echo "- tag: \`${TAG_NAME}\`"
+            echo "- target: \`${TARGET_SHA}\`"
+            echo "- created: \`true\`"
+          } >> "$GITHUB_STEP_SUMMARY"

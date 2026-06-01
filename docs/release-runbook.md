@@ -121,6 +121,12 @@ Expected result:
 
 - `Publish Package` finishes successfully
 
+If the tag exists but the publish workflow needs to be re-run with the current workflow definition, use the manual dispatch input:
+
+```bash
+gh workflow run publish.yml --repo tiangong-lca/tiangong-cli --field tag_name=cli-v<x.y.z>
+```
+
 ### 3. npm registry
 
 Confirm npm has the expected version:
@@ -169,6 +175,7 @@ For the CLI repo, that helper defaults to:
 - If the version bump PR is not merged, no release should happen.
 - If tag creation fails, fix the workflow or repository secret/config first. Do not manually continue the workspace bump.
 - If publish fails, inspect the failed GitHub Actions run and npm/Trusted Publisher configuration before retrying the release flow.
+- If the tag exists and points to the intended merge commit but publish did not run, re-run `publish.yml` with `tag_name=cli-v<x.y.z>`.
 - If npm does not show the expected version yet, wait for registry propagation before treating the release as failed.
 
 ## Operator Checklist

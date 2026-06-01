@@ -85,6 +85,7 @@ Facts that matter:
 - `.github/workflows/quality-gate.yml` is manual-dispatch only for remote reproduction, not an ordinary push-triggered test runner
 - `process save-draft`, `lifecyclemodel save-draft`, dataset governance commands, BuildPlan gates, publish schema/verification gates, and the newer process maintenance commands are expected to preserve `100%` coverage even when they add schema-validation, rewrite, or fallback branches
 - release-tag and docpact lint workflow changes should be described in the PR note when they alter the local or protected-branch proof
+- `tag-release-from-merge.yml` is idempotent when the expected `cli-v*` tag already points at the merge commit, and `publish.yml` can be re-run with `workflow_dispatch` only for an existing `cli-v*` tag on `origin/main`
 
 If the task changes control flow, add or update tests instead of using coverage-ignore pragmas.
 

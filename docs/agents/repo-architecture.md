@@ -148,6 +148,7 @@ Repo-level maintenance gates are now split across:
 - `.github/workflows/quality-gate.yml` for manual remote reproduction of the local gate
 - `.github/workflows/ai-doc-lint.yml`
 - `.github/workflows/tag-release-from-merge.yml`
+- `.github/workflows/publish.yml`
 
 Important constraints:
 
@@ -155,6 +156,7 @@ Important constraints:
 - `ai-doc-lint` keeps the historical check identity, but its implementation should run `docpact`
 - `docpact` enforces that command-surface and release-gate changes also refresh or review the governed source docs
 - the merge-tag workflow is guarded so only the upstream repository can execute release tagging
+- the publish workflow releases from `cli-v<package.json version>` and supports manual dispatch for existing-tag recovery/backfill
 
 ## Cross-Repo Boundaries
 
