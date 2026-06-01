@@ -4651,6 +4651,12 @@ test('executeCli rejects unknown root options', async () => {
 });
 
 test('executeCli rejects removed review command group without aliasing to qa', async () => {
+  const rootResult = await executeCli(['review'], makeDeps());
+  assert.equal(rootResult.exitCode, 2);
+  assert.equal(rootResult.stdout, '');
+  assert.match(rootResult.stderr, /Command 'review' was removed/u);
+  assert.match(rootResult.stderr, /tiangong-lca qa/u);
+
   const result = await executeCli(['review', 'process', '--help'], makeDeps());
   assert.equal(result.exitCode, 2);
   assert.equal(result.stdout, '');

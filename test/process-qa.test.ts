@@ -750,6 +750,22 @@ test('process-qa internals cover helper branches and rendering fallbacks', async
   assert.equal(
     __testInternals.classifyExchange({
       exchangeDirection: 'Input',
+      commonComment: 'source classification input group',
+      'common:other': {
+        'tidasimport:sourceTrace': {
+          payload: {
+            sourceClassification: {
+              inputGroup: '4',
+            },
+          },
+        },
+      },
+    }).classification,
+    'raw_material_input',
+  );
+  assert.equal(
+    __testInternals.classifyExchange({
+      exchangeDirection: 'Input',
       commonComment: 'misc auxiliary input',
       referenceToFlowDataSet: 'not-an-object',
     }).classification,
@@ -778,6 +794,49 @@ test('process-qa internals cover helper branches and rendering fallbacks', async
       }),
     ).classification,
     'product_output',
+  );
+  assert.equal(
+    __testInternals.classifyExchange(
+      {
+        '@dataSetInternalID': 'reference-output-1',
+        exchangeDirection: 'Output',
+        commonComment: 'declared quantitative reference output',
+      },
+      'reference-output-1',
+    ).classification,
+    'product_output',
+  );
+  assert.equal(
+    __testInternals.classifyExchange({
+      exchangeDirection: 'Output',
+      commonComment: 'source trace output group reference',
+      'common:other': {
+        'tidasimport:sourceTrace': {
+          payload: {
+            sourceTrace: {
+              sourceClassification: {
+                outputGroup: '0',
+              },
+            },
+          },
+        },
+      },
+    }).classification,
+    'product_output',
+  );
+  assert.equal(
+    __testInternals.classifyExchange({
+      exchangeDirection: 'Input',
+      commonComment: 'source trace without classification',
+      'common:other': {
+        'tidasimport:sourceTrace': {
+          payload: {
+            sourceTrace: {},
+          },
+        },
+      },
+    }).classification,
+    'other_input',
   );
   assert.equal(
     __testInternals.classifyExchange(
@@ -938,6 +997,23 @@ test('process-qa internals cover helper branches and rendering fallbacks', async
     ]).status,
     'needs_review',
   );
+  const warningFinding = __testInternals.createProcessQaFinding({
+    processFile: 'proc-null-rule.json',
+    severity: 'warning',
+    code: 'unknown_warning',
+    message: 'review only',
+  });
+  assert.equal(warningFinding.methodology_rule_id, null);
+  const blockerGate = __testInternals.processRulesetGate([
+    __testInternals.createProcessQaFinding({
+      processFile: 'proc-blocker.json',
+      severity: 'blocker',
+      code: 'process_missing_functional_unit',
+      message: 'blocker',
+    }),
+  ]);
+  assert.equal(blockerGate.status, 'blocked');
+  assert.equal(blockerGate.next_action, 'fix_blockers');
 
   assert.equal(
     __testInternals.unwrapProcessPayload(
@@ -985,6 +1061,32 @@ test('process-qa internals cover helper branches and rendering fallbacks', async
   );
 
   assert.deepEqual(__testInternals.parseLlmJsonOutput('{"findings":[]}'), { findings: [] });
+  assert.match(
+    __testInternals.buildPrompt([
+      {
+        process_file: 'proc.json',
+        base_names: ['Process'],
+        base_checks: {
+          source_name_ok: true,
+          functional_unit_ok: true,
+          system_boundary_ok: true,
+          time_ok: true,
+          geo_ok: true,
+          tech_ok: true,
+          admin_ok: true,
+        },
+        balance: {
+          raw_in: 1,
+          product: 1,
+          byproduct: 0,
+          waste: 0,
+          energy_excluded: 0,
+          relative_deviation: 0,
+        },
+      },
+    ]),
+    /输入摘要/u,
+  );
   assert.equal(__testInternals.parseLlmJsonOutput('[]'), null);
   assert.equal(__testInternals.parseLlmJsonOutput('not json'), null);
 
