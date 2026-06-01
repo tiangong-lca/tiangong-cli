@@ -17,11 +17,7 @@ import {
   type RunDatasetValidateOptions,
 } from './dataset-validate.js';
 import { runFlowQa, type FlowQaReport, type RunFlowQaOptions } from './flow-qa.js';
-import {
-  runProcessQa,
-  type ProcessQaReport,
-  type RunProcessQaOptions,
-} from './process-qa.js';
+import { runProcessQa, type ProcessQaReport, type RunProcessQaOptions } from './process-qa.js';
 
 type BilingualDatasetType = 'auto' | DatasetKind;
 type BilingualStatus = 'completed' | 'blocked';
@@ -784,10 +780,7 @@ export async function runDatasetBilingualValidate(
   if (options.outDir && (requestedType === 'process' || requestedType === 'auto')) {
     const processRows = rows.filter((row) => row.kind === 'process').map((row) => row.row);
     if (processRows.length > 0) {
-      const processRowsFile = path.join(
-        path.resolve(options.outDir),
-        'qa-input-processes.jsonl',
-      );
+      const processRowsFile = path.join(path.resolve(options.outDir), 'qa-input-processes.jsonl');
       writeJsonLinesArtifact(processRowsFile, processRows);
       processReport = await (options.processQaImpl ?? runProcessQa)({
         rowsFile: processRowsFile,

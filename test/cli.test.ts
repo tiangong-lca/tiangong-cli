@@ -216,10 +216,7 @@ test('executeCli returns help for publish and validation subcommands', async () 
   );
   assert.match(reviewFlowHelp.stdout, /--similarity-threshold/u);
 
-  const reviewLifecyclemodelHelp = await executeCli(
-    ['qa', 'lifecyclemodel', '--help'],
-    makeDeps(),
-  );
+  const reviewLifecyclemodelHelp = await executeCli(['qa', 'lifecyclemodel', '--help'], makeDeps());
   assert.equal(reviewLifecyclemodelHelp.exitCode, 0);
   assert.match(
     reviewLifecyclemodelHelp.stdout,

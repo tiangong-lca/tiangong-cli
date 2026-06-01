@@ -361,7 +361,7 @@ test('runLifecyclemodelQa writes artifact-first outputs and dedupes validation f
     assert.equal(invocationIndex.invocations.length, 1);
     assert.deepEqual(invocationIndex.invocations[0]?.command, [
       'qa',
-        'lifecyclemodel',
+      'lifecyclemodel',
       '--run-dir',
       runRoot,
       '--out-dir',

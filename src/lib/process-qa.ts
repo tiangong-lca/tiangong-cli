@@ -354,7 +354,10 @@ function sourceGroup(exchange: JsonRecord, groupName: 'inputGroup' | 'outputGrou
   return text || null;
 }
 
-function classifyExchange(exchange: JsonRecord, referenceFlowId: string | null = null): ClassifiedExchange {
+function classifyExchange(
+  exchange: JsonRecord,
+  referenceFlowId: string | null = null,
+): ClassifiedExchange {
   const comments =
     `${textFromValue(exchange.commonComment)} ${textFromValue(exchange.generalComment)}`.toLowerCase();
   const flowDescription = textFromValue(
@@ -524,7 +527,8 @@ function reviewFindingsForBase(processFile: string, base: BaseInfoCheck): Proces
         processFile,
         severity: 'warning',
         code: 'process_missing_source_base_name',
-        message: 'Process baseName should include a usable source-language entry before Foundry authoring is complete.',
+        message:
+          'Process baseName should include a usable source-language entry before Foundry authoring is complete.',
         evidence: { base_names: base.base_names },
       }),
     );
@@ -535,7 +539,8 @@ function reviewFindingsForBase(processFile: string, base: BaseInfoCheck): Proces
         processFile,
         severity: 'warning',
         code: 'process_missing_functional_unit',
-        message: 'Process quantitative reference functionalUnitOrOther is missing and should be curated by Foundry.',
+        message:
+          'Process quantitative reference functionalUnitOrOther is missing and should be curated by Foundry.',
       }),
     );
   }
@@ -721,14 +726,11 @@ function loadReviewRows(rowsFile: string): JsonRecord[] {
           if (error instanceof CliError) {
             throw error;
           }
-          throw new CliError(
-            `Process QA rows file contains invalid JSONL at line ${index + 1}.`,
-            {
-              code: 'PROCESS_QA_ROWS_INVALID_JSONL',
-              exitCode: 2,
-              details: String(error),
-            },
-          );
+          throw new CliError(`Process QA rows file contains invalid JSONL at line ${index + 1}.`, {
+            code: 'PROCESS_QA_ROWS_INVALID_JSONL',
+            exitCode: 2,
+            details: String(error),
+          });
         }
       });
   }
@@ -1121,9 +1123,7 @@ function renderUnitIssues(runId: string, unitIssues: UnitIssue[]): string {
   return lines.join('');
 }
 
-export async function runProcessQa(
-  options: RunProcessQaOptions,
-): Promise<ProcessQaReport> {
+export async function runProcessQa(options: RunProcessQaOptions): Promise<ProcessQaReport> {
   const outDir = path.resolve(
     requiredNonEmpty(options.outDir, '--out-dir', 'PROCESS_QA_OUT_DIR_REQUIRED'),
   );

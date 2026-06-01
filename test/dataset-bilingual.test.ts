@@ -459,8 +459,7 @@ test('dataset bilingual covers local-only extraction, apply blockers, and flow r
       outDir: path.join(dir, 'validate-flow'),
       type: 'flow',
       datasetValidateImpl: async (options) => validDatasetReport(options.inputPath, null, 'flow'),
-      processQaImpl: async (options) =>
-        processQaReport(path.join(options.outDir, 'report.json')),
+      processQaImpl: async (options) => processQaReport(path.join(options.outDir, 'report.json')),
       flowQaImpl: async (options) => flowQaReport(path.join(options.outDir, 'report.json')),
       now: new Date('2026-05-23T00:00:00.000Z'),
     });

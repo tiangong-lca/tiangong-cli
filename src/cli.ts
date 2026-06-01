@@ -126,16 +126,8 @@ import {
   type RunProcessIdentityPreflightOptions,
 } from './lib/identity-preflight.js';
 import { runPublish, type PublishReport, type RunPublishOptions } from './lib/publish.js';
-import {
-  runProcessQa,
-  type ProcessQaReport,
-  type RunProcessQaOptions,
-} from './lib/process-qa.js';
-import {
-  runFlowQa,
-  type FlowQaReport,
-  type RunFlowQaOptions,
-} from './lib/flow-qa.js';
+import { runProcessQa, type ProcessQaReport, type RunProcessQaOptions } from './lib/process-qa.js';
+import { runFlowQa, type FlowQaReport, type RunFlowQaOptions } from './lib/flow-qa.js';
 import {
   runLifecyclemodelQa,
   type LifecyclemodelQaReport,

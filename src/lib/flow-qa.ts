@@ -1314,13 +1314,10 @@ function resolveReviewInput(options: RunFlowQaOptions): {
     Boolean(options.runRoot),
   ].filter(Boolean);
   if (declaredModes.length !== 1) {
-    throw new CliError(
-      'Flow QA requires exactly one of --rows-file, --flows-dir, or --run-root.',
-      {
-        code: 'FLOW_QA_INPUT_MODE_REQUIRED',
-        exitCode: 2,
-      },
-    );
+    throw new CliError('Flow QA requires exactly one of --rows-file, --flows-dir, or --run-root.', {
+      code: 'FLOW_QA_INPUT_MODE_REQUIRED',
+      exitCode: 2,
+    });
   }
 
   if (options.rowsFile) {

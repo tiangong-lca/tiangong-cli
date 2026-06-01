@@ -367,17 +367,14 @@ function readRequiredRunManifest(layout: LifecyclemodelQaLayout): JsonObject {
 
   const manifestRunId = nonEmptyString(manifest.runId);
   if (manifestRunId && manifestRunId !== layout.runId) {
-    throw new CliError(
-      `lifecyclemodel QA run manifest runId mismatch: ${layout.runManifestPath}`,
-      {
-        code: 'LIFECYCLEMODEL_QA_RUN_MANIFEST_MISMATCH',
-        exitCode: 2,
-        details: {
-          expected: layout.runId,
-          actual: manifestRunId,
-        },
+    throw new CliError(`lifecyclemodel QA run manifest runId mismatch: ${layout.runManifestPath}`, {
+      code: 'LIFECYCLEMODEL_QA_RUN_MANIFEST_MISMATCH',
+      exitCode: 2,
+      details: {
+        expected: layout.runId,
+        actual: manifestRunId,
       },
-    );
+    });
   }
 
   return manifest;
