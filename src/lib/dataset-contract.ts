@@ -1,0 +1,468 @@
+import { createHash } from 'node:crypto';
+import { existsSync, readFileSync } from 'node:fs';
+import path from 'node:path';
+import { createRequire } from 'node:module';
+import { fileURLToPath } from 'node:url';
+import { writeJsonArtifact, writeTextArtifact } from './artifacts.js';
+import { CliError } from './errors.js';
+
+export type DatasetContractInclude = 'schema' | 'methodology' | 'ruleset';
+export type DatasetContractProfile = 'default' | 'ai-import';
+export type DatasetContractMode = 'contract' | 'context-pack';
+
+export type DatasetContractReport = {
+  schema_version: 1;
+  status: 'completed';
+  generated_at_utc: string;
+  mode: DatasetContractMode;
+  requested_type: string;
+  type: string;
+  profile: DatasetContractProfile;
+  includes: DatasetContractInclude[];
+  source: 'sdk-contract-api' | 'sdk-runtime-assets';
+  manifest: unknown;
+  files: {
+    manifest: string;
+    schema: string | null;
+    methodology: string | null;
+    ruleset: string | null;
+    ai_context_json: string | null;
+    ai_context_markdown: string | null;
+    report: string;
+  };
+};
+
+export type RunDatasetContractOptions = {
+  type: string | undefined;
+  include?: string | string[] | undefined;
+  profile?: string | undefined;
+  outDir: string | null | undefined;
+  mode: DatasetContractMode;
+  now?: Date;
+};
+
+type ContractPack = {
+  manifest: unknown;
+  schemaText?: string;
+  methodologyText?: string;
+  runtimeRuleset?: unknown;
+  aiContext?: unknown;
+};
+
+type CanonicalKind =
+  | 'contact'
+  | 'flow'
+  | 'flowproperty'
+  | 'lciamethod'
+  | 'lifecyclemodel'
+  | 'process'
+  | 'source'
+  | 'unitgroup';
+
+const requireFromHere = createRequire(import.meta.url);
+
+const aliases: Record<string, CanonicalKind> = {
+  contact: 'contact',
+  contacts: 'contact',
+  flow: 'flow',
+  flows: 'flow',
+  flowproperty: 'flowproperty',
+  flowproperties: 'flowproperty',
+  lciamethod: 'lciamethod',
+  lciamethods: 'lciamethod',
+  lifecyclemodel: 'lifecyclemodel',
+  lifecyclemodels: 'lifecyclemodel',
+  process: 'process',
+  processes: 'process',
+  source: 'source',
+  sources: 'source',
+  unitgroup: 'unitgroup',
+  unitgroups: 'unitgroup',
+};
+
+const schemaFiles: Record<CanonicalKind, string> = {
+  contact: 'tidas_contacts.json',
+  flow: 'tidas_flows.json',
+  flowproperty: 'tidas_flowproperties.json',
+  lciamethod: 'tidas_lciamethods.json',
+  lifecyclemodel: 'tidas_lifecyclemodels.json',
+  process: 'tidas_processes.json',
+  source: 'tidas_sources.json',
+  unitgroup: 'tidas_unitgroups.json',
+};
+
+const methodologyFiles: Partial<Record<CanonicalKind, string>> = {
+  flow: 'tidas_flows.yaml',
+  process: 'tidas_processes.yaml',
+};
+
+const allowedIncludes = new Set<DatasetContractInclude>(['schema', 'methodology', 'ruleset']);
+
+export async function runDatasetContract(
+  options: RunDatasetContractOptions,
+): Promise<DatasetContractReport> {
+  const type = normalizeType(options.type);
+  const includes = normalizeIncludes(options.include);
+  const profile = normalizeProfile(options.profile ?? defaultProfile(options.mode));
+  const outDir = requireOutDir(options.outDir);
+  const includeAiContext = options.mode === 'context-pack';
+  const loaded = await loadContractPack({
+    type,
+    includes,
+    profile,
+    includeAiContext,
+  });
+  const files = buildFiles(outDir, loaded.pack, includeAiContext);
+
+  writeJsonArtifact(files.manifest, loaded.pack.manifest);
+  if (loaded.pack.schemaText && files.schema) {
+    writeTextArtifact(files.schema, `${loaded.pack.schemaText.trimEnd()}\n`);
+  }
+  if (loaded.pack.methodologyText && files.methodology) {
+    writeTextArtifact(files.methodology, `${loaded.pack.methodologyText.trimEnd()}\n`);
+  }
+  if (loaded.pack.runtimeRuleset && files.ruleset) {
+    writeJsonArtifact(files.ruleset, loaded.pack.runtimeRuleset);
+  }
+  if (loaded.pack.aiContext && files.ai_context_json) {
+    writeJsonArtifact(files.ai_context_json, loaded.pack.aiContext);
+  }
+  if (includeAiContext && files.ai_context_markdown) {
+    writeTextArtifact(files.ai_context_markdown, renderAiContextMarkdown(type, loaded.pack));
+  }
+
+  const report: DatasetContractReport = {
+    schema_version: 1,
+    status: 'completed',
+    generated_at_utc: (options.now ?? new Date()).toISOString(),
+    mode: options.mode,
+    requested_type: options.type ?? '',
+    type,
+    profile,
+    includes,
+    source: loaded.source,
+    manifest: loaded.pack.manifest,
+    files,
+  };
+  writeJsonArtifact(files.report, report);
+
+  return report;
+}
+
+function normalizeType(value: string | undefined): CanonicalKind {
+  const raw = value?.trim();
+  if (!raw) {
+    throw new CliError('Missing required --type value.', {
+      code: 'DATASET_CONTRACT_TYPE_REQUIRED',
+      exitCode: 2,
+    });
+  }
+  const normalized = raw.toLowerCase().replace(/[-_]/gu, '');
+  const type = aliases[normalized];
+  if (!type) {
+    throw new CliError(
+      `Unsupported dataset contract type '${value}'. Supported types: ${Object.keys(aliases)
+        .sort()
+        .join(', ')}.`,
+      {
+        code: 'DATASET_CONTRACT_TYPE_INVALID',
+        exitCode: 2,
+      },
+    );
+  }
+  return type;
+}
+
+function normalizeIncludes(value: string | string[] | undefined): DatasetContractInclude[] {
+  const rawValues =
+    Array.isArray(value) && value.length > 0
+      ? value
+      : value && !Array.isArray(value)
+        ? [value]
+        : ['schema,methodology,ruleset'];
+  const includes = rawValues.flatMap((raw) =>
+    raw
+      .split(',')
+      .map((item) => item.trim().toLowerCase())
+      .filter(Boolean),
+  );
+
+  if (!includes.length) {
+    throw new CliError('At least one --include value is required.', {
+      code: 'DATASET_CONTRACT_INCLUDE_REQUIRED',
+      exitCode: 2,
+    });
+  }
+
+  for (const include of includes) {
+    if (!allowedIncludes.has(include as DatasetContractInclude)) {
+      throw new CliError('--include values must be schema, methodology, or ruleset.', {
+        code: 'DATASET_CONTRACT_INCLUDE_INVALID',
+        exitCode: 2,
+      });
+    }
+  }
+
+  return Array.from(new Set(includes)) as DatasetContractInclude[];
+}
+
+function normalizeProfile(value: string): DatasetContractProfile {
+  if (value === 'default' || value === 'ai-import') {
+    return value;
+  }
+  throw new CliError("--profile must be 'default' or 'ai-import'.", {
+    code: 'DATASET_CONTRACT_PROFILE_INVALID',
+    exitCode: 2,
+  });
+}
+
+function defaultProfile(mode: DatasetContractMode): DatasetContractProfile {
+  return mode === 'context-pack' ? 'ai-import' : 'default';
+}
+
+function requireOutDir(value: string | null | undefined): string {
+  if (!value?.trim()) {
+    throw new CliError('Missing required --out-dir value.', {
+      code: 'DATASET_CONTRACT_OUT_DIR_REQUIRED',
+      exitCode: 2,
+    });
+  }
+  return path.resolve(value);
+}
+
+async function loadContractPack(options: {
+  type: CanonicalKind;
+  includes: DatasetContractInclude[];
+  profile: DatasetContractProfile;
+  includeAiContext: boolean;
+}): Promise<{ source: DatasetContractReport['source']; pack: ContractPack }> {
+  const sdkModule = (await import('@tiangong-lca/tidas-sdk')) as Record<string, unknown>;
+  const getTidasContractPack = sdkModule.getTidasContractPack;
+  if (typeof getTidasContractPack === 'function') {
+    return {
+      source: 'sdk-contract-api',
+      pack: getTidasContractPack(options.type, {
+        include: options.includes,
+        profile: options.profile,
+        includeAiContext: options.includeAiContext,
+      }) as ContractPack,
+    };
+  }
+
+  return {
+    source: 'sdk-runtime-assets',
+    pack: loadFallbackContractPack(options),
+  };
+}
+
+function loadFallbackContractPack(options: {
+  type: CanonicalKind;
+  includes: DatasetContractInclude[];
+  profile: DatasetContractProfile;
+  includeAiContext: boolean;
+}): ContractPack {
+  const runtimeRoot = resolveSdkRuntimeAssetsRoot();
+  const schemaText = options.includes.includes('schema')
+    ? readOptionalText(path.join(runtimeRoot, 'tidas', 'schemas', schemaFiles[options.type]))
+    : undefined;
+  const methodologyFile = methodologyFiles[options.type];
+  const methodologyText =
+    options.includes.includes('methodology') && methodologyFile
+      ? readOptionalText(path.join(runtimeRoot, 'tidas', 'methodologies', methodologyFile))
+      : undefined;
+  const rulesetText = options.includes.includes('ruleset')
+    ? readOptionalText(path.join(runtimeRoot, 'tidas', 'methodologies', 'runtime_rulesets.json'))
+    : undefined;
+  const runtimeRuleset = rulesetText
+    ? filterRuntimeRuleset(JSON.parse(rulesetText) as Record<string, unknown>, options.type)
+    : undefined;
+  const aiContext = options.includeAiContext
+    ? buildAiContext({
+        type: options.type,
+        profile: options.profile,
+        schemaText,
+        methodologyText,
+        runtimeRuleset,
+      })
+    : undefined;
+
+  return {
+    manifest: {
+      schema_version: 1,
+      kind: options.type,
+      profile: options.profile,
+      includes: options.includes,
+      sdk_package: '@tiangong-lca/tidas-sdk',
+      schema: schemaText ? artifactManifest(schemaFiles[options.type], schemaText) : null,
+      methodology:
+        methodologyText && methodologyFile
+          ? artifactManifest(methodologyFile, methodologyText)
+          : null,
+      ruleset: runtimeRuleset
+        ? artifactManifest('runtime_rulesets.json', JSON.stringify(runtimeRuleset, null, 2))
+        : null,
+    },
+    schemaText,
+    methodologyText,
+    runtimeRuleset,
+    aiContext,
+  };
+}
+
+function resolveSdkRuntimeAssetsRoot(): string {
+  const sdkEntry = requireFromHere.resolve('@tiangong-lca/tidas-sdk');
+  const distRoot = path.dirname(sdkEntry);
+  const packagedRoot = path.join(distRoot, 'runtime-assets');
+  const cliRepoRoot = resolveCliRepoRoot();
+  const siblingSdkRoot = path.resolve(
+    cliRepoRoot,
+    '../tidas-sdk/sdks/typescript/src/runtime-assets',
+  );
+
+  for (const candidate of [siblingSdkRoot, packagedRoot]) {
+    if (existsSync(candidate)) {
+      return candidate;
+    }
+  }
+
+  throw new CliError('Could not resolve @tiangong-lca/tidas-sdk runtime assets.', {
+    code: 'DATASET_CONTRACT_SDK_ASSETS_NOT_FOUND',
+    exitCode: 1,
+    details: { sdkEntry },
+  });
+}
+
+function resolveCliRepoRoot(): string {
+  const moduleDir = path.dirname(fileURLToPath(import.meta.url));
+  const candidates = [path.resolve(moduleDir, '../..'), path.resolve(moduleDir, '../../..')];
+  return (
+    candidates.find(
+      (candidate) =>
+        existsSync(path.join(candidate, 'package.json')) &&
+        existsSync(path.join(candidate, 'src/cli.ts')),
+    ) ?? candidates[0]
+  );
+}
+
+function readOptionalText(filePath: string): string | undefined {
+  return existsSync(filePath) ? readFileSync(filePath, 'utf8') : undefined;
+}
+
+function filterRuntimeRuleset(
+  source: Record<string, unknown>,
+  type: CanonicalKind,
+): unknown | undefined {
+  const rulesets = Array.isArray(source.rulesets)
+    ? source.rulesets.filter((entry) => isRulesetForType(entry, type))
+    : [];
+  const rules = Array.isArray(source.rules)
+    ? source.rules.filter((entry) => isRulesetForType(entry, type))
+    : [];
+  if (!rulesets.length && !rules.length) {
+    return undefined;
+  }
+  return {
+    $schema: source.$schema,
+    schema_version: source.schema_version,
+    ruleset_version: source.ruleset_version,
+    purpose: source.purpose,
+    rulesets,
+    rules,
+  };
+}
+
+function isRulesetForType(entry: unknown, type: CanonicalKind): boolean {
+  return (
+    typeof entry === 'object' &&
+    entry !== null &&
+    'dataset_type' in entry &&
+    (entry as { dataset_type?: unknown }).dataset_type === type
+  );
+}
+
+function artifactManifest(
+  name: string,
+  content: string,
+): { name: string; sha256: string; bytes: number } {
+  return {
+    name,
+    sha256: createHash('sha256').update(content).digest('hex'),
+    bytes: Buffer.byteLength(content, 'utf8'),
+  };
+}
+
+function buildAiContext(options: {
+  type: CanonicalKind;
+  profile: DatasetContractProfile;
+  schemaText?: string;
+  methodologyText?: string;
+  runtimeRuleset?: unknown;
+}): unknown {
+  return {
+    schema_version: 1,
+    kind: options.type,
+    profile: options.profile,
+    instructions: [
+      `Generate or repair only canonical TIDAS ${options.type} data.`,
+      'Use the JSON schema as the structural contract.',
+      'Use the methodology YAML as the semantic authoring contract when present.',
+      'Treat runtime ruleset blocker rules as gate requirements.',
+      'Return candidate data only; do not claim that database writes have happened.',
+      'Preserve source provenance and unresolved assumptions so Foundry can build evidence and repair queues.',
+    ],
+    schema_text: options.schemaText,
+    methodology_text: options.methodologyText,
+    runtime_ruleset: options.runtimeRuleset,
+  };
+}
+
+function buildFiles(
+  outDir: string,
+  pack: ContractPack,
+  includeAiContext: boolean,
+): DatasetContractReport['files'] {
+  const outputsDir = path.join(outDir, 'outputs');
+  return {
+    manifest: path.join(outputsDir, 'contract-manifest.json'),
+    schema: pack.schemaText ? path.join(outputsDir, 'schema.json') : null,
+    methodology: pack.methodologyText ? path.join(outputsDir, 'methodology.yaml') : null,
+    ruleset: pack.runtimeRuleset ? path.join(outputsDir, 'runtime-ruleset.json') : null,
+    ai_context_json:
+      includeAiContext && pack.aiContext ? path.join(outputsDir, 'ai-context.json') : null,
+    ai_context_markdown: includeAiContext ? path.join(outputsDir, 'ai-context.md') : null,
+    report: path.join(outputsDir, 'contract-report.json'),
+  };
+}
+
+function renderAiContextMarkdown(type: CanonicalKind, pack: ContractPack): string {
+  const aiContext = isRecord(pack.aiContext) ? pack.aiContext : {};
+  const instructions = Array.isArray(aiContext.instructions)
+    ? aiContext.instructions.map((item) => `- ${String(item)}`).join('\n')
+    : '';
+  const sections = [`# TIDAS ${type} AI Context`, '', '## Instructions', instructions];
+  if (pack.methodologyText) {
+    sections.push('', '## Methodology YAML', '```yaml', pack.methodologyText.trimEnd(), '```');
+  }
+  if (pack.schemaText) {
+    sections.push('', '## JSON Schema', '```json', pack.schemaText.trimEnd(), '```');
+  }
+  if (pack.runtimeRuleset) {
+    sections.push(
+      '',
+      '## Runtime Ruleset',
+      '```json',
+      JSON.stringify(pack.runtimeRuleset, null, 2),
+      '```',
+    );
+  }
+  return `${sections.join('\n')}\n`;
+}
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === 'object' && value !== null && !Array.isArray(value);
+}
+
+export const __testInternals = {
+  normalizeIncludes,
+  normalizeType,
+};

@@ -232,6 +232,21 @@ import {
   type EvidenceSearchReport,
   type RunDatasetEvidenceSearchOptions,
 } from './lib/dataset-evidence-search.js';
+import {
+  runDatasetContract,
+  type DatasetContractReport,
+  type RunDatasetContractOptions,
+} from './lib/dataset-contract.js';
+import {
+  runDatasetImportLcaConvert,
+  type DatasetImportLcaReport,
+  type RunDatasetImportLcaConvertOptions,
+} from './lib/dataset-import-lca.js';
+import {
+  runDatasetAuthor,
+  type DatasetAuthorReport,
+  type RunDatasetAuthorOptions,
+} from './lib/dataset-author.js';
 
 export type CliDeps = {
   env: NodeJS.ProcessEnv;
@@ -371,6 +386,11 @@ export type CliDeps = {
   runDatasetEvidenceSearchImpl?: (
     options: RunDatasetEvidenceSearchOptions,
   ) => Promise<EvidenceSearchReport>;
+  runDatasetContractImpl?: (options: RunDatasetContractOptions) => Promise<DatasetContractReport>;
+  runDatasetImportLcaConvertImpl?: (
+    options: RunDatasetImportLcaConvertOptions,
+  ) => Promise<DatasetImportLcaReport> | DatasetImportLcaReport;
+  runDatasetAuthorImpl?: (options: RunDatasetAuthorOptions) => Promise<DatasetAuthorReport>;
 };
 
 export type CliResult = {
@@ -403,7 +423,7 @@ Implemented Commands:
   doctor     show environment diagnostics
   search     flow | process | lifecyclemodel
   process    get | list | identity-preflight | build-plan | scope-statistics | dedup-review | auto-build | resume-build | publish-build | complete-required-fields | save-draft | batch-build | refresh-references | verify-rows
-  dataset    validate | verify-remote | bilingual extract/apply/validate | evidence-search plan/run | references rewrite/refresh-remote
+  dataset    contract get | context-pack | import-lca convert | author | validate | verify-remote | bilingual extract/apply/validate | evidence-search plan/run | references rewrite/refresh-remote
   flow       get | list | identity-preflight | build-plan | fetch-rows | materialize-decisions | remediate | publish-version | publish-reviewed-data | build-alias-map | scan-process-flow-refs | plan-process-flow-repairs | apply-process-flow-repairs | regen-product | validate-processes
   lifecyclemodel auto-build | validate-build | publish-build | save-draft | graph | build-resulting-process | publish-resulting-process | orchestrate
   review     process | flow | lifecyclemodel
@@ -436,6 +456,10 @@ Examples:
   tiangong-lca process refresh-references --out-dir /abs/path/to/process-refresh --dry-run
   tiangong-lca process verify-rows --rows-file ./process-list-report.json --out-dir /abs/path/to/process-verify
   tiangong-lca dataset validate --input ./rows.jsonl --type auto --out-dir /abs/path/to/dataset-validate
+  tiangong-lca dataset contract get --type process --include schema,methodology,ruleset --out-dir ./contract
+  tiangong-lca dataset context-pack --type process --profile ai-import --out-dir ./context-pack
+  tiangong-lca dataset import-lca convert --input ./external-package --output-dir ./converted --from-format auto --target tidas
+  tiangong-lca dataset author --input ./source.pdf --target-types process,flow --out-dir ./authoring
   tiangong-lca dataset verify-remote --input ./rows.jsonl --out-dir /abs/path/to/dataset-remote-verify
   tiangong-lca dataset bilingual extract --input ./rows/processes.jsonl --type process --out-dir ./translation
   tiangong-lca dataset bilingual apply --input ./rows/processes.jsonl --translations ./translation/trans-reviewed.jsonl --out ./rows/processes.translated.jsonl
@@ -579,6 +603,10 @@ function renderDatasetHelp(): string {
   tiangong-lca dataset <subcommand> [options]
 
 Implemented Subcommands:
+  contract get        Write TIDAS schema / methodology / ruleset contract artifacts
+  context-pack        Write an AI-ready TIDAS contract context pack
+  import-lca convert  Convert supported external LCA packages through tidas-tools
+  author              Extract source evidence and prepare TIDAS context packs for AI authoring
   validate             Validate local flow / process / lifecyclemodel rows with the TIDAS SDK
   verify-remote        Verify dataset roots and TIDAS references against remote published versions
   bilingual extract    Extract bilingual translation units from local rows
@@ -589,6 +617,10 @@ Implemented Subcommands:
   references refresh-remote Refresh local TIDAS reference versions to latest reachable remote rows
 
 Examples:
+  tiangong-lca dataset contract get --type process --include schema,methodology,ruleset --out-dir ./contract --help
+  tiangong-lca dataset context-pack --type process --profile ai-import --out-dir ./context-pack --help
+  tiangong-lca dataset import-lca convert --input ./external-package --output-dir ./converted --from-format auto --target tidas --help
+  tiangong-lca dataset author --input ./source.pdf --target-types process,flow --out-dir ./authoring --help
   tiangong-lca dataset validate --input ./rows.jsonl --type auto --out-dir ./dataset-validate --help
   tiangong-lca dataset verify-remote --input ./rows.jsonl --out-dir ./dataset-remote-verify --help
   tiangong-lca dataset bilingual extract --input ./rows.jsonl --type process --out-dir ./translation --help
@@ -598,6 +630,105 @@ Examples:
   tiangong-lca dataset evidence-search run --input ./request.json --results ./search-results.json --out-dir ./evidence-search --help
   tiangong-lca dataset references rewrite --input ./rows.jsonl --from flow:<old-id>@<old-version> --to flow:<new-id>@<new-version> --out-dir ./dataset-rewrite --help
   tiangong-lca dataset references refresh-remote --input ./rows.jsonl --out ./rows.refreshed.jsonl --out-dir ./dataset-reference-refresh --help
+`.trim();
+}
+
+function renderDatasetContractHelp(): string {
+  return `Usage:
+  tiangong-lca dataset contract get --type <type> --out-dir <dir> [options]
+
+Options:
+  --type <type>       TIDAS target type: process, flow, source, contact, unitgroup, flowproperty, lifecyclemodel, lciamethod
+  --include <list>    Comma-separated or repeatable list: schema, methodology, ruleset (default: all)
+  --profile <name>    default | ai-import (default: default)
+  --out-dir <dir>     Artifact directory
+  --json              Print compact JSON
+  -h, --help
+
+Outputs written under --out-dir:
+  - outputs/contract-manifest.json
+  - outputs/schema.json when requested and available
+  - outputs/methodology.yaml when requested and available
+  - outputs/runtime-ruleset.json when requested and available
+  - outputs/contract-report.json
+`.trim();
+}
+
+function renderDatasetContextPackHelp(): string {
+  return `Usage:
+  tiangong-lca dataset context-pack --type <type> --out-dir <dir> [options]
+
+Options:
+  --type <type>       TIDAS target type for AI authoring or repair
+  --include <list>    Comma-separated or repeatable list: schema, methodology, ruleset (default: all)
+  --profile <name>    default | ai-import (default: ai-import)
+  --out-dir <dir>     Artifact directory
+  --json              Print compact JSON
+  -h, --help
+
+Outputs written under --out-dir:
+  - outputs/contract-manifest.json
+  - outputs/schema.json
+  - outputs/methodology.yaml when available
+  - outputs/runtime-ruleset.json when available
+  - outputs/ai-context.json
+  - outputs/ai-context.md
+  - outputs/contract-report.json
+`.trim();
+}
+
+function renderDatasetImportLcaHelp(): string {
+  return `Usage:
+  tiangong-lca dataset import-lca convert --input <path> --output-dir <dir> [options]
+
+Options:
+  --input <path>          Source file, directory, or package to import
+  --output-dir <dir>      Output directory for generated package and reports
+  --from-format <format>  auto, ecospold1, ecospold2, openlca-jsonld, openlca-process-xlsx, simapro-csv
+  --target <target>       tidas | ilcd | both (default: tidas)
+  --report <file>         Conversion report path (default: <output-dir>/conversion-report.json)
+  --mapping-dir <dir>     Optional custom mapping/reference data directory
+  --language <lang>       Default language for generated text (default: en)
+  --validation-jobs <n>   Parallel validation jobs passed to tidas-tools (default: 1)
+  --detect-only           Only detect the input format and write the report
+  --fail-on-warning       Return non-zero when converter warnings are present
+  --python <bin>          Python executable (default: python3)
+  --tidas-tools-dir <dir> Explicit tidas-tools checkout path
+  --json                  Print compact JSON
+  -h, --help
+
+Outputs written under --output-dir:
+  - conversion-report.json
+  - tidas/ when target includes TIDAS and not detect-only
+  - ilcd/ when target includes ILCD and not detect-only
+  - mapping.csv when not detect-only
+  - outputs/import-lca-report.json
+`.trim();
+}
+
+function renderDatasetAuthorHelp(): string {
+  return `Usage:
+  tiangong-lca dataset author --input <file> --target-types <types> --out-dir <dir> [options]
+
+Options:
+  --input <file>          PDF, Excel, image, markdown, or source document file
+  --target-types <list>   Comma-separated or repeatable TIDAS types, for example process,flow,source
+  --out-dir <dir>         Artifact directory
+  --prompt <text>         Optional extraction prompt passed to the unstructured parser
+  --provider <name>       Optional unstructured parser provider override
+  --model <name>          Optional unstructured parser model override
+  --timeout-ms <n>        Parser timeout in milliseconds (default: 120000)
+  --json                  Print compact JSON
+  -h, --help
+
+Outputs written under --out-dir:
+  - outputs/source-extract.json
+  - context/<type>/outputs/contract-manifest.json
+  - context/<type>/outputs/ai-context.json
+  - outputs/authoring-report.json
+
+Environment:
+  TIANGONG_LCA_UNSTRUCTURED_API_BASE_URL and TIANGONG_LCA_UNSTRUCTURED_API_KEY
 `.trim();
 }
 
@@ -2125,6 +2256,182 @@ function parseDatasetValidateFlags(args: string[]): {
     inputPath: typeof values.input === 'string' ? values.input : '',
     type: typeof values.type === 'string' ? values.type : undefined,
     outDir: typeof values['out-dir'] === 'string' ? values['out-dir'] : null,
+  };
+}
+
+function parseDatasetContractFlags(args: string[]): {
+  help: boolean;
+  json: boolean;
+  type: string | undefined;
+  include: string[];
+  profile: string | undefined;
+  outDir: string | null;
+} {
+  let values: ReturnType<typeof parseArgs>['values'];
+  try {
+    ({ values } = parseArgs({
+      args,
+      allowPositionals: false,
+      strict: true,
+      options: {
+        help: { type: 'boolean', short: 'h' },
+        json: { type: 'boolean' },
+        type: { type: 'string' },
+        include: { type: 'string', multiple: true },
+        profile: { type: 'string' },
+        'out-dir': { type: 'string' },
+      },
+    }));
+  } catch (error) {
+    throw new CliError(String(error), {
+      code: 'INVALID_ARGS',
+      exitCode: 2,
+    });
+  }
+
+  return {
+    help: Boolean(values.help),
+    json: Boolean(values.json),
+    type: typeof values.type === 'string' ? values.type : undefined,
+    include: Array.isArray(values.include)
+      ? values.include.filter((value): value is string => typeof value === 'string')
+      : [],
+    profile: typeof values.profile === 'string' ? values.profile : undefined,
+    outDir: typeof values['out-dir'] === 'string' ? values['out-dir'] : null,
+  };
+}
+
+function parseDatasetImportLcaConvertFlags(args: string[]): {
+  help: boolean;
+  json: boolean;
+  inputPath: string;
+  outputDir: string;
+  fromFormat: string | undefined;
+  target: string | undefined;
+  reportPath: string | undefined;
+  mappingDir: string | undefined;
+  language: string | undefined;
+  validationJobs: number | undefined;
+  detectOnly: boolean;
+  failOnWarning: boolean;
+  pythonBin: string | undefined;
+  tidasToolsDir: string | undefined;
+} {
+  let values: ReturnType<typeof parseArgs>['values'];
+  try {
+    ({ values } = parseArgs({
+      args,
+      allowPositionals: false,
+      strict: true,
+      options: {
+        help: { type: 'boolean', short: 'h' },
+        json: { type: 'boolean' },
+        input: { type: 'string' },
+        'output-dir': { type: 'string' },
+        'from-format': { type: 'string' },
+        target: { type: 'string' },
+        report: { type: 'string' },
+        'mapping-dir': { type: 'string' },
+        language: { type: 'string' },
+        'validation-jobs': { type: 'string' },
+        'detect-only': { type: 'boolean' },
+        'fail-on-warning': { type: 'boolean' },
+        python: { type: 'string' },
+        'tidas-tools-dir': { type: 'string' },
+      },
+    }));
+  } catch (error) {
+    throw new CliError(String(error), {
+      code: 'INVALID_ARGS',
+      exitCode: 2,
+    });
+  }
+
+  const validationJobs =
+    typeof values['validation-jobs'] === 'string' ? Number(values['validation-jobs']) : undefined;
+  if (validationJobs !== undefined && (!Number.isInteger(validationJobs) || validationJobs < 0)) {
+    throw new CliError('--validation-jobs must be a non-negative integer.', {
+      code: 'DATASET_IMPORT_LCA_VALIDATION_JOBS_INVALID',
+      exitCode: 2,
+    });
+  }
+
+  return {
+    help: Boolean(values.help),
+    json: Boolean(values.json),
+    inputPath: typeof values.input === 'string' ? values.input : '',
+    outputDir: typeof values['output-dir'] === 'string' ? values['output-dir'] : '',
+    fromFormat: typeof values['from-format'] === 'string' ? values['from-format'] : undefined,
+    target: typeof values.target === 'string' ? values.target : undefined,
+    reportPath: typeof values.report === 'string' ? values.report : undefined,
+    mappingDir: typeof values['mapping-dir'] === 'string' ? values['mapping-dir'] : undefined,
+    language: typeof values.language === 'string' ? values.language : undefined,
+    validationJobs,
+    detectOnly: Boolean(values['detect-only']),
+    failOnWarning: Boolean(values['fail-on-warning']),
+    pythonBin: typeof values.python === 'string' ? values.python : undefined,
+    tidasToolsDir:
+      typeof values['tidas-tools-dir'] === 'string' ? values['tidas-tools-dir'] : undefined,
+  };
+}
+
+function parseDatasetAuthorFlags(args: string[]): {
+  help: boolean;
+  json: boolean;
+  inputPath: string;
+  targetTypes: string[];
+  outDir: string | null;
+  prompt: string | undefined;
+  provider: string | undefined;
+  model: string | undefined;
+  timeoutMs: number | undefined;
+} {
+  let values: ReturnType<typeof parseArgs>['values'];
+  try {
+    ({ values } = parseArgs({
+      args,
+      allowPositionals: false,
+      strict: true,
+      options: {
+        help: { type: 'boolean', short: 'h' },
+        json: { type: 'boolean' },
+        input: { type: 'string' },
+        'target-types': { type: 'string', multiple: true },
+        'out-dir': { type: 'string' },
+        prompt: { type: 'string' },
+        provider: { type: 'string' },
+        model: { type: 'string' },
+        'timeout-ms': { type: 'string' },
+      },
+    }));
+  } catch (error) {
+    throw new CliError(String(error), {
+      code: 'INVALID_ARGS',
+      exitCode: 2,
+    });
+  }
+
+  const timeoutMs =
+    typeof values['timeout-ms'] === 'string' ? Number(values['timeout-ms']) : undefined;
+  if (timeoutMs !== undefined && (!Number.isInteger(timeoutMs) || timeoutMs <= 0)) {
+    throw new CliError('--timeout-ms must be a positive integer.', {
+      code: 'DATASET_AUTHOR_TIMEOUT_INVALID',
+      exitCode: 2,
+    });
+  }
+
+  return {
+    help: Boolean(values.help),
+    json: Boolean(values.json),
+    inputPath: typeof values.input === 'string' ? values.input : '',
+    targetTypes: Array.isArray(values['target-types'])
+      ? values['target-types'].filter((value): value is string => typeof value === 'string')
+      : [],
+    outDir: typeof values['out-dir'] === 'string' ? values['out-dir'] : null,
+    prompt: typeof values.prompt === 'string' ? values.prompt : undefined,
+    provider: typeof values.provider === 'string' ? values.provider : undefined,
+    model: typeof values.model === 'string' ? values.model : undefined,
+    timeoutMs,
   };
 }
 
@@ -4710,6 +5017,10 @@ export async function executeCli(argv: string[], deps: CliDeps): Promise<CliResu
     const datasetBilingualValidateImpl =
       deps.runDatasetBilingualValidateImpl ?? runDatasetBilingualValidate;
     const datasetEvidenceSearchImpl = deps.runDatasetEvidenceSearchImpl ?? runDatasetEvidenceSearch;
+    const datasetContractImpl = deps.runDatasetContractImpl ?? runDatasetContract;
+    const datasetImportLcaConvertImpl =
+      deps.runDatasetImportLcaConvertImpl ?? runDatasetImportLcaConvert;
+    const datasetAuthorImpl = deps.runDatasetAuthorImpl ?? runDatasetAuthor;
 
     if (flags.version) {
       return { exitCode: 0, stdout: `${loadCliPackageVersion(import.meta.url)}\n`, stderr: '' };
@@ -4761,6 +5072,114 @@ export async function executeCli(argv: string[], deps: CliDeps): Promise<CliResu
 
     if (command === 'dataset' && !subcommand) {
       return { exitCode: 0, stdout: `${renderDatasetHelp()}\n`, stderr: '' };
+    }
+
+    if (command === 'dataset' && subcommand === 'contract') {
+      const action = commandArgs[0] ?? '';
+      if (!action || action === '--help' || action === '-h') {
+        return { exitCode: 0, stdout: `${renderDatasetContractHelp()}\n`, stderr: '' };
+      }
+      if (action !== 'get') {
+        throw new CliError("dataset contract action must be 'get'.", {
+          code: 'DATASET_CONTRACT_ACTION_INVALID',
+          exitCode: 2,
+        });
+      }
+      const datasetFlags = parseDatasetContractFlags(commandArgs.slice(1));
+      if (datasetFlags.help) {
+        return { exitCode: 0, stdout: `${renderDatasetContractHelp()}\n`, stderr: '' };
+      }
+      const report = await datasetContractImpl({
+        type: datasetFlags.type,
+        include: datasetFlags.include,
+        profile: datasetFlags.profile,
+        outDir: datasetFlags.outDir,
+        mode: 'contract',
+      });
+      return {
+        exitCode: 0,
+        stdout: stringifyJson(report, datasetFlags.json),
+        stderr: '',
+      };
+    }
+
+    if (command === 'dataset' && subcommand === 'context-pack') {
+      const datasetFlags = parseDatasetContractFlags(commandArgs);
+      if (datasetFlags.help) {
+        return { exitCode: 0, stdout: `${renderDatasetContextPackHelp()}\n`, stderr: '' };
+      }
+      const report = await datasetContractImpl({
+        type: datasetFlags.type,
+        include: datasetFlags.include,
+        profile: datasetFlags.profile,
+        outDir: datasetFlags.outDir,
+        mode: 'context-pack',
+      });
+      return {
+        exitCode: 0,
+        stdout: stringifyJson(report, datasetFlags.json),
+        stderr: '',
+      };
+    }
+
+    if (command === 'dataset' && subcommand === 'import-lca') {
+      const action = commandArgs[0] ?? '';
+      if (!action || action === '--help' || action === '-h') {
+        return { exitCode: 0, stdout: `${renderDatasetImportLcaHelp()}\n`, stderr: '' };
+      }
+      if (action !== 'convert') {
+        throw new CliError("dataset import-lca action must be 'convert'.", {
+          code: 'DATASET_IMPORT_LCA_ACTION_INVALID',
+          exitCode: 2,
+        });
+      }
+      const datasetFlags = parseDatasetImportLcaConvertFlags(commandArgs.slice(1));
+      if (datasetFlags.help) {
+        return { exitCode: 0, stdout: `${renderDatasetImportLcaHelp()}\n`, stderr: '' };
+      }
+      const report = await datasetImportLcaConvertImpl({
+        inputPath: datasetFlags.inputPath,
+        outputDir: datasetFlags.outputDir,
+        fromFormat: datasetFlags.fromFormat,
+        target: datasetFlags.target,
+        reportPath: datasetFlags.reportPath,
+        mappingDir: datasetFlags.mappingDir,
+        language: datasetFlags.language,
+        validationJobs: datasetFlags.validationJobs,
+        detectOnly: datasetFlags.detectOnly,
+        failOnWarning: datasetFlags.failOnWarning,
+        pythonBin: datasetFlags.pythonBin,
+        tidasToolsDir: datasetFlags.tidasToolsDir,
+        env: deps.env,
+      });
+      return {
+        exitCode: report.status === 'completed' ? 0 : 1,
+        stdout: stringifyJson(report, datasetFlags.json),
+        stderr: '',
+      };
+    }
+
+    if (command === 'dataset' && subcommand === 'author') {
+      const datasetFlags = parseDatasetAuthorFlags(commandArgs);
+      if (datasetFlags.help) {
+        return { exitCode: 0, stdout: `${renderDatasetAuthorHelp()}\n`, stderr: '' };
+      }
+      const report = await datasetAuthorImpl({
+        inputPath: datasetFlags.inputPath,
+        targetTypes: datasetFlags.targetTypes,
+        outDir: datasetFlags.outDir,
+        prompt: datasetFlags.prompt,
+        provider: datasetFlags.provider,
+        model: datasetFlags.model,
+        timeoutMs: datasetFlags.timeoutMs,
+        env: deps.env,
+        fetchImpl: deps.fetchImpl,
+      });
+      return {
+        exitCode: 0,
+        stdout: stringifyJson(report, datasetFlags.json),
+        stderr: '',
+      };
     }
 
     if (command === 'dataset' && subcommand === 'validate') {
