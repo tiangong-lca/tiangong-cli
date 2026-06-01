@@ -18,8 +18,8 @@ checkPaths:
   - src/**
   - scripts/**
   - .github/workflows/**
-lastReviewedAt: 2026-06-01
-lastReviewedCommit: 8e1009da9b30369a0afe0e77fd2d2cd82bdf752e
+lastReviewedAt: 2026-06-02
+lastReviewedCommit: 56757053fca9dc5f4c8120225ee35e2b4cc995ef
 related:
   - AGENTS.md
   - .docpact/config.yaml
