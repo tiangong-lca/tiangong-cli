@@ -413,6 +413,24 @@ test('process required field issue collector detects missing and invalid annual 
         modellingAndValidation: {
           ...validRequiredStructures,
           dataSourcesTreatmentAndRepresentativeness: {
+            annualSupplyOrProductionVolume: [
+              {
+                '@xml:lang': 'en',
+                '#text': '0 kg/year; source production volume unavailable',
+              },
+            ],
+          },
+        },
+      },
+    }).map((issue) => issue.code),
+    ['annual_supply_or_production_volume_missing'],
+  );
+  assert.deepEqual(
+    collectProcessRequiredFieldIssues({
+      processDataSet: {
+        modellingAndValidation: {
+          ...validRequiredStructures,
+          dataSourcesTreatmentAndRepresentativeness: {
             annualSupplyOrProductionVolume: [{ '@xml:lang': 'en', '#text': 'not quantified' }],
           },
         },

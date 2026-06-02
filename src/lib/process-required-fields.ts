@@ -18,6 +18,8 @@ const ANNUAL_SUPPLY_ROOT_FIELD =
 const NUMERIC_TEXT_WITH_SUFFIX_PATTERN = /^[+-]?(\d+(\.\d*)?|\.\d+)([Ee][+-]?\d+)?\s+\S.*$/u;
 const ANNUAL_PERIOD_PATTERN =
   /(?:\/\s*(?:year|yr|a)\b|\bper\s+(?:year|annum)\b|\/\s*年|每年|年度|年供应|年产)/iu;
+const ANNUAL_UNAVAILABLE_PATTERN =
+  /\b(?:source\s+)?(?:production\s+)?volume\s+(?:unavailable|unknown|not\s+available)\b/iu;
 const CJK_TEXT_PATTERN = /[\p{Script=Han}]/u;
 const NET_CALORIFIC_VALUE_ID = '93a60a56-a3c8-11da-a746-0800200c9a66';
 const DEFAULT_COMPLIANCE_SYSTEM = {
@@ -174,7 +176,11 @@ function isValidAnnualSupplyVolume(value: unknown): boolean {
     items.length > 0 &&
     items.every((item) => {
       const text = item['#text'].trim();
-      return NUMERIC_TEXT_WITH_SUFFIX_PATTERN.test(text) && ANNUAL_PERIOD_PATTERN.test(text);
+      return (
+        !ANNUAL_UNAVAILABLE_PATTERN.test(text) &&
+        NUMERIC_TEXT_WITH_SUFFIX_PATTERN.test(text) &&
+        ANNUAL_PERIOD_PATTERN.test(text)
+      );
     })
   );
 }
@@ -245,6 +251,18 @@ export function collectProcessRequiredFieldIssues(
 
   const items = annualSupplyItems(annualSupply);
   if (items.length === 0) {
+    return [
+      ...issues,
+      {
+        code: 'annual_supply_or_production_volume_missing',
+        message:
+          'Process payload must include annualSupplyOrProductionVolume as numeric text with a unit or context suffix.',
+        path: ANNUAL_SUPPLY_FIELD,
+      },
+    ];
+  }
+
+  if (items.some((item) => ANNUAL_UNAVAILABLE_PATTERN.test(item['#text'].trim()))) {
     return [
       ...issues,
       {
