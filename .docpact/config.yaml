@@ -1,5 +1,6 @@
 version: 1
 layout: repo
+# Review note, 2026-06-02: release 0.0.11 prep keeps docpact ownership and coverage rules unchanged.
 lastReviewedAt: "2026-06-02"
 lastReviewedCommit: "3a5af4677994de587b31bc80ebac2f16f9d65442"
 

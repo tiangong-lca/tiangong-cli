@@ -49,6 +49,8 @@ related:
 
 `tiangong-lca-cli` owns the checked-in public `tiangong-lca` CLI contract: command nouns and verbs, launcher behavior, local artifact workflow, remote session/auth handling, and the repo-level release gate. Start here when the task may change what the CLI does or how it is validated.
 
+Review note, 2026-06-02: release 0.0.11 is a package metadata release for the merged dataset curation queue command; repo ownership boundaries remain unchanged.
+
 ## Bootstrap Order
 
 Load docs in this order:

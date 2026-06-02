@@ -40,6 +40,8 @@ related:
 
 This repo is organized around one stable launcher plus a library-style `src/lib/**` tree that implements command families and shared helpers.
 
+Review note, 2026-06-02: release 0.0.11 does not change CLI architecture; it publishes the existing dataset curation queue command family through the normal package release path.
+
 ## Stable Path Map
 
 | Path group | Role |

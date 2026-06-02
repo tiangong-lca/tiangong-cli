@@ -62,6 +62,8 @@ scripts/docpact validate-config --root . --strict
 scripts/docpact lint --root . --base <base> --head <head> --mode enforce
 ```
 
+Review note, 2026-06-02: release 0.0.11 validation uses the unchanged `npm run prepush:gate`, docpact, and npm pack dry-run flow.
+
 ## Validation Matrix
 
 | Change type | Minimum local proof | Additional proof when risk is higher | Notes |

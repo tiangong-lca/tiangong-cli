@@ -66,6 +66,8 @@ GitHub Actions must be enabled for the repository.
 
 Review note, 2026-06-02: adding the dataset curation queue command does not change Trusted Publishing, release token, tag, or workflow setup.
 
+Release 0.0.11 note, 2026-06-02: package version bump only; no repository secret, Trusted Publisher, tag, or workflow setup change is required.
+
 The publish workflow file is fixed at:
 
 - `.github/workflows/publish.yml`
