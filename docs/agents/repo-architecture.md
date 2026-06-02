@@ -124,12 +124,13 @@ These modules share one contract:
 Dataset-local governance now uses the same CLI-native command layer:
 
 - `src/lib/dataset-validate.ts`
+- `src/lib/dataset-curation-queue.ts`
 - `src/lib/dataset-references-rewrite.ts`
 - `src/lib/dataset-local.ts`
 - `src/lib/lifecyclemodel-save-draft-run.ts`
 - `src/lib/lifecyclemodel-graph.ts`
 
-These modules keep validation, reference rewrites, save-draft preparation, graph extraction, and local artifact reports inside the CLI instead of routing through skills or MCP transports.
+These modules keep validation, entity-level curation queue state, reference rewrites, save-draft preparation, graph extraction, and local artifact reports inside the CLI instead of routing through skills or MCP transports.
 
 ### Artifact and filesystem behavior
 

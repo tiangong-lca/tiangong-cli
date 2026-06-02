@@ -138,6 +138,7 @@ tiangong-lca
 | `tiangong-lca process publish-build` | 本地 `process_from_flow` publish handoff；先用 `ProcessSchema` 写出 `reports/process-publish-schema-gate.json`，通过后再产出 publish bundle/request/intent 并更新 state/invocation/handoff |
 | `tiangong-lca process batch-build` | 本地 `process_from_flow` batch manifest 编排、批量调用 auto-build、batch report 输出 |
 | `tiangong-lca dataset validate` | 本地 flow / process / lifecyclemodel rows 的统一 TIDAS SDK validation 与稳定报告输出 |
+| `tiangong-lca dataset curation-queue build` | 本地 Foundry external dataset import 的 entity-level curation queue 构建入口；输出 manifest、tasks、locks、blockers、per-entity input/closure/run-plan artifacts，不执行 AI、不写远端 |
 | `tiangong-lca dataset references rewrite` | 本地 process / lifecyclemodel rows 的 flow reference rewrite、patch evidence 输出，并可选走 state-aware save-draft commit |
 | `tiangong-lca lifecyclemodel auto-build` | 本地 lifecyclemodel local-run intake、graph 推断、reference process 选择、`json_ordered` artifact 输出 |
 | `tiangong-lca lifecyclemodel validate-build` | 本地 lifecyclemodel build run 校验重跑、per-model 校验报告与 aggregate report 输出 |
@@ -197,6 +198,7 @@ tiangong-lca
 `tiangong-lca dataset ...` 现在已经开始承接跨 dataset 的本地治理切片，其中：
 
 - `tiangong-lca dataset validate` 已可执行
+- `tiangong-lca dataset curation-queue build` 已可执行
 - `tiangong-lca dataset references rewrite` 已可执行
 
 注意：
@@ -213,6 +215,7 @@ tiangong-lca
 - 已实现的 `process batch-build` 继续走本地优先、artifact-first 路径，并把批量 item 编排、聚合 report、显式 batch root 下的 item run_dir 分配统一收口到 CLI
 - `process batch-build` 当前只负责本地 batch orchestration，不直接串接 resume / publish 或远端执行器
 - 已实现的 `dataset validate` 把 flow / process / lifecyclemodel 本地 rows 的 TIDAS SDK 校验收口到一个 dataset 级入口，并输出 type summary、validation report 与 failures jsonl
+- 已实现的 `dataset curation-queue build` 把 Foundry external dataset import 的 support / flow / process rows 收口成 entity-level queue artifact contract：`curation-queue-manifest.json`、`curation-queue-tasks.jsonl`、`curation-queue-locks.json`、`curation-queue-blockers.jsonl`，以及每个 entity 的 `input.jsonl`、`closure.json`、`entity-run-plan.json`。CLI 只负责稳定状态机、依赖闭包、锁和 blocker；AI authoring 仍必须通过 skill/Codex 输出 structured patch 或 build plan，并在 deterministic apply、schema/QA、prewrite verify、readback 后才允许进入远端写入。
 - 已实现的 `dataset references rewrite` 把 process / lifecyclemodel rows 中的 flow reference rewrite 收口到一个 deterministic 本地入口，默认只写 patch artifacts，只有显式 `--commit` 时才调用 state-aware save-draft 写入路径
 - 已实现的 `lifecyclemodel auto-build` 走本地只读、artifact-first 路径，输入固定为 local run manifest，不依赖 Python、MCP、KB、LLM 或远端 CRUD
 - `lifecyclemodel auto-build` 当前负责 graph 推断、reference process 选择、`@multiplicationFactor` 计算与 `json_ordered` lifecyclemodel 产物输出，并保留 `run-plan.json`、`resolved-manifest.json`、`selection/selection-brief.md`、`discovery/reference-model-summary.json`、`connections.json`、`process-catalog.json` 等 CLI 契约

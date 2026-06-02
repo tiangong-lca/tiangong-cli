@@ -63,6 +63,7 @@ related:
 - `tiangong-lca process publish-build`
 - `tiangong-lca process batch-build`
 - `tiangong-lca dataset validate`
+- `tiangong-lca dataset curation-queue build`
 - `tiangong-lca dataset references rewrite`
 - `tiangong-lca lifecyclemodel auto-build`
 - `tiangong-lca lifecyclemodel validate-build`
@@ -194,6 +195,7 @@ TIANGONG_LCA_UNSTRUCTURED_RETURN_TXT=true
 | `process identity-preflight` | 默认无；若启用 `--remote-candidates` 或输入 `remote_candidate_search.enabled=true`，则需要 `TIANGONG_LCA_API_BASE_URL`、`TIANGONG_LCA_API_KEY`、`TIANGONG_LCA_SUPABASE_PUBLISHABLE_KEY`（`TIANGONG_LCA_REGION` 可选） |
 | `process auto-build \| resume-build \| publish-build \| batch-build` | 无 |
 | `dataset validate` | 无 |
+| `dataset curation-queue build` | 无 |
 | `dataset references rewrite` | 本地 rewrite 默认无；若 `--commit` 写入 patched rows，则需要 `TIANGONG_LCA_API_BASE_URL`、`TIANGONG_LCA_API_KEY`、`TIANGONG_LCA_SUPABASE_PUBLISHABLE_KEY` |
 | `lifecyclemodel auto-build \| validate-build \| publish-build \| graph \| orchestrate` | 无 |
 | `lifecyclemodel save-draft` | 本地 dry-run 默认无；若 `--commit` 写入 lifecyclemodel draft，则需要 `TIANGONG_LCA_API_BASE_URL`、`TIANGONG_LCA_API_KEY`、`TIANGONG_LCA_SUPABASE_PUBLISHABLE_KEY` |
@@ -240,6 +242,7 @@ npm exec tiangong-lca -- process resume-build --run-dir /abs/path/to/process-run
 npm exec tiangong-lca -- process publish-build --run-dir /abs/path/to/process-run --json
 npm exec tiangong-lca -- process batch-build --input ./examples/process-batch-build.request.json --out-dir /abs/path/to/process-batch --json
 npm exec tiangong-lca -- dataset validate --input ./rows.jsonl --type auto --out-dir ./dataset-validate --json
+npm exec tiangong-lca -- dataset curation-queue build --processes ./rows/processes.jsonl --flows ./rows/flows.jsonl --support ./rows/sources.jsonl --out-dir ./curation-queue --json
 npm exec tiangong-lca -- dataset references rewrite --input ./rows.jsonl --from flow:<old-id>@<old-version> --to flow:<new-id>@<new-version> --out-dir ./dataset-rewrite --json
 npm exec tiangong-lca -- lifecyclemodel auto-build --input ./examples/lifecyclemodel-auto-build.request.json --out-dir /abs/path/to/lifecyclemodel-run --json
 npm exec tiangong-lca -- lifecyclemodel validate-build --run-dir /abs/path/to/lifecyclemodel-run --json

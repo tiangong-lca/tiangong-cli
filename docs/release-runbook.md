@@ -53,6 +53,8 @@ Before starting a release:
 - confirm npm has not already published the target version
 - confirm any command-surface feature PRs that will be included in the release have passed the local pre-push gate, including `npm run prepush:gate` and docpact, before preparing the version bump
 
+Review note, 2026-06-02: dataset curation queue command additions follow the existing feature-then-release flow; release prep still remains a separate package metadata bump.
+
 Useful commands:
 
 ```bash

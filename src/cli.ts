@@ -194,6 +194,11 @@ import {
   type RunDatasetValidateOptions,
 } from './lib/dataset-validate.js';
 import {
+  runDatasetCurationQueueBuild,
+  type DatasetCurationQueueBuildReport,
+  type RunDatasetCurationQueueBuildOptions,
+} from './lib/dataset-curation-queue.js';
+import {
   runDatasetReferencesRewrite,
   type DatasetReferencesRewriteReport,
   type RunDatasetReferencesRewriteOptions,
@@ -357,6 +362,9 @@ export type CliDeps = {
     options: RunFlowBuildPlanMaterializeOptions,
   ) => Promise<FlowBuildPlanGateReport>;
   runDatasetValidateImpl?: (options: RunDatasetValidateOptions) => Promise<DatasetValidateReport>;
+  runDatasetCurationQueueBuildImpl?: (
+    options: RunDatasetCurationQueueBuildOptions,
+  ) => Promise<DatasetCurationQueueBuildReport>;
   runDatasetReferencesRewriteImpl?: (
     options: RunDatasetReferencesRewriteOptions,
   ) => Promise<DatasetReferencesRewriteReport>;
@@ -415,7 +423,7 @@ Implemented Commands:
   doctor     show environment diagnostics
   search     flow | process | lifecyclemodel
   process    get | list | identity-preflight | build-plan | scope-statistics | dedup-review | auto-build | resume-build | publish-build | complete-required-fields | save-draft | batch-build | refresh-references | verify-rows
-  dataset    contract get | context-pack | import-lca convert | author | validate | verify-remote | bilingual extract/apply/validate | evidence-search plan/run | references rewrite/refresh-remote
+  dataset    contract get | context-pack | curation-queue build | import-lca convert | author | validate | verify-remote | bilingual extract/apply/validate | evidence-search plan/run | references rewrite/refresh-remote
   flow       get | list | identity-preflight | build-plan | fetch-rows | materialize-decisions | remediate | publish-version | publish-reviewed-data | build-alias-map | scan-process-flow-refs | plan-process-flow-repairs | apply-process-flow-repairs | regen-product | validate-processes
   lifecyclemodel auto-build | validate-build | publish-build | save-draft | graph | build-resulting-process | publish-resulting-process | orchestrate
   qa         process | flow | lifecyclemodel
@@ -450,6 +458,7 @@ Examples:
   tiangong-lca dataset validate --input ./rows.jsonl --type auto --out-dir /abs/path/to/dataset-validate
   tiangong-lca dataset contract get --type process --include schema,methodology,ruleset --out-dir ./contract
   tiangong-lca dataset context-pack --type process --profile ai-import --out-dir ./context-pack
+  tiangong-lca dataset curation-queue build --processes ./processes.jsonl --flows ./flows.jsonl --out-dir ./curation-queue
   tiangong-lca dataset import-lca convert --input ./external-package --output-dir ./converted --from-format auto --target tidas
   tiangong-lca dataset author --input ./source.pdf --target-types process,flow --out-dir ./authoring
   tiangong-lca dataset verify-remote --input ./rows.jsonl --out-dir /abs/path/to/dataset-remote-verify
@@ -597,6 +606,7 @@ function renderDatasetHelp(): string {
 Implemented Subcommands:
   contract get        Write TIDAS schema / methodology / ruleset contract artifacts
   context-pack        Write an AI-ready TIDAS contract context pack
+  curation-queue build Build entity-level AI curation queue artifacts for Foundry imports
   import-lca convert  Convert supported external LCA packages through tidas-tools
   author              Extract source evidence and prepare TIDAS context packs for AI authoring
   validate             Validate local flow / process / lifecyclemodel rows with the TIDAS SDK
@@ -611,6 +621,7 @@ Implemented Subcommands:
 Examples:
   tiangong-lca dataset contract get --type process --include schema,methodology,ruleset --out-dir ./contract --help
   tiangong-lca dataset context-pack --type process --profile ai-import --out-dir ./context-pack --help
+  tiangong-lca dataset curation-queue build --processes ./rows/processes.jsonl --flows ./rows/flows.jsonl --support ./rows/sources.jsonl --out-dir ./curation-queue --help
   tiangong-lca dataset import-lca convert --input ./external-package --output-dir ./converted --from-format auto --target tidas --help
   tiangong-lca dataset author --input ./source.pdf --target-types process,flow --out-dir ./authoring --help
   tiangong-lca dataset validate --input ./rows.jsonl --type auto --out-dir ./dataset-validate --help
@@ -666,6 +677,36 @@ Outputs written under --out-dir:
   - outputs/ai-context.json
   - outputs/ai-context.md
   - outputs/contract-report.json
+`.trim();
+}
+
+function renderDatasetCurationQueueHelp(): string {
+  return `Usage:
+  tiangong-lca dataset curation-queue build --processes <file> --out-dir <dir> [options]
+
+Options:
+  --processes <file>         Process rows JSON/JSONL
+  --flows <file>             Local flow rows JSON/JSONL used by process references
+  --support <file>           Repeatable support rows JSON/JSONL, for source/contact/unitgroup/flowproperty rows
+  --external-flow-ref <file> Repeatable external flow ref rows JSON/JSONL treated as already resolvable
+  --exclude-process-id <id>  Repeatable process id to skip
+  --process-limit <n>        Limit process tasks for focused validation or retries
+  --out-dir <dir>            Queue artifact directory
+  --json                     Print compact JSON
+  -h, --help
+
+Outputs written under --out-dir:
+  - outputs/curation-queue-manifest.json
+  - outputs/curation-queue-tasks.jsonl
+  - outputs/curation-queue-locks.json
+  - outputs/curation-queue-blockers.jsonl
+  - entities/<supports|flows|processes>/<id>__<version>/input.jsonl
+  - entities/<supports|flows|processes>/<id>__<version>/closure.json
+  - entities/<supports|flows|processes>/<id>__<version>/entity-run-plan.json
+
+Contract:
+  This command builds the queue only. AI authoring must write structured patches or build plans,
+  and remote writes remain blocked until deterministic apply, schema/QA, prewrite verify, and readback gates pass.
 `.trim();
 }
 
@@ -2289,6 +2330,66 @@ function parseDatasetContractFlags(args: string[]): {
       : [],
     profile: typeof values.profile === 'string' ? values.profile : undefined,
     outDir: typeof values['out-dir'] === 'string' ? values['out-dir'] : null,
+  };
+}
+
+function parseDatasetCurationQueueBuildFlags(args: string[]): {
+  help: boolean;
+  json: boolean;
+  processesPath: string;
+  flowsPath: string | undefined;
+  supportPaths: string[];
+  externalFlowRefPaths: string[];
+  outDir: string;
+  excludeProcessIds: string[];
+  processLimit: number | undefined;
+} {
+  let values: ReturnType<typeof parseArgs>['values'];
+  try {
+    ({ values } = parseArgs({
+      args,
+      allowPositionals: false,
+      strict: true,
+      options: {
+        help: { type: 'boolean', short: 'h' },
+        json: { type: 'boolean' },
+        processes: { type: 'string' },
+        flows: { type: 'string' },
+        support: { type: 'string', multiple: true },
+        'external-flow-ref': { type: 'string', multiple: true },
+        'exclude-process-id': { type: 'string', multiple: true },
+        'process-limit': { type: 'string' },
+        'out-dir': { type: 'string' },
+      },
+    }));
+  } catch (error) {
+    throw new CliError(String(error), {
+      code: 'INVALID_ARGS',
+      exitCode: 2,
+    });
+  }
+
+  const processLimit =
+    typeof values['process-limit'] === 'string'
+      ? Number.parseInt(values['process-limit'], 10)
+      : undefined;
+
+  return {
+    help: Boolean(values.help),
+    json: Boolean(values.json),
+    processesPath: typeof values.processes === 'string' ? values.processes : '',
+    flowsPath: typeof values.flows === 'string' ? values.flows : undefined,
+    supportPaths: Array.isArray(values.support)
+      ? values.support.filter((value): value is string => typeof value === 'string')
+      : [],
+    externalFlowRefPaths: Array.isArray(values['external-flow-ref'])
+      ? values['external-flow-ref'].filter((value): value is string => typeof value === 'string')
+      : [],
+    outDir: typeof values['out-dir'] === 'string' ? values['out-dir'] : '',
+    excludeProcessIds: Array.isArray(values['exclude-process-id'])
+      ? values['exclude-process-id'].filter((value): value is string => typeof value === 'string')
+      : [],
+    processLimit,
   };
 }
 
@@ -5008,6 +5109,8 @@ export async function executeCli(argv: string[], deps: CliDeps): Promise<CliResu
     const flowBuildPlanMaterializeImpl =
       deps.runFlowBuildPlanMaterializeImpl ?? runFlowBuildPlanMaterialize;
     const datasetValidateImpl = deps.runDatasetValidateImpl ?? runDatasetValidate;
+    const datasetCurationQueueBuildImpl =
+      deps.runDatasetCurationQueueBuildImpl ?? runDatasetCurationQueueBuild;
     const datasetReferencesRewriteImpl =
       deps.runDatasetReferencesRewriteImpl ?? runDatasetReferencesRewrite;
     const datasetRemoteRefreshImpl = deps.runDatasetRemoteRefreshImpl ?? runDatasetRemoteRefresh;
@@ -5118,6 +5221,37 @@ export async function executeCli(argv: string[], deps: CliDeps): Promise<CliResu
       });
       return {
         exitCode: 0,
+        stdout: stringifyJson(report, datasetFlags.json),
+        stderr: '',
+      };
+    }
+
+    if (command === 'dataset' && subcommand === 'curation-queue') {
+      const action = commandArgs[0] ?? '';
+      if (!action || action === '--help' || action === '-h') {
+        return { exitCode: 0, stdout: `${renderDatasetCurationQueueHelp()}\n`, stderr: '' };
+      }
+      if (action !== 'build') {
+        throw new CliError("dataset curation-queue action must be 'build'.", {
+          code: 'DATASET_CURATION_QUEUE_ACTION_INVALID',
+          exitCode: 2,
+        });
+      }
+      const datasetFlags = parseDatasetCurationQueueBuildFlags(commandArgs.slice(1));
+      if (datasetFlags.help) {
+        return { exitCode: 0, stdout: `${renderDatasetCurationQueueHelp()}\n`, stderr: '' };
+      }
+      const report = await datasetCurationQueueBuildImpl({
+        processesPath: datasetFlags.processesPath,
+        flowsPath: datasetFlags.flowsPath,
+        supportPaths: datasetFlags.supportPaths,
+        externalFlowRefPaths: datasetFlags.externalFlowRefPaths,
+        outDir: datasetFlags.outDir,
+        excludeProcessIds: datasetFlags.excludeProcessIds,
+        processLimit: datasetFlags.processLimit,
+      });
+      return {
+        exitCode: report.status === 'blocked' ? 1 : 0,
         stdout: stringifyJson(report, datasetFlags.json),
         stderr: '',
       };
