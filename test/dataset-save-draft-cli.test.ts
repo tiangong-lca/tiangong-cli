@@ -306,6 +306,7 @@ test('executeCli exposes generic dataset save-draft for support rows', async () 
     type: 'contact',
     outDir: 'contact-save',
     commit: true,
+    allowReferenceOnlySupport: false,
     env: {},
     fetchImpl: (observed[0] as { fetchImpl: unknown }).fetchImpl,
   });
@@ -354,6 +355,15 @@ test('dataset save-draft rejects explicit reference-only support types', () => {
   assert.throws(() => __testInternals.normalizeType('unit-groups'), /reference-only/u);
   assert.throws(() => __testInternals.normalizeType('flow-properties'), /reference-only/u);
   assert.throws(() => __testInternals.normalizeType('unknown'), /Expected --type/u);
+});
+
+test('dataset save-draft allows reference-only support types under the override opt-in', () => {
+  assert.equal(__testInternals.normalizeType('unitgroup', true), 'unitgroup');
+  assert.equal(__testInternals.normalizeType('unit-groups', true), 'unitgroup');
+  assert.equal(__testInternals.normalizeType('flowproperty', true), 'flowproperty');
+  assert.equal(__testInternals.normalizeType('flow-properties', true), 'flowproperty');
+  // override does not affect other types
+  assert.equal(__testInternals.normalizeType('contact', true), 'contact');
 });
 
 test('dataset save-draft internals cover row preparation and failure reports', () => {
