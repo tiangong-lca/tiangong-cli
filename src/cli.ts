@@ -2595,6 +2595,7 @@ function parseDatasetSaveDraftFlags(args: string[]): {
   type: string | undefined;
   outDir: string | null;
   commit: boolean;
+  allowReferenceOnlySupport: boolean;
 } {
   let values: ReturnType<typeof parseArgs>['values'];
   try {
@@ -2610,6 +2611,7 @@ function parseDatasetSaveDraftFlags(args: string[]): {
         'out-dir': { type: 'string' },
         commit: { type: 'boolean' },
         'dry-run': { type: 'boolean' },
+        'allow-account-local-support': { type: 'boolean' },
       },
     }));
   } catch (error) {
@@ -2633,6 +2635,7 @@ function parseDatasetSaveDraftFlags(args: string[]): {
     type: typeof values.type === 'string' ? values.type : undefined,
     outDir: typeof values['out-dir'] === 'string' ? values['out-dir'] : null,
     commit: Boolean(values.commit),
+    allowReferenceOnlySupport: Boolean(values['allow-account-local-support']),
   };
 }
 
@@ -6263,6 +6266,7 @@ export async function executeCli(argv: string[], deps: CliDeps): Promise<CliResu
         type: datasetFlags.type,
         outDir: datasetFlags.outDir,
         commit: datasetFlags.commit,
+        allowReferenceOnlySupport: datasetFlags.allowReferenceOnlySupport,
         env: deps.env,
         fetchImpl: deps.fetchImpl,
       });

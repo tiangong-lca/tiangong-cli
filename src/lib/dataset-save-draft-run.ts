@@ -150,6 +150,12 @@ export type RunDatasetSaveDraftOptions = {
   fetchImpl?: FetchLike;
   timeoutMs?: number;
   now?: Date;
+  /**
+   * Explicit opt-in to write account-local (My Data, state_code=0) Unit Group and
+   * Flow Property support rows that are otherwise reference-only. Default false keeps
+   * the CLI safe-by-default for interactive operators.
+   */
+  allowReferenceOnlySupport?: boolean | null;
 };
 
 type PreparedDatasetRow = {
@@ -259,7 +265,10 @@ function serializeError(error: unknown): { message: string; details?: unknown } 
   return { message: String(error) };
 }
 
-function normalizeType(value: string | null | undefined): DatasetSaveDraftType {
+function normalizeType(
+  value: string | null | undefined,
+  allowReferenceOnlySupport = false,
+): DatasetSaveDraftType {
   const normalized = value?.trim().toLowerCase();
   if (!normalized || normalized === 'auto') {
     return 'auto';
@@ -276,6 +285,9 @@ function normalizeType(value: string | null | undefined): DatasetSaveDraftType {
     normalized === 'unit-group' ||
     normalized === 'unit-groups'
   ) {
+    if (allowReferenceOnlySupport) {
+      return 'unitgroup';
+    }
     throw new CliError(
       'Unit groups are reference-only support data for dataset save-draft. Select an existing database row instead of creating a custom My Data unit group.',
       {
@@ -291,6 +303,9 @@ function normalizeType(value: string | null | undefined): DatasetSaveDraftType {
     normalized === 'flow-property' ||
     normalized === 'flow-properties'
   ) {
+    if (allowReferenceOnlySupport) {
+      return 'flowproperty';
+    }
     throw new CliError(
       'Flow properties are reference-only support data for dataset save-draft. Select an existing database row instead of creating a custom My Data flow property.',
       {
@@ -680,7 +695,10 @@ function selectedRow(row: PreparedDatasetRow): JsonObject {
   };
 }
 
-function buildPreparedFailure(row: PreparedDatasetRow): DatasetSaveDraftRowReport | null {
+function buildPreparedFailure(
+  row: PreparedDatasetRow,
+  allowReferenceOnlySupport = false,
+): DatasetSaveDraftRowReport | null {
   if (!row.type || !row.config) {
     return {
       index: row.index,
@@ -697,7 +715,7 @@ function buildPreparedFailure(row: PreparedDatasetRow): DatasetSaveDraftRowRepor
     };
   }
 
-  if (REFERENCE_ONLY_SAVE_DRAFT_TYPES.has(row.type)) {
+  if (REFERENCE_ONLY_SAVE_DRAFT_TYPES.has(row.type) && !allowReferenceOnlySupport) {
     return {
       index: row.index,
       id: row.id,
@@ -814,7 +832,10 @@ export async function runDatasetSaveDraft(
   const now = options.now ?? new Date();
   const inputPath = path.resolve(options.inputPath);
   const commit = options.commit === true;
-  const requestedType = normalizeType(options.type);
+  const allowReferenceOnlySupport =
+    options.allowReferenceOnlySupport === true ||
+    (options.env?.TIANGONG_ALLOW_ACCOUNT_LOCAL_SUPPORT ?? '') === '1';
+  const requestedType = normalizeType(options.type, allowReferenceOnlySupport);
   const outDir = path.resolve(options.outDir ?? defaultOutDir(inputPath, commit, now));
   const files = buildFiles(outDir);
   const preparedRows = prepareRows(inputPath, options.rawInput, requestedType);
@@ -853,7 +874,7 @@ export async function runDatasetSaveDraft(
 
   const reports: DatasetSaveDraftRowReport[] = [];
   for (const row of preparedRows) {
-    const preparedFailure = buildPreparedFailure(row);
+    const preparedFailure = buildPreparedFailure(row, allowReferenceOnlySupport);
     if (preparedFailure) {
       reports.push(preparedFailure);
       continue;
@@ -885,7 +906,7 @@ export async function runDatasetSaveDraft(
       });
       const visibleRow = visibleRows[0] ?? null;
       if (row.type === 'flow') {
-        if (!visibleRow && isElementaryFlowPayload(row.payload)) {
+        if (!visibleRow && isElementaryFlowPayload(row.payload) && !allowReferenceOnlySupport) {
           reports.push({
             ...baseReport,
             status: 'failed',
