@@ -1007,17 +1007,9 @@ export async function runDatasetRemoteVerify(
     let lookupFailed = false;
     const lookupKey = uniqueLookupKey(reference);
     if (reference.table && reference.id && lookupKey) {
+      // The bounded-concurrency prefetch above populated lookupCache for every
+      // reference that passes this same guard, so the promise is always present.
       try {
-        if (!lookupCache.has(lookupKey)) {
-          lookupCache.set(
-            lookupKey,
-            lookupImpl({
-              table: reference.table,
-              id: reference.id,
-              version: reference.version,
-            }),
-          );
-        }
         lookup = await lookupCache.get(lookupKey)!;
       } catch {
         lookupFailed = true;
