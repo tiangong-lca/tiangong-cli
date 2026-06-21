@@ -16,8 +16,8 @@ checkPaths:
   - README.md
   - src/**
   - test/**
-lastReviewedAt: 2026-06-11
-lastReviewedCommit: 4994cb623bc4acc278502af8bdbae43d374fa2f8
+lastReviewedAt: 2026-06-21
+lastReviewedCommit: 0ac195ea591b91951671a9bb4a0d81957ade39fc
 related:
   - ../AGENTS.md
   - ../.docpact/config.yaml
