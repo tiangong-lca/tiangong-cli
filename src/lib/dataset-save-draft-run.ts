@@ -906,7 +906,7 @@ export async function runDatasetSaveDraft(
       });
       const visibleRow = visibleRows[0] ?? null;
       if (row.type === 'flow') {
-        if (!visibleRow && isElementaryFlowPayload(row.payload)) {
+        if (!visibleRow && isElementaryFlowPayload(row.payload) && !allowReferenceOnlySupport) {
           reports.push({
             ...baseReport,
             status: 'failed',
