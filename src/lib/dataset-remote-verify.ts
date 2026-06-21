@@ -970,6 +970,38 @@ export async function runDatasetRemoteVerify(
   const lookupCache = new Map<string, Promise<RemoteDatasetLookup>>();
   const checks: RemoteVerificationCheck[] = [];
 
+  // Pre-fetch the unique remote lookups in bounded-concurrency batches. Large
+  // reference closures (e.g. a mega-process referencing 1600+ flows) would
+  // otherwise serialize into thousands of sequential round-trips and take many
+  // minutes; the loop below then simply awaits the already-in-flight cached
+  // promises, preserving the existing per-reference error handling.
+  const REMOTE_LOOKUP_CONCURRENCY = 20;
+  const prefetch: Array<{ key: string; request: RemoteDatasetLookupRequest }> = [];
+  const prefetchQueued = new Set<string>();
+  for (const reference of references) {
+    const lookupKey = uniqueLookupKey(reference);
+    if (reference.table && reference.id && lookupKey && !prefetchQueued.has(lookupKey)) {
+      prefetchQueued.add(lookupKey);
+      prefetch.push({
+        key: lookupKey,
+        request: { table: reference.table, id: reference.id, version: reference.version },
+      });
+    }
+  }
+  for (let offset = 0; offset < prefetch.length; offset += REMOTE_LOOKUP_CONCURRENCY) {
+    const batch = prefetch.slice(offset, offset + REMOTE_LOOKUP_CONCURRENCY);
+    await Promise.all(
+      batch.map(({ key, request }) => {
+        const promise = lookupImpl(request);
+        lookupCache.set(key, promise);
+        return promise.then(
+          () => undefined,
+          () => undefined,
+        );
+      }),
+    );
+  }
+
   for (const reference of references) {
     let lookup: RemoteDatasetLookup | null = null;
     let lookupFailed = false;
