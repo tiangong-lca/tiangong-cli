@@ -1,6 +1,6 @@
 {
   "name": "@tiangong-lca/cli",
-  "version": "0.0.18",
+  "version": "0.0.19",
   "description": "Unified TianGong LCA CLI with direct REST adapters and low-entropy command surface.",
   "repository": {
     "type": "git",
@@ -77,6 +77,6 @@
   },
   "dependencies": {
     "@supabase/supabase-js": "^2.101.1",
-    "@tiangong-lca/tidas-sdk": "^0.1.41"
+    "@tiangong-lca/tidas-sdk": "^0.1.45"
   }
 }
