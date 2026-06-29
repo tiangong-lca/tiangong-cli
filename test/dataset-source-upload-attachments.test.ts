@@ -692,3 +692,51 @@ test('executeCli maps upload-attachments status to an exit code', async () => {
   );
   assert.equal(failed.exitCode, 1);
 });
+
+test('executeCli renders source help for --help and -h action aliases', async () => {
+  for (const arg of ['--help', '-h']) {
+    const result = await executeCli(['dataset', 'source', arg], makeDeps());
+    assert.equal(result.exitCode, 0);
+    assert.match(result.stdout, /upload-attachments/u);
+  }
+});
+
+test('executeCli runs source upload-attachments end-to-end through the real impl', async () => {
+  const externalDocsDir = buildExternalDocs();
+  const inputPath = writeJsonl([source('s', { '@uri': '../external_docs/eaf.png' })]);
+  const outDir = tmp('tg-cli-e2e-');
+  try {
+    const result = await executeCli(
+      [
+        'dataset',
+        'source',
+        'upload-attachments',
+        '--input',
+        inputPath,
+        '--external-docs-dir',
+        externalDocsDir,
+        '--out-dir',
+        outDir,
+        '--json',
+      ],
+      makeDeps({ env: buildSupabaseTestEnv(), fetchImpl: async () => okResponse() }),
+    );
+    assert.equal(result.exitCode, 0);
+    const report = JSON.parse(result.stdout);
+    assert.equal(report.status, 'planned_attachment_upload');
+    assert.equal(report.summary.files_planned, 1);
+  } finally {
+    for (const d of [externalDocsDir, path.dirname(inputPath), outDir]) {
+      rmSync(d, { recursive: true, force: true });
+    }
+  }
+});
+
+test('executeCli rejects an unknown flag for source upload-attachments', async () => {
+  const result = await executeCli(
+    ['dataset', 'source', 'upload-attachments', '--input', 'x', '--bogus'],
+    makeDeps(),
+  );
+  assert.equal(result.exitCode, 2);
+  assert.match(result.stderr, /INVALID_ARGS|Unknown option|--bogus/u);
+});
