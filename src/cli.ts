@@ -279,6 +279,11 @@ import {
   type DatasetMaintenanceClearAccountReport,
   type RunDatasetMaintenanceClearAccountOptions,
 } from './lib/dataset-maintenance-clear-account.js';
+import {
+  runDatasetSourceUploadAttachments,
+  type DatasetSourceUploadAttachmentsReport,
+  type RunDatasetSourceUploadAttachmentsOptions,
+} from './lib/dataset-source-upload-attachments.js';
 
 export type CliDeps = {
   env: NodeJS.ProcessEnv;
@@ -453,6 +458,9 @@ export type CliDeps = {
   runDatasetMaintenanceClearAccountImpl?: (
     options: RunDatasetMaintenanceClearAccountOptions,
   ) => Promise<DatasetMaintenanceClearAccountReport>;
+  runDatasetSourceUploadAttachmentsImpl?: (
+    options: RunDatasetSourceUploadAttachmentsOptions,
+  ) => Promise<DatasetSourceUploadAttachmentsReport>;
 };
 
 export type CliResult = {
@@ -485,7 +493,7 @@ Implemented Commands:
   doctor     show environment diagnostics
   search     flow | process | lifecyclemodel
   process    get | list | identity-preflight | build-plan | scope-statistics | dedup-review | auto-build | resume-build | publish-build | complete-required-fields | save-draft | batch-build | refresh-references | verify-rows
-  dataset    contract get | context-pack | classification children/path/audit/apply | curation-queue build/next/verify | import-lca convert | author | patch apply | save-draft | validate | verify-remote | bilingual extract/apply/validate | evidence-search plan/run | references rewrite/refresh-remote | maintenance clear-account
+  dataset    contract get | context-pack | classification children/path/audit/apply | curation-queue build/next/verify | import-lca convert | author | patch apply | save-draft | source upload-attachments | validate | verify-remote | bilingual extract/apply/validate | evidence-search plan/run | references rewrite/refresh-remote | maintenance clear-account
   flow       get | list | identity-preflight | build-plan | fetch-rows | materialize-decisions | remediate | publish-version | publish-reviewed-data | build-alias-map | scan-process-flow-refs | plan-process-flow-repairs | apply-process-flow-repairs | regen-product | validate-processes
   lifecyclemodel auto-build | validate-build | publish-build | save-draft | graph | build-resulting-process | publish-resulting-process | orchestrate
   qa         process | flow | lifecyclemodel
@@ -686,6 +694,7 @@ Implemented Subcommands:
   author              Extract source evidence and prepare TIDAS context packs for AI authoring
   patch apply          Apply AI-authored structured dataset patches deterministically
   save-draft           Save contact/source/support or other canonical dataset rows through the platform dataset command path
+  source upload-attachments Upload source referenceToDigitalFile binaries to storage and rewrite their @uri
   validate             Validate local flow / process / lifecyclemodel rows with the TIDAS SDK
   verify-remote        Verify dataset roots and TIDAS references against remote published versions
   bilingual extract    Extract bilingual translation units from local rows
@@ -943,7 +952,7 @@ function renderDatasetImportLcaHelp(): string {
 Options:
   --input <path>          Source file, directory, or package to import
   --output-dir <dir>      Output directory for generated package and reports
-  --from-format <format>  auto, ecospold1, ecospold2, openlca-jsonld, openlca-process-xlsx, simapro-csv
+  --from-format <format>  auto, ecospold1, ecospold2, openlca-jsonld, openlca-process-xlsx, simapro-csv, ilcd
   --target <target>       tidas | ilcd | both (default: tidas)
   --report <file>         Conversion report path (default: <output-dir>/conversion-report.json)
   --mapping-dir <dir>     Optional custom mapping/reference data directory
@@ -1071,6 +1080,34 @@ Outputs written under --out-dir:
 Contract:
   This generic dataset path writes only mutable rows such as contact/source/flow/process. Unit group and flow property rows are reference-only; select existing database rows and rewrite references instead of creating My Data support rows.
   Process and lifecyclemodel imports may still use their dedicated save-draft commands when the workflow needs their specialized reports.
+`.trim();
+}
+
+function renderDatasetSourceUploadAttachmentsHelp(): string {
+  return `Usage:
+  tiangong-lca dataset source upload-attachments --input <file|dir> --external-docs-dir <dir> [options]
+
+Uploads the binary documents referenced by source datasets via referenceToDigitalFile
+(e.g. "../external_docs/pef_method.pdf") to a Supabase Storage bucket using the current
+authenticated account session, then rewrites each source's referenceToDigitalFile @uri to
+"../<bucket>/<key>". Plain http(s) URIs are left untouched; backslash paths and filename
+case differences are normalized; each physical file is uploaded once (deduped).
+
+Options:
+  --input <file|dir>        Source TIDAS rows (.jsonl, .json, or a directory of *.json)
+  --external-docs-dir <dir> Directory holding the referenced binaries
+  --bucket <name>           Storage bucket (default: external_docs)
+  --out-dir <dir>           Artifact directory
+  --commit                  Upload binaries (default: dry-run plan only)
+  --dry-run                 Plan without uploading (default)
+  --verify                  After upload, create a signed URL to confirm each object resolves
+  --timeout-ms <n>          Per-request timeout (default: 30000)
+  --json                    Print compact JSON
+  -h, --help
+
+Outputs written under --out-dir:
+  - attachments-report.json
+  - rewritten-sources.jsonl
 `.trim();
 }
 
@@ -2636,6 +2673,76 @@ function parseDatasetSaveDraftFlags(args: string[]): {
     outDir: typeof values['out-dir'] === 'string' ? values['out-dir'] : null,
     commit: Boolean(values.commit),
     allowReferenceOnlySupport: Boolean(values['allow-account-local-support']),
+  };
+}
+
+function parseDatasetSourceUploadAttachmentsFlags(args: string[]): {
+  help: boolean;
+  json: boolean;
+  inputPath: string;
+  externalDocsDir: string;
+  bucket: string | null;
+  outDir: string | null;
+  commit: boolean;
+  verify: boolean;
+  timeoutMs: number | undefined;
+} {
+  let values: ReturnType<typeof parseArgs>['values'];
+  try {
+    ({ values } = parseArgs({
+      args,
+      allowPositionals: false,
+      strict: true,
+      options: {
+        help: { type: 'boolean', short: 'h' },
+        json: { type: 'boolean' },
+        input: { type: 'string' },
+        'external-docs-dir': { type: 'string' },
+        bucket: { type: 'string' },
+        'out-dir': { type: 'string' },
+        commit: { type: 'boolean' },
+        'dry-run': { type: 'boolean' },
+        verify: { type: 'boolean' },
+        'timeout-ms': { type: 'string' },
+      },
+    }));
+  } catch (error) {
+    throw new CliError(String(error), {
+      code: 'INVALID_ARGS',
+      exitCode: 2,
+    });
+  }
+
+  if (values.commit && values['dry-run']) {
+    throw new CliError('Cannot pass both --commit and --dry-run.', {
+      code: 'INVALID_DATASET_SOURCE_UPLOAD_MODE',
+      exitCode: 2,
+    });
+  }
+
+  let timeoutMs: number | undefined;
+  if (typeof values['timeout-ms'] === 'string') {
+    const parsed = Number.parseInt(values['timeout-ms'], 10);
+    if (!Number.isInteger(parsed)) {
+      throw new CliError('--timeout-ms must be an integer.', {
+        code: 'INVALID_ARGS',
+        exitCode: 2,
+      });
+    }
+    timeoutMs = parsed;
+  }
+
+  return {
+    help: Boolean(values.help),
+    json: Boolean(values.json),
+    inputPath: typeof values.input === 'string' ? values.input : '',
+    externalDocsDir:
+      typeof values['external-docs-dir'] === 'string' ? values['external-docs-dir'] : '',
+    bucket: typeof values.bucket === 'string' ? values.bucket : null,
+    outDir: typeof values['out-dir'] === 'string' ? values['out-dir'] : null,
+    commit: Boolean(values.commit),
+    verify: Boolean(values.verify),
+    timeoutMs,
   };
 }
 
@@ -5911,6 +6018,8 @@ export async function executeCli(argv: string[], deps: CliDeps): Promise<CliResu
       deps.runDatasetClassificationApplyImpl ?? runDatasetClassificationApply;
     const datasetMaintenanceClearAccountImpl =
       deps.runDatasetMaintenanceClearAccountImpl ?? runDatasetMaintenanceClearAccount;
+    const datasetSourceUploadAttachmentsImpl =
+      deps.runDatasetSourceUploadAttachmentsImpl ?? runDatasetSourceUploadAttachments;
 
     if (flags.version) {
       return { exitCode: 0, stdout: `${loadCliPackageVersion(import.meta.url)}\n`, stderr: '' };
@@ -6250,6 +6359,61 @@ export async function executeCli(argv: string[], deps: CliDeps): Promise<CliResu
       });
       return {
         exitCode: report.status === 'blocked' ? 1 : 0,
+        stdout: stringifyJson(report, datasetFlags.json),
+        stderr: '',
+      };
+    }
+
+    if (command === 'dataset' && subcommand === 'source') {
+      const action = commandArgs[0] ?? '';
+      if (!action || action === '--help' || action === '-h') {
+        return {
+          exitCode: 0,
+          stdout: `${renderDatasetSourceUploadAttachmentsHelp()}\n`,
+          stderr: '',
+        };
+      }
+      if (action !== 'upload-attachments') {
+        throw new CliError("dataset source action must be 'upload-attachments'.", {
+          code: 'DATASET_SOURCE_ACTION_INVALID',
+          exitCode: 2,
+        });
+      }
+      const datasetFlags = parseDatasetSourceUploadAttachmentsFlags(commandArgs.slice(1));
+      if (datasetFlags.help) {
+        return {
+          exitCode: 0,
+          stdout: `${renderDatasetSourceUploadAttachmentsHelp()}\n`,
+          stderr: '',
+        };
+      }
+      if (!datasetFlags.inputPath) {
+        throw new CliError('dataset source upload-attachments requires --input.', {
+          code: 'DATASET_SOURCE_UPLOAD_INPUT_REQUIRED',
+          exitCode: 2,
+        });
+      }
+      if (!datasetFlags.externalDocsDir) {
+        throw new CliError('dataset source upload-attachments requires --external-docs-dir.', {
+          code: 'DATASET_SOURCE_UPLOAD_EXTERNAL_DOCS_DIR_REQUIRED',
+          exitCode: 2,
+        });
+      }
+
+      const report = await datasetSourceUploadAttachmentsImpl({
+        inputPath: datasetFlags.inputPath,
+        externalDocsDir: datasetFlags.externalDocsDir,
+        bucket: datasetFlags.bucket,
+        outDir: datasetFlags.outDir,
+        commit: datasetFlags.commit,
+        verify: datasetFlags.verify,
+        timeoutMs: datasetFlags.timeoutMs,
+        env: deps.env,
+        fetchImpl: deps.fetchImpl,
+      });
+
+      return {
+        exitCode: report.status === 'completed_with_failures' ? 1 : 0,
         stdout: stringifyJson(report, datasetFlags.json),
         stderr: '',
       };
