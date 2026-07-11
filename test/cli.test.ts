@@ -68,8 +68,8 @@ test('executeCli prints main help when no command is given', async () => {
   assert.match(result.stdout, /lifecyclemodel auto-build \| validate-build \| publish-build/u);
   assert.match(result.stdout, /publish-resulting-process/u);
   assert.match(result.stdout, /qa\s+process \| flow \| lifecyclemodel/u);
-  assert.match(result.stdout, /maintenance clear-account/u);
-  assert.match(result.stdout, /dataset maintenance plan \| apply \| verify/u);
+  assert.match(result.stdout, /maintenance clear-account\/plan\/apply\/verify/u);
+  assert.doesNotMatch(result.stdout, /dataset maintenance plan \| apply \| verify/u);
   assert.match(result.stdout, /exit with code 2/u);
   assert.equal(result.stderr, '');
 });
@@ -440,7 +440,9 @@ test('executeCli exposes dataset and lifecyclemodel friction-fix commands', asyn
   assert.match(datasetHelp.stdout, /validate/u);
   assert.match(datasetHelp.stdout, /references rewrite/u);
   assert.match(datasetHelp.stdout, /maintenance clear-account/u);
-  assert.match(datasetHelp.stdout, /maintenance plan\/apply\/verify/u);
+  assert.match(datasetHelp.stdout, /maintenance plan\s+Build an immutable/u);
+  assert.match(datasetHelp.stdout, /maintenance apply\s+Execute an explicitly approved/u);
+  assert.match(datasetHelp.stdout, /maintenance verify\s+Read back affected rows/u);
 
   const datasetValidateHelp = await executeCli(['dataset', 'validate', '--help'], makeDeps());
   assert.equal(datasetValidateHelp.exitCode, 0);
@@ -467,8 +469,11 @@ test('executeCli exposes dataset and lifecyclemodel friction-fix commands', asyn
 
   const datasetMaintenanceHelp = await executeCli(['dataset', 'maintenance', '--help'], makeDeps());
   assert.equal(datasetMaintenanceHelp.exitCode, 0);
-  assert.match(datasetMaintenanceHelp.stdout, /RLS-scoped cleanup and redo workflows/u);
-  assert.match(datasetMaintenanceHelp.stdout, /clear-account is implemented/u);
+  assert.match(
+    datasetMaintenanceHelp.stdout,
+    /current-user RLS and platform dataset command paths/u,
+  );
+  assert.match(datasetMaintenanceHelp.stdout, /apply is commit-only/u);
   assert.match(datasetMaintenanceHelp.stdout, /maintenance-plan\.json/u);
 
   const datasetMaintenanceClearHelp = await executeCli(
@@ -483,12 +488,27 @@ test('executeCli exposes dataset and lifecyclemodel friction-fix commands', asyn
   assert.match(datasetMaintenanceClearHelp.stdout, /--confirm <email>/u);
   assert.doesNotMatch(datasetMaintenanceClearHelp.stdout, /Planned command/u);
 
-  const datasetMaintenancePlan = await executeCli(['dataset', 'maintenance', 'plan'], makeDeps());
-  assert.equal(datasetMaintenancePlan.exitCode, 2);
-  assert.match(
-    datasetMaintenancePlan.stderr,
-    /Command 'dataset maintenance plan' is part of the planned unified surface/u,
+  const datasetMaintenancePlanHelp = await executeCli(
+    ['dataset', 'maintenance', 'plan', '--help'],
+    makeDeps(),
   );
+  assert.equal(datasetMaintenancePlanHelp.exitCode, 0);
+  assert.match(datasetMaintenancePlanHelp.stdout, /--operation <operation>/u);
+
+  const datasetMaintenanceApplyHelp = await executeCli(
+    ['dataset', 'maintenance', 'apply', '--help'],
+    makeDeps(),
+  );
+  assert.equal(datasetMaintenanceApplyHelp.exitCode, 0);
+  assert.match(datasetMaintenanceApplyHelp.stdout, /--approve-plan <sha256>/u);
+  assert.match(datasetMaintenanceApplyHelp.stdout, /Commit-only/u);
+
+  const datasetMaintenanceVerifyHelp = await executeCli(
+    ['dataset', 'maintenance', 'verify', '--help'],
+    makeDeps(),
+  );
+  assert.equal(datasetMaintenanceVerifyHelp.exitCode, 0);
+  assert.match(datasetMaintenanceVerifyHelp.stdout, /readback-verify-report\.json/u);
 
   let observedClearAccountOptions: unknown = null;
   const clearAccountDeps = makeDeps();
@@ -623,6 +643,120 @@ test('executeCli exposes dataset and lifecyclemodel friction-fix commands', asyn
   assert.match(lifecyclemodelGraphHelp.stdout, /tiangong-lca lifecyclemodel graph --input <file>/u);
   assert.match(lifecyclemodelGraphHelp.stdout, /--check-connections/u);
   assert.doesNotMatch(lifecyclemodelGraphHelp.stdout, /Planned command/u);
+});
+
+test('executeCli dispatches dataset maintenance plan, apply, and verify', async () => {
+  const deps = makeDeps();
+  let observedPlanOptions: unknown = null;
+  const planResult = await executeCli(
+    [
+      'dataset',
+      'maintenance',
+      'plan',
+      '--scope',
+      './maintenance-scope.json',
+      '--operation',
+      'repair-references',
+      '--out-dir',
+      './maintenance-run',
+      '--page-size',
+      '250',
+      '--timeout-ms',
+      '12000',
+      '--json',
+    ],
+    {
+      ...deps,
+      runDatasetMaintenancePlanImpl: async (options) => {
+        observedPlanOptions = options;
+        return { status: 'ready', marker: 'plan' } as never;
+      },
+    },
+  );
+  assert.equal(planResult.exitCode, 0);
+  assert.deepEqual(JSON.parse(planResult.stdout), { status: 'ready', marker: 'plan' });
+  assert.deepEqual(observedPlanOptions, {
+    scopePath: './maintenance-scope.json',
+    operation: 'repair-references',
+    outDir: './maintenance-run',
+    pageSize: 250,
+    timeoutMs: 12000,
+    env: deps.env,
+    fetchImpl: deps.fetchImpl,
+  });
+
+  const approvePlan = 'a'.repeat(64);
+  let observedApplyOptions: unknown = null;
+  const applyResult = await executeCli(
+    [
+      'dataset',
+      'maintenance',
+      'apply',
+      '--plan',
+      './maintenance-run/maintenance-plan.json',
+      '--commit',
+      '--approve-plan',
+      approvePlan,
+      '--confirm',
+      'user@example.com',
+      '--timeout-ms',
+      '15000',
+      '--json',
+    ],
+    {
+      ...deps,
+      runDatasetMaintenanceApplyImpl: async (options) => {
+        observedApplyOptions = options;
+        return { status: 'completed', marker: 'apply' } as never;
+      },
+    },
+  );
+  assert.equal(applyResult.exitCode, 0);
+  assert.deepEqual(JSON.parse(applyResult.stdout), { status: 'completed', marker: 'apply' });
+  assert.deepEqual(observedApplyOptions, {
+    planPath: './maintenance-run/maintenance-plan.json',
+    commit: true,
+    approvePlan,
+    confirm: 'user@example.com',
+    timeoutMs: 15000,
+    env: deps.env,
+    fetchImpl: deps.fetchImpl,
+  });
+
+  let observedVerifyOptions: unknown = null;
+  const verifyResult = await executeCli(
+    [
+      'dataset',
+      'maintenance',
+      'verify',
+      '--plan',
+      './maintenance-run/maintenance-plan.json',
+      '--out-dir',
+      './maintenance-run/verify',
+      '--page-size',
+      '100',
+      '--timeout-ms',
+      '9000',
+      '--json',
+    ],
+    {
+      ...deps,
+      runDatasetMaintenanceVerifyImpl: async (options) => {
+        observedVerifyOptions = options;
+        return { status: 'passed', marker: 'verify' } as never;
+      },
+    },
+  );
+  assert.equal(verifyResult.exitCode, 0);
+  assert.deepEqual(JSON.parse(verifyResult.stdout), { status: 'passed', marker: 'verify' });
+  assert.deepEqual(observedVerifyOptions, {
+    planPath: './maintenance-run/maintenance-plan.json',
+    outDir: './maintenance-run/verify',
+    pageSize: 100,
+    timeoutMs: 9000,
+    env: deps.env,
+    fetchImpl: deps.fetchImpl,
+  });
 });
 
 test('executeCli dispatches dataset and lifecyclemodel friction-fix commands', async () => {

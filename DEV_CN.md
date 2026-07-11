@@ -39,6 +39,8 @@ Review note, 2026-06-07: release 0.0.14 keeps maintainer runtime and release gui
 
 Review note, 2026-06-11: release 0.0.15 keeps maintainer runtime and release guidance unchanged. `dataset import-lca convert` now adapts to the tidas-tools 0.0.28 process-bundle flags (no bare `--process-bundles`, `--no-process-bundles` only when disabled) and reports bundle/mapping files from actual on-disk state.
 
+Review note, 2026-07-11: `dataset maintenance plan/apply/verify` is now an implemented current-user RLS command family. It adds no environment variables or release-path changes; commit remains bound to an immutable plan hash, current account confirmation, append-only per-action logs, and independent readback verification.
+
 设计原则：
 
 - 统一入口：所有 TianGong 平台能力最终收敛到 `tiangong-lca` 一个命令树
@@ -72,6 +74,7 @@ Review note, 2026-06-11: release 0.0.15 keeps maintainer runtime and release gui
 - `tiangong-lca dataset classification children/path/audit/apply`
 - `tiangong-lca dataset curation-queue build`
 - `tiangong-lca dataset references rewrite`
+- `tiangong-lca dataset maintenance plan/apply/verify`
 - `tiangong-lca lifecyclemodel auto-build`
 - `tiangong-lca lifecyclemodel validate-build`
 - `tiangong-lca lifecyclemodel publish-build`
@@ -207,6 +210,7 @@ TIANGONG_LCA_UNSTRUCTURED_RETURN_TXT=true
 | `dataset classification children/path/audit/apply` | 无 |
 | `dataset curation-queue build` | 无 |
 | `dataset references rewrite` | 本地 rewrite 默认无；若 `--commit` 写入 patched rows，则需要 `TIANGONG_LCA_API_BASE_URL`、`TIANGONG_LCA_API_KEY`、`TIANGONG_LCA_SUPABASE_PUBLISHABLE_KEY` |
+| `dataset maintenance plan/apply/verify` | 都需要 `TIANGONG_LCA_API_BASE_URL`、`TIANGONG_LCA_API_KEY`、`TIANGONG_LCA_SUPABASE_PUBLISHABLE_KEY`；`plan`/`verify` 只读，`apply` 还必须显式提供 plan hash 与当前账号邮箱确认 |
 | `lifecyclemodel auto-build \| validate-build \| publish-build \| graph \| orchestrate` | 无 |
 | `lifecyclemodel save-draft` | 本地 dry-run 默认无；若 `--commit` 写入 lifecyclemodel draft，则需要 `TIANGONG_LCA_API_BASE_URL`、`TIANGONG_LCA_API_KEY`、`TIANGONG_LCA_SUPABASE_PUBLISHABLE_KEY` |
 | `lifecyclemodel build-resulting-process` | 本地运行默认无；若 request 打开 `process_sources.allow_remote_lookup=true`，则需要 `TIANGONG_LCA_API_BASE_URL`、`TIANGONG_LCA_API_KEY`、`TIANGONG_LCA_SUPABASE_PUBLISHABLE_KEY` |
@@ -255,6 +259,9 @@ npm exec tiangong-lca -- dataset validate --input ./rows.jsonl --type auto --out
 npm exec tiangong-lca -- dataset classification audit --type location --input ./rows/rows.jsonl --out-dir ./location-audit --json
 npm exec tiangong-lca -- dataset curation-queue build --processes ./rows/processes.jsonl --flows ./rows/flows.jsonl --support ./rows/sources.jsonl --out-dir ./curation-queue --json
 npm exec tiangong-lca -- dataset references rewrite --input ./rows.jsonl --from flow:<old-id>@<old-version> --to flow:<new-id>@<new-version> --out-dir ./dataset-rewrite --json
+npm exec tiangong-lca -- dataset maintenance plan --scope ./maintenance-scope.json --operation repair-references --out-dir ./dataset-maintenance --json
+npm exec tiangong-lca -- dataset maintenance apply --plan ./dataset-maintenance/maintenance-plan.json --commit --approve-plan <sha256> --confirm <current-account-email> --json
+npm exec tiangong-lca -- dataset maintenance verify --plan ./dataset-maintenance/maintenance-plan.json --out-dir ./dataset-maintenance/verify --json
 npm exec tiangong-lca -- lifecyclemodel auto-build --input ./examples/lifecyclemodel-auto-build.request.json --out-dir /abs/path/to/lifecyclemodel-run --json
 npm exec tiangong-lca -- lifecyclemodel validate-build --run-dir /abs/path/to/lifecyclemodel-run --json
 npm exec tiangong-lca -- lifecyclemodel publish-build --run-dir /abs/path/to/lifecyclemodel-run --json
@@ -285,6 +292,10 @@ npm exec tiangong-lca -- admin embedding-run --input ./jobs.json --dry-run
 ```
 
 ## process / review / publish / validation 边界
+
+`tiangong-lca dataset maintenance plan/apply/verify` 是错误导入后 row-level 修复的 CLI-owned 入口。`plan` 冻结当前用户 RLS 可见快照、保护行、引用影响、desired payload 和 canonical plan SHA-256；`apply` 只允许精确 `id + version` 的当前账号 `state_code=0` draft，通过 `cmd_dataset_save_draft` / `cmd_dataset_delete` 执行，并把相同 plan/action correlation 写入 `p_audit` 和本地 `apply-progress.jsonl`；`verify` 独立读回 payload、owner/state、保护行和引用闭包。Foundry/skills 只能编排这些命令，不得实现私有 SQL、service-role 或 raw REST mutation。
+
+`apply` 是 commit-only：必须同时提供 `--commit`、精确 `--approve-plan <sha256>` 和 `--confirm <current-account-email>`。首写前会持久化 approval 并做全计划 drift preflight，每条 pending action 在 RPC 前再做 exact read；update 先于 delete，首个失败会停止后续动作，同一计划可从已记录成功项安全续跑。`lifecyclemodels`、`unitgroups`、`flowproperties`、public/shared、非 owner、非 draft 和不可见行在 v1 中一律保护或阻断。
 
 `tiangong-lca process get` 现在是统一 CLI 持有的只读 process 详情命令，负责：
 

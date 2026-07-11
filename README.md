@@ -17,13 +17,15 @@ checkPaths:
   - bin/**
   - src/cli.ts
   - src/main.ts
-lastReviewedAt: 2026-06-29
+lastReviewedAt: 2026-07-11
 lastReviewedCommit: 695e6d6fe718cb92d499f3ce8be2dc24c3f6ce29
 ---
 
 # TianGong LCA CLI
 
 Package: `@tiangong-lca/cli` Executable: `tiangong-lca` Node: `24.x`
+
+Review note, 2026-07-11: `dataset maintenance plan/apply/verify` is an implemented v1 command family for current-user RLS-scoped, exact-row draft maintenance with immutable plans, explicit approval, per-action logs, platform audit correlation, and independent readback verification.
 
 ## Run
 
@@ -273,7 +275,9 @@ tiangong-lca dataset curation-queue verify --queue-dir /abs/path/to/curation-que
 tiangong-lca dataset evidence-search plan --query "中国2026年电力结构数据" --out-dir /abs/path/to/evidence-search --json
 tiangong-lca dataset evidence-search run --input ./evidence-search.request.json --results ./search-results.json --out-dir /abs/path/to/evidence-search --json
 tiangong-lca dataset references rewrite --input ./rows.jsonl --from flow:<old-id>@<old-version> --to flow:<new-id>@<new-version> --out-dir /abs/path/to/dataset-rewrite --json
-tiangong-lca dataset maintenance plan --scope ./maintenance-scope.json --operation redo-import --out-dir /abs/path/to/dataset-maintenance
+tiangong-lca dataset maintenance plan --scope ./maintenance-scope.json --operation redo-import --out-dir /abs/path/to/dataset-maintenance --page-size 1000 --timeout-ms 10000 --json
+tiangong-lca dataset maintenance apply --plan /abs/path/to/dataset-maintenance/maintenance-plan.json --commit --approve-plan <sha256> --confirm <current-account-email> --timeout-ms 10000 --json
+tiangong-lca dataset maintenance verify --plan /abs/path/to/dataset-maintenance/maintenance-plan.json --out-dir /abs/path/to/dataset-maintenance/verify --page-size 1000 --timeout-ms 10000 --json
 tiangong-lca lifecyclemodel auto-build --input ./examples/lifecyclemodel-auto-build.request.json --out-dir /abs/path/to/lifecyclemodel-run --json
 tiangong-lca lifecyclemodel validate-build --run-dir /abs/path/to/lifecyclemodel-run --json
 tiangong-lca lifecyclemodel publish-build --run-dir /abs/path/to/lifecyclemodel-run --json
@@ -316,7 +320,50 @@ For `dataset curation-queue build/next/verify`, the CLI owns entity-level Foundr
 
 For `dataset references rewrite`, `--commit` executes the state-aware save-draft path for patched process and lifecyclemodel rows; without `--commit`, the command only writes local rewrite artifacts.
 
-For `dataset maintenance plan/apply/verify`, the planned command family owns RLS-scoped delete/redo workflows for bad imports. The contract requires a frozen scope manifest, current-user visible snapshot, protected rows list, reference impact report, dry-run report, explicit commit report, and readback verification. Foundry and skills may orchestrate it, but they must not add private Supabase delete logic.
+## Dataset Maintenance
+
+`dataset maintenance plan/apply/verify` is the v1 row-level cleanup surface for bad imports. It runs as the currently authenticated user and relies on RLS for visibility and ownership enforcement.
+
+```bash
+tiangong-lca dataset maintenance plan \
+  --scope ./maintenance-scope.json \
+  --operation redo-import \
+  --out-dir ./dataset-maintenance \
+  --page-size 1000 \
+  --timeout-ms 10000 \
+  --json
+
+tiangong-lca dataset maintenance apply \
+  --plan ./dataset-maintenance/maintenance-plan.json \
+  --commit \
+  --approve-plan <sha256> \
+  --confirm <current-account-email> \
+  --timeout-ms 10000 \
+  --json
+
+tiangong-lca dataset maintenance verify \
+  --plan ./dataset-maintenance/maintenance-plan.json \
+  --out-dir ./dataset-maintenance/verify \
+  --page-size 1000 \
+  --timeout-ms 10000 \
+  --json
+```
+
+V1 scope is intentionally narrow:
+
+- Each requested row must name its table, exact `id`, exact `version`, expected current owner, and draft `state_code=0` state.
+- `--operation` accepts `delete`, `retire`, `redo-import`, or `repair-references`; it records the operator's maintenance intent and does not broaden the eligible row actions.
+- Only current-user `contacts`, `sources`, `flows`, and `processes` can become `save_draft` or `delete` actions.
+- `lifecyclemodels`, `unitgroups`, `flowproperties`, public/shared rows, non-owner rows, and non-draft rows are protected.
+- The CLI classifies and executes an operator-authored scope; it does not decide whether rows are semantically duplicates, canonical replacements, or safe business-level cleanup targets.
+
+`plan` writes the frozen `maintenance-scope.json`, `rls-visible-snapshot.json`, `protected-rows.jsonl`, `reference-impact-report.json`, `maintenance-plan.json`, and `dry-run-report.json`. The plan SHA-256 is the approval identity; do not edit the plan after review.
+
+`apply` is write-disabled unless all three commit guards are present: `--commit`, `--approve-plan <sha256>`, and `--confirm <current-account-email>`. Before the first write it re-checks the whole plan for drift and persists `approval-record.json`. It then executes updates before deletes through the platform dataset command path, correlates the plan and action ids in `p_audit`, and appends one durable record per attempted action to `apply-progress.jsonl`. Each record includes at least the plan SHA-256, operation/action ids, exact table/id/version, actor, start/finish times, before/after SHA-256, result or error, and rollback guidance. `commit-report.json` summarizes the ledger. A failure stops later actions; recorded successful actions are recognized on a safe rerun.
+
+`verify` performs a fresh remote readback rather than trusting the apply report and writes `readback-verify-report.json` in its own output directory.
+
+Foundry and skills may prepare the scope, invoke these commands, and retain their artifacts. They must not replace the CLI with direct SQL, service-role access, raw REST mutation, or private Supabase delete/update code.
 
 ## More Docs
 

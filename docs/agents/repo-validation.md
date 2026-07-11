@@ -27,7 +27,7 @@ checkPaths:
   - scripts/docpact
   - scripts/docpact-gate.sh
   - scripts/install-git-hooks.sh
-lastReviewedAt: 2026-06-29
+lastReviewedAt: 2026-07-11
 lastReviewedCommit: 695e6d6fe718cb92d499f3ce8be2dc24c3f6ce29
 related:
   - ../../AGENTS.md
@@ -72,13 +72,15 @@ Review note, 2026-06-07: release 0.0.14 requires the same local proof plus focus
 
 Review note, 2026-06-11: release 0.0.15 requires the same local proof plus focused dataset import-lca coverage for the tidas-tools 0.0.28 bundle-flag adaptation and disk-derived report fields. Publication remains PR merge to upstream `main`, tag workflow, and npm Trusted Publishing.
 
+Review note, 2026-07-11: `dataset maintenance plan/apply/verify` adds focused proof for exact-row scope freezing, current-user RLS guards, immutable plan hashing, protected-row classification, full-plan drift preflight, approval-before-write, per-action logs, platform audit correlation, failure/resume behavior, and independent readback verification.
+
 ## Validation Matrix
 
 | Change type | Minimum local proof | Additional proof when risk is higher | Notes |
 | --- | --- | --- | --- |
 | `bin/**`, `src/main.ts`, or `src/cli.ts` | `npm run lint`; `npm test`; `npm run build` | run the relevant `tiangong-lca --help` or subcommand help path after build | Launcher and dispatch changes affect the public command surface directly. |
 | session, auth, env, or remote adapter helpers under `src/lib/{dotenv,env,user-api-key,supabase-*,remote,http}*`, plus command-local remote adapters such as explicit identity-preflight hybrid search | `npm run lint`; `npm test`; `npm run build` | run focused tests for the touched helper plus one command that exercises the changed path | Record any required live env assumptions in the PR note. |
-| flow, process, dataset, lifecyclemodel, review, publish, or run command families | `npm run lint`; `npm test`; `npm run build` | run focused tests for the touched command family; run `npm run test:coverage:assert-full` if the change touched uncovered branches; prefer `npm run prepush:gate` when the change adds new command paths | Preserve the low-entropy command contract and structured artifact outputs, including BuildPlan, review/dedup ruleset, publish schema, and verification gate reports when authoring or publish commands are involved. |
+| flow, process, dataset, lifecyclemodel, review, publish, or run command families | `npm run lint`; `npm test`; `npm run build` | run focused tests for the touched command family; run `npm run test:coverage:assert-full` if the change touched uncovered branches; prefer `npm run prepush:gate` when the change adds new command paths | Preserve the low-entropy command contract and structured artifact outputs, including BuildPlan, review/dedup ruleset, publish schema, and verification gate reports when authoring or publish commands are involved. Dataset maintenance proof must also cover plan immutability, current-user RLS/protected-row guards, drift rejection, approval-before-write, append-only action logs, stop/resume behavior, and fresh readback. |
 | artifact, IO, or state-lock behavior | `npm run lint`; `npm test`; `npm run build` | run one representative command path that writes the changed artifact layout, if safe | Path and file layout regressions matter for downstream automation. |
 | `test/**` or coverage gate scripts | `npm run lint`; `npm test`; `npm run test:coverage`; `npm run test:coverage:assert-full` | run `npm run prepush:gate` when the change affects the protected-branch gate directly | Coverage for `src/**/*.ts` is expected to remain at `100%`. |
 | `package.json`, `.nvmrc`, `scripts/ci/**`, or `.github/workflows/**` | `npm run lint`; `npm test`; `npm run build` | run `npm run prepush:gate`; run `docpact lint` when the change affects release or documentation gates | Release-tag checks, workflow guards, and dependency baselines change the repo contract. |
@@ -94,6 +96,8 @@ Facts that matter:
 - the local `pre-push` hook runs docpact first and then `npm run prepush:gate`
 - `.github/workflows/quality-gate.yml` is manual-dispatch only for remote reproduction, not an ordinary push-triggered test runner
 - `process save-draft`, `lifecyclemodel save-draft`, dataset governance commands such as curation queue build/next/verify, BuildPlan gates, publish schema/verification gates, and the newer process maintenance commands are expected to preserve `100%` coverage even when they add schema-validation, rewrite, or fallback branches
+- Dataset maintenance tests must prove that exact `id` + `version`, `state_code=0`, and current-account ownership are enforced; `lifecyclemodels`, `unitgroups`, `flowproperties`, public/non-owner/non-draft rows remain protected; no action runs after full-plan drift or approval mismatch; approval is persisted before the first mutation; each attempted action is appended durably to `apply-progress.jsonl` with plan/action correlation, actor, timing, before/after hashes, result/error, and rollback fields; and `verify` performs its own remote readback instead of trusting `apply` output.
+- Live maintenance validation, when explicitly authorized, must use a disposable current-user draft scope and the official platform command path. Direct SQL, service-role credentials, or raw REST mutation are never acceptable test evidence.
 - release-tag and docpact lint workflow changes should be described in the PR note when they alter the local or protected-branch proof
 - `tag-release-from-merge.yml` is idempotent when the expected `cli-v*` tag already points at the merge commit, and `publish.yml` can be re-run with `workflow_dispatch` only for an existing `cli-v*` tag on `origin/main`
 - local npm authentication is not release validation evidence; routine publication is verified by the upstream tag workflow and npm Trusted Publishing workflow after merge

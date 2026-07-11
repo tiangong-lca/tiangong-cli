@@ -134,6 +134,71 @@ test('prepush coverage covers CLI parser error and help branches', async () => {
     ['dataset', 'maintenance', 'clear-account', '--commit', '--dry-run'],
     ['dataset', 'maintenance', 'clear-account', '--state-code', 'bad'],
     ['dataset', 'maintenance', 'clear-account', '--page-size', 'bad'],
+    ['dataset', 'maintenance', 'plan', '--bad-flag'],
+    ['dataset', 'maintenance', 'plan'],
+    ['dataset', 'maintenance', 'plan', '--scope', 'scope.json'],
+    ['dataset', 'maintenance', 'plan', '--scope', 'scope.json', '--operation', 'delete'],
+    [
+      'dataset',
+      'maintenance',
+      'plan',
+      '--scope',
+      'scope.json',
+      '--operation',
+      'bad',
+      '--out-dir',
+      'out',
+    ],
+    [
+      'dataset',
+      'maintenance',
+      'plan',
+      '--scope',
+      'scope.json',
+      '--operation',
+      'delete',
+      '--out-dir',
+      'out',
+      '--page-size',
+      'bad',
+    ],
+    [
+      'dataset',
+      'maintenance',
+      'plan',
+      '--scope',
+      'scope.json',
+      '--operation',
+      'delete',
+      '--out-dir',
+      'out',
+      '--page-size',
+      '0',
+    ],
+    ['dataset', 'maintenance', 'apply', '--bad-flag'],
+    ['dataset', 'maintenance', 'apply', '--commit'],
+    ['dataset', 'maintenance', 'apply', '--plan', 'plan.json', '--commit', '--dry-run'],
+    ['dataset', 'maintenance', 'apply', '--plan', 'plan.json', '--dry-run'],
+    ['dataset', 'maintenance', 'apply', '--plan', 'plan.json'],
+    ['dataset', 'maintenance', 'apply', '--plan', 'plan.json', '--commit'],
+    ['dataset', 'maintenance', 'apply', '--plan', 'plan.json', '--commit', '--approve-plan', 'abc'],
+    [
+      'dataset',
+      'maintenance',
+      'apply',
+      '--plan',
+      'plan.json',
+      '--commit',
+      '--approve-plan',
+      'abc',
+      '--confirm',
+      'user@example.com',
+      '--timeout-ms',
+      '0',
+    ],
+    ['dataset', 'maintenance', 'verify', '--bad-flag'],
+    ['dataset', 'maintenance', 'verify'],
+    ['dataset', 'maintenance', 'verify', '--plan', 'plan.json', '--timeout-ms', 'bad'],
     ['dataset', 'maintenance', 'bad-action'],
     ['process', 'identity-preflight', '--timeout-ms', '0'],
   ];
@@ -426,6 +491,54 @@ test('prepush coverage covers CLI parser error and help branches', async () => {
     },
   );
   assert.equal(maintenanceFailed.exitCode, 1);
+
+  const maintenancePlanBlocked = await executeCli(
+    [
+      'dataset',
+      'maintenance',
+      'plan',
+      '--scope',
+      'scope.json',
+      '--operation',
+      'delete',
+      '--out-dir',
+      'out',
+    ],
+    {
+      ...makeDeps(),
+      runDatasetMaintenancePlanImpl: async () => ({ status: 'blocked' }) as never,
+    },
+  );
+  assert.equal(maintenancePlanBlocked.exitCode, 1);
+
+  const maintenanceApplyFailed = await executeCli(
+    [
+      'dataset',
+      'maintenance',
+      'apply',
+      '--plan',
+      'plan.json',
+      '--commit',
+      '--approve-plan',
+      'abc',
+      '--confirm',
+      'user@example.com',
+    ],
+    {
+      ...makeDeps(),
+      runDatasetMaintenanceApplyImpl: async () => ({ status: 'completed_with_failures' }) as never,
+    },
+  );
+  assert.equal(maintenanceApplyFailed.exitCode, 1);
+
+  const maintenanceVerifyFailed = await executeCli(
+    ['dataset', 'maintenance', 'verify', '--plan', 'plan.json'],
+    {
+      ...makeDeps(),
+      runDatasetMaintenanceVerifyImpl: async () => ({ status: 'failed' }) as never,
+    },
+  );
+  assert.equal(maintenanceVerifyFailed.exitCode, 1);
 
   const lifecycleRows = await executeCli(
     ['qa', 'lifecyclemodel', '--rows-file', 'models.jsonl', '--out-dir', 'qa-out'],
