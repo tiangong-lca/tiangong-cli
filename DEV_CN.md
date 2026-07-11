@@ -18,8 +18,8 @@ checkPaths:
   - src/**
   - scripts/**
   - .github/workflows/**
-lastReviewedAt: 2026-06-29
-lastReviewedCommit: 695e6d6fe718cb92d499f3ce8be2dc24c3f6ce29
+lastReviewedAt: 2026-07-11
+lastReviewedCommit: 192ce9cb233af85b8bcf50136d37fd08d4ae8292
 related:
   - AGENTS.md
   - .docpact/config.yaml
@@ -40,6 +40,8 @@ Review note, 2026-06-07: release 0.0.14 keeps maintainer runtime and release gui
 Review note, 2026-06-11: release 0.0.15 keeps maintainer runtime and release guidance unchanged. `dataset import-lca convert` now adapts to the tidas-tools 0.0.28 process-bundle flags (no bare `--process-bundles`, `--no-process-bundles` only when disabled) and reports bundle/mapping files from actual on-disk state.
 
 Review note, 2026-07-11: `dataset maintenance plan/apply/verify` is now an implemented current-user RLS command family. It adds no environment variables or release-path changes; commit remains bound to an immutable plan hash, current account confirmation, append-only per-action logs, and independent readback verification.
+
+Review note, 2026-07-11: maintenance 现新增显式 `publish-support` 操作，只允许把通过 TIDAS schema 与根 id/version 校验的当前账号 draft `unitgroups` / `flowproperties` 发布为 `state_code=100`。执行通过 `cmd_dataset_publish_guarded` 在同一事务内完成行锁、时间戳/payload 前置条件、状态更新和审计写入，并支持基于数据库审计证明的丢失响应重试。
 
 设计原则：
 
@@ -293,9 +295,9 @@ npm exec tiangong-lca -- admin embedding-run --input ./jobs.json --dry-run
 
 ## process / review / publish / validation 边界
 
-`tiangong-lca dataset maintenance plan/apply/verify` 是错误导入后 row-level 修复的 CLI-owned 入口。`plan` 冻结当前用户 RLS 可见快照、保护行、引用影响、desired payload 和 canonical plan SHA-256；`apply` 只允许精确 `id + version` 的当前账号 `state_code=0` draft，通过 `cmd_dataset_save_draft` / `cmd_dataset_delete` 执行，并把相同 plan/action correlation 写入 `p_audit` 和本地 `apply-progress.jsonl`；`verify` 独立读回 payload、owner/state、保护行和引用闭包。Foundry/skills 只能编排这些命令，不得实现私有 SQL、service-role 或 raw REST mutation。
+`tiangong-lca dataset maintenance plan/apply/verify` 是错误导入后 row-level 修复的 CLI-owned 入口。`plan` 冻结当前用户 RLS 可见快照、保护行、引用影响、desired payload 和 canonical plan SHA-256；普通操作只允许精确 `id + version` 的当前账号 `state_code=0` draft 通过 `cmd_dataset_save_draft` / `cmd_dataset_delete` 执行。显式 `publish-support` 操作只接受 `unitgroups` / `flowproperties` 的 `publish` action，并在计划解析和执行前重复校验 TIDAS schema、payload 根 id/version 与非空 `modified_at`，再调用 `cmd_dataset_publish_guarded`。所有路径都把相同 plan/action correlation 写入 `p_audit` 和本地 `apply-progress.jsonl`；`verify` 独立读回 payload、owner/state、保护行和引用闭包。Foundry/skills 只能编排这些命令，不得实现私有 SQL、service-role 或 raw REST mutation。
 
-`apply` 是 commit-only：必须同时提供 `--commit`、精确 `--approve-plan <sha256>` 和 `--confirm <current-account-email>`。首写前会持久化 approval 并做全计划 drift preflight，每条 pending action 在 RPC 前再做 exact read；update 先于 delete，首个失败会停止后续动作，同一计划可从已记录成功项安全续跑。`lifecyclemodels`、`unitgroups`、`flowproperties`、public/shared、非 owner、非 draft 和不可见行在 v1 中一律保护或阻断。
+`apply` 是 commit-only：必须同时提供 `--commit`、精确 `--approve-plan <sha256>` 和 `--confirm <current-account-email>`。首写前会持久化 approval 并做全计划 drift preflight，每条 pending action 在 RPC 前再做 exact read；save/update、support publish、delete 按固定顺序执行，首个失败会停止后续动作，同一计划可从已记录成功项安全续跑。除上述窄化的 FP/UG publish 外，`lifecyclemodels`、其他 support mutation、public/shared、非 owner、非 draft 和不可见行在 v1 中一律保护或阻断。
 
 `tiangong-lca process get` 现在是统一 CLI 持有的只读 process 详情命令，负责：
 

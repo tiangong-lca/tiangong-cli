@@ -52,6 +52,8 @@ Review note, 2026-06-11: release 0.0.15 keeps the import-lca wrapper inside the 
 
 Review note, 2026-07-11: row-level dataset maintenance is implemented in the native CLI as `dataset maintenance plan/apply/verify`. The architecture keeps scope freezing, current-user RLS reads, protected-row classification, approved platform-command writes, append-only action logging, and independent verification in separate maintenance modules.
 
+Review note, 2026-07-11: the same maintenance modules now support a deliberately narrow `publish-support` operation. It permits only schema-valid, identity-matching current-owner draft `unitgroups` and `flowproperties`, delegates atomic compare-and-publish plus audit-proven retry to `cmd_dataset_publish_guarded`, and keeps approval, append-only logs, resume checks, and state-100 readback within the existing plan/apply/verify boundary.
+
 ## Stable Path Map
 
 | Path group | Role |

@@ -28,7 +28,7 @@ related:
 
 # TianGong LCA CLI 实施指南
 
-Review note, 2026-07-11: `dataset maintenance plan/apply/verify` 已实现为 v1 current-user RLS row-level maintenance 契约；scope 冻结、全计划 drift preflight、显式审批、逐 action 日志、平台审计关联与独立 readback verification 都由原生 CLI 持有。
+Review note, 2026-07-11: `dataset maintenance plan/apply/verify` 已实现为 current-user RLS row-level maintenance 契约；scope 冻结、全计划 drift preflight、显式审批、逐 action 日志、平台审计关联与独立 readback verification 都由原生 CLI 持有，`publish-support` 仅扩展 exact draft FP/UG 的既有 RPC 发布路径。
 
 ## 1. 目标
 
@@ -279,7 +279,7 @@ tiangong-lca
 ```bash
 tiangong-lca dataset maintenance plan \
   --scope ./maintenance-scope.json \
-  --operation <delete|retire|redo-import|repair-references> \
+  --operation <delete|retire|redo-import|repair-references|publish-support> \
   --out-dir ./dataset-maintenance \
   [--page-size <n>] \
   [--timeout-ms <n>] \
@@ -304,9 +304,10 @@ tiangong-lca dataset maintenance verify \
 Scope 与保护规则：
 
 - 远端读取和写入都使用当前认证用户 session 与数据库 RLS，不接受 target user 覆盖。
-- 每条 scope row 必须给出表、exact `id`、exact `version`、expected owner、expected `state_code=0` 与 operator-authored intended action/reason；`--operation` 只接受 `delete`、`retire`、`redo-import`、`repair-references`，且不允许只按 broad `state_code=0` 或其他宽过滤器清理。
-- V1 可执行对象只有 `contacts`、`sources`、`flows`、`processes`，可执行 action 只有 `save_draft` 与 `delete`。
-- `lifecyclemodels`、`unitgroups`、`flowproperties`、public/shared、非当前 owner、非 draft、不可见或 exact version 不一致的 rows 一律进入 protected/blocked，不会降级成可执行 action。
+- 每条 scope row 必须给出表、exact `id`、exact `version`、expected owner、expected `state_code=0` 与 operator-authored intended action/reason；`--operation` 只接受 `delete`、`retire`、`redo-import`、`repair-references`、`publish-support`，且不允许只按 broad `state_code=0` 或其他宽过滤器清理。
+- `contacts`、`sources`、`flows`、`processes` 只允许 `save_draft` 与 `delete`；`publish-support` 只允许对 current-user draft 的 `unitgroups`、`flowproperties` 执行 exact `publish`。
+- `publish` 与 `publish-support` 双向强绑定，不能把 `publish` 混入其他 operation，也不能把 `save_draft` / `delete` 混入 `publish-support`。计划阶段先验证 FP/UG TIDAS schema 与 payload root UUID/version；写入仅调用 `cmd_dataset_publish_guarded`，由数据库在行锁内比较 approved `modified_at` 与 `json_ordered`。已是 public 的重试只有在 command audit 能证明同一 plan/operation/action 已提交时才幂等成功。
+- `lifecyclemodels`、不匹配的 action/table、public/shared、非当前 owner、非 draft、不可见或 exact version 不一致的 rows 一律进入 protected/blocked，不会降级成可执行 action。
 - CLI 只执行人工/上游已经做出的清洗决策，不判断 public canonical、语义重复、引用替代或 redo 内容是否正确。
 
 `plan` 在任何 mutation 之前写出并固定：
@@ -325,7 +326,7 @@ Scope 与保护规则：
 1. 重新认证当前用户并校验账号邮箱。
 2. 对整份计划重新抓取 exact rows 与引用，任何 drift 都在首写前阻断。
 3. 在首写前持久化 `approval-record.json`。
-4. 先执行 `save_draft`，再执行 `delete`；所有写入都通过平台 dataset command path，而不是 raw REST mutation。
+4. 按 `save_draft`、`publish`、`delete` 的固定顺序执行；所有写入都通过平台 dataset command path，而不是 raw REST mutation。`publish` 日志保留发布前 payload，并明确标记为需要人工审查的回退，因为维护命令不会静默把 public data 降回 draft。
 5. 为每条尝试的 action 向 `apply-progress.jsonl` 追加 durable log，并在平台命令的 `p_audit` 中带入 plan/action correlation id。每行至少记录 `plan_sha256`、`operation_id`、`action_id`、table/id/version、actor、started/finished、`before_sha256`、`after_sha256`、result/error 与 rollback。
 6. 任一 action 失败即停止后续动作并写出 `commit-report.json`；已成功 action 保留在日志中，重跑时据此识别已完成状态，避免盲目重复写入。
 

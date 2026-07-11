@@ -33,7 +33,7 @@ checkPaths:
   - scripts/docpact-gate.sh
   - scripts/install-git-hooks.sh
 lastReviewedAt: 2026-07-11
-lastReviewedCommit: 695e6d6fe718cb92d499f3ce8be2dc24c3f6ce29
+lastReviewedCommit: 192ce9cb233af85b8bcf50136d37fd08d4ae8292
 related:
   - .docpact/config.yaml
   - docs/agents/repo-validation.md
@@ -58,6 +58,8 @@ Review note, 2026-06-07: release 0.0.14 keeps the CLI-owned dataset classificati
 Review note, 2026-06-11: release 0.0.15 keeps command nouns/verbs, repo ownership, and release workflow boundaries unchanged. `dataset import-lca convert` now matches the tidas-tools 0.0.28 import_lca CLI surface: the wrapper no longer passes a bare `--process-bundles` flag, forwards `--no-process-bundles` when bundles are disabled, and derives report bundle/mapping file fields from on-disk state.
 
 Review note, 2026-07-11: `dataset maintenance plan/apply/verify` is now the CLI-owned v1 row-level maintenance contract. It freezes exact current-user RLS scope and audit artifacts before any write, executes only approved `save_draft` / `delete` actions through platform command paths, and verifies the result with an independent readback.
+
+Review note, 2026-07-11: the maintenance contract now also has an explicit `publish-support` operation limited to schema-valid, root-identity-matching current-owner draft `unitgroups` and `flowproperties`. Apply delegates locked payload/timestamp preconditions, state transition, and audit-proven replay to `cmd_dataset_publish_guarded`; all other support mutations remain protected.
 
 ## Bootstrap Order
 
@@ -114,7 +116,7 @@ Route those tasks to:
 - Newly added process-maintenance commands such as `process identity-preflight`, `process build-plan`, `process scope-statistics`, `process dedup-review`, `process refresh-references`, and `process verify-rows` still belong to the native CLI command surface in `src/cli.ts` and `src/lib/process-*.ts` / shared CLI-native helpers.
 - `process save-draft` now has a local `ProcessSchema` validation gate before any commit path writes remote state, and `--target-user-id` is a hard current-session/visible-draft owner guard for account-scoped batch imports.
 - Dataset-level local governance commands such as `dataset validate`, `dataset curation-queue build/next/verify`, and `dataset references rewrite` belong to the same native CLI command surface in `src/cli.ts` and `src/lib/dataset-*.ts`.
-- `dataset maintenance plan/apply/verify` owns current-user RLS-scoped row maintenance in `src/lib/dataset-maintenance-{contract,remote,plan,apply,verify}.ts`. V1 requires exact `id` + `version`, `state_code=0`, and current-session ownership; it can plan `save_draft` / `delete` actions only for `contacts`, `sources`, `flows`, and `processes`. `lifecyclemodels`, `unitgroups`, `flowproperties`, public rows, non-owner rows, and non-draft rows are protected.
+- `dataset maintenance plan/apply/verify` owns current-user RLS-scoped row maintenance in `src/lib/dataset-maintenance-{contract,remote,plan,apply,verify}.ts`. V1 requires exact `id` + `version`, `state_code=0`, and current-session ownership. Ordinary maintenance can plan `save_draft` / `delete` actions only for `contacts`, `sources`, `flows`, and `processes`; the separate `publish-support` operation can only publish schema-valid exact drafts in `unitgroups` and `flowproperties` through `cmd_dataset_publish_guarded`. `lifecyclemodels`, public rows, non-owner rows, non-draft rows, and every other support-table mutation remain protected.
 - `lifecyclemodel save-draft` validates canonical lifecyclemodel payloads with `LifeCycleModelSchema` before any commit path writes remote state; `lifecyclemodel graph` remains a local artifact command.
 - `flow publish-version` validates canonical flow payloads with `FlowSchema` before remote visibility planning or writes, and emits `flow-publish-version-gate-report.json` as the blocking ruleset artifact.
 - `process publish-build` validates canonical process payloads with `ProcessSchema` before publish handoff artifacts are written, and emits `reports/process-publish-schema-gate.json`.

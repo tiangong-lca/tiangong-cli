@@ -10,6 +10,7 @@ import {
   isJsonObject,
   MAINTENANCE_SCAN_TABLES,
   type DatasetMaintenanceMutableTable,
+  type DatasetMaintenancePublishTable,
   type DatasetMaintenanceRemoteRow,
   type DatasetMaintenanceScanTable,
   type JsonObject,
@@ -277,7 +278,7 @@ export async function fetchMaintenanceAccountRows(options: {
 
 async function invokeMaintenanceRpc(options: {
   context: DatasetMaintenanceRemoteContext;
-  rpc: 'cmd_dataset_save_draft' | 'cmd_dataset_delete';
+  rpc: 'cmd_dataset_save_draft' | 'cmd_dataset_delete' | 'cmd_dataset_publish_guarded';
   body: JsonObject;
 }): Promise<JsonObject> {
   const url = `${options.context.rest_base_url}/rpc/${options.rpc}`;
@@ -340,6 +341,29 @@ export async function deleteMaintenanceRow(options: {
       p_table: options.table,
       p_id: options.id,
       p_version: options.version,
+      p_audit: options.audit,
+    },
+  });
+}
+
+export async function publishMaintenanceRow(options: {
+  context: DatasetMaintenanceRemoteContext;
+  table: DatasetMaintenancePublishTable;
+  id: string;
+  version: string;
+  expectedModifiedAt: string | null;
+  expectedPayload: JsonObject;
+  audit: JsonObject;
+}): Promise<JsonObject> {
+  return invokeMaintenanceRpc({
+    context: options.context,
+    rpc: 'cmd_dataset_publish_guarded',
+    body: {
+      p_table: options.table,
+      p_id: options.id,
+      p_version: options.version,
+      p_expected_modified_at: options.expectedModifiedAt,
+      p_expected_json_ordered: options.expectedPayload,
       p_audit: options.audit,
     },
   });

@@ -18,6 +18,8 @@ import {
   type DatasetMaintenancePlan,
   type DatasetMaintenancePlanAction,
   type DatasetMaintenanceProgressEntry,
+  type DatasetMaintenanceMutableTable,
+  type DatasetMaintenancePublishTable,
   type DatasetMaintenanceRemoteRow,
   type JsonObject,
 } from './dataset-maintenance-contract.js';
@@ -26,6 +28,7 @@ import {
   deleteMaintenanceRow,
   fetchMaintenanceAccountRows,
   fetchMaintenanceExactRows,
+  publishMaintenanceRow,
   resolveMaintenanceRemoteContext,
   saveDraftMaintenanceRow,
   type DatasetMaintenanceRemoteContext,
@@ -181,6 +184,12 @@ function finalProjectedRows(options: {
       });
     }
   }
+  for (const action of options.plan.actions.filter((entry) => entry.action === 'publish')) {
+    const row = projected.get(maintenanceRowKey(action));
+    if (row) {
+      projected.set(maintenanceRowKey(action), { ...row, state_code: 100 });
+    }
+  }
   for (const action of options.plan.actions.filter((entry) => entry.action === 'delete')) {
     projected.delete(maintenanceRowKey(action));
   }
@@ -237,11 +246,7 @@ function assertApplyPreconditions(options: {
       }
       continue;
     }
-    if (
-      !currentRow ||
-      currentRow.user_id !== action.expected_user_id ||
-      currentRow.state_code !== 0
-    ) {
+    if (!currentRow || currentRow.user_id !== action.expected_user_id) {
       throw new CliError(`Action row is missing, non-draft, or not owned: ${action.action_id}`, {
         code: 'DATASET_MAINTENANCE_ACTION_ROW_DRIFT',
         exitCode: 1,
@@ -249,14 +254,41 @@ function assertApplyPreconditions(options: {
     }
     const currentSnapshot = snapshotRemoteRow(currentRow);
     if (alreadySucceeded) {
-      const desired = loadDesiredPayload(options.planDir, action);
-      if (currentSnapshot.payload_sha256 !== sha256Json(desired)) {
-        throw new CliError(`Previously saved row payload drifted: ${action.action_id}`, {
+      const expectedPayloadSha256 =
+        action.action === 'publish'
+          ? action.before.payload_sha256
+          : sha256Json(loadDesiredPayload(options.planDir, action));
+      const expectedStateCode = action.action === 'publish' ? 100 : 0;
+      if (
+        currentRow.state_code !== expectedStateCode ||
+        currentSnapshot.payload_sha256 !== expectedPayloadSha256 ||
+        currentRow.model_id !== action.before.model_id ||
+        currentRow.rule_verification !== action.before.rule_verification
+      ) {
+        const message =
+          action.action === 'publish'
+            ? `Previously published row drifted: ${action.action_id}`
+            : `Previously saved row payload drifted: ${action.action_id}`;
+        throw new CliError(message, {
           code: 'DATASET_MAINTENANCE_RESUME_DRIFT',
           exitCode: 1,
         });
       }
-    } else if (currentSnapshot.row_sha256 !== action.before.row_sha256) {
+    } else if (action.action === 'publish' && currentRow.state_code === 100) {
+      if (
+        currentSnapshot.payload_sha256 !== action.before.payload_sha256 ||
+        currentRow.model_id !== action.before.model_id ||
+        currentRow.rule_verification !== action.before.rule_verification
+      ) {
+        throw new CliError(`Unlogged published row differs from the plan: ${action.action_id}`, {
+          code: 'DATASET_MAINTENANCE_RESUME_DRIFT',
+          exitCode: 1,
+        });
+      }
+    } else if (
+      currentRow.state_code !== 0 ||
+      currentSnapshot.row_sha256 !== action.before.row_sha256
+    ) {
       throw new CliError(`Pending action row drifted after planning: ${action.action_id}`, {
         code: 'DATASET_MAINTENANCE_ACTION_ROW_DRIFT',
         exitCode: 1,
@@ -323,11 +355,24 @@ async function executeAction(options: {
     version: options.action.version,
   });
   const pendingRow = justInTime.rows.length === 1 ? justInTime.rows[0] : null;
+  const pendingSnapshot = pendingRow ? snapshotRemoteRow(pendingRow) : null;
+  const exactDraft = Boolean(
+    pendingRow &&
+    pendingRow.state_code === 0 &&
+    pendingSnapshot?.row_sha256 === options.action.before.row_sha256,
+  );
+  const auditedPublishReplayCandidate = Boolean(
+    options.action.action === 'publish' &&
+    pendingRow &&
+    pendingRow.state_code === 100 &&
+    pendingSnapshot?.payload_sha256 === options.action.before.payload_sha256 &&
+    pendingRow.model_id === options.action.before.model_id &&
+    pendingRow.rule_verification === options.action.before.rule_verification,
+  );
   if (
     !pendingRow ||
     pendingRow.user_id !== options.action.expected_user_id ||
-    pendingRow.state_code !== 0 ||
-    snapshotRemoteRow(pendingRow).row_sha256 !== options.action.before.row_sha256
+    (!exactDraft && !auditedPublishReplayCandidate)
   ) {
     throw new CliError(`Action row drifted immediately before write: ${options.action.action_id}`, {
       code: 'DATASET_MAINTENANCE_ACTION_JUST_IN_TIME_DRIFT',
@@ -344,7 +389,7 @@ async function executeAction(options: {
   if (options.action.action === 'save_draft') {
     const remoteResult = await saveDraftMaintenanceRow({
       context: options.context,
-      table: options.action.table,
+      table: options.action.table as DatasetMaintenanceMutableTable,
       id: options.action.id,
       version: options.action.version,
       payload: loadDesiredPayload(options.planDir, options.action),
@@ -382,9 +427,50 @@ async function executeAction(options: {
       remoteResultSha256: sha256Json(remoteResult),
     };
   }
+  if (options.action.action === 'publish') {
+    const remoteResult = await publishMaintenanceRow({
+      context: options.context,
+      table: options.action.table as DatasetMaintenancePublishTable,
+      id: options.action.id,
+      version: options.action.version,
+      expectedModifiedAt: options.action.before.modified_at,
+      expectedPayload: options.action.before.json_ordered!,
+      audit,
+    });
+    const readback = await fetchMaintenanceExactRows({
+      context: options.context,
+      table: options.action.table,
+      id: options.action.id,
+      version: options.action.version,
+    });
+    const row = readback.rows[0];
+    if (readback.rows.length !== 1 || !row) {
+      throw new CliError(`publish readback failed for ${options.action.action_id}.`, {
+        code: 'DATASET_MAINTENANCE_ACTION_READBACK_FAILED',
+        exitCode: 1,
+      });
+    }
+    const readbackSnapshot = snapshotRemoteRow(row);
+    if (
+      row.user_id !== options.action.expected_user_id ||
+      row.state_code !== 100 ||
+      readbackSnapshot.payload_sha256 !== options.action.before.payload_sha256 ||
+      row.model_id !== options.action.before.model_id ||
+      row.rule_verification !== options.action.before.rule_verification
+    ) {
+      throw new CliError(`publish readback mismatch for ${options.action.action_id}.`, {
+        code: 'DATASET_MAINTENANCE_ACTION_READBACK_FAILED',
+        exitCode: 1,
+      });
+    }
+    return {
+      afterSha256: readbackSnapshot.row_sha256,
+      remoteResultSha256: sha256Json(remoteResult),
+    };
+  }
   const remoteResult = await deleteMaintenanceRow({
     context: options.context,
-    table: options.action.table,
+    table: options.action.table as DatasetMaintenanceMutableTable,
     id: options.action.id,
     version: options.action.version,
     audit,
@@ -514,7 +600,8 @@ export async function runDatasetMaintenanceApply(
       }
 
       const ordered = [...plan.actions].sort((left, right) => {
-        const actionOrder = Number(left.action === 'delete') - Number(right.action === 'delete');
+        const rank = { save_draft: 0, publish: 1, delete: 2 } as const;
+        const actionOrder = rank[left.action] - rank[right.action];
         return actionOrder || left.ordinal - right.ordinal;
       });
       for (const action of ordered) {

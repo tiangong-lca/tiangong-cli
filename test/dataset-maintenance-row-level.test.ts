@@ -58,6 +58,11 @@ import {
 
 type StoredRow = Omit<DatasetMaintenanceRemoteRow, 'table'>;
 
+const PASSING_PUBLISH_SCHEMAS = {
+  unitgroups: { safeParse: () => ({ success: true as const }) },
+  flowproperties: { safeParse: () => ({ success: true as const }) },
+};
+
 function jsonResponse(body: unknown, status = 200): ResponseLike {
   return {
     ok: status >= 200 && status < 300,
@@ -121,13 +126,104 @@ function flowPayload(id: string, version = '01.00.000'): JsonObject {
   };
 }
 
+function supportReference(type: string): JsonObject {
+  return {
+    '@refObjectId': '12345678-1234-4123-8123-123456789abc',
+    '@type': type,
+    '@uri': '../support/12345678-1234-4123-8123-123456789abc.json',
+    '@version': '01.00.000',
+    'common:shortDescription': { '#text': 'Test support', '@xml:lang': 'en' },
+  };
+}
+
+function supportDataSetInformation(id: string): JsonObject {
+  return {
+    'common:UUID': id,
+    'common:name': { '#text': 'Test support', '@xml:lang': 'en' },
+    classificationInformation: {
+      'common:classification': {
+        'common:class': { '#text': 'Other', '@classId': '4', '@level': '0' },
+      },
+    },
+  };
+}
+
+function supportAdministrativeInformation(id: string, version: string): JsonObject {
+  return {
+    dataEntryBy: {
+      'common:referenceToDataSetFormat': supportReference('source data set'),
+      'common:timeStamp': '2026-07-11T00:00:00Z',
+    },
+    publicationAndOwnership: {
+      'common:dataSetVersion': version,
+      'common:permanentDataSetURI': `https://example.com/support/${id}`,
+      'common:referenceToOwnershipOfDataSet': supportReference('contact data set'),
+    },
+  };
+}
+
+function supportModellingAndValidation(): JsonObject {
+  return {
+    complianceDeclarations: {
+      compliance: {
+        'common:approvalOfOverallCompliance': 'Not defined',
+        'common:referenceToComplianceSystem': supportReference('source data set'),
+      },
+    },
+  };
+}
+
+function unitGroupPayload(id: string, version = '01.00.000'): JsonObject {
+  return {
+    unitGroupDataSet: {
+      '@version': '1.1',
+      '@xmlns': 'http://lca.jrc.it/ILCD/UnitGroup',
+      '@xmlns:common': 'http://lca.jrc.it/ILCD/Common',
+      '@xmlns:xsi': 'http://www.w3.org/2001/XMLSchema-instance',
+      '@xsi:schemaLocation':
+        'http://lca.jrc.it/ILCD/UnitGroup ../../schemas/ILCD_UnitGroupDataSet.xsd',
+      unitGroupInformation: {
+        dataSetInformation: supportDataSetInformation(id),
+        quantitativeReference: { referenceToReferenceUnit: '1' },
+      },
+      modellingAndValidation: supportModellingAndValidation(),
+      administrativeInformation: supportAdministrativeInformation(id, version),
+    },
+  };
+}
+
+function flowPropertyPayload(id: string, version = '01.00.000'): JsonObject {
+  return {
+    flowPropertyDataSet: {
+      '@version': '1.1',
+      '@xmlns': 'http://lca.jrc.it/ILCD/FlowProperty',
+      '@xmlns:common': 'http://lca.jrc.it/ILCD/Common',
+      '@xmlns:xsi': 'http://www.w3.org/2001/XMLSchema-instance',
+      '@xsi:schemaLocation':
+        'http://lca.jrc.it/ILCD/FlowProperty ../../schemas/ILCD_FlowPropertyDataSet.xsd',
+      flowPropertiesInformation: {
+        dataSetInformation: supportDataSetInformation(id),
+        quantitativeReference: {
+          referenceToReferenceUnitGroup: supportReference('unit group data set'),
+        },
+      },
+      modellingAndValidation: supportModellingAndValidation(),
+      administrativeInformation: supportAdministrativeInformation(id, version),
+    },
+  };
+}
+
 class FakeMaintenanceRemote {
   readonly userId = '11111111-1111-4111-8111-111111111111';
   readonly email = 'owner@example.com';
   readonly env: NodeJS.ProcessEnv;
   readonly rows = new Map<string, StoredRow[]>();
   readonly rpcOrder: string[] = [];
+  readonly rpcBodies: Record<string, unknown>[] = [];
+  readonly publishAuditKeys = new Set<string>();
   failDeleteOnce = false;
+  failPublishResponseAfterCommitOnce = false;
+  publishReadbackFailure: 'missing' | 'mismatch' | null = null;
   invalidJson = false;
 
   constructor(label: string) {
@@ -186,6 +282,7 @@ class FakeMaintenanceRemote {
     if (rpc) {
       const body = JSON.parse(String(init?.body)) as Record<string, unknown>;
       this.rpcOrder.push(rpc);
+      this.rpcBodies.push(body);
       if (rpc === 'cmd_dataset_delete' && this.failDeleteOnce) {
         this.failDeleteOnce = false;
         return jsonResponse({ message: 'injected delete failure' }, 500);
@@ -199,6 +296,37 @@ class FakeMaintenanceRemote {
         if (rowIndex >= 0) {
           tableRows.splice(rowIndex, 1);
         }
+      } else if (rpc === 'cmd_dataset_publish_guarded' && rowIndex >= 0) {
+        const audit = body.p_audit as Record<string, unknown>;
+        const auditKey = JSON.stringify({
+          table,
+          id: body.p_id,
+          version: body.p_version,
+          plan_sha256: audit.plan_sha256,
+          operation_id: audit.operation_id,
+          action_id: audit.action_id,
+        });
+        const current = tableRows[rowIndex]!;
+        if (current.state_code === 100) {
+          if (!this.publishAuditKeys.has(auditKey)) {
+            return jsonResponse({ ok: false, code: 'PUBLISH_REPLAY_UNPROVEN' });
+          }
+        } else {
+          this.publishAuditKeys.add(auditKey);
+          if (this.publishReadbackFailure === 'missing') {
+            tableRows.splice(rowIndex, 1);
+          } else {
+            tableRows[rowIndex] = {
+              ...current,
+              state_code: this.publishReadbackFailure === 'mismatch' ? 20 : 100,
+              modified_at: '2026-07-02T00:00:00.000Z',
+            };
+          }
+        }
+        if (this.failPublishResponseAfterCommitOnce) {
+          this.failPublishResponseAfterCommitOnce = false;
+          return jsonResponse({ message: 'response lost after commit' }, 500);
+        }
       } else if (rowIndex >= 0) {
         tableRows[rowIndex] = {
           ...tableRows[rowIndex]!,
@@ -208,7 +336,11 @@ class FakeMaintenanceRemote {
           modified_at: '2026-07-02T00:00:00.000Z',
         };
       }
-      return jsonResponse({ ok: true, audit: body.p_audit });
+      return jsonResponse({
+        ok: true,
+        audit: body.p_audit,
+        data: rowIndex >= 0 ? tableRows[rowIndex] : null,
+      });
     }
     const table = url.pathname.split('/rest/v1/')[1] ?? '';
     let values = [...(this.rows.get(table) ?? [])];
@@ -511,6 +643,533 @@ test('row-level maintenance plans update-first closure, resumes failure, and ver
   }
 });
 
+test('support publication plans publish exact FP/UG drafts, resume safely, and verify state', async () => {
+  const root = mkdtempSync(path.join(os.tmpdir(), 'tg-maintenance-publish-support-'));
+  const remote = new FakeMaintenanceRemote('publish-support');
+  const unitGroupId = '66666666-6666-4666-8666-666666666666';
+  const flowPropertyId = '77777777-7777-4777-8777-777777777777';
+  remote.add('unitgroups', unitGroupId, unitGroupPayload(unitGroupId));
+  remote.add('flowproperties', flowPropertyId, flowPropertyPayload(flowPropertyId));
+  const scopePath = path.join(root, 'scope.json');
+  const outDir = path.join(root, 'maintenance');
+  writeFileSync(
+    scopePath,
+    JSON.stringify({
+      schema_version: 1,
+      task_id: 'bafu-fpug-publish-test',
+      operation: 'publish-support',
+      account: { user_id: remote.userId, email: remote.email },
+      source_lineage: { workbook_sha256: 'a'.repeat(64), rows: ['1.1', '1.2'] },
+      actions: [
+        {
+          action_id: 'publish-units-time',
+          action: 'publish',
+          table: 'unitgroups',
+          id: unitGroupId,
+          version: '01.00.000',
+          expected_user_id: remote.userId,
+          expected_state_code: 0,
+          reason_code: 'FPUG_001_PUBLISH_TARGET',
+          reason: 'Publish workbook-authorized latest unit group support.',
+          evidence: ['BAFU-AI清洗执行任务.xlsx#FPUG Executable Actions!1.1'],
+        },
+        {
+          action_id: 'publish-time',
+          action: 'publish',
+          table: 'flowproperties',
+          id: flowPropertyId,
+          version: '01.00.000',
+          expected_user_id: remote.userId,
+          expected_state_code: 0,
+          reason_code: 'FPUG_002_PUBLISH_TARGET',
+          reason: 'Publish workbook-authorized latest flow property support.',
+          evidence: ['BAFU-AI清洗执行任务.xlsx#FPUG Executable Actions!1.2'],
+        },
+      ],
+    }),
+  );
+  const now = new Date('2026-07-11T02:00:00.000Z');
+  try {
+    const plan = await runDatasetMaintenancePlan({
+      scopePath,
+      operation: 'publish-support',
+      outDir,
+      env: remote.env,
+      fetchImpl: remote.fetch,
+      now,
+      publishSchemas: PASSING_PUBLISH_SCHEMAS,
+    });
+    assert.equal(plan.status, 'ready');
+    assert.deepEqual(
+      {
+        actions: plan.summary.actions,
+        save_draft: plan.summary.save_draft,
+        delete: plan.summary.delete,
+        publish: plan.summary.publish,
+        protected_rows: plan.summary.protected_rows,
+      },
+      { actions: 2, save_draft: 0, delete: 0, publish: 2, protected_rows: 0 },
+    );
+    assert.deepEqual(
+      plan.actions.map((action) => action.rollback.strategy),
+      ['manual_review_published_state', 'manual_review_published_state'],
+    );
+    assert.equal(
+      plan.actions.every((action) => action.desired_payload === null),
+      true,
+    );
+    assert.equal(parseMaintenancePlan(plan).operation, 'publish-support');
+
+    const craftedPublishPlan = (
+      payload: JsonObject,
+      modifiedAt?: string | null,
+    ): DatasetMaintenancePlan => {
+      const crafted = structuredClone(plan);
+      const action = crafted.actions[0]!;
+      const before = action.before!;
+      const snapshot = snapshotRemoteRow({
+        table: before.table,
+        id: before.id,
+        version: before.version,
+        user_id: before.user_id,
+        state_code: before.state_code,
+        modified_at: modifiedAt === undefined ? before.modified_at : modifiedAt,
+        json_ordered: payload,
+        model_id: before.model_id,
+        rule_verification: before.rule_verification,
+      });
+      action.before = snapshot;
+      action.rollback.before_payload = payload;
+      action.rollback.before_payload_sha256 = snapshot.payload_sha256;
+      crafted.plan_sha256 = computePlanSha256(crafted);
+      return crafted;
+    };
+    assert.throws(
+      () => parseMaintenancePlan(craftedPublishPlan({ unexpected: true })),
+      /must pass its TIDAS schema and match the row id\/version/u,
+    );
+    assert.throws(
+      () =>
+        parseMaintenancePlan(
+          craftedPublishPlan(unitGroupPayload('88888888-8888-4888-8888-888888888888')),
+        ),
+      /must pass its TIDAS schema and match the row id\/version/u,
+    );
+    assert.throws(
+      () => parseMaintenancePlan(craftedPublishPlan(unitGroupPayload(unitGroupId), null)),
+      /requires a frozen modified_at value/u,
+    );
+
+    const applied = await runDatasetMaintenanceApply({
+      planPath: path.join(outDir, 'maintenance-plan.json'),
+      commit: true,
+      approvePlan: plan.plan_sha256,
+      confirm: remote.email,
+      env: remote.env,
+      fetchImpl: remote.fetch,
+      now,
+    });
+    assert.equal(applied.status, 'completed');
+    assert.equal(applied.summary.success, 2);
+    assert.deepEqual(remote.rpcOrder, [
+      'cmd_dataset_publish_guarded',
+      'cmd_dataset_publish_guarded',
+    ]);
+    assert.equal(remote.rpcBodies[0]?.p_expected_modified_at, '2026-07-01T00:00:00.000Z');
+    assert.deepEqual(remote.rpcBodies[0]?.p_expected_json_ordered, unitGroupPayload(unitGroupId));
+    assert.deepEqual(remote.rpcBodies[0]?.p_audit, {
+      plan_sha256: plan.plan_sha256,
+      operation_id: plan.operation_id,
+      action_id: 'publish-units-time',
+      reason_code: 'FPUG_001_PUBLISH_TARGET',
+      source: 'tiangong-lca dataset maintenance apply',
+    });
+    assert.deepEqual(
+      ['unitgroups', 'flowproperties'].map((table) => remote.rows.get(table)?.[0]?.state_code),
+      [100, 100],
+    );
+    const progress = readJsonLinesIfPresent(path.join(outDir, 'apply-progress.jsonl')) as Array<{
+      action: string;
+      after_sha256: string | null;
+      rollback: { strategy: string };
+    }>;
+    assert.equal(
+      progress.every((entry) => entry.action === 'publish'),
+      true,
+    );
+    assert.equal(
+      progress.every((entry) => typeof entry.after_sha256 === 'string'),
+      true,
+    );
+    assert.equal(
+      progress.every((entry) => entry.rollback.strategy === 'manual_review_published_state'),
+      true,
+    );
+
+    const verified = await runDatasetMaintenanceVerify({
+      planPath: path.join(outDir, 'maintenance-plan.json'),
+      outDir: path.join(outDir, 'verify-passed'),
+      env: remote.env,
+      fetchImpl: remote.fetch,
+      now,
+    });
+    assert.equal(verified.status, 'passed');
+    assert.deepEqual(
+      verified.action_checks.map((check) => check.observed),
+      ['published', 'published'],
+    );
+
+    const resumed = await runDatasetMaintenanceApply({
+      planPath: path.join(outDir, 'maintenance-plan.json'),
+      commit: true,
+      approvePlan: plan.plan_sha256,
+      confirm: remote.email,
+      env: remote.env,
+      fetchImpl: remote.fetch,
+      now,
+    });
+    assert.equal(resumed.status, 'completed');
+    assert.equal(resumed.summary.resumed_successes, 2);
+    assert.deepEqual(remote.rpcOrder, [
+      'cmd_dataset_publish_guarded',
+      'cmd_dataset_publish_guarded',
+    ]);
+
+    remote.rows.get('flowproperties')![0]!.state_code = 20;
+    const failed = await runDatasetMaintenanceVerify({
+      planPath: path.join(outDir, 'maintenance-plan.json'),
+      outDir: path.join(outDir, 'verify-failed'),
+      env: remote.env,
+      fetchImpl: remote.fetch,
+      now,
+    });
+    assert.equal(failed.status, 'failed');
+    assert.match(failed.issues.map((entry) => entry.code).join(','), /PUBLISH_READBACK/u);
+
+    const driftContext = await resolveMaintenanceRemoteContext({
+      env: remote.env,
+      fetchImpl: remote.fetch,
+      now,
+    });
+    let driftRows = await fetchMaintenanceAccountRows({
+      context: driftContext,
+      userId: remote.userId,
+    });
+    assert.throws(
+      () =>
+        applyInternals.assertApplyPreconditions({
+          plan,
+          planDir: outDir,
+          currentRows: driftRows.rows,
+          progress: applyInternals.parseProgress(plan, path.join(outDir, 'apply-progress.jsonl')),
+        }),
+      /Previously published row drifted/u,
+    );
+
+    remote.rows.get('flowproperties')![0]!.state_code = 100;
+    remote.rows.get('flowproperties')![0]!.json_ordered = { unexpected: true };
+    driftRows = await fetchMaintenanceAccountRows({
+      context: driftContext,
+      userId: remote.userId,
+    });
+    assert.throws(
+      () =>
+        applyInternals.assertApplyPreconditions({
+          plan,
+          planDir: outDir,
+          currentRows: driftRows.rows,
+          progress: applyInternals.parseProgress(plan, path.join(outDir, 'missing-progress.jsonl')),
+        }),
+      /Unlogged published row differs/u,
+    );
+
+    remote.rows.get('flowproperties')!.splice(0, 1);
+    const missing = await runDatasetMaintenanceVerify({
+      planPath: path.join(outDir, 'maintenance-plan.json'),
+      outDir: path.join(outDir, 'verify-missing'),
+      env: remote.env,
+      fetchImpl: remote.fetch,
+      now,
+    });
+    assert.equal(missing.status, 'failed');
+    assert.match(missing.issues.map((entry) => entry.code).join(','), /PUBLISH_READBACK/u);
+  } finally {
+    rmSync(root, { recursive: true, force: true });
+  }
+});
+
+test('support publication apply rejects missing and mismatched immediate readback', async () => {
+  const root = mkdtempSync(path.join(os.tmpdir(), 'tg-maintenance-publish-readback-'));
+  try {
+    for (const failure of ['missing', 'mismatch'] as const) {
+      const scenarioRoot = path.join(root, failure);
+      mkdirSync(scenarioRoot, { recursive: true });
+      const remote = new FakeMaintenanceRemote(`publish-readback-${failure}`);
+      const id = '88888888-8888-4888-8888-888888888888';
+      remote.add('unitgroups', id, unitGroupPayload(id));
+      const scopePath = path.join(scenarioRoot, 'scope.json');
+      const outDir = path.join(scenarioRoot, 'maintenance');
+      writeFileSync(
+        scopePath,
+        JSON.stringify({
+          schema_version: 1,
+          task_id: `publish-readback-${failure}`,
+          operation: 'publish-support',
+          account: { user_id: remote.userId, email: remote.email },
+          actions: [
+            {
+              action_id: 'publish-unitgroup',
+              action: 'publish',
+              table: 'unitgroups',
+              id,
+              version: '01.00.000',
+              expected_user_id: remote.userId,
+              expected_state_code: 0,
+              reason_code: 'PUBLISH_SUPPORT',
+              reason: 'Exercise immediate readback guards.',
+              evidence: [],
+            },
+          ],
+        }),
+      );
+      const now = new Date('2026-07-11T02:30:00.000Z');
+      const plan = await runDatasetMaintenancePlan({
+        scopePath,
+        operation: 'publish-support',
+        outDir,
+        env: remote.env,
+        fetchImpl: remote.fetch,
+        now,
+        publishSchemas: PASSING_PUBLISH_SCHEMAS,
+      });
+      const context = await resolveMaintenanceRemoteContext({
+        env: remote.env,
+        fetchImpl: remote.fetch,
+        now,
+      });
+      remote.publishReadbackFailure = failure;
+      await assert.rejects(
+        () =>
+          applyInternals.executeAction({
+            action: plan.actions[0]!,
+            plan,
+            planDir: outDir,
+            context,
+          }),
+        failure === 'missing' ? /publish readback failed/u : /publish readback mismatch/u,
+      );
+    }
+  } finally {
+    rmSync(root, { recursive: true, force: true });
+  }
+});
+
+test('support publication safely replays an audit-proven commit after its response is lost', async () => {
+  const root = mkdtempSync(path.join(os.tmpdir(), 'tg-maintenance-publish-replay-'));
+  const remote = new FakeMaintenanceRemote('publish-replay');
+  const id = 'cccccccc-cccc-4ccc-8ccc-cccccccccccc';
+  remote.add('unitgroups', id, unitGroupPayload(id));
+  const scopePath = path.join(root, 'scope.json');
+  const outDir = path.join(root, 'maintenance');
+  writeFileSync(
+    scopePath,
+    JSON.stringify({
+      schema_version: 1,
+      task_id: 'publish-replay',
+      operation: 'publish-support',
+      account: { user_id: remote.userId, email: remote.email },
+      actions: [
+        {
+          action_id: 'publish-unitgroup',
+          action: 'publish',
+          table: 'unitgroups',
+          id,
+          version: '01.00.000',
+          expected_user_id: remote.userId,
+          expected_state_code: 0,
+          reason_code: 'PUBLISH_SUPPORT',
+          reason: 'Exercise audit-proven idempotent replay.',
+          evidence: [],
+        },
+      ],
+    }),
+  );
+  const now = new Date('2026-07-11T02:45:00.000Z');
+  try {
+    const plan = await runDatasetMaintenancePlan({
+      scopePath,
+      operation: 'publish-support',
+      outDir,
+      env: remote.env,
+      fetchImpl: remote.fetch,
+      now,
+      publishSchemas: PASSING_PUBLISH_SCHEMAS,
+    });
+    remote.failPublishResponseAfterCommitOnce = true;
+    const uncertain = await runDatasetMaintenanceApply({
+      planPath: path.join(outDir, 'maintenance-plan.json'),
+      commit: true,
+      approvePlan: plan.plan_sha256,
+      confirm: remote.email,
+      env: remote.env,
+      fetchImpl: remote.fetch,
+      now,
+    });
+    assert.equal(uncertain.status, 'completed_with_failures');
+    assert.equal(uncertain.summary.failed, 1);
+    assert.equal(remote.rows.get('unitgroups')?.[0]?.state_code, 100);
+
+    const recovered = await runDatasetMaintenanceApply({
+      planPath: path.join(outDir, 'maintenance-plan.json'),
+      commit: true,
+      approvePlan: plan.plan_sha256,
+      confirm: remote.email,
+      env: remote.env,
+      fetchImpl: remote.fetch,
+      now,
+    });
+    assert.equal(recovered.status, 'completed');
+    assert.equal(recovered.summary.success, 1);
+    assert.deepEqual(remote.rpcOrder, [
+      'cmd_dataset_publish_guarded',
+      'cmd_dataset_publish_guarded',
+    ]);
+    assert.deepEqual(
+      readJsonLinesIfPresent(path.join(outDir, 'apply-progress.jsonl')).map(
+        (entry) => (entry as { result: string }).result,
+      ),
+      ['failed', 'success'],
+    );
+    const verified = await runDatasetMaintenanceVerify({
+      planPath: path.join(outDir, 'maintenance-plan.json'),
+      outDir: path.join(outDir, 'verify'),
+      env: remote.env,
+      fetchImpl: remote.fetch,
+      now,
+    });
+    assert.equal(verified.status, 'passed');
+  } finally {
+    rmSync(root, { recursive: true, force: true });
+  }
+});
+
+test('support publication planning blocks schema-invalid and misidentified payloads', async () => {
+  const root = mkdtempSync(path.join(os.tmpdir(), 'tg-maintenance-publish-validation-'));
+  const remote = new FakeMaintenanceRemote('publish-validation');
+  const unitGroupId = '99999999-9999-4999-8999-999999999999';
+  const flowPropertyId = 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa';
+  const noModifiedAtId = 'dddddddd-dddd-4ddd-8ddd-dddddddddddd';
+  remote.add('unitgroups', unitGroupId, {
+    unitGroupDataSet: {
+      unitGroupInformation: { dataSetInformation: { 'common:UUID': unitGroupId } },
+      administrativeInformation: {
+        publicationAndOwnership: { 'common:dataSetVersion': '01.00.000' },
+      },
+    },
+  });
+  remote.add(
+    'flowproperties',
+    flowPropertyId,
+    flowPropertyPayload('bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb'),
+  );
+  remote.add('unitgroups', noModifiedAtId, unitGroupPayload(noModifiedAtId), {
+    modified_at: null,
+  });
+
+  const writeScope = (options: {
+    table: 'unitgroups' | 'flowproperties';
+    id: string;
+    target: string;
+  }): string => {
+    const scopePath = path.join(root, `${options.target}.json`);
+    writeFileSync(
+      scopePath,
+      JSON.stringify({
+        schema_version: 1,
+        task_id: options.target,
+        operation: 'publish-support',
+        account: { user_id: remote.userId, email: remote.email },
+        actions: [
+          {
+            action_id: options.target,
+            action: 'publish',
+            table: options.table,
+            id: options.id,
+            version: '01.00.000',
+            expected_user_id: remote.userId,
+            expected_state_code: 0,
+            reason_code: 'PUBLISH_SUPPORT',
+            reason: 'Validate payload before publication.',
+            evidence: [],
+          },
+        ],
+      }),
+    );
+    return scopePath;
+  };
+
+  try {
+    const schemaBlocked = await runDatasetMaintenancePlan({
+      scopePath: writeScope({
+        table: 'unitgroups',
+        id: unitGroupId,
+        target: 'schema-invalid',
+      }),
+      operation: 'publish-support',
+      outDir: path.join(root, 'schema-invalid-plan'),
+      env: remote.env,
+      fetchImpl: remote.fetch,
+    });
+    assert.equal(schemaBlocked.status, 'blocked');
+    assert.match(
+      schemaBlocked.blockers.map((entry) => entry.code).join(','),
+      /PUBLISH_PAYLOAD_SCHEMA_INVALID/u,
+    );
+
+    const identityBlocked = await runDatasetMaintenancePlan({
+      scopePath: writeScope({
+        table: 'flowproperties',
+        id: flowPropertyId,
+        target: 'identity-mismatch',
+      }),
+      operation: 'publish-support',
+      outDir: path.join(root, 'identity-mismatch-plan'),
+      env: remote.env,
+      fetchImpl: remote.fetch,
+      publishSchemas: PASSING_PUBLISH_SCHEMAS,
+    });
+    assert.equal(identityBlocked.status, 'blocked');
+    assert.match(
+      identityBlocked.blockers.map((entry) => entry.code).join(','),
+      /PUBLISH_PAYLOAD_IDENTITY_MISMATCH/u,
+    );
+    assert.doesNotMatch(
+      identityBlocked.blockers.map((entry) => entry.code).join(','),
+      /PUBLISH_PAYLOAD_SCHEMA_INVALID/u,
+    );
+
+    const timestampBlocked = await runDatasetMaintenancePlan({
+      scopePath: writeScope({
+        table: 'unitgroups',
+        id: noModifiedAtId,
+        target: 'missing-modified-at',
+      }),
+      operation: 'publish-support',
+      outDir: path.join(root, 'missing-modified-at-plan'),
+      env: remote.env,
+      fetchImpl: remote.fetch,
+      publishSchemas: PASSING_PUBLISH_SCHEMAS,
+    });
+    assert.equal(timestampBlocked.status, 'blocked');
+    assert.match(
+      timestampBlocked.blockers.map((entry) => entry.code).join(','),
+      /PUBLISH_EXPECTED_MODIFIED_AT_MISSING/u,
+    );
+  } finally {
+    rmSync(root, { recursive: true, force: true });
+  }
+});
+
 test('row-level plan blocks a delete with projected inbound references', async () => {
   const root = mkdtempSync(path.join(os.tmpdir(), 'tg-maintenance-blocked-'));
   const remote = new FakeMaintenanceRemote('row-maintenance-blocked');
@@ -577,6 +1236,90 @@ test('maintenance contracts and remote adapters reject unsafe inputs and invalid
         ],
       }),
     /protected or unsupported/u,
+  );
+  const publishAction = {
+    action_id: 'publish-time',
+    action: 'publish',
+    table: 'flowproperties',
+    id: '77777777-7777-4777-8777-777777777777',
+    version: '01.00.000',
+    expected_user_id: remote.userId,
+    expected_state_code: 0,
+    reason_code: 'PUBLISH_SUPPORT',
+    reason: 'Publish exact reviewed support.',
+    evidence: [],
+  };
+  assert.equal(
+    parseMaintenanceScope({
+      schema_version: 1,
+      task_id: 'publish-support',
+      operation: 'publish-support',
+      account: { user_id: remote.userId },
+      actions: [publishAction],
+    }).actions[0]?.table,
+    'flowproperties',
+  );
+  assert.throws(
+    () =>
+      parseMaintenanceScope({
+        schema_version: 1,
+        task_id: 'wrong-operation',
+        operation: 'repair-references',
+        account: { user_id: remote.userId },
+        actions: [publishAction],
+      }),
+    /cannot contain publish/u,
+  );
+  assert.throws(
+    () =>
+      parseMaintenanceScope({
+        schema_version: 1,
+        task_id: 'wrong-table',
+        operation: 'publish-support',
+        account: { user_id: remote.userId },
+        actions: [{ ...publishAction, table: 'flows' }],
+      }),
+    /protected or unsupported/u,
+  );
+  assert.throws(
+    () =>
+      parseMaintenanceScope({
+        schema_version: 1,
+        task_id: 'wrong-action',
+        operation: 'publish-support',
+        account: { user_id: remote.userId },
+        actions: [
+          {
+            ...publishAction,
+            action: 'save_draft',
+            table: 'flows',
+            desired_payload_path: 'payload.json',
+          },
+        ],
+      }),
+    /cannot contain save_draft/u,
+  );
+  assert.throws(
+    () =>
+      parseMaintenanceScope({
+        schema_version: 1,
+        task_id: 'publish-payload',
+        operation: 'publish-support',
+        account: { user_id: remote.userId },
+        actions: [{ ...publishAction, desired_payload_path: 'forbidden.json' }],
+      }),
+    /cannot include desired_payload_path/u,
+  );
+  assert.throws(
+    () =>
+      parseMaintenanceScope({
+        schema_version: 1,
+        task_id: 'unsupported-action',
+        operation: 'publish-support',
+        account: { user_id: remote.userId },
+        actions: [{ ...publishAction, action: 'publish_all' }],
+      }),
+    /Unsupported maintenance action/u,
   );
   const context = await resolveMaintenanceRemoteContext({
     env: remote.env,
@@ -896,6 +1639,11 @@ test('maintenance plan parser rejects tampered action, snapshot, summary, and bl
     withImportRun.source_import_run_id = 'bafu-import-run';
     withImportRun.plan_sha256 = computePlanSha256(withImportRun);
     assert.equal(parseMaintenancePlan(withImportRun).source_import_run_id, 'bafu-import-run');
+
+    const legacyV1Plan = structuredClone(basePlan);
+    delete legacyV1Plan.summary.publish;
+    legacyV1Plan.plan_sha256 = computePlanSha256(legacyV1Plan);
+    assert.equal(parseMaintenancePlan(legacyV1Plan).summary.publish, undefined);
 
     invalidPlan((plan) => Object.assign(plan.actions[0]!, { table: 'unitgroups' }));
     invalidPlan((plan) => Object.assign(plan.actions[0]!, { expected_user_id: 'other-user' }));

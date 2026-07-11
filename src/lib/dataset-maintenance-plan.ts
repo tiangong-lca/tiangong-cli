@@ -18,6 +18,7 @@ import {
   type DatasetMaintenancePlan,
   type DatasetMaintenancePlanAction,
   type DatasetMaintenanceProtectedRow,
+  type DatasetMaintenancePublishTable,
   type DatasetMaintenanceReferenceImpact,
   type DatasetMaintenanceRemoteRow,
   type DatasetMaintenanceRowSnapshot,
@@ -25,11 +26,17 @@ import {
   type JsonObject,
 } from './dataset-maintenance-contract.js';
 import {
+  inspectMaintenancePublishPayload,
+  maintenancePublishPayloadIdentity,
+  type DatasetMaintenancePublishSchemas,
+} from './dataset-maintenance-publish-validation.js';
+import {
   fetchMaintenanceAccountRows,
   fetchMaintenanceExactRows,
   normalizeMaintenancePageSize,
   resolveMaintenanceRemoteContext,
 } from './dataset-maintenance-remote.js';
+import { validationIssues } from './tidas-sdk-validation.js';
 
 export type RunDatasetMaintenancePlanOptions = {
   scopePath: string;
@@ -40,6 +47,7 @@ export type RunDatasetMaintenancePlanOptions = {
   env: NodeJS.ProcessEnv;
   fetchImpl: FetchLike;
   now?: Date;
+  publishSchemas?: DatasetMaintenancePublishSchemas;
 };
 
 function normalizeEmail(value: string): string {
@@ -61,16 +69,6 @@ function blocker(
     version: action.version,
     ...(details === undefined ? {} : { details }),
   };
-}
-
-function desiredPayloadIdentity(payload: JsonObject): {
-  id: string | null;
-  version: string | null;
-} {
-  const root = collectRemoteReferences([{ json_ordered: payload }]).find(
-    (reference) => reference.role === 'root',
-  );
-  return { id: root?.id ?? null, version: root?.version ?? null };
 }
 
 function referenceImpacts(options: {
@@ -149,6 +147,13 @@ function projectedRows(options: {
     const payload = options.desiredPayloads.get(action.action_id);
     if (row && payload) {
       projected.set(key, { ...row, json_ordered: payload });
+    }
+  }
+  for (const action of options.actions.filter((entry) => entry.action === 'publish')) {
+    const key = maintenanceRowKey(action);
+    const row = projected.get(key);
+    if (row) {
+      projected.set(key, { ...row, state_code: 100 });
     }
   }
   for (const action of options.actions.filter((entry) => entry.action === 'delete')) {
@@ -307,6 +312,44 @@ export async function runDatasetMaintenancePlan(
         blocker(action, 'TARGET_PAYLOAD_MISSING', 'Target row has no object json_ordered payload.'),
       );
     }
+    if (action.action === 'publish' && before && !before.modified_at) {
+      actionBlockers.push(
+        blocker(
+          action,
+          'PUBLISH_EXPECTED_MODIFIED_AT_MISSING',
+          'Publish target requires a non-null modified_at optimistic-lock value.',
+        ),
+      );
+    }
+    if (action.action === 'publish' && before?.json_ordered) {
+      const inspection = inspectMaintenancePublishPayload({
+        table: action.table as DatasetMaintenancePublishTable,
+        payload: before.json_ordered,
+        schemas: options.publishSchemas,
+      });
+      const identity = inspection.identity;
+      if (identity.id !== action.id || identity.version !== action.version) {
+        actionBlockers.push(
+          blocker(
+            action,
+            'PUBLISH_PAYLOAD_IDENTITY_MISMATCH',
+            'Publish target payload root id/version does not match the exact database row.',
+            identity,
+          ),
+        );
+      }
+      const schemaResult = inspection.schemaResult;
+      if (!schemaResult.success) {
+        actionBlockers.push(
+          blocker(
+            action,
+            'PUBLISH_PAYLOAD_SCHEMA_INVALID',
+            'Publish target payload does not pass its TIDAS schema.',
+            { issues: validationIssues(schemaResult) },
+          ),
+        );
+      }
+    }
     if (
       before &&
       action.expected_before_sha256 &&
@@ -351,7 +394,7 @@ export async function runDatasetMaintenancePlan(
         path: path.relative(outDir, payloadPath),
         sha256: sha256Json(rawPayload),
       };
-      const identity = desiredPayloadIdentity(rawPayload);
+      const identity = maintenancePublishPayloadIdentity(rawPayload);
       if (identity.id !== action.id || identity.version !== action.version) {
         actionBlockers.push(
           blocker(
@@ -374,7 +417,9 @@ export async function runDatasetMaintenancePlan(
         strategy:
           action.action === 'save_draft'
             ? 'save_before_snapshot'
-            : 'restore_deleted_before_snapshot',
+            : action.action === 'delete'
+              ? 'restore_deleted_before_snapshot'
+              : 'manual_review_published_state',
         before_payload_sha256: before?.payload_sha256 ?? null,
         before_payload: before?.json_ordered ?? null,
         model_id: before?.model_id ?? null,
@@ -439,6 +484,7 @@ export async function runDatasetMaintenancePlan(
       actions: actionPlans.length,
       save_draft: actionPlans.filter((action) => action.action === 'save_draft').length,
       delete: actionPlans.filter((action) => action.action === 'delete').length,
+      publish: actionPlans.filter((action) => action.action === 'publish').length,
       protected_rows: protectedRowList.length,
       blockers: allBlockers.length,
       current_reference_impacts: currentImpacts.length,
@@ -509,7 +555,7 @@ export async function runDatasetMaintenancePlan(
 }
 
 export const __testInternals = {
-  desiredPayloadIdentity,
+  desiredPayloadIdentity: maintenancePublishPayloadIdentity,
   maintenanceProjectedReferenceFingerprint,
   projectedRows,
   protectedRows,

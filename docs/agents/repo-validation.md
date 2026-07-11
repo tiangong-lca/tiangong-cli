@@ -74,6 +74,8 @@ Review note, 2026-06-11: release 0.0.15 requires the same local proof plus focus
 
 Review note, 2026-07-11: `dataset maintenance plan/apply/verify` adds focused proof for exact-row scope freezing, current-user RLS guards, immutable plan hashing, protected-row classification, full-plan drift preflight, approval-before-write, per-action logs, platform audit correlation, failure/resume behavior, and independent readback verification.
 
+Review note, 2026-07-11: `publish-support` validation additionally proves operation/action/table binding, FP/UG schema and root identity, exact draft owner/version eligibility, guarded-RPC compare-and-publish, audit-proven retry after a lost response/log, payload-preserving `state_code=100` readback, and rejection of mixed save/delete or unsupported publish targets.
+
 ## Validation Matrix
 
 | Change type | Minimum local proof | Additional proof when risk is higher | Notes |

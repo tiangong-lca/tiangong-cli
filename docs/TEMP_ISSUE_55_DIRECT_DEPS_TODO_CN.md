@@ -17,7 +17,7 @@ checkPaths:
   - src/lib/tidas-sdk-package-validator.ts
   - test/**
 lastReviewedAt: 2026-07-11
-lastReviewedCommit: b11482ca0dae414719336525c580cab1126897cd
+lastReviewedCommit: 192ce9cb233af85b8bcf50136d37fd08d4ae8292
 related:
   - ../AGENTS.md
   - ../.docpact/config.yaml

@@ -1,28 +1,39 @@
 import crypto from 'node:crypto';
 import { appendFileSync, existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
 import path from 'node:path';
+import { inspectMaintenancePublishPayload } from './dataset-maintenance-publish-validation.js';
 import { CliError } from './errors.js';
 
 export type JsonObject = Record<string, unknown>;
 
 export const MAINTENANCE_MUTABLE_TABLES = ['contacts', 'sources', 'flows', 'processes'] as const;
 
+export const MAINTENANCE_PUBLISH_TABLES = ['unitgroups', 'flowproperties'] as const;
+
 export const MAINTENANCE_SCAN_TABLES = [
   ...MAINTENANCE_MUTABLE_TABLES,
   'lifecyclemodels',
-  'unitgroups',
-  'flowproperties',
+  ...MAINTENANCE_PUBLISH_TABLES,
 ] as const;
 
 export type DatasetMaintenanceMutableTable = (typeof MAINTENANCE_MUTABLE_TABLES)[number];
+export type DatasetMaintenancePublishTable = (typeof MAINTENANCE_PUBLISH_TABLES)[number];
+export type DatasetMaintenanceActionTable =
+  | DatasetMaintenanceMutableTable
+  | DatasetMaintenancePublishTable;
 export type DatasetMaintenanceScanTable = (typeof MAINTENANCE_SCAN_TABLES)[number];
-export type DatasetMaintenanceOperation = 'delete' | 'retire' | 'redo-import' | 'repair-references';
-export type DatasetMaintenanceActionKind = 'save_draft' | 'delete';
+export type DatasetMaintenanceOperation =
+  | 'delete'
+  | 'retire'
+  | 'redo-import'
+  | 'repair-references'
+  | 'publish-support';
+export type DatasetMaintenanceActionKind = 'save_draft' | 'delete' | 'publish';
 
 export type DatasetMaintenanceScopeAction = {
   action_id: string;
   action: DatasetMaintenanceActionKind;
-  table: DatasetMaintenanceMutableTable;
+  table: DatasetMaintenanceActionTable;
   id: string;
   version: string;
   expected_user_id: string;
@@ -86,7 +97,7 @@ export type DatasetMaintenanceProtectedRow = {
 
 export type DatasetMaintenanceReferenceImpact = {
   target_action_id: string;
-  target_table: DatasetMaintenanceMutableTable;
+  target_table: DatasetMaintenanceActionTable;
   target_id: string;
   target_version: string;
   phase: 'current' | 'projected';
@@ -107,7 +118,10 @@ export type DatasetMaintenancePlanAction = DatasetMaintenanceScopeAction & {
   } | null;
   blockers: DatasetMaintenanceBlocker[];
   rollback: {
-    strategy: 'save_before_snapshot' | 'restore_deleted_before_snapshot';
+    strategy:
+      | 'save_before_snapshot'
+      | 'restore_deleted_before_snapshot'
+      | 'manual_review_published_state';
     before_payload_sha256: string | null;
     before_payload: JsonObject | null;
     model_id: string | null;
@@ -136,6 +150,7 @@ export type DatasetMaintenancePlan = {
     actions: number;
     save_draft: number;
     delete: number;
+    publish?: number;
     protected_rows: number;
     blockers: number;
     current_reference_impacts: number;
@@ -161,7 +176,7 @@ export type DatasetMaintenanceProgressEntry = {
   operation_id: string;
   action_id: string;
   action: DatasetMaintenanceActionKind;
-  table: DatasetMaintenanceMutableTable;
+  table: DatasetMaintenanceActionTable;
   id: string;
   version: string;
   reason_code: string;
@@ -256,6 +271,7 @@ function parseAction(
   value: unknown,
   index: number,
   accountUserId: string,
+  operation: DatasetMaintenanceOperation,
 ): DatasetMaintenanceScopeAction {
   if (!isJsonObject(value)) {
     throw new CliError(`Maintenance scope action ${index} must be an object.`, {
@@ -265,13 +281,17 @@ function parseAction(
   }
   const action = requireToken(value.action, `actions[${index}].action`);
   const table = requireToken(value.table, `actions[${index}].table`);
-  if (!['save_draft', 'delete'].includes(action)) {
+  if (!['save_draft', 'delete', 'publish'].includes(action)) {
     throw new CliError(`Unsupported maintenance action: ${action}`, {
       code: 'DATASET_MAINTENANCE_ACTION_UNSUPPORTED',
       exitCode: 2,
     });
   }
-  if (!(MAINTENANCE_MUTABLE_TABLES as readonly string[]).includes(table)) {
+  const publishAction = action === 'publish';
+  const allowedTable = publishAction
+    ? (MAINTENANCE_PUBLISH_TABLES as readonly string[]).includes(table)
+    : (MAINTENANCE_MUTABLE_TABLES as readonly string[]).includes(table);
+  if (!allowedTable) {
     throw new CliError(
       `Maintenance cannot mutate protected or unsupported dataset table: ${table}`,
       {
@@ -279,6 +299,15 @@ function parseAction(
         exitCode: 2,
       },
     );
+  }
+  if (
+    (operation === 'publish-support' && !publishAction) ||
+    (operation !== 'publish-support' && publishAction)
+  ) {
+    throw new CliError(`Maintenance operation ${operation} cannot contain ${action} actions.`, {
+      code: 'DATASET_MAINTENANCE_OPERATION_ACTION_MISMATCH',
+      exitCode: 2,
+    });
   }
   if (value.expected_state_code !== 0) {
     throw new CliError(`Maintenance action ${index} must require expected_state_code=0.`, {
@@ -306,6 +335,15 @@ function parseAction(
       exitCode: 2,
     });
   }
+  if (action !== 'save_draft' && desiredPayloadPath) {
+    throw new CliError(
+      `Maintenance ${action} action ${index} cannot include desired_payload_path.`,
+      {
+        code: 'DATASET_MAINTENANCE_DESIRED_PAYLOAD_FORBIDDEN',
+        exitCode: 2,
+      },
+    );
+  }
   const expectedBeforeSha256 = token(value.expected_before_sha256);
   if (expectedBeforeSha256 && !/^[a-f0-9]{64}$/u.test(expectedBeforeSha256)) {
     throw new CliError(`Maintenance action ${index} expected_before_sha256 is invalid.`, {
@@ -317,7 +355,7 @@ function parseAction(
   return {
     action_id: requireToken(value.action_id, `actions[${index}].action_id`),
     action: action as DatasetMaintenanceActionKind,
-    table: table as DatasetMaintenanceMutableTable,
+    table: table as DatasetMaintenanceActionTable,
     id: requireToken(value.id, `actions[${index}].id`),
     version: requireToken(value.version, `actions[${index}].version`),
     expected_user_id: expectedUserId,
@@ -341,7 +379,9 @@ export function parseMaintenanceScope(
     });
   }
   const operation = requireToken(value.operation, 'operation');
-  if (!['delete', 'retire', 'redo-import', 'repair-references'].includes(operation)) {
+  if (
+    !['delete', 'retire', 'redo-import', 'repair-references', 'publish-support'].includes(operation)
+  ) {
     throw new CliError(`Unsupported maintenance operation: ${operation}`, {
       code: 'DATASET_MAINTENANCE_OPERATION_UNSUPPORTED',
       exitCode: 2,
@@ -363,7 +403,9 @@ export function parseMaintenanceScope(
       exitCode: 2,
     });
   }
-  const actions = value.actions.map((entry, index) => parseAction(entry, index, userId));
+  const actions = value.actions.map((entry, index) =>
+    parseAction(entry, index, userId, operation as DatasetMaintenanceOperation),
+  );
   const actionIds = new Set<string>();
   const rowKeys = new Set<string>();
   const payloadNames = new Set<string>();
@@ -595,6 +637,37 @@ export function parseMaintenancePlan(value: unknown): DatasetMaintenancePlan {
           details: { action_id: action.action_id },
         });
       }
+      if (action.action === 'publish') {
+        if (typeof before.modified_at !== 'string' || before.modified_at.length === 0) {
+          throw new CliError('Ready publish action requires a frozen modified_at value.', {
+            code: 'DATASET_MAINTENANCE_PLAN_INVALID',
+            exitCode: 2,
+            details: { action_id: action.action_id },
+          });
+        }
+        const inspection = inspectMaintenancePublishPayload({
+          table: action.table as DatasetMaintenancePublishTable,
+          payload: before.json_ordered,
+        });
+        if (
+          inspection.identity.id !== action.id ||
+          inspection.identity.version !== action.version ||
+          !inspection.schemaResult.success
+        ) {
+          throw new CliError(
+            'Ready publish action payload must pass its TIDAS schema and match the row id/version.',
+            {
+              code: 'DATASET_MAINTENANCE_PLAN_INVALID',
+              exitCode: 2,
+              details: {
+                action_id: action.action_id,
+                identity: inspection.identity,
+                schema_valid: inspection.schemaResult.success,
+              },
+            },
+          );
+        }
+      }
       const remoteRow: DatasetMaintenanceRemoteRow = {
         table: before.table,
         id: before.id,
@@ -618,7 +691,11 @@ export function parseMaintenancePlan(value: unknown): DatasetMaintenancePlan {
         });
       }
       const expectedRollbackStrategy =
-        action.action === 'save_draft' ? 'save_before_snapshot' : 'restore_deleted_before_snapshot';
+        action.action === 'save_draft'
+          ? 'save_before_snapshot'
+          : action.action === 'delete'
+            ? 'restore_deleted_before_snapshot'
+            : 'manual_review_published_state';
       if (
         action.rollback.strategy !== expectedRollbackStrategy ||
         action.rollback.before_payload_sha256 !== before.payload_sha256 ||
@@ -639,7 +716,7 @@ export function parseMaintenancePlan(value: unknown): DatasetMaintenancePlan {
         (!isJsonObject(action.desired_payload) ||
           typeof action.desired_payload.path !== 'string' ||
           !/^[a-f0-9]{64}$/u.test(String(action.desired_payload.sha256)))) ||
-      (action.action === 'delete' && action.desired_payload !== null)
+      (action.action !== 'save_draft' && action.desired_payload !== null)
     ) {
       throw new CliError('Maintenance plan action desired payload contract is invalid.', {
         code: 'DATASET_MAINTENANCE_PLAN_INVALID',
@@ -655,6 +732,8 @@ export function parseMaintenancePlan(value: unknown): DatasetMaintenancePlan {
     plan.summary.save_draft ===
       plan.actions.filter((action) => action.action === 'save_draft').length &&
     plan.summary.delete === plan.actions.filter((action) => action.action === 'delete').length &&
+    (plan.summary.publish ?? 0) ===
+      plan.actions.filter((action) => action.action === 'publish').length &&
     plan.summary.protected_rows === plan.protected_rows.length &&
     plan.summary.blockers === plan.blockers.length &&
     Number.isInteger(plan.summary.current_reference_impacts) &&

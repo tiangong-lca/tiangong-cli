@@ -57,7 +57,7 @@ export type DatasetMaintenanceVerifyReport = {
   action_checks: Array<{
     action_id: string;
     status: 'passed' | 'failed';
-    observed: 'desired_payload' | 'absent' | 'mismatch';
+    observed: 'desired_payload' | 'published' | 'absent' | 'mismatch';
   }>;
   issues: DatasetMaintenanceVerifyIssue[];
   artifacts: {
@@ -206,6 +206,33 @@ export async function runDatasetMaintenanceVerify(
       });
       continue;
     }
+    if (action.action === 'publish') {
+      const row = exact.rows.length === 1 ? exact.rows[0] : null;
+      const snapshot = row ? snapshotRemoteRow(row) : null;
+      const passed = Boolean(
+        row &&
+        snapshot?.payload_sha256 === action.before?.payload_sha256 &&
+        row.user_id === action.expected_user_id &&
+        row.state_code === 100 &&
+        row.model_id === action.before?.model_id &&
+        row.rule_verification === action.before?.rule_verification,
+      );
+      if (!passed) {
+        problems.push(
+          issue(
+            'PUBLISH_READBACK_MISMATCH',
+            'Published row payload, owner, state, model_id, or rule_verification did not match the plan.',
+            action,
+          ),
+        );
+      }
+      actionChecks.push({
+        action_id: action.action_id,
+        status: passed ? 'passed' : 'failed',
+        observed: passed ? 'published' : 'mismatch',
+      });
+      continue;
+    }
     const payload = desiredPayload(planDir, action);
     const row = exact.rows.length === 1 ? exact.rows[0] : null;
     const snapshot = row ? snapshotRemoteRow(row) : null;
@@ -251,7 +278,7 @@ export async function runDatasetMaintenanceVerify(
   }
   const expectedFinalKeys = new Set([
     ...plan.protected_rows.map(maintenanceRowKey),
-    ...plan.actions.filter((action) => action.action === 'save_draft').map(maintenanceRowKey),
+    ...plan.actions.filter((action) => action.action !== 'delete').map(maintenanceRowKey),
   ]);
   for (const row of current.rows) {
     if (!expectedFinalKeys.has(maintenanceRowKey(row))) {
