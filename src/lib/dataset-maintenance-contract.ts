@@ -1,28 +1,39 @@
 import crypto from 'node:crypto';
 import { appendFileSync, existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
 import path from 'node:path';
+import { inspectMaintenancePublishPayload } from './dataset-maintenance-publish-validation.js';
 import { CliError } from './errors.js';
 
 export type JsonObject = Record<string, unknown>;
 
 export const MAINTENANCE_MUTABLE_TABLES = ['contacts', 'sources', 'flows', 'processes'] as const;
 
+export const MAINTENANCE_PUBLISH_TABLES = ['unitgroups', 'flowproperties'] as const;
+
 export const MAINTENANCE_SCAN_TABLES = [
   ...MAINTENANCE_MUTABLE_TABLES,
   'lifecyclemodels',
-  'unitgroups',
-  'flowproperties',
+  ...MAINTENANCE_PUBLISH_TABLES,
 ] as const;
 
 export type DatasetMaintenanceMutableTable = (typeof MAINTENANCE_MUTABLE_TABLES)[number];
+export type DatasetMaintenancePublishTable = (typeof MAINTENANCE_PUBLISH_TABLES)[number];
+export type DatasetMaintenanceActionTable =
+  | DatasetMaintenanceMutableTable
+  | DatasetMaintenancePublishTable;
 export type DatasetMaintenanceScanTable = (typeof MAINTENANCE_SCAN_TABLES)[number];
-export type DatasetMaintenanceOperation = 'delete' | 'retire' | 'redo-import' | 'repair-references';
-export type DatasetMaintenanceActionKind = 'save_draft' | 'delete';
+export type DatasetMaintenanceOperation =
+  | 'delete'
+  | 'retire'
+  | 'redo-import'
+  | 'repair-references'
+  | 'publish-support';
+export type DatasetMaintenanceActionKind = 'save_draft' | 'delete' | 'publish';
 
 export type DatasetMaintenanceScopeAction = {
   action_id: string;
   action: DatasetMaintenanceActionKind;
-  table: DatasetMaintenanceMutableTable;
+  table: DatasetMaintenanceActionTable;
   id: string;
   version: string;
   expected_user_id: string;
@@ -86,7 +97,7 @@ export type DatasetMaintenanceProtectedRow = {
 
 export type DatasetMaintenanceReferenceImpact = {
   target_action_id: string;
-  target_table: DatasetMaintenanceMutableTable;
+  target_table: DatasetMaintenanceActionTable;
   target_id: string;
   target_version: string;
   phase: 'current' | 'projected';
@@ -107,7 +118,10 @@ export type DatasetMaintenancePlanAction = DatasetMaintenanceScopeAction & {
   } | null;
   blockers: DatasetMaintenanceBlocker[];
   rollback: {
-    strategy: 'save_before_snapshot' | 'restore_deleted_before_snapshot';
+    strategy:
+      | 'save_before_snapshot'
+      | 'restore_deleted_before_snapshot'
+      | 'manual_review_published_state';
     before_payload_sha256: string | null;
     before_payload: JsonObject | null;
     model_id: string | null;
@@ -136,6 +150,7 @@ export type DatasetMaintenancePlan = {
     actions: number;
     save_draft: number;
     delete: number;
+    publish?: number;
     protected_rows: number;
     blockers: number;
     current_reference_impacts: number;
@@ -155,13 +170,70 @@ export type DatasetMaintenancePlan = {
   blockers: DatasetMaintenanceBlocker[];
 };
 
+export const DATASET_MAINTENANCE_SUPPORT_APPROVAL_SCHEMA =
+  'tiangong-lca.dataset-maintenance.support-approval.v1' as const;
+
+export type DatasetMaintenanceSupportApprovalAction = {
+  ordinal: number;
+  action_id: string;
+  action: 'publish';
+  table: DatasetMaintenancePublishTable;
+  id: string;
+  version: string;
+  reason_code: string;
+  expected_user_id: string;
+  expected_state_code: 0;
+  expected_modified_at: string;
+  expected_before_sha256: string;
+  expected_payload_sha256: string;
+  plan_sha256: string;
+  operation_id: string;
+  approval_audit_id: string;
+  reviewer_user_id: string;
+  reviewer_email: string;
+  idempotent_replay: boolean;
+};
+
+export type DatasetMaintenanceSupportApprovalRecord = {
+  schema: typeof DATASET_MAINTENANCE_SUPPORT_APPROVAL_SCHEMA;
+  schema_version: 1;
+  approved_at_utc: string;
+  plan_path: string;
+  plan_sha256: string;
+  task_id: string;
+  operation: 'publish-support';
+  operation_id: string;
+  target_owner: {
+    user_id: string;
+    email: string | null;
+  };
+  reviewer: {
+    user_id: string;
+    email: string;
+  };
+  authority: {
+    source: 'public.command_audit_log';
+    rpc: 'cmd_dataset_support_approve_guarded';
+    local_artifact_is_authority: false;
+  };
+  actions: DatasetMaintenanceSupportApprovalAction[];
+};
+
+export type DatasetMaintenanceProgressApprovalCorrelation = {
+  approval_audit_id: string;
+  reviewer_user_id: string;
+  reviewer_email: string;
+  publish_audit_id: string | null;
+  publish_idempotent_replay: boolean | null;
+};
+
 export type DatasetMaintenanceProgressEntry = {
   schema_version: 1;
   plan_sha256: string;
   operation_id: string;
   action_id: string;
   action: DatasetMaintenanceActionKind;
-  table: DatasetMaintenanceMutableTable;
+  table: DatasetMaintenanceActionTable;
   id: string;
   version: string;
   reason_code: string;
@@ -171,6 +243,7 @@ export type DatasetMaintenanceProgressEntry = {
     action_id: string;
     reason_code: string;
     source: 'tiangong-lca dataset maintenance apply';
+    approval_audit_id?: string;
   };
   actor: {
     user_id: string;
@@ -184,6 +257,7 @@ export type DatasetMaintenanceProgressEntry = {
   result: 'success' | 'failed';
   error: string | null;
   rollback: DatasetMaintenancePlanAction['rollback'];
+  support_approval?: DatasetMaintenanceProgressApprovalCorrelation | null;
 };
 
 function token(value: unknown): string | null {
@@ -224,6 +298,17 @@ export function sha256Json(value: unknown): string {
   return sha256Text(stableJsonText(value));
 }
 
+export function normalizeMaintenanceAuditId(value: unknown, label: string): string {
+  if (typeof value === 'string' && /^[1-9][0-9]{0,17}$/u.test(value)) {
+    return value;
+  }
+  throw new CliError(`${label} must be a positive integer string.`, {
+    code: 'DATASET_MAINTENANCE_AUDIT_ID_INVALID',
+    exitCode: 1,
+    details: value,
+  });
+}
+
 export function snapshotRemoteRow(row: DatasetMaintenanceRemoteRow): DatasetMaintenanceRowSnapshot {
   return {
     ...row,
@@ -256,6 +341,7 @@ function parseAction(
   value: unknown,
   index: number,
   accountUserId: string,
+  operation: DatasetMaintenanceOperation,
 ): DatasetMaintenanceScopeAction {
   if (!isJsonObject(value)) {
     throw new CliError(`Maintenance scope action ${index} must be an object.`, {
@@ -265,13 +351,17 @@ function parseAction(
   }
   const action = requireToken(value.action, `actions[${index}].action`);
   const table = requireToken(value.table, `actions[${index}].table`);
-  if (!['save_draft', 'delete'].includes(action)) {
+  if (!['save_draft', 'delete', 'publish'].includes(action)) {
     throw new CliError(`Unsupported maintenance action: ${action}`, {
       code: 'DATASET_MAINTENANCE_ACTION_UNSUPPORTED',
       exitCode: 2,
     });
   }
-  if (!(MAINTENANCE_MUTABLE_TABLES as readonly string[]).includes(table)) {
+  const publishAction = action === 'publish';
+  const allowedTable = publishAction
+    ? (MAINTENANCE_PUBLISH_TABLES as readonly string[]).includes(table)
+    : (MAINTENANCE_MUTABLE_TABLES as readonly string[]).includes(table);
+  if (!allowedTable) {
     throw new CliError(
       `Maintenance cannot mutate protected or unsupported dataset table: ${table}`,
       {
@@ -279,6 +369,15 @@ function parseAction(
         exitCode: 2,
       },
     );
+  }
+  if (
+    (operation === 'publish-support' && !publishAction) ||
+    (operation !== 'publish-support' && publishAction)
+  ) {
+    throw new CliError(`Maintenance operation ${operation} cannot contain ${action} actions.`, {
+      code: 'DATASET_MAINTENANCE_OPERATION_ACTION_MISMATCH',
+      exitCode: 2,
+    });
   }
   if (value.expected_state_code !== 0) {
     throw new CliError(`Maintenance action ${index} must require expected_state_code=0.`, {
@@ -306,6 +405,15 @@ function parseAction(
       exitCode: 2,
     });
   }
+  if (action !== 'save_draft' && desiredPayloadPath) {
+    throw new CliError(
+      `Maintenance ${action} action ${index} cannot include desired_payload_path.`,
+      {
+        code: 'DATASET_MAINTENANCE_DESIRED_PAYLOAD_FORBIDDEN',
+        exitCode: 2,
+      },
+    );
+  }
   const expectedBeforeSha256 = token(value.expected_before_sha256);
   if (expectedBeforeSha256 && !/^[a-f0-9]{64}$/u.test(expectedBeforeSha256)) {
     throw new CliError(`Maintenance action ${index} expected_before_sha256 is invalid.`, {
@@ -317,7 +425,7 @@ function parseAction(
   return {
     action_id: requireToken(value.action_id, `actions[${index}].action_id`),
     action: action as DatasetMaintenanceActionKind,
-    table: table as DatasetMaintenanceMutableTable,
+    table: table as DatasetMaintenanceActionTable,
     id: requireToken(value.id, `actions[${index}].id`),
     version: requireToken(value.version, `actions[${index}].version`),
     expected_user_id: expectedUserId,
@@ -341,7 +449,9 @@ export function parseMaintenanceScope(
     });
   }
   const operation = requireToken(value.operation, 'operation');
-  if (!['delete', 'retire', 'redo-import', 'repair-references'].includes(operation)) {
+  if (
+    !['delete', 'retire', 'redo-import', 'repair-references', 'publish-support'].includes(operation)
+  ) {
     throw new CliError(`Unsupported maintenance operation: ${operation}`, {
       code: 'DATASET_MAINTENANCE_OPERATION_UNSUPPORTED',
       exitCode: 2,
@@ -363,7 +473,9 @@ export function parseMaintenanceScope(
       exitCode: 2,
     });
   }
-  const actions = value.actions.map((entry, index) => parseAction(entry, index, userId));
+  const actions = value.actions.map((entry, index) =>
+    parseAction(entry, index, userId, operation as DatasetMaintenanceOperation),
+  );
   const actionIds = new Set<string>();
   const rowKeys = new Set<string>();
   const payloadNames = new Set<string>();
@@ -595,6 +707,37 @@ export function parseMaintenancePlan(value: unknown): DatasetMaintenancePlan {
           details: { action_id: action.action_id },
         });
       }
+      if (action.action === 'publish') {
+        if (typeof before.modified_at !== 'string' || before.modified_at.length === 0) {
+          throw new CliError('Ready publish action requires a frozen modified_at value.', {
+            code: 'DATASET_MAINTENANCE_PLAN_INVALID',
+            exitCode: 2,
+            details: { action_id: action.action_id },
+          });
+        }
+        const inspection = inspectMaintenancePublishPayload({
+          table: action.table as DatasetMaintenancePublishTable,
+          payload: before.json_ordered,
+        });
+        if (
+          inspection.identity.id !== action.id ||
+          inspection.identity.version !== action.version ||
+          !inspection.schemaResult.success
+        ) {
+          throw new CliError(
+            'Ready publish action payload must pass its TIDAS schema and match the row id/version.',
+            {
+              code: 'DATASET_MAINTENANCE_PLAN_INVALID',
+              exitCode: 2,
+              details: {
+                action_id: action.action_id,
+                identity: inspection.identity,
+                schema_valid: inspection.schemaResult.success,
+              },
+            },
+          );
+        }
+      }
       const remoteRow: DatasetMaintenanceRemoteRow = {
         table: before.table,
         id: before.id,
@@ -618,7 +761,11 @@ export function parseMaintenancePlan(value: unknown): DatasetMaintenancePlan {
         });
       }
       const expectedRollbackStrategy =
-        action.action === 'save_draft' ? 'save_before_snapshot' : 'restore_deleted_before_snapshot';
+        action.action === 'save_draft'
+          ? 'save_before_snapshot'
+          : action.action === 'delete'
+            ? 'restore_deleted_before_snapshot'
+            : 'manual_review_published_state';
       if (
         action.rollback.strategy !== expectedRollbackStrategy ||
         action.rollback.before_payload_sha256 !== before.payload_sha256 ||
@@ -639,7 +786,7 @@ export function parseMaintenancePlan(value: unknown): DatasetMaintenancePlan {
         (!isJsonObject(action.desired_payload) ||
           typeof action.desired_payload.path !== 'string' ||
           !/^[a-f0-9]{64}$/u.test(String(action.desired_payload.sha256)))) ||
-      (action.action === 'delete' && action.desired_payload !== null)
+      (action.action !== 'save_draft' && action.desired_payload !== null)
     ) {
       throw new CliError('Maintenance plan action desired payload contract is invalid.', {
         code: 'DATASET_MAINTENANCE_PLAN_INVALID',
@@ -655,6 +802,8 @@ export function parseMaintenancePlan(value: unknown): DatasetMaintenancePlan {
     plan.summary.save_draft ===
       plan.actions.filter((action) => action.action === 'save_draft').length &&
     plan.summary.delete === plan.actions.filter((action) => action.action === 'delete').length &&
+    (plan.summary.publish ?? 0) ===
+      plan.actions.filter((action) => action.action === 'publish').length &&
     plan.summary.protected_rows === plan.protected_rows.length &&
     plan.summary.blockers === plan.blockers.length &&
     Number.isInteger(plan.summary.current_reference_impacts) &&
@@ -683,4 +832,155 @@ export function parseMaintenancePlan(value: unknown): DatasetMaintenancePlan {
     });
   }
   return plan;
+}
+
+export function parseMaintenanceSupportApprovalRecord(
+  value: unknown,
+  plan: DatasetMaintenancePlan,
+): DatasetMaintenanceSupportApprovalRecord {
+  if (
+    !isJsonObject(value) ||
+    value.schema !== DATASET_MAINTENANCE_SUPPORT_APPROVAL_SCHEMA ||
+    value.schema_version !== 1 ||
+    value.operation !== 'publish-support' ||
+    plan.operation !== 'publish-support' ||
+    value.plan_sha256 !== plan.plan_sha256 ||
+    value.task_id !== plan.task_id ||
+    value.operation_id !== plan.operation_id ||
+    typeof value.approved_at_utc !== 'string' ||
+    !value.approved_at_utc.trim() ||
+    typeof value.plan_path !== 'string' ||
+    !value.plan_path.trim() ||
+    !isJsonObject(value.target_owner) ||
+    value.target_owner.user_id !== plan.account.user_id ||
+    value.target_owner.email !== plan.account.email ||
+    !isJsonObject(value.reviewer) ||
+    typeof value.reviewer.user_id !== 'string' ||
+    !value.reviewer.user_id.trim() ||
+    typeof value.reviewer.email !== 'string' ||
+    !value.reviewer.email.trim() ||
+    value.reviewer.user_id === plan.account.user_id ||
+    !isJsonObject(value.authority) ||
+    value.authority.source !== 'public.command_audit_log' ||
+    value.authority.rpc !== 'cmd_dataset_support_approve_guarded' ||
+    value.authority.local_artifact_is_authority !== false ||
+    !Array.isArray(value.actions) ||
+    value.actions.length !== plan.actions.length
+  ) {
+    throw new CliError(
+      'Support approval record does not match the immutable publish-support plan.',
+      {
+        code: 'DATASET_MAINTENANCE_SUPPORT_APPROVAL_INVALID',
+        exitCode: 1,
+      },
+    );
+  }
+
+  const rawActions = value.actions;
+  const actionsById = new Map<string, JsonObject>();
+  for (const rawAction of rawActions) {
+    if (
+      !isJsonObject(rawAction) ||
+      typeof rawAction.action_id !== 'string' ||
+      actionsById.has(rawAction.action_id)
+    ) {
+      throw new CliError('Support approval record has duplicate or invalid actions.', {
+        code: 'DATASET_MAINTENANCE_SUPPORT_APPROVAL_INVALID',
+        exitCode: 1,
+      });
+    }
+    actionsById.set(rawAction.action_id, rawAction);
+  }
+
+  const normalizedActions: DatasetMaintenanceSupportApprovalAction[] = [];
+  const approvalAuditIds = new Set<string>();
+  for (const action of plan.actions) {
+    const rawAction = actionsById.get(action.action_id);
+    if (
+      action.action !== 'publish' ||
+      !action.before ||
+      typeof action.before.modified_at !== 'string' ||
+      typeof action.before.payload_sha256 !== 'string' ||
+      !rawAction ||
+      rawAction.ordinal !== action.ordinal ||
+      rawAction.action !== action.action ||
+      rawAction.table !== action.table ||
+      rawAction.id !== action.id ||
+      rawAction.version !== action.version ||
+      rawAction.reason_code !== action.reason_code ||
+      rawAction.expected_user_id !== action.expected_user_id ||
+      rawAction.expected_state_code !== 0 ||
+      rawAction.expected_modified_at !== action.before.modified_at ||
+      rawAction.expected_before_sha256 !== action.before.row_sha256 ||
+      rawAction.expected_payload_sha256 !== action.before.payload_sha256 ||
+      rawAction.plan_sha256 !== plan.plan_sha256 ||
+      rawAction.operation_id !== plan.operation_id ||
+      rawAction.reviewer_user_id !== value.reviewer.user_id ||
+      rawAction.reviewer_email !== value.reviewer.email ||
+      typeof rawAction.idempotent_replay !== 'boolean'
+    ) {
+      throw new CliError(`Support approval does not exactly bind action ${action.action_id}.`, {
+        code: 'DATASET_MAINTENANCE_SUPPORT_APPROVAL_ACTION_MISMATCH',
+        exitCode: 1,
+        details: { action_id: action.action_id },
+      });
+    }
+    const approvalAuditId = normalizeMaintenanceAuditId(
+      rawAction.approval_audit_id,
+      `Support approval audit id for ${action.action_id}`,
+    );
+    if (approvalAuditIds.has(approvalAuditId)) {
+      throw new CliError('Support approval audit ids must map one-to-one to plan actions.', {
+        code: 'DATASET_MAINTENANCE_SUPPORT_APPROVAL_AUDIT_ID_DUPLICATE',
+        exitCode: 1,
+        details: { action_id: action.action_id, approval_audit_id: approvalAuditId },
+      });
+    }
+    approvalAuditIds.add(approvalAuditId);
+    normalizedActions.push({
+      ordinal: action.ordinal,
+      action_id: action.action_id,
+      action: 'publish',
+      table: action.table as DatasetMaintenancePublishTable,
+      id: action.id,
+      version: action.version,
+      reason_code: action.reason_code,
+      expected_user_id: action.expected_user_id,
+      expected_state_code: 0,
+      expected_modified_at: action.before.modified_at,
+      expected_before_sha256: action.before.row_sha256,
+      expected_payload_sha256: action.before.payload_sha256,
+      plan_sha256: plan.plan_sha256,
+      operation_id: plan.operation_id,
+      approval_audit_id: approvalAuditId,
+      reviewer_user_id: value.reviewer.user_id,
+      reviewer_email: value.reviewer.email,
+      idempotent_replay: rawAction.idempotent_replay,
+    });
+  }
+
+  return {
+    schema: DATASET_MAINTENANCE_SUPPORT_APPROVAL_SCHEMA,
+    schema_version: 1,
+    approved_at_utc: value.approved_at_utc,
+    plan_path: value.plan_path,
+    plan_sha256: plan.plan_sha256,
+    task_id: plan.task_id,
+    operation: 'publish-support',
+    operation_id: plan.operation_id,
+    target_owner: {
+      user_id: plan.account.user_id,
+      email: plan.account.email,
+    },
+    reviewer: {
+      user_id: value.reviewer.user_id,
+      email: value.reviewer.email,
+    },
+    authority: {
+      source: 'public.command_audit_log',
+      rpc: 'cmd_dataset_support_approve_guarded',
+      local_artifact_is_authority: false,
+    },
+    actions: normalizedActions,
+  };
 }

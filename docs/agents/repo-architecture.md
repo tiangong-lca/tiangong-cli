@@ -26,8 +26,8 @@ checkPaths:
   - scripts/docpact
   - scripts/docpact-gate.sh
   - scripts/install-git-hooks.sh
-lastReviewedAt: 2026-07-11
-lastReviewedCommit: 695e6d6fe718cb92d499f3ce8be2dc24c3f6ce29
+lastReviewedAt: 2026-07-12
+lastReviewedCommit: 6ca035564bc2bdc3e1693e991a3035c617bffa25
 related:
   - ../../AGENTS.md
   - ../../.docpact/config.yaml
@@ -51,6 +51,12 @@ Review note, 2026-06-07: release 0.0.14 keeps the architecture in the existing T
 Review note, 2026-06-11: release 0.0.15 keeps the import-lca wrapper inside the existing TypeScript dataset command family. Only the tidas-tools spawn argument construction and report file derivation changed to match tidas-tools 0.0.28; no new orchestration layer or release path.
 
 Review note, 2026-07-11: row-level dataset maintenance is implemented in the native CLI as `dataset maintenance plan/apply/verify`. The architecture keeps scope freezing, current-user RLS reads, protected-row classification, approved platform-command writes, append-only action logging, and independent verification in separate maintenance modules.
+
+Review note, 2026-07-11: the same maintenance modules now support a deliberately narrow `publish-support` operation. It permits only schema-valid, identity-matching current-owner draft `unitgroups` and `flowproperties`, delegates atomic compare-and-publish plus audit-proven retry to `cmd_dataset_publish_guarded`, and keeps approval, append-only logs, resume checks, and state-100 readback within the existing plan/apply/verify boundary.
+
+Review note, 2026-07-12: `dataset-maintenance-approve-support.ts` adds an independent reviewer phase without adding a new transport layer. Reviewer authorization is written by `cmd_dataset_support_approve_guarded`; apply and verify carry its exact audit correlation, while the owner's local confirmation remains a distinct non-authoritative artifact.
+
+Review note, 2026-07-12: the remote adapter now exposes read-only `qry_dataset_publish_guarded_proof` verification. The artifact chain carries globally unique approval ids, database-owned reviewer UUID/email, publish audit ids, and replay decisions; verify treats the database proof—not locally self-consistent files—as the committed-publication authority.
 
 ## Stable Path Map
 
@@ -139,7 +145,7 @@ Dataset-local governance now uses the same CLI-native command layer:
 - `src/lib/dataset-curation-queue.ts`
 - `src/lib/dataset-references-rewrite.ts`
 - `src/lib/dataset-maintenance-clear-account.ts`
-- `src/lib/dataset-maintenance-{contract,remote,plan,apply,verify}.ts`
+- `src/lib/dataset-maintenance-{contract,remote,plan,approve-support,apply,verify}.ts`
 - `src/lib/dataset-local.ts`
 - `src/lib/lifecyclemodel-save-draft-run.ts`
 - `src/lib/lifecyclemodel-graph.ts`
@@ -151,10 +157,11 @@ The row-level maintenance family is deliberately split by responsibility:
 - `contract` owns the versioned scope, immutable plan, action, approval, and report shapes.
 - `remote` owns current-session authentication, current-user RLS reads, exact `id` + `version` row lookup, reference-impact reads, platform `save_draft` / `delete` command execution, and audit correlation.
 - `plan` freezes `maintenance-scope.json`, `rls-visible-snapshot.json`, `protected-rows.jsonl`, `reference-impact-report.json`, `maintenance-plan.json`, and `dry-run-report.json` before any write.
-- `apply` re-runs a full-plan drift preflight, verifies `--approve-plan <sha256>` and `--confirm <email>`, persists approval before the first write, appends one durable `apply-progress.jsonl` record per action, executes updates before deletes, and stops on the first failure so a rerun can resume from the recorded outcomes. Each ledger row carries at least the plan SHA-256, operation/action ids, exact entity ref, actor, start/finish times, before/after SHA-256, result/error, and rollback guidance.
-- `verify` performs a fresh readback independently of apply and writes `readback-verify-report.json`.
+- `approve-support` authenticates a reviewer distinct from the owner and calls the review-admin-only RPC for each exact publish action, emitting `support-approval-record.json` as a non-authoritative handoff for globally unique immutable database audit ids and the database-returned reviewer UUID/email.
+- `apply` re-runs a full-plan drift preflight, verifies the owner's `--approve-plan <sha256>` and `--confirm <email>`, persists an owner-only execution confirmation before the first write, and requires one exact reviewer audit id per publish action. It sends the expected reviewer UUID/email to the guarded publish RPC and appends the returned reviewer, approval audit, publish audit, and replay correlation to `apply-progress.jsonl`; `commit-report.json` reproduces that correlation exactly.
+- `verify` performs a fresh readback independently of apply, calls `qry_dataset_publish_guarded_proof` for every publish action, compares the database proof with all local correlation and the fresh target, and writes `readback-verify-report.json`.
 
-V1 only permits current-user, `state_code=0`, exact-version `contacts`, `sources`, `flows`, and `processes` to become `save_draft` or `delete` actions. `lifecyclemodels`, `unitgroups`, `flowproperties`, public/shared rows, rows owned by another account, and non-draft rows stay protected. The CLI records the operator-supplied maintenance operation but does not make semantic cleanup or canonicalization decisions.
+Ordinary V1 maintenance only permits current-user, `state_code=0`, exact-version `contacts`, `sources`, `flows`, and `processes` to become `save_draft` or `delete` actions. The separate future `publish-support` operation is the only exception: it may create exact `publish` actions for current-owner draft `unitgroups` and `flowproperties`, and only after a distinct review-admin has recorded the matching immutable database approval. `lifecyclemodels`, support rows outside that explicit promotion path, public/shared rows, rows owned by another account, and non-draft rows stay protected. Owner-draft cleanup and account-local FP/UG use do not depend on this future promotion path. The CLI records the operator-supplied maintenance operation but does not make semantic cleanup or canonicalization decisions.
 
 All mutation continues through the public platform dataset command path. Direct SQL, service-role access, raw REST mutation, and Foundry-local delete/update implementations are outside this architecture; Foundry may only prepare scope, invoke the CLI, and retain its artifacts.
 

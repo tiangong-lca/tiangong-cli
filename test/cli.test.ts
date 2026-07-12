@@ -68,7 +68,7 @@ test('executeCli prints main help when no command is given', async () => {
   assert.match(result.stdout, /lifecyclemodel auto-build \| validate-build \| publish-build/u);
   assert.match(result.stdout, /publish-resulting-process/u);
   assert.match(result.stdout, /qa\s+process \| flow \| lifecyclemodel/u);
-  assert.match(result.stdout, /maintenance clear-account\/plan\/apply\/verify/u);
+  assert.match(result.stdout, /maintenance clear-account\/plan\/approve-support\/apply\/verify/u);
   assert.doesNotMatch(result.stdout, /dataset maintenance plan \| apply \| verify/u);
   assert.match(result.stdout, /exit with code 2/u);
   assert.equal(result.stderr, '');
@@ -441,6 +441,7 @@ test('executeCli exposes dataset and lifecyclemodel friction-fix commands', asyn
   assert.match(datasetHelp.stdout, /references rewrite/u);
   assert.match(datasetHelp.stdout, /maintenance clear-account/u);
   assert.match(datasetHelp.stdout, /maintenance plan\s+Build an immutable/u);
+  assert.match(datasetHelp.stdout, /maintenance approve-support\s+Record an independent/u);
   assert.match(datasetHelp.stdout, /maintenance apply\s+Execute an explicitly approved/u);
   assert.match(datasetHelp.stdout, /maintenance verify\s+Read back affected rows/u);
 
@@ -495,6 +496,14 @@ test('executeCli exposes dataset and lifecyclemodel friction-fix commands', asyn
   assert.equal(datasetMaintenancePlanHelp.exitCode, 0);
   assert.match(datasetMaintenancePlanHelp.stdout, /--operation <operation>/u);
 
+  const datasetMaintenanceApproveSupportHelp = await executeCli(
+    ['dataset', 'maintenance', 'approve-support', '--help'],
+    makeDeps(),
+  );
+  assert.equal(datasetMaintenanceApproveSupportHelp.exitCode, 0);
+  assert.match(datasetMaintenanceApproveSupportHelp.stdout, /--confirm <email>/u);
+  assert.match(datasetMaintenanceApproveSupportHelp.stdout, /local artifact is a handoff/u);
+
   const datasetMaintenanceApplyHelp = await executeCli(
     ['dataset', 'maintenance', 'apply', '--help'],
     makeDeps(),
@@ -509,6 +518,7 @@ test('executeCli exposes dataset and lifecyclemodel friction-fix commands', asyn
   );
   assert.equal(datasetMaintenanceVerifyHelp.exitCode, 0);
   assert.match(datasetMaintenanceVerifyHelp.stdout, /readback-verify-report\.json/u);
+  assert.match(datasetMaintenanceVerifyHelp.stdout, /qry_dataset_publish_guarded_proof/u);
 
   let observedClearAccountOptions: unknown = null;
   const clearAccountDeps = makeDeps();
@@ -656,7 +666,7 @@ test('executeCli dispatches dataset maintenance plan, apply, and verify', async 
       '--scope',
       './maintenance-scope.json',
       '--operation',
-      'repair-references',
+      'publish-support',
       '--out-dir',
       './maintenance-run',
       '--page-size',
@@ -677,7 +687,7 @@ test('executeCli dispatches dataset maintenance plan, apply, and verify', async 
   assert.deepEqual(JSON.parse(planResult.stdout), { status: 'ready', marker: 'plan' });
   assert.deepEqual(observedPlanOptions, {
     scopePath: './maintenance-scope.json',
-    operation: 'repair-references',
+    operation: 'publish-support',
     outDir: './maintenance-run',
     pageSize: 250,
     timeoutMs: 12000,
@@ -686,6 +696,77 @@ test('executeCli dispatches dataset maintenance plan, apply, and verify', async 
   });
 
   const approvePlan = 'a'.repeat(64);
+  let observedApproveSupportOptions: unknown = null;
+  const approveSupportResult = await executeCli(
+    [
+      'dataset',
+      'maintenance',
+      'approve-support',
+      '--plan',
+      './maintenance-run/maintenance-plan.json',
+      '--approve-plan',
+      approvePlan,
+      '--confirm',
+      'reviewer@example.com',
+      '--out',
+      './handoff/support-approval.json',
+      '--timeout-ms',
+      '14000',
+      '--json',
+    ],
+    {
+      ...deps,
+      runDatasetMaintenanceApproveSupportImpl: async (options) => {
+        observedApproveSupportOptions = options;
+        return { schema_version: 1, marker: 'approve-support' } as never;
+      },
+    },
+  );
+  assert.equal(approveSupportResult.exitCode, 0);
+  assert.deepEqual(JSON.parse(approveSupportResult.stdout), {
+    schema_version: 1,
+    marker: 'approve-support',
+  });
+  assert.deepEqual(observedApproveSupportOptions, {
+    planPath: './maintenance-run/maintenance-plan.json',
+    approvePlan,
+    confirm: 'reviewer@example.com',
+    outPath: './handoff/support-approval.json',
+    timeoutMs: 14000,
+    env: deps.env,
+    fetchImpl: deps.fetchImpl,
+  });
+  let observedApproveSupportWithoutOut: unknown = null;
+  const approveWithoutOut = await executeCli(
+    [
+      'dataset',
+      'maintenance',
+      'approve-support',
+      '--plan',
+      './maintenance-run/maintenance-plan.json',
+      '--approve-plan',
+      approvePlan,
+      '--confirm',
+      'reviewer@example.com',
+    ],
+    {
+      ...deps,
+      runDatasetMaintenanceApproveSupportImpl: async (options) => {
+        observedApproveSupportWithoutOut = options;
+        return { schema_version: 1, marker: 'approve-support-default-out' } as never;
+      },
+    },
+  );
+  assert.equal(approveWithoutOut.exitCode, 0);
+  assert.deepEqual(observedApproveSupportWithoutOut, {
+    planPath: './maintenance-run/maintenance-plan.json',
+    approvePlan,
+    confirm: 'reviewer@example.com',
+    timeoutMs: undefined,
+    env: deps.env,
+    fetchImpl: deps.fetchImpl,
+  });
+
   let observedApplyOptions: unknown = null;
   const applyResult = await executeCli(
     [
@@ -699,6 +780,8 @@ test('executeCli dispatches dataset maintenance plan, apply, and verify', async 
       approvePlan,
       '--confirm',
       'user@example.com',
+      '--support-approval',
+      './handoff/support-approval.json',
       '--timeout-ms',
       '15000',
       '--json',
@@ -718,6 +801,7 @@ test('executeCli dispatches dataset maintenance plan, apply, and verify', async 
     commit: true,
     approvePlan,
     confirm: 'user@example.com',
+    supportApprovalPath: './handoff/support-approval.json',
     timeoutMs: 15000,
     env: deps.env,
     fetchImpl: deps.fetchImpl,
@@ -737,6 +821,8 @@ test('executeCli dispatches dataset maintenance plan, apply, and verify', async 
       '100',
       '--timeout-ms',
       '9000',
+      '--support-approval',
+      './handoff/support-approval.json',
       '--json',
     ],
     {
@@ -754,9 +840,30 @@ test('executeCli dispatches dataset maintenance plan, apply, and verify', async 
     outDir: './maintenance-run/verify',
     pageSize: 100,
     timeoutMs: 9000,
+    supportApprovalPath: './handoff/support-approval.json',
     env: deps.env,
     fetchImpl: deps.fetchImpl,
   });
+});
+
+test('executeCli validates independent support approval arguments', async () => {
+  const deps = makeDeps();
+  for (const [args, pattern] of [
+    [['dataset', 'maintenance', 'approve-support'], /requires --plan/u],
+    [
+      ['dataset', 'maintenance', 'approve-support', '--plan', 'plan.json'],
+      /requires --approve-plan/u,
+    ],
+    [
+      ['dataset', 'maintenance', 'approve-support', '--plan', 'plan.json', '--approve-plan', 'abc'],
+      /requires --confirm/u,
+    ],
+    [['dataset', 'maintenance', 'approve-support', '--unknown'], /Unknown option/u],
+  ] as const) {
+    const result = await executeCli([...args], deps);
+    assert.equal(result.exitCode, 2);
+    assert.match(result.stderr, pattern);
+  }
 });
 
 test('executeCli dispatches dataset and lifecyclemodel friction-fix commands', async () => {

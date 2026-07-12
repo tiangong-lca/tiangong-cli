@@ -280,6 +280,7 @@ import {
   type RunDatasetMaintenanceClearAccountOptions,
 } from './lib/dataset-maintenance-clear-account.js';
 import { runDatasetMaintenancePlan } from './lib/dataset-maintenance-plan.js';
+import { runDatasetMaintenanceApproveSupport } from './lib/dataset-maintenance-approve-support.js';
 import { runDatasetMaintenanceApply } from './lib/dataset-maintenance-apply.js';
 import { runDatasetMaintenanceVerify } from './lib/dataset-maintenance-verify.js';
 import type { DatasetMaintenanceOperation } from './lib/dataset-maintenance-contract.js';
@@ -463,6 +464,7 @@ export type CliDeps = {
     options: RunDatasetMaintenanceClearAccountOptions,
   ) => Promise<DatasetMaintenanceClearAccountReport>;
   runDatasetMaintenancePlanImpl?: typeof runDatasetMaintenancePlan;
+  runDatasetMaintenanceApproveSupportImpl?: typeof runDatasetMaintenanceApproveSupport;
   runDatasetMaintenanceApplyImpl?: typeof runDatasetMaintenanceApply;
   runDatasetMaintenanceVerifyImpl?: typeof runDatasetMaintenanceVerify;
   runDatasetSourceUploadAttachmentsImpl?: (
@@ -500,7 +502,7 @@ Implemented Commands:
   doctor     show environment diagnostics
   search     flow | process | lifecyclemodel
   process    get | list | identity-preflight | build-plan | scope-statistics | dedup-review | auto-build | resume-build | publish-build | complete-required-fields | save-draft | batch-build | refresh-references | verify-rows
-  dataset    contract get | context-pack | classification children/path/audit/apply | curation-queue build/next/verify | import-lca convert | author | patch apply | save-draft | source upload-attachments | validate | verify-remote | bilingual extract/apply/validate | evidence-search plan/run | references rewrite/refresh-remote | maintenance clear-account/plan/apply/verify
+  dataset    contract get | context-pack | classification children/path/audit/apply | curation-queue build/next/verify | import-lca convert | author | patch apply | save-draft | source upload-attachments | validate | verify-remote | bilingual extract/apply/validate | evidence-search plan/run | references rewrite/refresh-remote | maintenance clear-account/plan/approve-support/apply/verify
   flow       get | list | identity-preflight | build-plan | fetch-rows | materialize-decisions | remediate | publish-version | publish-reviewed-data | build-alias-map | scan-process-flow-refs | plan-process-flow-repairs | apply-process-flow-repairs | regen-product | validate-processes
   lifecyclemodel auto-build | validate-build | publish-build | save-draft | graph | build-resulting-process | publish-resulting-process | orchestrate
   qa         process | flow | lifecyclemodel
@@ -553,7 +555,8 @@ Examples:
   tiangong-lca dataset evidence-search run --input ./evidence-search.request.json --results ./search-results.json --out-dir ./evidence-search
   tiangong-lca dataset references rewrite --input ./rows.jsonl --from flow:<old-id>@<old-version> --to flow:<new-id>@<new-version> --out-dir /abs/path/to/dataset-rewrite
   tiangong-lca dataset maintenance clear-account --out-dir /abs/path/to/account-clear --json
-  tiangong-lca dataset maintenance plan --scope ./maintenance-scope.json --operation redo-import --out-dir /abs/path/to/dataset-maintenance
+  tiangong-lca dataset maintenance plan --scope ./maintenance-scope.json --operation publish-support --out-dir /abs/path/to/dataset-maintenance
+  tiangong-lca dataset maintenance approve-support --plan ./dataset-maintenance/maintenance-plan.json --approve-plan <sha256> --confirm reviewer@example.com
   tiangong-lca lifecyclemodel auto-build --input ./lifecyclemodel-auto-build.request.json --out-dir /abs/path/to/lifecyclemodel-run
   tiangong-lca lifecyclemodel validate-build --run-dir /abs/path/to/lifecyclemodel-run
   tiangong-lca lifecyclemodel publish-build --run-dir /abs/path/to/lifecyclemodel-run
@@ -711,6 +714,7 @@ Implemented Subcommands:
   references refresh-remote Refresh local TIDAS reference versions to latest reachable remote rows
   maintenance clear-account Dry-run or clear current authenticated account-owned dataset rows through RLS
   maintenance plan    Build an immutable, RLS-visible row-level maintenance plan
+  maintenance approve-support Record an independent review-admin approval for a publish-support plan
   maintenance apply   Execute an explicitly approved maintenance plan through current-user RLS
   maintenance verify  Read back affected rows and references against the immutable plan
 
@@ -738,26 +742,31 @@ Examples:
   tiangong-lca dataset references rewrite --input ./rows.jsonl --from flow:<old-id>@<old-version> --to flow:<new-id>@<new-version> --out-dir ./dataset-rewrite --help
   tiangong-lca dataset references refresh-remote --input ./rows.jsonl --out ./rows.refreshed.jsonl --out-dir ./dataset-reference-refresh --help
   tiangong-lca dataset maintenance clear-account --out-dir ./account-clear --json --help
-  tiangong-lca dataset maintenance plan --scope ./maintenance-scope.json --operation redo-import --out-dir ./dataset-maintenance --help
+  tiangong-lca dataset maintenance plan --scope ./maintenance-scope.json --operation publish-support --out-dir ./dataset-maintenance --help
+  tiangong-lca dataset maintenance approve-support --plan ./dataset-maintenance/maintenance-plan.json --approve-plan <sha256> --confirm reviewer@example.com --help
 `.trim();
 }
 
 function renderDatasetMaintenanceHelp(): string {
   return `Usage:
-  tiangong-lca dataset maintenance <clear-account|plan|apply|verify> [options]
+  tiangong-lca dataset maintenance <clear-account|plan|approve-support|apply|verify> [options]
 
 Actions:
   clear-account Dry-run or delete current authenticated account-owned lifecyclemodels, processes, flows, sources, and contacts.
   plan    Build an immutable maintenance plan from a scope manifest, visible remote snapshot, dependency impact report, and intended operation.
+  approve-support Record an independent review-admin approval in the database for every frozen publish action.
   apply   Execute an approved plan through current-user RLS and platform dataset command paths; never bypass RLS or delete rows outside the visible scope.
   verify  Re-fetch affected rows and references, then prove that deleted, updated, skipped, protected, and redone rows match the plan.
 
 Safety:
-  plan and verify are read-only.
-  apply is commit-only and requires --commit, the exact plan SHA-256 via --approve-plan, and the current account email via --confirm.
+  plan and verify are read-only. verify proves every support publication through qry_dataset_publish_guarded_proof.
+  approve-support writes only immutable reviewer audit entries.
+  apply is commit-only and still requires the owner's exact plan SHA-256 and account email.
+  publish-support apply requires both the owner's apply confirmation and a separate reviewer support-approval-record.json; the database audit, not the local file, is authoritative.
 
 Required Artifact Contract:
   - maintenance-plan.json
+  - support-approval-record.json (publish-support only)
   - rls-visible-snapshot.json
   - protected-rows.jsonl
   - reference-impact-report.json
@@ -768,9 +777,34 @@ Required Artifact Contract:
 Examples:
   tiangong-lca dataset maintenance clear-account --out-dir ./account-clear --json
   tiangong-lca dataset maintenance clear-account --commit --confirm user@example.com --out-dir ./account-clear
-  tiangong-lca dataset maintenance plan --scope ./maintenance-scope.json --operation redo-import --out-dir ./dataset-maintenance
-  tiangong-lca dataset maintenance apply --plan ./dataset-maintenance/maintenance-plan.json --commit --approve-plan <sha256> --confirm user@example.com
+  tiangong-lca dataset maintenance plan --scope ./maintenance-scope.json --operation publish-support --out-dir ./dataset-maintenance
+  tiangong-lca dataset maintenance approve-support --plan ./dataset-maintenance/maintenance-plan.json --approve-plan <sha256> --confirm reviewer@example.com
+  tiangong-lca dataset maintenance apply --plan ./dataset-maintenance/maintenance-plan.json --commit --approve-plan <sha256> --confirm owner@example.com --support-approval ./dataset-maintenance/support-approval-record.json
   tiangong-lca dataset maintenance verify --plan ./dataset-maintenance/maintenance-plan.json --out-dir ./dataset-maintenance/verify
+`.trim();
+}
+
+function renderDatasetMaintenanceApproveSupportHelp(): string {
+  return `Usage:
+  tiangong-lca dataset maintenance approve-support --plan <file> --approve-plan <sha256> --confirm <reviewer-email> [options]
+
+Behavior:
+  Authenticates the independent reviewer, requires an exact plan hash and reviewer email, then asks
+  cmd_dataset_support_approve_guarded to bind every frozen FP/UG publish action to an immutable database audit entry.
+  The emitted local artifact is a handoff record only; it is never the authorization source.
+
+Options:
+  --plan <file>           Immutable publish-support maintenance-plan.json
+  --approve-plan <sha256> Exact SHA-256 recorded for the plan
+  --confirm <email>       Current authenticated reviewer email
+  --out <file>            Output file (default: support-approval-record.json beside the plan)
+  --timeout-ms <n>        Request timeout in milliseconds
+  --json                  Print compact JSON
+  -h, --help
+
+Output:
+  support-approval-record.json binds the reviewer and each action's exact target, snapshot hashes,
+  plan/action correlation, durable approval audit id, and idempotent replay result.
 `.trim();
 }
 
@@ -779,7 +813,7 @@ function renderDatasetMaintenancePlanHelp(): string {
   tiangong-lca dataset maintenance plan --scope <file> --operation <operation> --out-dir <dir> [options]
 
 Operations:
-  delete | retire | redo-import | repair-references
+  delete | retire | redo-import | repair-references | publish-support
 
 Options:
   --scope <file>       Maintenance scope manifest
@@ -797,22 +831,27 @@ protected-row ledger, reference-impact report, and dry-run report.
 
 function renderDatasetMaintenanceApplyHelp(): string {
   return `Usage:
-  tiangong-lca dataset maintenance apply --plan <file> --commit --approve-plan <sha256> --confirm <email> [options]
+  tiangong-lca dataset maintenance apply --plan <file> --commit --approve-plan <sha256> --confirm <owner-email> [options]
 
 Behavior:
   Commit-only. The command rejects dry-run mode, a missing --commit flag, a plan hash mismatch,
-  or a confirmation email that does not match the current authenticated account.
+  or a confirmation email that does not match the current authenticated owner account. publish-support
+  additionally requires a complete independent reviewer artifact whose database audit ids bind one-to-one to the plan.
+  The publish RPC revalidates the artifact's expected reviewer UUID/email before mutation and returns an exact
+  approval/publish audit plus idempotent-replay correlation that is persisted in progress and commit artifacts.
 
 Options:
   --plan <file>          Immutable maintenance-plan.json
   --commit               Execute the approved plan
   --approve-plan <sha256> Exact SHA-256 recorded for the plan
   --confirm <email>      Current authenticated account email
+  --support-approval <file> Independent reviewer artifact (default beside publish-support plan)
   --timeout-ms <n>       Request timeout in milliseconds
   --json                 Print compact JSON
   -h, --help
 
-Outputs include approval-record.json and commit-report.json alongside an append-only action ledger.
+approval-record.json is only the owner's apply confirmation. It is not reviewer authorization.
+Outputs include commit-report.json alongside an append-only action ledger with reviewer/publish audit correlation.
 `.trim();
 }
 
@@ -820,15 +859,21 @@ function renderDatasetMaintenanceVerifyHelp(): string {
   return `Usage:
   tiangong-lca dataset maintenance verify --plan <file> [options]
 
+Behavior:
+  Re-fetches every affected row, validates approval/progress/commit correlation, and calls
+  qry_dataset_publish_guarded_proof for each publish action. Only that database proof can establish
+  the exact plan/action, approval audit, reviewer UUID/email, publish audit, and published target.
+
 Options:
   --plan <file>       Immutable maintenance-plan.json
   --out-dir <dir>     Optional verification artifact directory
   --page-size <n>     Readback page size
   --timeout-ms <n>    Request timeout in milliseconds
+  --support-approval <file> Reviewer artifact when verifying publish-support (default beside plan)
   --json              Print compact JSON
   -h, --help
 
-Outputs include readback-verify-report.json with affected-row and reference checks.
+  Outputs include readback-verify-report.json with affected-row, reference, and database-proof checks.
 `.trim();
 }
 
@@ -3843,10 +3888,12 @@ function parseDatasetMaintenancePlanFlags(args: string[]): {
   const rawOperation = typeof values.operation === 'string' ? values.operation : null;
   if (
     rawOperation !== null &&
-    !['delete', 'retire', 'redo-import', 'repair-references'].includes(rawOperation)
+    !['delete', 'retire', 'redo-import', 'repair-references', 'publish-support'].includes(
+      rawOperation,
+    )
   ) {
     throw new CliError(
-      "--operation must be 'delete', 'retire', 'redo-import', or 'repair-references'.",
+      "--operation must be 'delete', 'retire', 'redo-import', 'repair-references', or 'publish-support'.",
       {
         code: 'DATASET_MAINTENANCE_OPERATION_INVALID',
         exitCode: 2,
@@ -3873,6 +3920,7 @@ function parseDatasetMaintenanceApplyFlags(args: string[]): {
   commit: boolean;
   approvePlan: string;
   confirm: string;
+  supportApprovalPath: string | undefined;
   timeoutMs: number | undefined;
   dryRun: boolean;
 } {
@@ -3889,6 +3937,7 @@ function parseDatasetMaintenanceApplyFlags(args: string[]): {
         commit: { type: 'boolean' },
         'approve-plan': { type: 'string' },
         confirm: { type: 'string' },
+        'support-approval': { type: 'string' },
         'timeout-ms': { type: 'string' },
         'dry-run': { type: 'boolean' },
       },
@@ -3907,8 +3956,52 @@ function parseDatasetMaintenanceApplyFlags(args: string[]): {
     commit: Boolean(values.commit),
     approvePlan: typeof values['approve-plan'] === 'string' ? values['approve-plan'] : '',
     confirm: typeof values.confirm === 'string' ? values.confirm : '',
+    supportApprovalPath:
+      typeof values['support-approval'] === 'string' ? values['support-approval'] : undefined,
     timeoutMs: parseDatasetMaintenancePositiveInteger(values['timeout-ms'], '--timeout-ms'),
     dryRun: Boolean(values['dry-run']),
+  };
+}
+
+function parseDatasetMaintenanceApproveSupportFlags(args: string[]): {
+  help: boolean;
+  json: boolean;
+  planPath: string;
+  approvePlan: string;
+  confirm: string;
+  outPath: string | undefined;
+  timeoutMs: number | undefined;
+} {
+  let values: ReturnType<typeof parseArgs>['values'];
+  try {
+    ({ values } = parseArgs({
+      args,
+      allowPositionals: false,
+      strict: true,
+      options: {
+        help: { type: 'boolean', short: 'h' },
+        json: { type: 'boolean' },
+        plan: { type: 'string' },
+        'approve-plan': { type: 'string' },
+        confirm: { type: 'string' },
+        out: { type: 'string' },
+        'timeout-ms': { type: 'string' },
+      },
+    }));
+  } catch (error) {
+    throw new CliError(String(error), {
+      code: 'INVALID_ARGS',
+      exitCode: 2,
+    });
+  }
+  return {
+    help: Boolean(values.help),
+    json: Boolean(values.json),
+    planPath: typeof values.plan === 'string' ? values.plan : '',
+    approvePlan: typeof values['approve-plan'] === 'string' ? values['approve-plan'] : '',
+    confirm: typeof values.confirm === 'string' ? values.confirm : '',
+    outPath: typeof values.out === 'string' ? values.out : undefined,
+    timeoutMs: parseDatasetMaintenancePositiveInteger(values['timeout-ms'], '--timeout-ms'),
   };
 }
 
@@ -3919,6 +4012,7 @@ function parseDatasetMaintenanceVerifyFlags(args: string[]): {
   outDir: string | undefined;
   pageSize: number | undefined;
   timeoutMs: number | undefined;
+  supportApprovalPath: string | undefined;
 } {
   let values: ReturnType<typeof parseArgs>['values'];
   try {
@@ -3933,6 +4027,7 @@ function parseDatasetMaintenanceVerifyFlags(args: string[]): {
         'out-dir': { type: 'string' },
         'page-size': { type: 'string' },
         'timeout-ms': { type: 'string' },
+        'support-approval': { type: 'string' },
       },
     }));
   } catch (error) {
@@ -3949,6 +4044,8 @@ function parseDatasetMaintenanceVerifyFlags(args: string[]): {
     outDir: typeof values['out-dir'] === 'string' ? values['out-dir'] : undefined,
     pageSize: parseDatasetMaintenancePositiveInteger(values['page-size'], '--page-size'),
     timeoutMs: parseDatasetMaintenancePositiveInteger(values['timeout-ms'], '--timeout-ms'),
+    supportApprovalPath:
+      typeof values['support-approval'] === 'string' ? values['support-approval'] : undefined,
   };
 }
 
@@ -6243,6 +6340,8 @@ export async function executeCli(argv: string[], deps: CliDeps): Promise<CliResu
       deps.runDatasetMaintenanceClearAccountImpl ?? runDatasetMaintenanceClearAccount;
     const datasetMaintenancePlanImpl =
       deps.runDatasetMaintenancePlanImpl ?? runDatasetMaintenancePlan;
+    const datasetMaintenanceApproveSupportImpl =
+      deps.runDatasetMaintenanceApproveSupportImpl ?? runDatasetMaintenanceApproveSupport;
     const datasetMaintenanceApplyImpl =
       deps.runDatasetMaintenanceApplyImpl ?? runDatasetMaintenanceApply;
     const datasetMaintenanceVerifyImpl =
@@ -6905,6 +7004,55 @@ export async function executeCli(argv: string[], deps: CliDeps): Promise<CliResu
         };
       }
 
+      if (action === 'approve-support') {
+        const datasetFlags = parseDatasetMaintenanceApproveSupportFlags(commandArgs.slice(1));
+        if (datasetFlags.help) {
+          return {
+            exitCode: 0,
+            stdout: `${renderDatasetMaintenanceApproveSupportHelp()}\n`,
+            stderr: '',
+          };
+        }
+        if (!datasetFlags.planPath) {
+          throw new CliError('dataset maintenance approve-support requires --plan.', {
+            code: 'DATASET_MAINTENANCE_PLAN_REQUIRED',
+            exitCode: 2,
+          });
+        }
+        if (!datasetFlags.approvePlan) {
+          throw new CliError(
+            'dataset maintenance approve-support requires --approve-plan <sha256>.',
+            {
+              code: 'DATASET_MAINTENANCE_APPROVAL_REQUIRED',
+              exitCode: 2,
+            },
+          );
+        }
+        if (!datasetFlags.confirm) {
+          throw new CliError(
+            'dataset maintenance approve-support requires --confirm <reviewer-email>.',
+            {
+              code: 'DATASET_MAINTENANCE_CONFIRM_REQUIRED',
+              exitCode: 2,
+            },
+          );
+        }
+        const report = await datasetMaintenanceApproveSupportImpl({
+          planPath: datasetFlags.planPath,
+          approvePlan: datasetFlags.approvePlan,
+          confirm: datasetFlags.confirm,
+          ...(datasetFlags.outPath ? { outPath: datasetFlags.outPath } : {}),
+          timeoutMs: datasetFlags.timeoutMs,
+          env: deps.env,
+          fetchImpl: deps.fetchImpl,
+        });
+        return {
+          exitCode: 0,
+          stdout: stringifyJson(report, datasetFlags.json),
+          stderr: '',
+        };
+      }
+
       if (action === 'plan') {
         const datasetFlags = parseDatasetMaintenancePlanFlags(commandArgs.slice(1));
         if (datasetFlags.help) {
@@ -7001,6 +7149,9 @@ export async function executeCli(argv: string[], deps: CliDeps): Promise<CliResu
           commit: datasetFlags.commit,
           approvePlan: datasetFlags.approvePlan,
           confirm: datasetFlags.confirm,
+          ...(datasetFlags.supportApprovalPath
+            ? { supportApprovalPath: datasetFlags.supportApprovalPath }
+            : {}),
           timeoutMs: datasetFlags.timeoutMs,
           env: deps.env,
           fetchImpl: deps.fetchImpl,
@@ -7032,6 +7183,9 @@ export async function executeCli(argv: string[], deps: CliDeps): Promise<CliResu
           outDir: datasetFlags.outDir,
           pageSize: datasetFlags.pageSize,
           timeoutMs: datasetFlags.timeoutMs,
+          ...(datasetFlags.supportApprovalPath
+            ? { supportApprovalPath: datasetFlags.supportApprovalPath }
+            : {}),
           env: deps.env,
           fetchImpl: deps.fetchImpl,
         });
@@ -7043,7 +7197,7 @@ export async function executeCli(argv: string[], deps: CliDeps): Promise<CliResu
       }
 
       throw new CliError(
-        "dataset maintenance action must be 'clear-account', 'plan', 'apply', or 'verify'.",
+        "dataset maintenance action must be 'clear-account', 'plan', 'approve-support', 'apply', or 'verify'.",
         {
           code: 'DATASET_MAINTENANCE_ACTION_INVALID',
           exitCode: 2,

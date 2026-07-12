@@ -25,7 +25,11 @@ lastReviewedCommit: 695e6d6fe718cb92d499f3ce8be2dc24c3f6ce29
 
 Package: `@tiangong-lca/cli` Executable: `tiangong-lca` Node: `24.x`
 
-Review note, 2026-07-11: `dataset maintenance plan/apply/verify` is an implemented v1 command family for current-user RLS-scoped, exact-row draft maintenance with immutable plans, explicit approval, per-action logs, platform audit correlation, and independent readback verification.
+Review note, 2026-07-11: `dataset maintenance plan/apply/verify` provides current-user RLS-scoped exact-row maintenance with immutable plans, explicit approval, per-action logs, platform audit correlation, and independent readback. Its `publish-support` extension is limited to exact draft FP/UG rows and the existing publication RPC.
+
+Review note, 2026-07-12: public FP/UG promotion now requires `dataset maintenance approve-support` under a different review-admin account. The owner confirmation and reviewer authorization are separate, and the database audit entry—not either local artifact—is authoritative.
+
+Review note, 2026-07-12: `verify` now obtains an exact read-only database proof for every support publication. Local approval, progress, and commit artifacts must agree with the database-owned reviewer UUID/email, approval audit id, publish audit id, target snapshot, and replay metadata; they cannot prove publication by themselves.
 
 ## Run
 
@@ -276,6 +280,8 @@ tiangong-lca dataset evidence-search plan --query "中国2026年电力结构数�
 tiangong-lca dataset evidence-search run --input ./evidence-search.request.json --results ./search-results.json --out-dir /abs/path/to/evidence-search --json
 tiangong-lca dataset references rewrite --input ./rows.jsonl --from flow:<old-id>@<old-version> --to flow:<new-id>@<new-version> --out-dir /abs/path/to/dataset-rewrite --json
 tiangong-lca dataset maintenance plan --scope ./maintenance-scope.json --operation redo-import --out-dir /abs/path/to/dataset-maintenance --page-size 1000 --timeout-ms 10000 --json
+tiangong-lca dataset maintenance plan --scope ./support-promotion-scope.json --operation publish-support --out-dir /abs/path/to/dataset-support-promotion --json
+tiangong-lca dataset maintenance approve-support --plan /abs/path/to/dataset-support-promotion/maintenance-plan.json --approve-plan <sha256> --confirm <reviewer-email> --out /abs/path/to/dataset-support-promotion/support-approval-record.json --json
 tiangong-lca dataset maintenance apply --plan /abs/path/to/dataset-maintenance/maintenance-plan.json --commit --approve-plan <sha256> --confirm <current-account-email> --timeout-ms 10000 --json
 tiangong-lca dataset maintenance verify --plan /abs/path/to/dataset-maintenance/maintenance-plan.json --out-dir /abs/path/to/dataset-maintenance/verify --page-size 1000 --timeout-ms 10000 --json
 tiangong-lca lifecyclemodel auto-build --input ./examples/lifecyclemodel-auto-build.request.json --out-dir /abs/path/to/lifecyclemodel-run --json
@@ -322,22 +328,32 @@ For `dataset references rewrite`, `--commit` executes the state-aware save-draft
 
 ## Dataset Maintenance
 
-`dataset maintenance plan/apply/verify` is the v1 row-level cleanup surface for bad imports. It runs as the currently authenticated user and relies on RLS for visibility and ownership enforcement.
+`dataset maintenance plan/approve-support/apply/verify` is the row-level cleanup surface for bad imports and narrowly reviewed support publication. Planning, owner apply, and verification run as the target owner; `approve-support` runs separately as an independent review-admin.
+
+`publish-support` is only for a later public-promotion decision. Keeping FP/UG rows as owner-visible `state_code=0` drafts and cleaning data within that private account does not require this reviewer workflow.
 
 ```bash
 tiangong-lca dataset maintenance plan \
   --scope ./maintenance-scope.json \
-  --operation redo-import \
+  --operation publish-support \
   --out-dir ./dataset-maintenance \
   --page-size 1000 \
   --timeout-ms 10000 \
+  --json
+
+tiangong-lca dataset maintenance approve-support \
+  --plan ./dataset-maintenance/maintenance-plan.json \
+  --approve-plan <sha256> \
+  --confirm <reviewer-email> \
+  --out ./dataset-maintenance/support-approval-record.json \
   --json
 
 tiangong-lca dataset maintenance apply \
   --plan ./dataset-maintenance/maintenance-plan.json \
   --commit \
   --approve-plan <sha256> \
-  --confirm <current-account-email> \
+  --confirm <owner-email> \
+  --support-approval ./dataset-maintenance/support-approval-record.json \
   --timeout-ms 10000 \
   --json
 
@@ -349,19 +365,23 @@ tiangong-lca dataset maintenance verify \
   --json
 ```
 
-V1 scope is intentionally narrow:
+The scope is intentionally narrow:
 
 - Each requested row must name its table, exact `id`, exact `version`, expected current owner, and draft `state_code=0` state.
-- `--operation` accepts `delete`, `retire`, `redo-import`, or `repair-references`; it records the operator's maintenance intent and does not broaden the eligible row actions.
+- `--operation` accepts `delete`, `retire`, `redo-import`, `repair-references`, or `publish-support`; it records the operator's maintenance intent and does not broaden the eligible row actions.
 - Only current-user `contacts`, `sources`, `flows`, and `processes` can become `save_draft` or `delete` actions.
-- `lifecyclemodels`, `unitgroups`, `flowproperties`, public/shared rows, non-owner rows, and non-draft rows are protected.
+- `publish-support` accepts only `publish` actions for exact owner draft `unitgroups` and `flowproperties`. A different authenticated review-admin must run `approve-support`; the database records the reviewer, target owner, exact id/version, frozen `modified_at` and payload, plan hash, operation id, and action id. Owners cannot self-approve.
+- `apply` calls `cmd_dataset_publish_guarded` with each globally unique approval audit id and the expected reviewer UUID/email. The database revalidates that the approval is current, independent, authorized, and bound to the same reviewer/snapshot/action before comparing the row under lock and setting `state_code=100`. The CLI requires the returned approval id, reviewer UUID/email, publish audit id, and boolean replay decision to match before recording success. A retry succeeds only when the database audit proves the same approval and publish action committed it.
+- `publish` cannot appear in another operation, and `publish-support` cannot contain `save_draft` or `delete`. `lifecyclemodels`, unsupported action/table combinations, public/shared rows, non-owner rows, and non-draft rows remain protected.
 - The CLI classifies and executes an operator-authored scope; it does not decide whether rows are semantically duplicates, canonical replacements, or safe business-level cleanup targets.
 
-`plan` writes the frozen `maintenance-scope.json`, `rls-visible-snapshot.json`, `protected-rows.jsonl`, `reference-impact-report.json`, `maintenance-plan.json`, and `dry-run-report.json`. The plan SHA-256 is the approval identity; do not edit the plan after review.
+`plan` writes the frozen `maintenance-scope.json`, `rls-visible-snapshot.json`, `protected-rows.jsonl`, `reference-impact-report.json`, `maintenance-plan.json`, and `dry-run-report.json`. Publish actions also require the frozen FP/UG payload to pass its TIDAS schema and to contain the same root UUID/version as the exact database row. The plan SHA-256 is the approval identity; do not edit the plan after review.
 
-`apply` is write-disabled unless all three commit guards are present: `--commit`, `--approve-plan <sha256>`, and `--confirm <current-account-email>`. Before the first write it re-checks the whole plan for drift and persists `approval-record.json`. It then executes updates before deletes through the platform dataset command path, correlates the plan and action ids in `p_audit`, and appends one durable record per attempted action to `apply-progress.jsonl`. Each record includes at least the plan SHA-256, operation/action ids, exact table/id/version, actor, start/finish times, before/after SHA-256, result or error, and rollback guidance. `commit-report.json` summarizes the ledger. A failure stops later actions; recorded successful actions are recognized on a safe rerun.
+`approve-support` emits immutable `support-approval-record.json` with the database-returned reviewer UUID/email and a globally one-to-one action/snapshot/approval-audit correlation. This file is only a portable handoff: editing or fabricating it cannot authorize publication because the publish RPC verifies the referenced database audit row and reviewer identity before mutation.
 
-`verify` performs a fresh remote readback rather than trusting the apply report and writes `readback-verify-report.json` in its own output directory.
+`apply` is write-disabled unless all three owner commit guards are present: `--commit`, `--approve-plan <sha256>`, and `--confirm <owner-email>`. Before the first write it re-checks the whole plan for drift and persists `approval-record.json`, explicitly classified as an owner execution confirmation rather than reviewer authorization. A `publish-support` plan additionally requires the complete reviewer artifact. Apply executes draft updates, support publications, and deletes in that order through platform dataset command paths and appends one durable record per attempt to `apply-progress.jsonl`; publish entries retain the exact approval id, reviewer UUID/email, publish audit id, and publish `idempotent_replay` result. `commit-report.json` must reproduce that correlation exactly. A failure stops later actions; recorded successes are recognized on a safe rerun.
+
+`verify` performs a fresh remote readback rather than trusting the apply report, checks exact correlation across the approval artifact, progress ledger, and commit report, and calls the read-only `qry_dataset_publish_guarded_proof` RPC for every publish action. Verification passes only when the database proof returns the same plan/action, approval audit, reviewer UUID/email, publish audit, and target as the local records and fresh readback. It writes these proof results to `readback-verify-report.json` in its own output directory.
 
 Foundry and skills may prepare the scope, invoke these commands, and retain their artifacts. They must not replace the CLI with direct SQL, service-role access, raw REST mutation, or private Supabase delete/update code.
 

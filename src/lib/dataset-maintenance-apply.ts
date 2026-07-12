@@ -8,7 +8,9 @@ import {
   appendStableJsonLine,
   isJsonObject,
   maintenanceRowKey,
+  normalizeMaintenanceAuditId,
   parseMaintenancePlan,
+  parseMaintenanceSupportApprovalRecord,
   readJsonFile,
   readJsonLinesIfPresent,
   resolveMaintenancePlanArtifactPath,
@@ -18,7 +20,12 @@ import {
   type DatasetMaintenancePlan,
   type DatasetMaintenancePlanAction,
   type DatasetMaintenanceProgressEntry,
+  type DatasetMaintenanceProgressApprovalCorrelation,
+  type DatasetMaintenanceMutableTable,
+  type DatasetMaintenancePublishTable,
   type DatasetMaintenanceRemoteRow,
+  type DatasetMaintenanceSupportApprovalAction,
+  type DatasetMaintenanceSupportApprovalRecord,
   type JsonObject,
 } from './dataset-maintenance-contract.js';
 import { maintenanceProjectedReferenceFingerprint } from './dataset-maintenance-plan.js';
@@ -26,6 +33,7 @@ import {
   deleteMaintenanceRow,
   fetchMaintenanceAccountRows,
   fetchMaintenanceExactRows,
+  publishMaintenanceRow,
   resolveMaintenanceRemoteContext,
   saveDraftMaintenanceRow,
   type DatasetMaintenanceRemoteContext,
@@ -55,9 +63,11 @@ export type DatasetMaintenanceApplyReport = {
     version: string;
     status: 'success' | 'failed' | 'pending';
     error: string | null;
+    support_approval: DatasetMaintenanceProgressApprovalCorrelation | null;
   }>;
   artifacts: {
     approval_record: string;
+    support_approval_record: string | null;
     apply_progress: string;
     commit_report: string;
     attempt_report: string;
@@ -65,7 +75,13 @@ export type DatasetMaintenanceApplyReport = {
   database_audit: {
     rpc_transaction_log: 'public.command_audit_log';
     source: 'tiangong-lca dataset maintenance apply';
-    correlation_fields: ['plan_sha256', 'operation_id', 'action_id', 'reason_code'];
+    correlation_fields: [
+      'plan_sha256',
+      'operation_id',
+      'action_id',
+      'reason_code',
+      'approval_audit_id',
+    ];
   };
 };
 
@@ -74,6 +90,7 @@ export type RunDatasetMaintenanceApplyOptions = {
   commit: boolean;
   approvePlan: string;
   confirm: string;
+  supportApprovalPath?: string;
   timeoutMs?: number;
   env: NodeJS.ProcessEnv;
   fetchImpl: FetchLike;
@@ -84,6 +101,11 @@ type ProgressState = {
   entries: DatasetMaintenanceProgressEntry[];
   successes: Map<string, DatasetMaintenanceProgressEntry>;
   latestFailures: Map<string, DatasetMaintenanceProgressEntry>;
+};
+
+type SupportApprovalBinding = {
+  action: DatasetMaintenanceSupportApprovalAction;
+  reviewer: DatasetMaintenanceSupportApprovalRecord['reviewer'];
 };
 
 function clock(options: RunDatasetMaintenanceApplyOptions): string {
@@ -116,7 +138,59 @@ function loadDesiredPayload(planDir: string, action: DatasetMaintenancePlanActio
   return payload;
 }
 
-function parseProgress(plan: DatasetMaintenancePlan, progressPath: string): ProgressState {
+function progressApprovalMatches(options: {
+  value: JsonObject;
+  action: DatasetMaintenancePlanAction;
+  binding: SupportApprovalBinding | null;
+}): boolean {
+  const auditContext = isJsonObject(options.value.audit_context)
+    ? options.value.audit_context
+    : null;
+  const correlation = isJsonObject(options.value.support_approval)
+    ? options.value.support_approval
+    : null;
+  if (options.action.action !== 'publish') {
+    return (
+      (options.value.support_approval === undefined || options.value.support_approval === null) &&
+      auditContext?.approval_audit_id === undefined
+    );
+  }
+  if (!options.binding || !correlation) {
+    return false;
+  }
+  let approvalAuditId: string;
+  let publishAuditId: string | null;
+  try {
+    approvalAuditId = normalizeMaintenanceAuditId(
+      correlation.approval_audit_id,
+      'Apply progress approval audit id',
+    );
+    publishAuditId =
+      correlation.publish_audit_id === null
+        ? null
+        : normalizeMaintenanceAuditId(
+            correlation.publish_audit_id,
+            'Apply progress publish audit id',
+          );
+  } catch {
+    return false;
+  }
+  return (
+    approvalAuditId === options.binding.action.approval_audit_id &&
+    auditContext?.approval_audit_id === options.binding.action.approval_audit_id &&
+    correlation.reviewer_user_id === options.binding.reviewer.user_id &&
+    correlation.reviewer_email === options.binding.reviewer.email &&
+    (options.value.result === 'success'
+      ? publishAuditId !== null && typeof correlation.publish_idempotent_replay === 'boolean'
+      : publishAuditId === null && correlation.publish_idempotent_replay === null)
+  );
+}
+
+function parseProgress(
+  plan: DatasetMaintenancePlan,
+  progressPath: string,
+  supportApprovals: Map<string, SupportApprovalBinding> = new Map(),
+): ProgressState {
   const rawEntries = readJsonLinesIfPresent(progressPath);
   const entries: DatasetMaintenanceProgressEntry[] = [];
   const actionsById = new Map(plan.actions.map((action) => [action.action_id, action]));
@@ -133,14 +207,29 @@ function parseProgress(plan: DatasetMaintenancePlan, progressPath: string): Prog
       typeof value.action_id !== 'string' ||
       !action ||
       value.action !== action.action ||
+      value.table !== action.table ||
+      value.id !== action.id ||
+      value.version !== action.version ||
       value.reason_code !== action.reason_code ||
-      typeof value.before_sha256 !== 'string' ||
+      value.before_sha256 !== action.before?.row_sha256 ||
+      typeof value.started_at_utc !== 'string' ||
+      typeof value.ended_at_utc !== 'string' ||
+      !isJsonObject(value.actor) ||
+      value.actor.user_id !== plan.account.user_id ||
+      value.actor.email !== plan.account.email ||
       !isJsonObject(value.audit_context) ||
       value.audit_context.plan_sha256 !== plan.plan_sha256 ||
       value.audit_context.operation_id !== plan.operation_id ||
       value.audit_context.action_id !== action.action_id ||
       value.audit_context.reason_code !== action.reason_code ||
       value.audit_context.source !== 'tiangong-lca dataset maintenance apply' ||
+      !isJsonObject(value.rollback) ||
+      sha256Json(value.rollback) !== sha256Json(action.rollback) ||
+      !progressApprovalMatches({
+        value,
+        action,
+        binding: supportApprovals.get(action.action_id) ?? null,
+      }) ||
       !['success', 'failed'].includes(String(value.result)) ||
       (value.result === 'success' && typeof value.remote_result_sha256 !== 'string') ||
       (value.result === 'failed' && value.remote_result_sha256 !== null)
@@ -179,6 +268,12 @@ function finalProjectedRows(options: {
         ...row,
         json_ordered: loadDesiredPayload(options.planDir, action),
       });
+    }
+  }
+  for (const action of options.plan.actions.filter((entry) => entry.action === 'publish')) {
+    const row = projected.get(maintenanceRowKey(action));
+    if (row) {
+      projected.set(maintenanceRowKey(action), { ...row, state_code: 100 });
     }
   }
   for (const action of options.plan.actions.filter((entry) => entry.action === 'delete')) {
@@ -237,11 +332,7 @@ function assertApplyPreconditions(options: {
       }
       continue;
     }
-    if (
-      !currentRow ||
-      currentRow.user_id !== action.expected_user_id ||
-      currentRow.state_code !== 0
-    ) {
+    if (!currentRow || currentRow.user_id !== action.expected_user_id) {
       throw new CliError(`Action row is missing, non-draft, or not owned: ${action.action_id}`, {
         code: 'DATASET_MAINTENANCE_ACTION_ROW_DRIFT',
         exitCode: 1,
@@ -249,14 +340,41 @@ function assertApplyPreconditions(options: {
     }
     const currentSnapshot = snapshotRemoteRow(currentRow);
     if (alreadySucceeded) {
-      const desired = loadDesiredPayload(options.planDir, action);
-      if (currentSnapshot.payload_sha256 !== sha256Json(desired)) {
-        throw new CliError(`Previously saved row payload drifted: ${action.action_id}`, {
+      const expectedPayloadSha256 =
+        action.action === 'publish'
+          ? action.before.payload_sha256
+          : sha256Json(loadDesiredPayload(options.planDir, action));
+      const expectedStateCode = action.action === 'publish' ? 100 : 0;
+      if (
+        currentRow.state_code !== expectedStateCode ||
+        currentSnapshot.payload_sha256 !== expectedPayloadSha256 ||
+        currentRow.model_id !== action.before.model_id ||
+        currentRow.rule_verification !== action.before.rule_verification
+      ) {
+        const message =
+          action.action === 'publish'
+            ? `Previously published row drifted: ${action.action_id}`
+            : `Previously saved row payload drifted: ${action.action_id}`;
+        throw new CliError(message, {
           code: 'DATASET_MAINTENANCE_RESUME_DRIFT',
           exitCode: 1,
         });
       }
-    } else if (currentSnapshot.row_sha256 !== action.before.row_sha256) {
+    } else if (action.action === 'publish' && currentRow.state_code === 100) {
+      if (
+        currentSnapshot.payload_sha256 !== action.before.payload_sha256 ||
+        currentRow.model_id !== action.before.model_id ||
+        currentRow.rule_verification !== action.before.rule_verification
+      ) {
+        throw new CliError(`Unlogged published row differs from the plan: ${action.action_id}`, {
+          code: 'DATASET_MAINTENANCE_RESUME_DRIFT',
+          exitCode: 1,
+        });
+      }
+    } else if (
+      currentRow.state_code !== 0 ||
+      currentSnapshot.row_sha256 !== action.before.row_sha256
+    ) {
       throw new CliError(`Pending action row drifted after planning: ${action.action_id}`, {
         code: 'DATASET_MAINTENANCE_ACTION_ROW_DRIFT',
         exitCode: 1,
@@ -293,6 +411,8 @@ function validateApprovalRecord(options: {
   if (
     !isJsonObject(record) ||
     record.plan_sha256 !== options.plan.plan_sha256 ||
+    record.approval_kind !== 'owner_apply_confirmation' ||
+    record.authority !== 'operator_confirmation_only' ||
     !isJsonObject(record.account) ||
     record.account.user_id !== options.context.account.user_id ||
     record.account.email !== options.context.account.email
@@ -304,12 +424,74 @@ function validateApprovalRecord(options: {
   }
 }
 
+function loadSupportApproval(options: {
+  plan: DatasetMaintenancePlan;
+  planDir: string;
+  supportApprovalPath?: string;
+}): {
+  path: string | null;
+  record: DatasetMaintenanceSupportApprovalRecord | null;
+  byActionId: Map<string, SupportApprovalBinding>;
+} {
+  if (options.plan.operation !== 'publish-support') {
+    if (options.supportApprovalPath) {
+      throw new CliError('--support-approval is valid only for publish-support plans.', {
+        code: 'DATASET_MAINTENANCE_SUPPORT_APPROVAL_UNEXPECTED',
+        exitCode: 2,
+      });
+    }
+    return { path: null, record: null, byActionId: new Map() };
+  }
+  const approvalPath = path.resolve(
+    options.supportApprovalPath ?? path.join(options.planDir, 'support-approval-record.json'),
+  );
+  if (!existsSync(approvalPath)) {
+    throw new CliError('publish-support apply requires a support approval artifact.', {
+      code: 'DATASET_MAINTENANCE_SUPPORT_APPROVAL_REQUIRED',
+      exitCode: 1,
+      details: { path: approvalPath },
+    });
+  }
+  const record = parseMaintenanceSupportApprovalRecord(
+    readJsonFile(approvalPath, 'Support approval record'),
+    options.plan,
+  );
+  return {
+    path: approvalPath,
+    record,
+    byActionId: new Map(
+      record.actions.map((action) => [action.action_id, { action, reviewer: record.reviewer }]),
+    ),
+  };
+}
+
+function progressApprovalCorrelation(
+  binding: SupportApprovalBinding | null,
+  publishAuditId: string | null,
+  publishIdempotentReplay: boolean | null,
+): DatasetMaintenanceProgressApprovalCorrelation | null {
+  return binding
+    ? {
+        approval_audit_id: binding.action.approval_audit_id,
+        reviewer_user_id: binding.reviewer.user_id,
+        reviewer_email: binding.reviewer.email,
+        publish_audit_id: publishAuditId,
+        publish_idempotent_replay: publishIdempotentReplay,
+      }
+    : null;
+}
+
 async function executeAction(options: {
   action: DatasetMaintenancePlanAction;
   plan: DatasetMaintenancePlan;
   planDir: string;
   context: DatasetMaintenanceRemoteContext;
-}): Promise<{ afterSha256: string | null; remoteResultSha256: string }> {
+  supportApproval?: SupportApprovalBinding;
+}): Promise<{
+  afterSha256: string | null;
+  remoteResultSha256: string;
+  supportApproval: DatasetMaintenanceProgressApprovalCorrelation | null;
+}> {
   if (!options.action.before) {
     throw new CliError(`Action lacks a before snapshot: ${options.action.action_id}`, {
       code: 'DATASET_MAINTENANCE_PLAN_INVALID',
@@ -323,11 +505,24 @@ async function executeAction(options: {
     version: options.action.version,
   });
   const pendingRow = justInTime.rows.length === 1 ? justInTime.rows[0] : null;
+  const pendingSnapshot = pendingRow ? snapshotRemoteRow(pendingRow) : null;
+  const exactDraft = Boolean(
+    pendingRow &&
+    pendingRow.state_code === 0 &&
+    pendingSnapshot?.row_sha256 === options.action.before.row_sha256,
+  );
+  const auditedPublishReplayCandidate = Boolean(
+    options.action.action === 'publish' &&
+    pendingRow &&
+    pendingRow.state_code === 100 &&
+    pendingSnapshot?.payload_sha256 === options.action.before.payload_sha256 &&
+    pendingRow.model_id === options.action.before.model_id &&
+    pendingRow.rule_verification === options.action.before.rule_verification,
+  );
   if (
     !pendingRow ||
     pendingRow.user_id !== options.action.expected_user_id ||
-    pendingRow.state_code !== 0 ||
-    snapshotRemoteRow(pendingRow).row_sha256 !== options.action.before.row_sha256
+    (!exactDraft && !auditedPublishReplayCandidate)
   ) {
     throw new CliError(`Action row drifted immediately before write: ${options.action.action_id}`, {
       code: 'DATASET_MAINTENANCE_ACTION_JUST_IN_TIME_DRIFT',
@@ -344,7 +539,7 @@ async function executeAction(options: {
   if (options.action.action === 'save_draft') {
     const remoteResult = await saveDraftMaintenanceRow({
       context: options.context,
-      table: options.action.table,
+      table: options.action.table as DatasetMaintenanceMutableTable,
       id: options.action.id,
       version: options.action.version,
       payload: loadDesiredPayload(options.planDir, options.action),
@@ -380,11 +575,104 @@ async function executeAction(options: {
     return {
       afterSha256: readbackSnapshot.row_sha256,
       remoteResultSha256: sha256Json(remoteResult),
+      supportApproval: null,
+    };
+  }
+  if (options.action.action === 'publish') {
+    if (!options.supportApproval) {
+      throw new CliError(
+        `Publish action lacks an independent support approval: ${options.action.action_id}`,
+        {
+          code: 'DATASET_MAINTENANCE_SUPPORT_APPROVAL_REQUIRED',
+          exitCode: 1,
+        },
+      );
+    }
+    const remoteResult = await publishMaintenanceRow({
+      context: options.context,
+      table: options.action.table as DatasetMaintenancePublishTable,
+      id: options.action.id,
+      version: options.action.version,
+      expectedModifiedAt: options.action.before.modified_at,
+      expectedPayload: options.action.before.json_ordered!,
+      audit: {
+        ...audit,
+        approval_audit_id: options.supportApproval.action.approval_audit_id,
+        approval_reviewer_user_id: options.supportApproval.reviewer.user_id,
+        approval_reviewer_email: options.supportApproval.reviewer.email,
+      },
+    });
+    const approvalAuditId = normalizeMaintenanceAuditId(
+      remoteResult.approval_audit_id,
+      `Publish approval audit id for ${options.action.action_id}`,
+    );
+    const publishAuditId = normalizeMaintenanceAuditId(
+      remoteResult.audit_id,
+      `Publish audit id for ${options.action.action_id}`,
+    );
+    if (typeof remoteResult.idempotent_replay !== 'boolean') {
+      throw new CliError(
+        `Publish RPC did not return an idempotent replay decision for ${options.action.action_id}.`,
+        {
+          code: 'DATASET_MAINTENANCE_PUBLISH_REPLAY_CORRELATION_MISSING',
+          exitCode: 1,
+          details: remoteResult,
+        },
+      );
+    }
+    if (
+      approvalAuditId !== options.supportApproval.action.approval_audit_id ||
+      remoteResult.approval_reviewer_user_id !== options.supportApproval.reviewer.user_id ||
+      remoteResult.approval_reviewer_email !== options.supportApproval.reviewer.email
+    ) {
+      throw new CliError(
+        `Publish RPC approval correlation mismatch for ${options.action.action_id}.`,
+        {
+          code: 'DATASET_MAINTENANCE_PUBLISH_APPROVAL_CORRELATION_MISMATCH',
+          exitCode: 1,
+          details: remoteResult,
+        },
+      );
+    }
+    const readback = await fetchMaintenanceExactRows({
+      context: options.context,
+      table: options.action.table,
+      id: options.action.id,
+      version: options.action.version,
+    });
+    const row = readback.rows[0];
+    if (readback.rows.length !== 1 || !row) {
+      throw new CliError(`publish readback failed for ${options.action.action_id}.`, {
+        code: 'DATASET_MAINTENANCE_ACTION_READBACK_FAILED',
+        exitCode: 1,
+      });
+    }
+    const readbackSnapshot = snapshotRemoteRow(row);
+    if (
+      row.user_id !== options.action.expected_user_id ||
+      row.state_code !== 100 ||
+      readbackSnapshot.payload_sha256 !== options.action.before.payload_sha256 ||
+      row.model_id !== options.action.before.model_id ||
+      row.rule_verification !== options.action.before.rule_verification
+    ) {
+      throw new CliError(`publish readback mismatch for ${options.action.action_id}.`, {
+        code: 'DATASET_MAINTENANCE_ACTION_READBACK_FAILED',
+        exitCode: 1,
+      });
+    }
+    return {
+      afterSha256: readbackSnapshot.row_sha256,
+      remoteResultSha256: sha256Json(remoteResult),
+      supportApproval: progressApprovalCorrelation(
+        options.supportApproval,
+        publishAuditId,
+        remoteResult.idempotent_replay,
+      ),
     };
   }
   const remoteResult = await deleteMaintenanceRow({
     context: options.context,
-    table: options.action.table,
+    table: options.action.table as DatasetMaintenanceMutableTable,
     id: options.action.id,
     version: options.action.version,
     audit,
@@ -401,7 +689,11 @@ async function executeAction(options: {
       exitCode: 1,
     });
   }
-  return { afterSha256: null, remoteResultSha256: sha256Json(remoteResult) };
+  return {
+    afterSha256: null,
+    remoteResultSha256: sha256Json(remoteResult),
+    supportApproval: null,
+  };
 }
 
 function nextAttemptPath(planDir: string): string {
@@ -449,6 +741,11 @@ export async function runDatasetMaintenanceApply(
       exitCode: 1,
     });
   }
+  const supportApproval = loadSupportApproval({
+    plan,
+    planDir,
+    supportApprovalPath: options.supportApprovalPath,
+  });
 
   const progressPath = path.join(planDir, 'apply-progress.jsonl');
   return withStateFileLock(
@@ -476,7 +773,7 @@ export async function runDatasetMaintenanceApply(
           exitCode: 2,
         });
       }
-      const progress = parseProgress(plan, progressPath);
+      const progress = parseProgress(plan, progressPath, supportApproval.byActionId);
       const resumedSuccesses = progress.successes.size;
       const current = await fetchMaintenanceAccountRows({
         context,
@@ -494,6 +791,8 @@ export async function runDatasetMaintenanceApply(
       if (!existsSync(approvalPath)) {
         writeImmutableJson(approvalPath, {
           schema_version: 1,
+          approval_kind: 'owner_apply_confirmation',
+          authority: 'operator_confirmation_only',
           approved_at_utc: clock(options),
           plan_path: planPath,
           plan_sha256: plan.plan_sha256,
@@ -514,7 +813,8 @@ export async function runDatasetMaintenanceApply(
       }
 
       const ordered = [...plan.actions].sort((left, right) => {
-        const actionOrder = Number(left.action === 'delete') - Number(right.action === 'delete');
+        const rank = { save_draft: 0, publish: 1, delete: 2 } as const;
+        const actionOrder = rank[left.action] - rank[right.action];
         return actionOrder || left.ordinal - right.ordinal;
       });
       for (const action of ordered) {
@@ -523,7 +823,14 @@ export async function runDatasetMaintenanceApply(
         }
         const startedAt = clock(options);
         try {
-          const actionResult = await executeAction({ action, plan, planDir, context });
+          const binding = supportApproval.byActionId.get(action.action_id) ?? null;
+          const actionResult = await executeAction({
+            action,
+            plan,
+            planDir,
+            context,
+            ...(binding ? { supportApproval: binding } : {}),
+          });
           const entry: DatasetMaintenanceProgressEntry = {
             schema_version: 1,
             plan_sha256: plan.plan_sha256,
@@ -540,6 +847,7 @@ export async function runDatasetMaintenanceApply(
               action_id: action.action_id,
               reason_code: action.reason_code,
               source: 'tiangong-lca dataset maintenance apply',
+              ...(binding ? { approval_audit_id: binding.action.approval_audit_id } : {}),
             },
             actor: { user_id: context.account.user_id, email: context.account.email },
             started_at_utc: startedAt,
@@ -550,12 +858,14 @@ export async function runDatasetMaintenanceApply(
             result: 'success',
             error: null,
             rollback: action.rollback,
+            support_approval: actionResult.supportApproval,
           };
           appendStableJsonLine(progressPath, entry);
           progress.entries.push(entry);
           progress.successes.set(action.action_id, entry);
           progress.latestFailures.delete(action.action_id);
         } catch (error) {
+          const binding = supportApproval.byActionId.get(action.action_id) ?? null;
           const entry: DatasetMaintenanceProgressEntry = {
             schema_version: 1,
             plan_sha256: plan.plan_sha256,
@@ -572,6 +882,7 @@ export async function runDatasetMaintenanceApply(
               action_id: action.action_id,
               reason_code: action.reason_code,
               source: 'tiangong-lca dataset maintenance apply',
+              ...(binding ? { approval_audit_id: binding.action.approval_audit_id } : {}),
             },
             actor: { user_id: context.account.user_id, email: context.account.email },
             started_at_utc: startedAt,
@@ -582,6 +893,7 @@ export async function runDatasetMaintenanceApply(
             result: 'failed',
             error: errorMessage(error),
             rollback: action.rollback,
+            support_approval: progressApprovalCorrelation(binding, null, null),
           };
           appendStableJsonLine(progressPath, entry);
           progress.entries.push(entry);
@@ -605,6 +917,7 @@ export async function runDatasetMaintenanceApply(
               ? ('failed' as const)
               : ('pending' as const),
           error: failure?.error ?? null,
+          support_approval: success?.support_approval ?? failure?.support_approval ?? null,
         };
       });
       const successCount = actions.filter((action) => action.status === 'success').length;
@@ -629,6 +942,7 @@ export async function runDatasetMaintenanceApply(
         actions,
         artifacts: {
           approval_record: approvalPath,
+          support_approval_record: supportApproval.path,
           apply_progress: progressPath,
           commit_report: path.join(planDir, 'commit-report.json'),
           attempt_report: attemptPath,
@@ -636,7 +950,13 @@ export async function runDatasetMaintenanceApply(
         database_audit: {
           rpc_transaction_log: 'public.command_audit_log',
           source: 'tiangong-lca dataset maintenance apply',
-          correlation_fields: ['plan_sha256', 'operation_id', 'action_id', 'reason_code'],
+          correlation_fields: [
+            'plan_sha256',
+            'operation_id',
+            'action_id',
+            'reason_code',
+            'approval_audit_id',
+          ],
         },
       };
       writeImmutableJson(attemptPath, report);
@@ -653,7 +973,10 @@ export const __testInternals = {
   executeAction,
   finalProjectedRows,
   loadDesiredPayload,
+  loadSupportApproval,
   nextAttemptPath,
   parseProgress,
+  progressApprovalCorrelation,
+  progressApprovalMatches,
   validateApprovalRecord,
 };
