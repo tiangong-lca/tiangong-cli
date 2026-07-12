@@ -1,5 +1,9 @@
 import path from 'node:path';
 import { collectRemoteReferences } from './dataset-remote-verify.js';
+import {
+  buildAliasRewritePlan,
+  type DatasetMaintenanceAliasSchemas,
+} from './dataset-maintenance-alias-rewrite.js';
 import { CliError } from './errors.js';
 import type { FetchLike } from './http.js';
 import {
@@ -14,6 +18,7 @@ import {
   writeImmutableJson,
   writeImmutableJsonLines,
   type DatasetMaintenanceBlocker,
+  type DatasetMaintenanceAliasBatchPlan,
   type DatasetMaintenanceOperation,
   type DatasetMaintenancePlan,
   type DatasetMaintenancePlanAction,
@@ -24,6 +29,11 @@ import {
   type DatasetMaintenanceScopeAction,
   type JsonObject,
 } from './dataset-maintenance-contract.js';
+import {
+  inspectMaintenanceSupportPayload,
+  maintenancePayloadIdentity,
+  type DatasetMaintenanceSupportSchemas,
+} from './dataset-maintenance-support-validation.js';
 import {
   fetchMaintenanceAccountRows,
   fetchMaintenanceExactRows,
@@ -40,6 +50,8 @@ export type RunDatasetMaintenancePlanOptions = {
   env: NodeJS.ProcessEnv;
   fetchImpl: FetchLike;
   now?: Date;
+  supportSchemas?: DatasetMaintenanceSupportSchemas;
+  aliasSchemas?: DatasetMaintenanceAliasSchemas;
 };
 
 function normalizeEmail(value: string): string {
@@ -61,16 +73,6 @@ function blocker(
     version: action.version,
     ...(details === undefined ? {} : { details }),
   };
-}
-
-function desiredPayloadIdentity(payload: JsonObject): {
-  id: string | null;
-  version: string | null;
-} {
-  const root = collectRemoteReferences([{ json_ordered: payload }]).find(
-    (reference) => reference.role === 'root',
-  );
-  return { id: root?.id ?? null, version: root?.version ?? null };
 }
 
 function referenceImpacts(options: {
@@ -143,7 +145,9 @@ function projectedRows(options: {
   desiredPayloads: Map<string, JsonObject>;
 }): DatasetMaintenanceRemoteRow[] {
   const projected = new Map(options.current.map((row) => [maintenanceRowKey(row), { ...row }]));
-  for (const action of options.actions.filter((entry) => entry.action === 'save_draft')) {
+  for (const action of options.actions.filter((entry) =>
+    ['save_draft', 'update_json_ordered'].includes(entry.action),
+  )) {
     const key = maintenanceRowKey(action);
     const row = projected.get(key);
     const payload = options.desiredPayloads.get(action.action_id);
@@ -263,6 +267,61 @@ export async function runDatasetMaintenancePlan(
   const snapshotByKey = new Map(snapshotRows.map((row) => [maintenanceRowKey(row), row]));
   const desiredPayloads = new Map<string, JsonObject>();
   const actionPlans: DatasetMaintenancePlanAction[] = [];
+  const aliasTargetSnapshots = new Map<
+    string,
+    DatasetMaintenanceAliasBatchPlan['target_snapshots']
+  >();
+  for (const batch of scope.alias_batches ?? []) {
+    const targetRows = await Promise.all(
+      (['unitgroup', 'flowproperty'] as const).map(async (kind) => {
+        const target = batch.target[kind];
+        const table = kind === 'unitgroup' ? 'unitgroups' : 'flowproperties';
+        const exact = await fetchMaintenanceExactRows({
+          context,
+          table,
+          id: target.id,
+          version: target.version,
+        });
+        const row = exact.rows.length === 1 ? exact.rows[0] : null;
+        if (!row?.json_ordered) return null;
+        const inspection = inspectMaintenanceSupportPayload({
+          table,
+          payload: row.json_ordered,
+          schemas: options.supportSchemas,
+        });
+        return inspection.identity.id === target.id &&
+          inspection.identity.version === target.version &&
+          inspection.schemaResult.success
+          ? snapshotRemoteRow(row)
+          : null;
+      }),
+    );
+    const sourceUnitGroupSnapshot = snapshotByKey.get(
+      maintenanceRowKey({
+        table: 'unitgroups',
+        id: batch.source.unitgroup.id,
+        version: batch.source.unitgroup.version,
+      }),
+    );
+    const sourceUnitGroupInspection = sourceUnitGroupSnapshot?.json_ordered
+      ? inspectMaintenanceSupportPayload({
+          table: 'unitgroups',
+          payload: sourceUnitGroupSnapshot.json_ordered,
+          schemas: options.supportSchemas,
+        })
+      : null;
+    aliasTargetSnapshots.set(batch.batch_id, {
+      unitgroup: targetRows[0],
+      flowproperty: targetRows[1],
+      source_unitgroup:
+        sourceUnitGroupSnapshot &&
+        sourceUnitGroupInspection?.identity.id === batch.source.unitgroup.id &&
+        sourceUnitGroupInspection.identity.version === batch.source.unitgroup.version &&
+        sourceUnitGroupInspection.schemaResult.success
+          ? sourceUnitGroupSnapshot
+          : null,
+    });
+  }
 
   for (const [ordinal, action] of scope.actions.entries()) {
     const actionBlockers: DatasetMaintenanceBlocker[] = [];
@@ -305,6 +364,15 @@ export async function runDatasetMaintenancePlan(
     if (before && !before.json_ordered) {
       actionBlockers.push(
         blocker(action, 'TARGET_PAYLOAD_MISSING', 'Target row has no object json_ordered payload.'),
+      );
+    }
+    if (action.action === 'update_json_ordered' && before && !before.modified_at) {
+      actionBlockers.push(
+        blocker(
+          action,
+          'ALIAS_EXPECTED_MODIFIED_AT_MISSING',
+          `${action.action} target requires a non-null modified_at optimistic-lock value.`,
+        ),
       );
     }
     if (
@@ -351,7 +419,7 @@ export async function runDatasetMaintenancePlan(
         path: path.relative(outDir, payloadPath),
         sha256: sha256Json(rawPayload),
       };
-      const identity = desiredPayloadIdentity(rawPayload);
+      const identity = maintenancePayloadIdentity(rawPayload);
       if (identity.id !== action.id || identity.version !== action.version) {
         actionBlockers.push(
           blocker(
@@ -374,13 +442,54 @@ export async function runDatasetMaintenancePlan(
         strategy:
           action.action === 'save_draft'
             ? 'save_before_snapshot'
-            : 'restore_deleted_before_snapshot',
+            : action.action === 'delete'
+              ? 'restore_deleted_before_snapshot'
+              : 'restore_atomic_alias_before_snapshot',
         before_payload_sha256: before?.payload_sha256 ?? null,
         before_payload: before?.json_ordered ?? null,
         model_id: before?.model_id ?? null,
         rule_verification: before?.rule_verification ?? null,
       },
     });
+  }
+
+  let aliasBatches: DatasetMaintenanceAliasBatchPlan[] | undefined;
+  if (scope.operation === 'merge-support-aliases') {
+    const aliasPlan = buildAliasRewritePlan({
+      scope,
+      actions: actionPlans,
+      accountRows: accountSnapshot.rows,
+      targetSnapshots: aliasTargetSnapshots,
+      schemas: options.aliasSchemas,
+    });
+    aliasBatches = aliasPlan.batches;
+    for (const action of actionPlans) {
+      const rawPayload = aliasPlan.desired_payloads.get(action.action_id);
+      if (!rawPayload) continue;
+      const payloadPath = path.join(
+        outDir,
+        'payloads',
+        `${safeActionFileName(action.action_id)}.json`,
+      );
+      writeImmutableJson(payloadPath, rawPayload);
+      desiredPayloads.set(action.action_id, rawPayload);
+      action.desired_payload = {
+        path: path.relative(outDir, payloadPath),
+        sha256: sha256Json(rawPayload),
+      };
+      const identity = maintenancePayloadIdentity(rawPayload);
+      if (identity.id !== action.id || identity.version !== action.version) {
+        action.blockers.push(
+          blocker(
+            action,
+            'DESIRED_PAYLOAD_IDENTITY_MISMATCH',
+            'Generated alias payload root id/version does not match the target row.',
+            identity,
+          ),
+        );
+        action.status = 'blocked';
+      }
+    }
   }
 
   const intendedRows = projectedRows({
@@ -430,6 +539,7 @@ export async function runDatasetMaintenancePlan(
     },
     source_import_run_id: scope.source_import_run_id ?? null,
     source_lineage: scope.source_lineage ?? null,
+    target_mode: scope.target_mode ?? null,
     status: allBlockers.length ? 'blocked' : 'ready',
     scope_sha256: scopeSha256,
     visible_snapshot_sha256: sha256Json(snapshotRows),
@@ -439,6 +549,14 @@ export async function runDatasetMaintenancePlan(
       actions: actionPlans.length,
       save_draft: actionPlans.filter((action) => action.action === 'save_draft').length,
       delete: actionPlans.filter((action) => action.action === 'delete').length,
+      update_json_ordered: actionPlans.filter((action) => action.action === 'update_json_ordered')
+        .length,
+      atomic_batches: aliasBatches?.length ?? 0,
+      scaled_exchanges: aliasBatches?.reduce((sum, batch) => sum + batch.summary.exchanges, 0) ?? 0,
+      scaled_amount_fields:
+        aliasBatches?.reduce((sum, batch) => sum + batch.summary.amount_fields, 0) ?? 0,
+      unrelated_exchanges_preserved:
+        aliasBatches?.reduce((sum, batch) => sum + batch.summary.unrelated_exchanges, 0) ?? 0,
       protected_rows: protectedRowList.length,
       blockers: allBlockers.length,
       current_reference_impacts: currentImpacts.length,
@@ -452,8 +570,10 @@ export async function runDatasetMaintenancePlan(
       maintenance_plan: 'maintenance-plan.json',
       dry_run_report: 'dry-run-report.json',
       payload_dir: 'payloads',
+      ...(aliasBatches ? { exchange_rewrite_plan: 'exchange-rewrite-plan.jsonl' } : {}),
     },
     actions: actionPlans,
+    ...(aliasBatches ? { alias_batches: aliasBatches } : {}),
     protected_rows: protectedRowList,
     blockers: allBlockers,
   };
@@ -475,6 +595,21 @@ export async function runDatasetMaintenancePlan(
     rows: snapshotRows,
   });
   writeImmutableJsonLines(path.join(outDir, plan.artifacts.protected_rows), protectedRowList);
+  if (plan.artifacts.exchange_rewrite_plan) {
+    writeImmutableJsonLines(
+      path.join(outDir, plan.artifacts.exchange_rewrite_plan),
+      plan.alias_batches!.flatMap((batch) =>
+        batch.exchange_rewrites.map((rewrite) => ({
+          schema_version: 1,
+          plan_sha256: plan.plan_sha256,
+          operation_id: plan.operation_id,
+          batch_id: batch.batch_id,
+          factor: batch.factor,
+          ...rewrite,
+        })),
+      ),
+    );
+  }
   writeImmutableJson(path.join(outDir, plan.artifacts.reference_impact_report), {
     schema_version: 1,
     generated_at_utc: generatedAtUtc,
@@ -489,6 +624,7 @@ export async function runDatasetMaintenancePlan(
     generated_at_utc: generatedAtUtc,
     status: plan.status,
     operation: plan.operation,
+    target_mode: plan.target_mode,
     task_id: plan.task_id,
     plan_sha256: plan.plan_sha256,
     account: plan.account,
@@ -502,6 +638,14 @@ export async function runDatasetMaintenancePlan(
       status: action.status,
       blockers: action.blockers,
     })),
+    alias_batches: plan.alias_batches?.map((batch) => ({
+      batch_id: batch.batch_id,
+      dimension: batch.dimension,
+      factor: batch.factor,
+      summary: batch.summary,
+      postconditions: batch.postconditions,
+      target_snapshots: batch.target_snapshots,
+    })),
     blockers: plan.blockers,
   });
   writeImmutableJson(path.join(outDir, plan.artifacts.maintenance_plan), plan);
@@ -509,7 +653,7 @@ export async function runDatasetMaintenancePlan(
 }
 
 export const __testInternals = {
-  desiredPayloadIdentity,
+  desiredPayloadIdentity: maintenancePayloadIdentity,
   maintenanceProjectedReferenceFingerprint,
   projectedRows,
   protectedRows,

@@ -26,8 +26,8 @@ checkPaths:
   - scripts/docpact
   - scripts/docpact-gate.sh
   - scripts/install-git-hooks.sh
-lastReviewedAt: 2026-07-11
-lastReviewedCommit: 695e6d6fe718cb92d499f3ce8be2dc24c3f6ce29
+lastReviewedAt: 2026-07-12
+lastReviewedCommit: 192ce9cb233af85b8bcf50136d37fd08d4ae8292
 related:
   - ../../AGENTS.md
   - ../../.docpact/config.yaml
@@ -51,6 +51,8 @@ Review note, 2026-06-07: release 0.0.14 keeps the architecture in the existing T
 Review note, 2026-06-11: release 0.0.15 keeps the import-lca wrapper inside the existing TypeScript dataset command family. Only the tidas-tools spawn argument construction and report file derivation changed to match tidas-tools 0.0.28; no new orchestration layer or release path.
 
 Review note, 2026-07-11: row-level dataset maintenance is implemented in the native CLI as `dataset maintenance plan/apply/verify`. The architecture keeps scope freezing, current-user RLS reads, protected-row classification, approved platform-command writes, append-only action logging, and independent verification in separate maintenance modules.
+
+Review note, 2026-07-12: `merge-support-aliases` is one fixed BAFU owner-draft transformation inside the maintenance boundary. Scope and plan require `target_mode=owner_draft`; planning freezes exact current-owner state-0 source/target support and exchange closure; apply sends `target_visibility=owner_draft` in one atomic guarded RPC per dimension; verify re-reads private state and validates the mode-bound row/exchange/batch proof chain. Publication is a separate future workflow.
 
 ## Stable Path Map
 
@@ -140,6 +142,8 @@ Dataset-local governance now uses the same CLI-native command layer:
 - `src/lib/dataset-references-rewrite.ts`
 - `src/lib/dataset-maintenance-clear-account.ts`
 - `src/lib/dataset-maintenance-{contract,remote,plan,apply,verify}.ts`
+- `src/lib/dataset-maintenance-alias-rewrite.ts`
+- `src/lib/dataset-maintenance-support-validation.ts`
 - `src/lib/dataset-local.ts`
 - `src/lib/lifecyclemodel-save-draft-run.ts`
 - `src/lib/lifecyclemodel-graph.ts`
@@ -149,12 +153,14 @@ These modules keep validation, entity-level curation queue build/next/verify sta
 The row-level maintenance family is deliberately split by responsibility:
 
 - `contract` owns the versioned scope, immutable plan, action, approval, and report shapes.
-- `remote` owns current-session authentication, current-user RLS reads, exact `id` + `version` row lookup, reference-impact reads, platform `save_draft` / `delete` command execution, and audit correlation.
-- `plan` freezes `maintenance-scope.json`, `rls-visible-snapshot.json`, `protected-rows.jsonl`, `reference-impact-report.json`, `maintenance-plan.json`, and `dry-run-report.json` before any write.
-- `apply` re-runs a full-plan drift preflight, verifies `--approve-plan <sha256>` and `--confirm <email>`, persists approval before the first write, appends one durable `apply-progress.jsonl` record per action, executes updates before deletes, and stops on the first failure so a rerun can resume from the recorded outcomes. Each ledger row carries at least the plan SHA-256, operation/action ids, exact entity ref, actor, start/finish times, before/after SHA-256, result/error, and rollback guidance.
-- `verify` performs a fresh readback independently of apply and writes `readback-verify-report.json`.
+- `remote` owns current-session authentication, current-user RLS reads, exact `id` + `version` row lookup, reference-impact reads, platform `save_draft` / `delete` / guarded owner-draft alias-batch RPC execution, and audit correlation.
+- `alias-rewrite` owns the fixed two-dimension BAFU profile, reviewed target-reference derivation, closure counting, and arbitrary-precision decimal scaling. It never uses JavaScript binary floating point for exchange amounts.
+- `support-validation` validates frozen owner-draft FP/UG payload schemas plus embedded root UUID/version without importing publication behavior.
+- `plan` freezes `maintenance-scope.json`, `rls-visible-snapshot.json`, `protected-rows.jsonl`, `reference-impact-report.json`, `maintenance-plan.json`, and `dry-run-report.json` before any write. Alias plans additionally freeze `exchange-rewrite-plan.jsonl`, three support snapshots per batch, per-process exchange locators/hashes, desired payloads, and exact postconditions.
+- `apply` re-runs a full-plan drift preflight, verifies `--approve-plan <sha256>` and `--confirm <email>`, and persists approval before the first write. Ordinary actions remain sequential; an alias dimension is submitted once to `cmd_dataset_alias_batch_guarded` and is never decomposed into per-row writes. Apply records `apply-progress.jsonl`, `alias-exchange-progress.jsonl`, and `alias-batch-progress.jsonl`, and repairs a lost-response/log gap only through an audit-proven whole-batch replay.
+- `verify` performs a fresh readback independently of apply, validates the immutable support snapshots and exact durable proof chain, and writes `readback-verify-report.json`.
 
-V1 only permits current-user, `state_code=0`, exact-version `contacts`, `sources`, `flows`, and `processes` to become `save_draft` or `delete` actions. `lifecyclemodels`, `unitgroups`, `flowproperties`, public/shared rows, rows owned by another account, and non-draft rows stay protected. The CLI records the operator-supplied maintenance operation but does not make semantic cleanup or canonicalization decisions.
+Ordinary V1 maintenance only permits current-user, `state_code=0`, exact-version `contacts`, `sources`, `flows`, and `processes` to become `save_draft` or `delete` actions. `merge-support-aliases` is narrower still: exactly two owner-draft batches (`time`, `length_time`), 52 draft rows, 59 selected exchanges, and 309 unrelated exchanges preserved, with reviewed factors and postcondition counts encoded as contract invariants. Source and target FP/UG plus all changed parents must be the current actor's `state_code=0`; public, foreign, or mixed visibility is rejected. It rewrites references and exchange amounts but does not delete support rows or change visibility.
 
 All mutation continues through the public platform dataset command path. Direct SQL, service-role access, raw REST mutation, and Foundry-local delete/update implementations are outside this architecture; Foundry may only prepare scope, invoke the CLI, and retain its artifacts.
 

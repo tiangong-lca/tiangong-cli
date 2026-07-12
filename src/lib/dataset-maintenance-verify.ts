@@ -43,6 +43,7 @@ export type DatasetMaintenanceVerifyReport = {
   task_id: string;
   operation: DatasetMaintenancePlan['operation'];
   operation_id: string;
+  target_mode: DatasetMaintenancePlan['target_mode'];
   plan_sha256: string;
   actor: { user_id: string; email: string };
   summary: {
@@ -51,6 +52,9 @@ export type DatasetMaintenanceVerifyReport = {
     protected_rows: number;
     protected_checks_passed: number;
     progress_successes: number;
+    atomic_batches?: number;
+    atomic_batch_successes?: number;
+    exchange_rewrite_logs?: number;
     dangling_deleted_target_references: number;
     issues: number;
   };
@@ -78,6 +82,8 @@ export type RunDatasetMaintenanceVerifyOptions = {
   fetchImpl: FetchLike;
   now?: Date;
 };
+
+const POSITIVE_INTEGER_TEXT = /^[1-9]\d*$/u;
 
 function issue(
   code: string,
@@ -159,6 +165,8 @@ export async function runDatasetMaintenanceVerify(
   const approvalRecordPath = path.join(planDir, 'approval-record.json');
   const progressPath = path.join(planDir, 'apply-progress.jsonl');
   const commitReportPath = path.join(planDir, 'commit-report.json');
+  const aliasBatchProgressPath = path.join(planDir, 'alias-batch-progress.jsonl');
+  const aliasExchangeProgressPath = path.join(planDir, 'alias-exchange-progress.jsonl');
   const pageSize = normalizeMaintenancePageSize(options.pageSize);
   const plan = parseMaintenancePlan(readJsonFile(planPath, 'Maintenance plan'));
   const context = await resolveMaintenanceRemoteContext({
@@ -234,6 +242,221 @@ export async function runDatasetMaintenanceVerify(
     });
   }
 
+  const progress = readJsonLinesIfPresent(progressPath);
+  const actionsById = new Map(plan.actions.map((action) => [action.action_id, action]));
+
+  let aliasBatchSuccesses = 0;
+  let aliasExchangeLogs = 0;
+  const aliasBatchProofs = new Map<
+    string,
+    { batch_request_sha256: string; summary_audit_id: string }
+  >();
+  if (plan.operation === 'merge-support-aliases') {
+    for (const batch of plan.alias_batches!) {
+      for (const snapshot of [
+        batch.target_snapshots.unitgroup!,
+        batch.target_snapshots.flowproperty!,
+        batch.target_snapshots.source_unitgroup!,
+      ]) {
+        const exact = await fetchMaintenanceExactRows({
+          context,
+          table: snapshot.table,
+          id: snapshot.id,
+          version: snapshot.version,
+        });
+        const row = exact.rows.length === 1 ? exact.rows[0] : null;
+        if (
+          !row ||
+          row.user_id !== plan.account.user_id ||
+          row.state_code !== 0 ||
+          snapshotRemoteRow(row).row_sha256 !== snapshot.row_sha256
+        ) {
+          problems.push({
+            code: 'ALIAS_SUPPORT_READBACK_MISMATCH',
+            message: 'Alias target/source support snapshot changed after planning.',
+            table: snapshot.table,
+            id: snapshot.id,
+            version: snapshot.version,
+            details: { batch_id: batch.batch_id },
+          });
+        }
+      }
+    }
+
+    const batchesById = new Map(plan.alias_batches!.map((batch) => [batch.batch_id, batch]));
+    const successfulBatches = new Set<string>();
+    for (const [index, entry] of readJsonLinesIfPresent(aliasBatchProgressPath).entries()) {
+      const batch =
+        isJsonObject(entry) && typeof entry.batch_id === 'string'
+          ? batchesById.get(entry.batch_id)
+          : null;
+      const valid = Boolean(
+        isJsonObject(entry) &&
+        entry.schema_version === 1 &&
+        entry.plan_sha256 === plan.plan_sha256 &&
+        entry.operation_id === plan.operation_id &&
+        entry.target_mode === 'owner_draft' &&
+        batch &&
+        entry.dimension === batch.dimension &&
+        entry.factor === batch.factor &&
+        entry.row_count === batch.summary.rows &&
+        entry.exchange_count === batch.summary.exchanges &&
+        isJsonObject(entry.actor) &&
+        entry.actor.user_id === plan.account.user_id &&
+        entry.actor.email === plan.account.email &&
+        typeof entry.started_at_utc === 'string' &&
+        typeof entry.ended_at_utc === 'string' &&
+        (entry.result === 'success' || entry.result === 'failed') &&
+        (entry.result !== 'success' || !successfulBatches.has(batch.batch_id)) &&
+        (entry.result === 'success'
+          ? typeof entry.batch_request_sha256 === 'string' &&
+            /^[a-f0-9]{64}$/u.test(entry.batch_request_sha256) &&
+            typeof entry.idempotent_replay === 'boolean' &&
+            typeof entry.summary_audit_id === 'string' &&
+            POSITIVE_INTEGER_TEXT.test(entry.summary_audit_id) &&
+            entry.error === null
+          : entry.batch_request_sha256 === null &&
+            entry.idempotent_replay === null &&
+            entry.summary_audit_id === null &&
+            typeof entry.error === 'string'),
+      );
+      if (!valid) {
+        problems.push({
+          code: 'ALIAS_BATCH_PROGRESS_INVALID',
+          message: 'alias-batch-progress.jsonl contains an invalid or foreign entry.',
+          details: { line: index + 1 },
+        });
+      } else if (isJsonObject(entry) && entry.result === 'success' && batch) {
+        successfulBatches.add(batch.batch_id);
+        aliasBatchProofs.set(batch.batch_id, {
+          batch_request_sha256: entry.batch_request_sha256 as string,
+          summary_audit_id: entry.summary_audit_id as string,
+        });
+      }
+    }
+    for (const batch of plan.alias_batches!) {
+      if (!successfulBatches.has(batch.batch_id)) {
+        problems.push({
+          code: 'ALIAS_BATCH_SUCCESS_LOG_MISSING',
+          message: 'No successful atomic batch progress entry exists.',
+          details: { batch_id: batch.batch_id },
+        });
+      }
+    }
+    aliasBatchSuccesses = successfulBatches.size;
+
+    const expectedRewrites = new Map(
+      plan.alias_batches!.flatMap((batch) =>
+        batch.exchange_rewrites.map(
+          (rewrite) =>
+            [
+              `${batch.batch_id}\u0000${rewrite.action_id}\u0000${rewrite.exchange_index}\u0000${rewrite.data_set_internal_id}` as string,
+              { batch, rewrite },
+            ] as const,
+        ),
+      ),
+    );
+    const loggedKeys = new Set<string>();
+    for (const [index, entry] of readJsonLinesIfPresent(aliasExchangeProgressPath).entries()) {
+      const key =
+        isJsonObject(entry) &&
+        typeof entry.batch_id === 'string' &&
+        typeof entry.action_id === 'string' &&
+        typeof entry.exchange_index === 'number' &&
+        typeof entry.data_set_internal_id === 'string'
+          ? `${entry.batch_id}\u0000${entry.action_id}\u0000${entry.exchange_index}\u0000${entry.data_set_internal_id}`
+          : '';
+      const expected = expectedRewrites.get(key);
+      const batchProof = expected ? aliasBatchProofs.get(expected.batch.batch_id) : null;
+      const action = expected ? actionsById.get(expected.rewrite.action_id) : null;
+      const rowProofCandidates = expected
+        ? progress.filter(
+            (candidate) =>
+              isJsonObject(candidate) &&
+              candidate.schema_version === 1 &&
+              candidate.plan_sha256 === plan.plan_sha256 &&
+              candidate.operation_id === plan.operation_id &&
+              candidate.action_id === expected.rewrite.action_id &&
+              candidate.action === 'update_json_ordered' &&
+              candidate.table === action?.table &&
+              candidate.id === action?.id &&
+              candidate.version === action?.version &&
+              candidate.batch_id === expected.batch.batch_id &&
+              candidate.batch_request_sha256 === batchProof?.batch_request_sha256 &&
+              candidate.summary_audit_id === batchProof?.summary_audit_id &&
+              typeof candidate.database_audit_id === 'string' &&
+              POSITIVE_INTEGER_TEXT.test(candidate.database_audit_id) &&
+              candidate.result === 'success',
+          )
+        : [];
+      const rowProof = rowProofCandidates.length === 1 ? rowProofCandidates[0] : null;
+      const rowAuditId =
+        isJsonObject(rowProof) && typeof rowProof.database_audit_id === 'string'
+          ? rowProof.database_audit_id
+          : null;
+      const valid = Boolean(
+        isJsonObject(entry) &&
+        expected &&
+        batchProof &&
+        rowProof &&
+        entry.schema_version === 1 &&
+        entry.plan_sha256 === plan.plan_sha256 &&
+        entry.operation_id === plan.operation_id &&
+        entry.target_mode === 'owner_draft' &&
+        entry.factor === expected.batch.factor &&
+        entry.result === 'success' &&
+        typeof entry.batch_request_sha256 === 'string' &&
+        /^[a-f0-9]{64}$/u.test(entry.batch_request_sha256) &&
+        entry.batch_request_sha256 === batchProof.batch_request_sha256 &&
+        typeof entry.database_audit_id === 'string' &&
+        POSITIVE_INTEGER_TEXT.test(entry.database_audit_id) &&
+        entry.database_audit_id === rowAuditId &&
+        entry.summary_audit_id === batchProof.summary_audit_id &&
+        isJsonObject(entry.actor) &&
+        entry.actor.user_id === plan.account.user_id &&
+        entry.actor.email === plan.account.email &&
+        typeof entry.logged_at_utc === 'string' &&
+        sha256Json({
+          action_id: entry.action_id,
+          process_id: entry.process_id,
+          process_version: entry.process_version,
+          exchange_index: entry.exchange_index,
+          data_set_internal_id: entry.data_set_internal_id,
+          flow_id: entry.flow_id,
+          flow_version: entry.flow_version,
+          direction: entry.direction,
+          before_exchange_sha256: entry.before_exchange_sha256,
+          before_mean_amount: entry.before_mean_amount,
+          before_resulting_amount: entry.before_resulting_amount,
+          after_mean_amount: entry.after_mean_amount,
+          after_resulting_amount: entry.after_resulting_amount,
+          after_exchange_sha256: entry.after_exchange_sha256,
+        }) === sha256Json(expected.rewrite) &&
+        !loggedKeys.has(key),
+      );
+      if (!valid) {
+        problems.push({
+          code: 'ALIAS_EXCHANGE_PROGRESS_INVALID',
+          message:
+            'alias-exchange-progress.jsonl contains an invalid, duplicate, or foreign entry.',
+          details: { line: index + 1 },
+        });
+      } else {
+        loggedKeys.add(key);
+      }
+    }
+    for (const key of expectedRewrites.keys()) {
+      if (!loggedKeys.has(key)) {
+        problems.push({
+          code: 'ALIAS_EXCHANGE_SUCCESS_LOG_MISSING',
+          message: 'An approved exchange rewrite lacks a durable success entry.',
+          details: { key },
+        });
+      }
+    }
+    aliasExchangeLogs = loggedKeys.size;
+  }
+
   let protectedPassed = 0;
   for (const protectedRow of plan.protected_rows) {
     const row = currentByKey.get(maintenanceRowKey(protectedRow));
@@ -251,7 +474,7 @@ export async function runDatasetMaintenanceVerify(
   }
   const expectedFinalKeys = new Set([
     ...plan.protected_rows.map(maintenanceRowKey),
-    ...plan.actions.filter((action) => action.action === 'save_draft').map(maintenanceRowKey),
+    ...plan.actions.filter((action) => action.action !== 'delete').map(maintenanceRowKey),
   ]);
   for (const row of current.rows) {
     if (!expectedFinalKeys.has(maintenanceRowKey(row))) {
@@ -299,6 +522,7 @@ export async function runDatasetMaintenanceVerify(
       approvalRecord.task_id !== plan.task_id ||
       approvalRecord.operation !== plan.operation ||
       approvalRecord.operation_id !== plan.operation_id ||
+      approvalRecord.target_mode !== plan.target_mode ||
       !isJsonObject(approvalRecord.account) ||
       approvalRecord.account.user_id !== plan.account.user_id ||
       approvalRecord.account.email !== plan.account.email ||
@@ -313,14 +537,13 @@ export async function runDatasetMaintenanceVerify(
     }
   }
 
-  const progress = readJsonLinesIfPresent(progressPath);
-  const actionsById = new Map(plan.actions.map((action) => [action.action_id, action]));
   const successfulActionIds = new Set<string>();
   for (const [index, entry] of progress.entries()) {
     const action =
       isJsonObject(entry) && typeof entry.action_id === 'string'
         ? actionsById.get(entry.action_id)
         : null;
+    const aliasProof = action?.batch_id ? aliasBatchProofs.get(action.batch_id) : null;
     const valid = Boolean(
       isJsonObject(entry) &&
       entry.schema_version === 1 &&
@@ -344,6 +567,24 @@ export async function runDatasetMaintenanceVerify(
       entry.audit_context.action_id === action.action_id &&
       entry.audit_context.reason_code === action.reason_code &&
       entry.audit_context.source === 'tiangong-lca dataset maintenance apply' &&
+      (action.action !== 'update_json_ordered' ||
+        (aliasProof &&
+          entry.target_mode === 'owner_draft' &&
+          entry.audit_context.target_mode === 'owner_draft' &&
+          entry.batch_id === action.batch_id &&
+          typeof entry.batch_request_sha256 === 'string' &&
+          /^[a-f0-9]{64}$/u.test(entry.batch_request_sha256) &&
+          entry.batch_request_sha256 === aliasProof.batch_request_sha256 &&
+          typeof entry.database_audit_id === 'string' &&
+          POSITIVE_INTEGER_TEXT.test(entry.database_audit_id) &&
+          entry.summary_audit_id === aliasProof.summary_audit_id)) &&
+      (action.action === 'update_json_ordered' ||
+        (!('target_mode' in entry) &&
+          !('target_mode' in entry.audit_context) &&
+          !('batch_id' in entry) &&
+          !('batch_request_sha256' in entry) &&
+          !('database_audit_id' in entry) &&
+          !('summary_audit_id' in entry))) &&
       isJsonObject(entry.rollback) &&
       sha256Json(entry.rollback) === sha256Json(action.rollback) &&
       (entry.result === 'success' || entry.result === 'failed') &&
@@ -366,6 +607,14 @@ export async function runDatasetMaintenanceVerify(
       continue;
     }
     if (isJsonObject(entry) && entry.result === 'success' && action) {
+      if (successfulActionIds.has(action.action_id)) {
+        problems.push({
+          code: 'APPLY_PROGRESS_SUCCESS_DUPLICATE',
+          message: 'apply-progress.jsonl contains more than one success proof for an action.',
+          details: { line: index + 1, action_id: action.action_id },
+        });
+        continue;
+      }
       successfulActionIds.add(action.action_id);
     }
   }
@@ -412,6 +661,7 @@ export async function runDatasetMaintenanceVerify(
       commitReport.task_id !== plan.task_id ||
       commitReport.operation !== plan.operation ||
       commitReport.operation_id !== plan.operation_id ||
+      commitReport.target_mode !== plan.target_mode ||
       commitReport.status !== 'completed' ||
       !isJsonObject(commitReport.actor) ||
       commitReport.actor.user_id !== plan.account.user_id ||
@@ -437,6 +687,7 @@ export async function runDatasetMaintenanceVerify(
     task_id: plan.task_id,
     operation: plan.operation,
     operation_id: plan.operation_id,
+    target_mode: plan.target_mode,
     plan_sha256: plan.plan_sha256,
     actor: { user_id: context.account.user_id, email: context.account.email },
     summary: {
@@ -445,6 +696,13 @@ export async function runDatasetMaintenanceVerify(
       protected_rows: plan.protected_rows.length,
       protected_checks_passed: protectedPassed,
       progress_successes: successfulActionIds.size,
+      ...(plan.operation === 'merge-support-aliases'
+        ? {
+            atomic_batches: plan.alias_batches!.length,
+            atomic_batch_successes: aliasBatchSuccesses,
+            exchange_rewrite_logs: aliasExchangeLogs,
+          }
+        : {}),
       dangling_deleted_target_references: danglingReferences.length,
       issues: problems.length,
     },

@@ -8,6 +8,11 @@ import {
   runDatasetMaintenanceApply,
 } from '../src/lib/dataset-maintenance-apply.js';
 import {
+  __testInternals as aliasInternals,
+  buildAliasRewritePlan,
+  multiplyExactDecimal,
+} from '../src/lib/dataset-maintenance-alias-rewrite.js';
+import {
   appendStableJsonLine,
   computePlanSha256,
   isJsonObject,
@@ -18,6 +23,7 @@ import {
   readJsonLinesIfPresent,
   resolveMaintenancePlanArtifactPath,
   safeActionFileName,
+  sha256Json,
   sha256Text,
   snapshotRemoteRow,
   stableJsonText,
@@ -25,6 +31,7 @@ import {
   writeImmutableJson,
   writeImmutableJsonLines,
   type DatasetMaintenancePlan,
+  type DatasetMaintenanceAliasBatch,
   type DatasetMaintenancePlanAction,
   type DatasetMaintenanceProgressEntry,
   type DatasetMaintenanceRemoteRow,
@@ -57,6 +64,11 @@ import {
 } from './helpers/supabase-auth.js';
 
 type StoredRow = Omit<DatasetMaintenanceRemoteRow, 'table'>;
+
+const PASSING_SUPPORT_SCHEMAS = {
+  unitgroups: { safeParse: () => ({ success: true as const }) },
+  flowproperties: { safeParse: () => ({ success: true as const }) },
+};
 
 function jsonResponse(body: unknown, status = 200): ResponseLike {
   return {
@@ -121,13 +133,453 @@ function flowPayload(id: string, version = '01.00.000'): JsonObject {
   };
 }
 
+function aliasId(value: number): string {
+  return `00000000-0000-4000-8000-${String(value).padStart(12, '0')}`;
+}
+
+function aliasReference(
+  kind: 'unitgroups' | 'flowproperties' | 'flows',
+  id: string,
+  version: string,
+  name: string,
+): JsonObject {
+  const type =
+    kind === 'unitgroups'
+      ? 'unit group data set'
+      : kind === 'flowproperties'
+        ? 'flow property data set'
+        : 'flow data set';
+  return {
+    '@refObjectId': id,
+    '@type': type,
+    '@uri': `../${kind}/${id}.json`,
+    '@version': version,
+    'common:shortDescription': { '#text': name, '@xml:lang': 'en' },
+  };
+}
+
+function aliasUnitGroupPayload(options: {
+  id: string;
+  version: string;
+  referenceName: string;
+  targetUnits?: Array<{ id: string; mean: string; name: string }>;
+}): JsonObject {
+  return {
+    unitGroupDataSet: {
+      unitGroupInformation: {
+        dataSetInformation: {
+          'common:UUID': options.id,
+          'common:name': { '#text': `Units of ${options.referenceName}`, '@xml:lang': 'en' },
+        },
+        quantitativeReference: { referenceToReferenceUnit: '1' },
+      },
+      units: {
+        unit: (options.targetUnits ?? [{ id: '1', mean: '1.0', name: options.referenceName }]).map(
+          (unit) => ({
+            '@dataSetInternalID': unit.id,
+            meanValue: unit.mean,
+            name: unit.name,
+          }),
+        ),
+      },
+      administrativeInformation: {
+        publicationAndOwnership: { 'common:dataSetVersion': options.version },
+      },
+    },
+  };
+}
+
+function aliasFlowPropertyPayload(options: {
+  id: string;
+  version: string;
+  name: string;
+  unitGroupReference: JsonObject;
+}): JsonObject {
+  return {
+    flowPropertyDataSet: {
+      flowPropertiesInformation: {
+        dataSetInformation: {
+          'common:UUID': options.id,
+          'common:name': { '#text': options.name, '@xml:lang': 'en' },
+        },
+        quantitativeReference: {
+          referenceToReferenceUnitGroup: options.unitGroupReference,
+        },
+      },
+      administrativeInformation: {
+        publicationAndOwnership: { 'common:dataSetVersion': options.version },
+      },
+    },
+  };
+}
+
+function aliasFlowPayload(options: {
+  id: string;
+  version: string;
+  flowPropertyReference: JsonObject;
+}): JsonObject {
+  return {
+    flowDataSet: {
+      flowInformation: { dataSetInformation: { 'common:UUID': options.id } },
+      flowProperties: {
+        flowProperty: {
+          '@dataSetInternalID': '1',
+          meanValue: '1',
+          referenceToFlowPropertyDataSet: options.flowPropertyReference,
+        },
+      },
+      administrativeInformation: {
+        publicationAndOwnership: { 'common:dataSetVersion': options.version },
+      },
+    },
+  };
+}
+
+function aliasProcessPayload(options: {
+  id: string;
+  version: string;
+  exchanges: JsonObject[];
+}): JsonObject {
+  return {
+    processDataSet: {
+      processInformation: { dataSetInformation: { 'common:UUID': options.id } },
+      exchanges: { exchange: options.exchanges },
+      administrativeInformation: {
+        publicationAndOwnership: { 'common:dataSetVersion': options.version },
+      },
+    },
+  };
+}
+
+type AliasFixture = {
+  scope: JsonObject;
+  selected_exchange_count: number;
+};
+
+function seedAliasFixture(remote: FakeMaintenanceRemote): AliasFixture {
+  const draftVersion = '00.00.001';
+  const publicVersion = '01.00.000';
+  const unrelatedFlowId = aliasId(999_999);
+  const batches = [
+    {
+      batch_id: 'time',
+      dimension: 'time',
+      factor: '0.00011415525114155251',
+      sourceUnitGroupId: aliasId(1),
+      sourceFlowPropertyId: aliasId(2),
+      targetUnitGroupId: aliasId(3),
+      targetFlowPropertyId: aliasId(4),
+      sourceName: 'hr',
+      targetName: 'Time',
+      flowCount: 10,
+      processCount: 14,
+      selectedCount: 20,
+      unrelatedCount: 155,
+      existingTargetFlowCount: 96,
+      existingTargetExchangeCount: 421,
+      targetUnits: [
+        { id: '1', mean: '1.0', name: 'a' },
+        { id: '4', mean: '0.00011415525114155251', name: 'hr' },
+      ],
+    },
+    {
+      batch_id: 'length_time',
+      dimension: 'length_time',
+      factor: '1000',
+      sourceUnitGroupId: aliasId(101),
+      sourceFlowPropertyId: aliasId(102),
+      targetUnitGroupId: aliasId(103),
+      targetFlowPropertyId: aliasId(104),
+      sourceName: 'kmy',
+      targetName: 'Length*time',
+      flowCount: 13,
+      processCount: 13,
+      selectedCount: 39,
+      unrelatedCount: 154,
+      existingTargetFlowCount: 19,
+      existingTargetExchangeCount: 3177,
+      targetUnits: [
+        { id: '1', mean: '1.0', name: 'm*a' },
+        { id: '4', mean: '1000.0', name: 'kmy' },
+      ],
+    },
+  ] as const;
+  const scopeActions: JsonObject[] = [];
+  const scopeBatches: JsonObject[] = [];
+  let nextId = 10_000;
+
+  for (const batch of batches) {
+    const sourceUnitGroupRef = aliasReference(
+      'unitgroups',
+      batch.sourceUnitGroupId,
+      draftVersion,
+      `Units of ${batch.sourceName}`,
+    );
+    const targetUnitGroupRef = aliasReference(
+      'unitgroups',
+      batch.targetUnitGroupId,
+      publicVersion,
+      batch.batch_id === 'time' ? 'Units of time' : 'Units of length*time',
+    );
+    const sourceFlowPropertyRef = aliasReference(
+      'flowproperties',
+      batch.sourceFlowPropertyId,
+      draftVersion,
+      `Amount in ${batch.sourceName}`,
+    );
+    const targetFlowPropertyRef = aliasReference(
+      'flowproperties',
+      batch.targetFlowPropertyId,
+      publicVersion,
+      batch.targetName,
+    );
+    remote.add(
+      'unitgroups',
+      batch.sourceUnitGroupId,
+      aliasUnitGroupPayload({
+        id: batch.sourceUnitGroupId,
+        version: draftVersion,
+        referenceName: batch.sourceName,
+      }),
+      { version: draftVersion },
+    );
+    remote.add(
+      'unitgroups',
+      batch.targetUnitGroupId,
+      aliasUnitGroupPayload({
+        id: batch.targetUnitGroupId,
+        version: publicVersion,
+        referenceName: batch.batch_id === 'time' ? 'time' : 'length*time',
+        targetUnits: [...batch.targetUnits],
+      }),
+      { version: publicVersion },
+    );
+    remote.add(
+      'flowproperties',
+      batch.sourceFlowPropertyId,
+      aliasFlowPropertyPayload({
+        id: batch.sourceFlowPropertyId,
+        version: draftVersion,
+        name: `Amount in ${batch.sourceName}`,
+        unitGroupReference: sourceUnitGroupRef,
+      }),
+      { version: draftVersion },
+    );
+    remote.add(
+      'flowproperties',
+      batch.targetFlowPropertyId,
+      aliasFlowPropertyPayload({
+        id: batch.targetFlowPropertyId,
+        version: publicVersion,
+        name: batch.targetName,
+        unitGroupReference: targetUnitGroupRef,
+      }),
+      { version: publicVersion },
+    );
+    scopeActions.push({
+      action_id: `${batch.batch_id}-flowproperty`,
+      action: 'update_json_ordered',
+      table: 'flowproperties',
+      id: batch.sourceFlowPropertyId,
+      version: draftVersion,
+      expected_user_id: remote.userId,
+      expected_state_code: 0,
+      reason_code: 'FP_ALIAS_REWRITE',
+      reason: 'Move the alias flowproperty to the canonical unitgroup.',
+      evidence: ['fpug-step2-alias-preflight/analysis-report.json'],
+      batch_id: batch.batch_id,
+    });
+
+    const affectedFlowIds: string[] = [];
+    for (let index = 0; index < batch.flowCount; index += 1) {
+      const flowId = aliasId(nextId++);
+      affectedFlowIds.push(flowId);
+      remote.add(
+        'flows',
+        flowId,
+        aliasFlowPayload({
+          id: flowId,
+          version: draftVersion,
+          flowPropertyReference: sourceFlowPropertyRef,
+        }),
+        { version: draftVersion },
+      );
+      scopeActions.push({
+        action_id: `${batch.batch_id}-flow-${index}`,
+        action: 'update_json_ordered',
+        table: 'flows',
+        id: flowId,
+        version: draftVersion,
+        expected_user_id: remote.userId,
+        expected_state_code: 0,
+        reason_code: 'FLOW_PROPERTY_ALIAS_REWRITE',
+        reason: 'Use the canonical flowproperty reference.',
+        evidence: [],
+        batch_id: batch.batch_id,
+      });
+    }
+    const existingTargetFlowIds: string[] = [];
+    for (let index = 0; index < batch.existingTargetFlowCount; index += 1) {
+      const flowId = aliasId(nextId++);
+      existingTargetFlowIds.push(flowId);
+      remote.add(
+        'flows',
+        flowId,
+        aliasFlowPayload({
+          id: flowId,
+          version: draftVersion,
+          flowPropertyReference: targetFlowPropertyRef,
+        }),
+        { version: draftVersion },
+      );
+    }
+
+    let selectedRemaining = batch.selectedCount;
+    let unrelatedRemaining = batch.unrelatedCount;
+    for (let processIndex = 0; processIndex < batch.processCount; processIndex += 1) {
+      const processId = aliasId(nextId++);
+      const processSlotsRemaining = batch.processCount - processIndex;
+      const selectedHere = Math.ceil(selectedRemaining / processSlotsRemaining);
+      const unrelatedHere = Math.ceil(unrelatedRemaining / processSlotsRemaining);
+      selectedRemaining -= selectedHere;
+      unrelatedRemaining -= unrelatedHere;
+      const exchanges: JsonObject[] = [];
+      const exchangeInstances: JsonObject[] = [];
+      for (let index = 0; index < selectedHere; index += 1) {
+        const flowId = affectedFlowIds[(processIndex + index) % affectedFlowIds.length]!;
+        const amount =
+          batch.batch_id === 'time' && processIndex === 0 && index === 0
+            ? '1.0'
+            : batch.batch_id === 'length_time' && processIndex === 0 && index === 0
+              ? '0.0549'
+              : '1';
+        const exchange: JsonObject = {
+          '@dataSetInternalID': String(exchanges.length + 1),
+          referenceToFlowDataSet: aliasReference('flows', flowId, draftVersion, 'Affected'),
+          exchangeDirection: (processIndex + index) % 2 === 0 ? 'Input' : 'Output',
+          meanAmount: amount,
+          resultingAmount: amount,
+          relativeStandardDeviation95In: '0',
+        };
+        const exchangeIndex = exchanges.length;
+        exchanges.push(exchange);
+        exchangeInstances.push({
+          exchange_index: exchangeIndex,
+          data_set_internal_id: exchange['@dataSetInternalID'],
+          flow_id: flowId,
+          flow_version: draftVersion,
+          direction: exchange.exchangeDirection,
+          before_exchange_sha256: sha256Json(exchange),
+          before_mean_amount: amount,
+          before_resulting_amount: amount,
+        });
+      }
+      for (let index = 0; index < unrelatedHere; index += 1) {
+        exchanges.push({
+          '@dataSetInternalID': String(exchanges.length + 1),
+          referenceToFlowDataSet: aliasReference(
+            'flows',
+            unrelatedFlowId,
+            draftVersion,
+            'Unrelated',
+          ),
+          exchangeDirection: 'Input',
+          meanAmount: '2',
+          resultingAmount: '2',
+        });
+      }
+      remote.add(
+        'processes',
+        processId,
+        aliasProcessPayload({ id: processId, version: draftVersion, exchanges }),
+        { version: draftVersion },
+      );
+      scopeActions.push({
+        action_id: `${batch.batch_id}-process-${processIndex}`,
+        action: 'update_json_ordered',
+        table: 'processes',
+        id: processId,
+        version: draftVersion,
+        expected_user_id: remote.userId,
+        expected_state_code: 0,
+        reason_code: 'EXACT_EXCHANGE_SCALE',
+        reason: 'Scale only the frozen source-flow exchange instances.',
+        evidence: [],
+        batch_id: batch.batch_id,
+        exchange_instances: exchangeInstances,
+      });
+    }
+    const protectedProcessId = aliasId(nextId++);
+    remote.add(
+      'processes',
+      protectedProcessId,
+      aliasProcessPayload({
+        id: protectedProcessId,
+        version: draftVersion,
+        exchanges: Array.from({ length: batch.existingTargetExchangeCount }, (_, index) => ({
+          '@dataSetInternalID': String(index + 1),
+          referenceToFlowDataSet: aliasReference(
+            'flows',
+            existingTargetFlowIds[index % existingTargetFlowIds.length]!,
+            draftVersion,
+            'Canonical',
+          ),
+          exchangeDirection: 'Input',
+          meanAmount: '1',
+          resultingAmount: '1',
+        })),
+      }),
+      { version: draftVersion },
+    );
+    scopeBatches.push({
+      batch_id: batch.batch_id,
+      dimension: batch.dimension,
+      factor: batch.factor,
+      source: {
+        unitgroup: { id: batch.sourceUnitGroupId, version: draftVersion },
+        flowproperty: { id: batch.sourceFlowPropertyId, version: draftVersion },
+      },
+      target: {
+        unitgroup: { id: batch.targetUnitGroupId, version: publicVersion },
+        flowproperty: { id: batch.targetFlowPropertyId, version: publicVersion },
+      },
+    });
+  }
+  return {
+    scope: {
+      schema_version: 1,
+      task_id: 'bafu-fpug-alias-batches',
+      operation: 'merge-support-aliases',
+      target_mode: 'owner_draft',
+      account: { user_id: remote.userId, email: remote.email },
+      source_lineage: {
+        exact_scope_sha256: '57e4a6ea07957b56a6849be2c4ebc8aea29dc1c031602621eed4fe41137e2432',
+      },
+      alias_batches: scopeBatches,
+      actions: scopeActions,
+    },
+    selected_exchange_count: 59,
+  };
+}
+
+function aliasRemoteRows(remote: FakeMaintenanceRemote): DatasetMaintenanceRemoteRow[] {
+  return [...remote.rows.entries()].flatMap(([table, rows]) =>
+    rows.map((row) => ({ ...row, table: table as DatasetMaintenanceRemoteRow['table'] })),
+  );
+}
+
 class FakeMaintenanceRemote {
   readonly userId = '11111111-1111-4111-8111-111111111111';
   readonly email = 'owner@example.com';
   readonly env: NodeJS.ProcessEnv;
   readonly rows = new Map<string, StoredRow[]>();
   readonly rpcOrder: string[] = [];
+  readonly rpcBodies: Record<string, unknown>[] = [];
+  readonly aliasAuditKeys = new Set<string>();
   failDeleteOnce = false;
+  failAliasResponseAfterCommitOnce = false;
+  aliasReadbackFailure: 'missing' | 'mismatch' | null = null;
+  invalidAliasProof = false;
   invalidJson = false;
 
   constructor(label: string) {
@@ -186,6 +638,103 @@ class FakeMaintenanceRemote {
     if (rpc) {
       const body = JSON.parse(String(init?.body)) as Record<string, unknown>;
       this.rpcOrder.push(rpc);
+      this.rpcBodies.push(body);
+      if (rpc === 'cmd_dataset_alias_batch_guarded') {
+        const batch = body.p_batch as Record<string, unknown>;
+        const actions = batch.actions as Array<Record<string, unknown>>;
+        assert.equal(batch.target_visibility, 'owner_draft');
+        for (const target of Object.values(batch.target as Record<string, JsonObject>)) {
+          assert.equal(target.expected_user_id, this.userId);
+          assert.equal(target.expected_state_code, 0);
+        }
+        for (const action of actions) {
+          assert.equal(action.expected_user_id, this.userId);
+          assert.equal(action.expected_state_code, 0);
+        }
+        const auditKey = JSON.stringify({
+          target_visibility: batch.target_visibility,
+          plan_sha256: batch.plan_sha256,
+          operation_id: batch.operation_id,
+          batch_id: batch.batch_id,
+          actions: actions.map((action) => action.action_id),
+        });
+        const desired = actions.every((action) => {
+          const rows = this.rows.get(String(action.table)) ?? [];
+          const row = rows.find(
+            (entry) => entry.id === action.id && entry.version === action.version,
+          );
+          return stableJsonText(row?.json_ordered) === stableJsonText(action.desired_json_ordered);
+        });
+        if (!desired) {
+          for (const action of actions) {
+            const rows = this.rows.get(String(action.table)) ?? [];
+            const index = rows.findIndex(
+              (entry) => entry.id === action.id && entry.version === action.version,
+            );
+            assert.notEqual(index, -1);
+            assert.equal(
+              stableJsonText(rows[index]?.json_ordered),
+              stableJsonText(action.expected_json_ordered),
+            );
+            rows[index] = {
+              ...rows[index]!,
+              json_ordered: action.desired_json_ordered as JsonObject,
+              modified_at: '2026-07-03T00:00:00.000Z',
+            };
+          }
+          this.aliasAuditKeys.add(auditKey);
+        } else if (!this.aliasAuditKeys.has(auditKey)) {
+          return jsonResponse({ ok: false, code: 'ALIAS_REPLAY_UNPROVEN' });
+        }
+        if (this.failAliasResponseAfterCommitOnce) {
+          this.failAliasResponseAfterCommitOnce = false;
+          return jsonResponse({ message: 'response lost after alias commit' }, 500);
+        }
+        const exchangeCount = actions.reduce((sum, action) => {
+          const mutation = action.mutation as Record<string, unknown>;
+          return (
+            sum +
+            (mutation.kind === 'process_exchange_amounts'
+              ? (mutation.exchanges as unknown[]).length
+              : 0)
+          );
+        }, 0);
+        if (this.invalidAliasProof) {
+          return jsonResponse({ ok: true });
+        }
+        if (this.aliasReadbackFailure) {
+          const first = actions[0]!;
+          const rows = this.rows.get(String(first.table))!;
+          const index = rows.findIndex(
+            (entry) => entry.id === first.id && entry.version === first.version,
+          );
+          if (this.aliasReadbackFailure === 'missing') {
+            rows.splice(index, 1);
+          } else {
+            rows[index] = { ...rows[index]!, model_id: 'readback-mismatch' };
+          }
+          this.aliasReadbackFailure = null;
+        }
+        return jsonResponse({
+          ok: true,
+          command: 'cmd_dataset_alias_batch_guarded',
+          target_visibility: batch.target_visibility,
+          dimension: batch.dimension,
+          batch_id: batch.batch_id,
+          batch_request_sha256: sha256Text(stableJsonText(batch)),
+          row_count: actions.length,
+          exchange_count: exchangeCount,
+          summary_audit_id: '9001',
+          audit: actions.map((action, index) => ({
+            action_id: action.action_id,
+            table: action.table,
+            id: action.id,
+            version: action.version,
+            audit_id: String(10_000 + index),
+          })),
+          idempotent_replay: desired,
+        });
+      }
       if (rpc === 'cmd_dataset_delete' && this.failDeleteOnce) {
         this.failDeleteOnce = false;
         return jsonResponse({ message: 'injected delete failure' }, 500);
@@ -208,7 +757,11 @@ class FakeMaintenanceRemote {
           modified_at: '2026-07-02T00:00:00.000Z',
         };
       }
-      return jsonResponse({ ok: true, audit: body.p_audit });
+      return jsonResponse({
+        ok: true,
+        audit: body.p_audit,
+        data: rowIndex >= 0 ? tableRows[rowIndex] : null,
+      });
     }
     const table = url.pathname.split('/rest/v1/')[1] ?? '';
     let values = [...(this.rows.get(table) ?? [])];
@@ -222,6 +775,45 @@ class FakeMaintenanceRemote {
     const limit = Number(url.searchParams.get('limit') ?? values.length);
     return jsonResponse(values.slice(offset, offset + limit));
   };
+}
+
+async function prepareAliasScenario(
+  root: string,
+  label: string,
+): Promise<{
+  remote: FakeMaintenanceRemote;
+  plan: DatasetMaintenancePlan;
+  outDir: string;
+  context: Awaited<ReturnType<typeof resolveMaintenanceRemoteContext>>;
+}> {
+  const scenarioRoot = path.join(root, label);
+  mkdirSync(scenarioRoot, { recursive: true });
+  const remote = new FakeMaintenanceRemote(label);
+  const fixture = seedAliasFixture(remote);
+  const scopePath = path.join(scenarioRoot, 'scope.json');
+  const outDir = path.join(scenarioRoot, 'maintenance');
+  writeFileSync(scopePath, JSON.stringify(fixture.scope));
+  const now = new Date('2026-07-11T07:00:00.000Z');
+  const plan = await runDatasetMaintenancePlan({
+    scopePath,
+    operation: 'merge-support-aliases',
+    outDir,
+    env: remote.env,
+    fetchImpl: remote.fetch,
+    now,
+    supportSchemas: PASSING_SUPPORT_SCHEMAS,
+    aliasSchemas: {
+      flowproperties: { safeParse: () => ({ success: true as const }) },
+      flows: { safeParse: () => ({ success: true as const }) },
+      processes: { safeParse: () => ({ success: true as const }) },
+    },
+  });
+  const context = await resolveMaintenanceRemoteContext({
+    env: remote.env,
+    fetchImpl: remote.fetch,
+    now,
+  });
+  return { remote, plan, outDir, context };
 }
 
 function buildScopeFiles(options: {
@@ -417,6 +1009,7 @@ test('row-level maintenance plans update-first closure, resumes failure, and ver
       now,
     });
     assert.equal(plan.status, 'ready');
+    assert.equal(plan.target_mode, null);
     assert.equal(plan.summary.current_reference_impacts, 1);
     assert.equal(plan.summary.projected_reference_impacts, 0);
     assert.equal(plan.summary.protected_rows, 1);
@@ -506,6 +1099,1503 @@ test('row-level maintenance plans update-first closure, resumes failure, and ver
     assert.equal(verified.summary.action_checks_passed, 2);
     assert.equal(verified.summary.protected_checks_passed, 1);
     assert.equal(verified.summary.dangling_deleted_target_references, 0);
+  } finally {
+    rmSync(root, { recursive: true, force: true });
+  }
+});
+
+test('alias decimal arithmetic preserves lexical scale without binary floating point', () => {
+  assert.equal(multiplyExactDecimal('1.0', '0.00011415525114155251'), '0.000114155251141552510');
+  assert.equal(multiplyExactDecimal('0.0549', '1000'), '54.9000');
+  assert.equal(multiplyExactDecimal('-2.50', '1000'), '-2500.00');
+  assert.equal(multiplyExactDecimal('0.00', '1000'), '0.00');
+  assert.equal(multiplyExactDecimal('1e3', '1000'), null);
+  assert.equal(multiplyExactDecimal('1'.repeat(257), '1000'), null);
+  assert.equal(aliasInternals.decimalEqual('1000.0', '1000'), true);
+  assert.equal(aliasInternals.decimalEqual('-0', '0.0'), true);
+  assert.equal(aliasInternals.decimalEqual('-1', '1'), false);
+  assert.equal(aliasInternals.decimalEqual('bad', '1'), false);
+});
+
+test('alias rewrite helpers reject malformed support, flow, and exchange evidence', () => {
+  const draftVersion = '00.00.001';
+  const publicVersion = '01.00.000';
+  const batch: DatasetMaintenanceAliasBatch = {
+    batch_id: 'time',
+    dimension: 'time',
+    factor: '0.00011415525114155251',
+    source: {
+      unitgroup: { id: aliasId(1), version: draftVersion },
+      flowproperty: { id: aliasId(2), version: draftVersion },
+    },
+    target: {
+      unitgroup: { id: aliasId(3), version: publicVersion },
+      flowproperty: { id: aliasId(4), version: publicVersion },
+    },
+  };
+  const sourceUnitGroup = snapshotRemoteRow({
+    table: 'unitgroups',
+    id: batch.source.unitgroup.id,
+    version: draftVersion,
+    user_id: 'owner',
+    state_code: 0,
+    modified_at: '2026-07-11T00:00:00Z',
+    json_ordered: aliasUnitGroupPayload({
+      id: batch.source.unitgroup.id,
+      version: draftVersion,
+      referenceName: 'hr',
+    }),
+    model_id: null,
+    rule_verification: null,
+  });
+  const targetUnitGroup = snapshotRemoteRow({
+    table: 'unitgroups',
+    id: batch.target.unitgroup.id,
+    version: publicVersion,
+    user_id: 'owner',
+    state_code: 0,
+    modified_at: '2026-07-11T00:00:00Z',
+    json_ordered: aliasUnitGroupPayload({
+      id: batch.target.unitgroup.id,
+      version: publicVersion,
+      referenceName: 'time',
+      targetUnits: [
+        { id: '1', mean: '1.0', name: 'a' },
+        { id: '4', mean: batch.factor, name: 'hr' },
+      ],
+    }),
+    model_id: null,
+    rule_verification: null,
+  });
+  const targetUnitGroupReference = aliasReference(
+    'unitgroups',
+    batch.target.unitgroup.id,
+    publicVersion,
+    'Units of time',
+  );
+  const targetFlowProperty = snapshotRemoteRow({
+    table: 'flowproperties',
+    id: batch.target.flowproperty.id,
+    version: publicVersion,
+    user_id: 'owner',
+    state_code: 0,
+    modified_at: '2026-07-11T00:00:00Z',
+    json_ordered: aliasFlowPropertyPayload({
+      id: batch.target.flowproperty.id,
+      version: publicVersion,
+      name: 'Time',
+      unitGroupReference: targetUnitGroupReference,
+    }),
+    model_id: null,
+    rule_verification: null,
+  });
+  assert.equal(aliasInternals.targetSnapshotValid(null, 'unitgroups', batch, 'owner'), false);
+  assert.equal(
+    aliasInternals.targetSnapshotValid(targetUnitGroup, 'unitgroups', batch, 'owner'),
+    true,
+  );
+  for (const mutate of [
+    (value: typeof targetUnitGroup) => (value.table = 'flowproperties'),
+    (value: typeof targetUnitGroup) => (value.id = 'wrong'),
+    (value: typeof targetUnitGroup) => (value.version = 'wrong'),
+    (value: typeof targetUnitGroup) => (value.user_id = 'wrong'),
+    (value: typeof targetUnitGroup) => (value.state_code = 100),
+    (value: typeof targetUnitGroup) => (value.modified_at = null),
+    (value: typeof targetUnitGroup) => (value.json_ordered = null),
+    (value: typeof targetUnitGroup) => (value.payload_sha256 = null),
+  ]) {
+    const value = structuredClone(targetUnitGroup);
+    mutate(value);
+    assert.equal(aliasInternals.targetSnapshotValid(value, 'unitgroups', batch, 'owner'), false);
+  }
+  assert.equal(
+    aliasInternals.targetSnapshotValid(targetFlowProperty, 'flowproperties', batch, 'owner'),
+    true,
+  );
+  assert.equal(aliasInternals.sourceUnitGroupSnapshotValid(null, batch, 'owner'), false);
+  assert.equal(aliasInternals.sourceUnitGroupSnapshotValid(sourceUnitGroup, batch, 'owner'), true);
+  for (const mutate of [
+    (value: typeof sourceUnitGroup) => (value.table = 'flows'),
+    (value: typeof sourceUnitGroup) => (value.id = 'wrong'),
+    (value: typeof sourceUnitGroup) => (value.version = 'wrong'),
+    (value: typeof sourceUnitGroup) => (value.user_id = 'wrong'),
+    (value: typeof sourceUnitGroup) => (value.state_code = 100),
+    (value: typeof sourceUnitGroup) => (value.modified_at = null),
+    (value: typeof sourceUnitGroup) => (value.json_ordered = null),
+    (value: typeof sourceUnitGroup) => (value.payload_sha256 = null),
+  ]) {
+    const value = structuredClone(sourceUnitGroup);
+    mutate(value);
+    assert.equal(aliasInternals.sourceUnitGroupSnapshotValid(value, batch, 'owner'), false);
+  }
+
+  const sourceUnit = aliasInternals.sourceReferenceUnit(sourceUnitGroup, batch);
+  assert.deepEqual(sourceUnit, { '@dataSetInternalID': '1', meanValue: '1.0', name: 'hr' });
+  assert.deepEqual(
+    aliasInternals.targetConversionUnit({
+      source: sourceUnit,
+      target: targetUnitGroup,
+      factor: batch.factor,
+    }),
+    { '@dataSetInternalID': '4', meanValue: batch.factor, name: 'hr' },
+  );
+  assert.equal(aliasInternals.sourceReferenceUnit(null, batch), null);
+  assert.equal(
+    aliasInternals.sourceReferenceUnit(
+      { ...sourceUnitGroup, json_ordered: { unitGroupDataSet: { units: {} } } },
+      batch,
+    ),
+    null,
+  );
+  const wrongSource = structuredClone(sourceUnitGroup);
+  const wrongSourceUnit = (wrongSource.json_ordered!.unitGroupDataSet as JsonObject)
+    .units as JsonObject;
+  wrongSourceUnit.unit = [{ '@dataSetInternalID': '1', meanValue: 2, name: 'wrong' }];
+  assert.equal(aliasInternals.sourceReferenceUnit(wrongSource, batch), null);
+  assert.equal(
+    aliasInternals.targetConversionUnit({ source: null, target: null, factor: '1' }),
+    null,
+  );
+  assert.equal(aliasInternals.targetUnitGroupReferenceFromFlowProperty(null, batch), null);
+  const wrongTargetFlowProperty = structuredClone(targetFlowProperty);
+  const wrongTargetRoot = wrongTargetFlowProperty.json_ordered!.flowPropertyDataSet as JsonObject;
+  (wrongTargetRoot.flowPropertiesInformation as JsonObject).quantitativeReference = {};
+  assert.equal(
+    aliasInternals.targetUnitGroupReferenceFromFlowProperty(wrongTargetFlowProperty, batch),
+    null,
+  );
+  assert.deepEqual(
+    aliasInternals.targetUnitGroupReferenceFromFlowProperty(targetFlowProperty, batch),
+    targetUnitGroupReference,
+  );
+
+  const targetFlowPropertyReference = aliasReference(
+    'flowproperties',
+    batch.target.flowproperty.id,
+    publicVersion,
+    'Time',
+  );
+  const sourceFlowPropertyReference = aliasReference(
+    'flowproperties',
+    batch.source.flowproperty.id,
+    draftVersion,
+    'Amount in hr',
+  );
+  const flowPayloadValue = aliasFlowPayload({
+    id: aliasId(10),
+    version: draftVersion,
+    flowPropertyReference: sourceFlowPropertyReference,
+  });
+  assert.equal(aliasInternals.flowPropertyEntries({}), null);
+  assert.equal(aliasInternals.flowPropertyEntries({ flowDataSet: { flowProperties: {} } }), null);
+  assert.deepEqual(
+    aliasInternals.flowPropertyEntries({
+      flowDataSet: { flowProperties: { flowProperty: [{ ok: true }] } },
+    }),
+    [{ ok: true }],
+  );
+  assert.equal(
+    aliasInternals.flowPropertyEntries({
+      flowDataSet: { flowProperties: { flowProperty: [{ ok: true }, null] } },
+    }),
+    null,
+  );
+  assert.equal(aliasInternals.flowPropertySingleton({}), null);
+  assert.equal(aliasInternals.processExchangeEntries({}), null);
+  assert.deepEqual(
+    aliasInternals.processExchangeEntries({
+      processDataSet: { exchanges: { exchange: { ok: true } } },
+    }),
+    [{ ok: true }],
+  );
+  assert.equal(
+    aliasInternals.processExchangeEntries({
+      processDataSet: { exchanges: { exchange: [{ ok: true }, null] } },
+    }),
+    null,
+  );
+  assert.deepEqual(aliasInternals.referenceIdentity(null), { id: null, version: null });
+  assert.deepEqual(aliasInternals.referenceIdentity({ '@refObjectId': 1 }), {
+    id: null,
+    version: null,
+  });
+  assert.equal(aliasInternals.referenceMatches({ '@refObjectId': 'x' }, 'x'), true);
+  assert.equal(aliasInternals.referenceMatches({ '@refObjectId': 'x' }, 'x', '1'), false);
+  assert.equal(aliasInternals.canonicalFlowPropertyReference([], batch), null);
+  const canonicalRows = [
+    {
+      table: 'flows',
+      id: 'one',
+      version: draftVersion,
+      user_id: 'owner',
+      state_code: 0,
+      modified_at: 'now',
+      json_ordered: aliasFlowPayload({
+        id: 'one',
+        version: draftVersion,
+        flowPropertyReference: targetFlowPropertyReference,
+      }),
+      model_id: null,
+      rule_verification: null,
+    },
+  ] satisfies DatasetMaintenanceRemoteRow[];
+  assert.deepEqual(
+    aliasInternals.canonicalFlowPropertyReference(canonicalRows, batch),
+    targetFlowPropertyReference,
+  );
+  assert.equal(
+    aliasInternals.canonicalFlowPropertyReference(
+      [
+        ...canonicalRows,
+        {
+          ...canonicalRows[0]!,
+          id: 'two',
+          json_ordered: aliasFlowPayload({
+            id: 'two',
+            version: draftVersion,
+            flowPropertyReference: { ...targetFlowPropertyReference, extra: true },
+          }),
+        },
+      ],
+      batch,
+    ),
+    null,
+  );
+  assert.equal(aliasInternals.replaceAliasFlowProperty({}, batch, targetUnitGroupReference), null);
+  assert.equal(
+    aliasInternals.replaceFlowReferenceProperty({}, batch, targetFlowPropertyReference),
+    null,
+  );
+  assert.ok(
+    aliasInternals.replaceFlowReferenceProperty(
+      flowPayloadValue,
+      batch,
+      targetFlowPropertyReference,
+    ),
+  );
+
+  const exchange: JsonObject = {
+    '@dataSetInternalID': '1',
+    referenceToFlowDataSet: aliasReference('flows', aliasId(10), draftVersion, 'Affected'),
+    exchangeDirection: 'Input',
+    meanAmount: '1.0',
+    resultingAmount: '1.0',
+  };
+  const processAction = {
+    action_id: 'process',
+    id: aliasId(20),
+    version: draftVersion,
+    exchange_instances: [
+      {
+        exchange_index: 0,
+        data_set_internal_id: '1',
+        flow_id: aliasId(10),
+        flow_version: draftVersion,
+        direction: 'Input',
+        before_exchange_sha256: sha256Json(exchange),
+        before_mean_amount: '1.0',
+        before_resulting_amount: '1.0',
+      },
+    ],
+  } as DatasetMaintenancePlanAction;
+  const processPayloadValue = aliasProcessPayload({
+    id: processAction.id,
+    version: draftVersion,
+    exchanges: [exchange],
+  });
+  assert.equal(
+    aliasInternals.rewriteProcessExchanges({
+      payload: {},
+      action: processAction,
+      batch,
+    }),
+    null,
+  );
+  assert.ok(
+    aliasInternals.rewriteProcessExchanges({
+      payload: processPayloadValue,
+      action: processAction,
+      batch,
+    }),
+  );
+  for (const mutate of [
+    (action: DatasetMaintenancePlanAction) => (action.exchange_instances = undefined),
+    (action: DatasetMaintenancePlanAction) => (action.exchange_instances![0]!.exchange_index = 9),
+    (action: DatasetMaintenancePlanAction) =>
+      (action.exchange_instances![0]!.data_set_internal_id = 'wrong'),
+    (action: DatasetMaintenancePlanAction) => (action.exchange_instances![0]!.flow_id = 'wrong'),
+    (action: DatasetMaintenancePlanAction) => (action.exchange_instances![0]!.direction = 'Output'),
+    (action: DatasetMaintenancePlanAction) =>
+      (action.exchange_instances![0]!.before_exchange_sha256 = '0'.repeat(64)),
+    (action: DatasetMaintenancePlanAction) =>
+      (action.exchange_instances![0]!.before_mean_amount = 'wrong'),
+    (action: DatasetMaintenancePlanAction) =>
+      (action.exchange_instances![0]!.before_resulting_amount = 'wrong'),
+  ]) {
+    const action = structuredClone(processAction);
+    mutate(action);
+    assert.equal(
+      aliasInternals.rewriteProcessExchanges({ payload: processPayloadValue, action, batch }),
+      null,
+    );
+  }
+  const invalidDecimalAction = structuredClone(processAction);
+  const invalidDecimalPayload = structuredClone(processPayloadValue);
+  const invalidDecimalExchange = (
+    ((invalidDecimalPayload.processDataSet as JsonObject).exchanges as JsonObject)
+      .exchange as JsonObject[]
+  )[0]!;
+  invalidDecimalExchange.meanAmount = 'invalid';
+  invalidDecimalExchange.resultingAmount = 'invalid';
+  invalidDecimalAction.exchange_instances![0]!.before_mean_amount = 'invalid';
+  invalidDecimalAction.exchange_instances![0]!.before_resulting_amount = 'invalid';
+  invalidDecimalAction.exchange_instances![0]!.before_exchange_sha256 =
+    sha256Json(invalidDecimalExchange);
+  assert.equal(
+    aliasInternals.rewriteProcessExchanges({
+      payload: invalidDecimalPayload,
+      action: invalidDecimalAction,
+      batch,
+    }),
+    null,
+  );
+  assert.deepEqual(
+    aliasInternals.canonicalFlowPropertyReference(
+      [{ ...canonicalRows[0]!, json_ordered: {} }, ...canonicalRows],
+      batch,
+    ),
+    targetFlowPropertyReference,
+  );
+  assert.equal(
+    aliasInternals.countFlowPropertyRefs([{ ...canonicalRows[0]!, json_ordered: null }], 'x', '1'),
+    0,
+  );
+  assert.equal(
+    aliasInternals.countFlowPropertyRefs([{ ...canonicalRows[0]!, json_ordered: {} }], 'x', '1'),
+    0,
+  );
+  const malformedSupportRows = [
+    { ...canonicalRows[0]!, table: 'flowproperties' as const, json_ordered: {} },
+    {
+      ...canonicalRows[0]!,
+      table: 'flowproperties' as const,
+      id: 'two',
+      json_ordered: { flowPropertyDataSet: {} },
+    },
+  ];
+  assert.equal(aliasInternals.countUnitGroupRefs(malformedSupportRows, 'x', '1'), 0);
+  assert.equal(
+    aliasInternals.flowsWithProperty([{ ...canonicalRows[0]!, json_ordered: {} }], 'x', '1').size,
+    0,
+  );
+  const malformedProcessRows = [
+    { ...canonicalRows[0]!, table: 'processes' as const, json_ordered: {} },
+  ];
+  assert.equal(aliasInternals.countExchangeFlowRefs(malformedProcessRows, new Set()), 0);
+  assert.equal(aliasInternals.exchangeClosureKeys(malformedProcessRows, new Set()).size, 0);
+  assert.equal(
+    aliasInternals.selectorClosureKeys([{ ...processAction, exchange_instances: undefined }]).size,
+    0,
+  );
+  assert.equal(
+    aliasInternals.projectRows(canonicalRows, new Map(), []).at(0)?.json_ordered,
+    canonicalRows[0]?.json_ordered,
+  );
+  assert.deepEqual(
+    buildAliasRewritePlan({
+      scope: {
+        schema_version: 1,
+        task_id: 'no-alias-batches',
+        operation: 'delete',
+        account: { user_id: 'owner' },
+        actions: [],
+      },
+      actions: [],
+      accountRows: malformedProcessRows,
+      targetSnapshots: new Map(),
+    }),
+    { desired_payloads: new Map(), batches: [] },
+  );
+});
+
+test('alias scope parser rejects malformed batches, bindings, and exchange locators', () => {
+  const batch = (batchId: string, dimension: 'time' | 'length_time'): JsonObject => ({
+    batch_id: batchId,
+    dimension,
+    factor: dimension === 'time' ? '0.00011415525114155251' : '1000',
+    source: {
+      unitgroup: { id: `${batchId}-source-ug`, version: '00.00.001' },
+      flowproperty: { id: `${batchId}-source-fp`, version: '00.00.001' },
+    },
+    target: {
+      unitgroup: { id: `${batchId}-target-ug`, version: '01.00.000' },
+      flowproperty: { id: `${batchId}-target-fp`, version: '01.00.000' },
+    },
+  });
+  const exchange = (): JsonObject => ({
+    exchange_index: 0,
+    data_set_internal_id: '1',
+    flow_id: 'flow',
+    flow_version: '00.00.001',
+    direction: 'Input',
+    before_exchange_sha256: 'a'.repeat(64),
+    before_mean_amount: '1',
+    before_resulting_amount: '1',
+  });
+  const valid: JsonObject = {
+    schema_version: 1,
+    task_id: 'alias-parser',
+    operation: 'merge-support-aliases',
+    target_mode: 'owner_draft',
+    account: { user_id: 'owner' },
+    alias_batches: [batch('time', 'time'), batch('length_time', 'length_time')],
+    actions: [
+      {
+        action_id: 'fp',
+        action: 'update_json_ordered',
+        table: 'flowproperties',
+        id: 'time-source-fp',
+        version: '00.00.001',
+        expected_user_id: 'owner',
+        expected_state_code: 0,
+        reason_code: 'ALIAS',
+        reason: 'test',
+        evidence: [],
+        batch_id: 'time',
+      },
+    ],
+  };
+  assert.equal(parseMaintenanceScope(valid).operation, 'merge-support-aliases');
+  const invalidValues: unknown[] = [];
+  const add = (mutate: (value: JsonObject) => void): void => {
+    const value = structuredClone(valid);
+    mutate(value);
+    invalidValues.push(value);
+  };
+  add((value) => delete value.target_mode);
+  add((value) => (value.target_mode = 'public'));
+  add((value) => (value.alias_batches = []));
+  add((value) => ((value.alias_batches as unknown[])[0] = null));
+  add((value) => (((value.alias_batches as JsonObject[])[0]!.source as unknown) = null));
+  add((value) => ((value.alias_batches as JsonObject[])[0]!.dimension = 'bad'));
+  add((value) => ((value.alias_batches as JsonObject[])[0]!.factor = '1'));
+  add(
+    (value) =>
+      ((((value.alias_batches as JsonObject[])[0]!.target as JsonObject).unitgroup as unknown) =
+        null),
+  );
+  add((value) => ((value.actions as JsonObject[])[0]!.table = 'unitgroups'));
+  add((value) => ((value.actions as JsonObject[])[0]!.action = 'delete'));
+  add((value) => {
+    const action = (value.actions as JsonObject[])[0]!;
+    action.action = 'delete';
+    action.table = 'flows';
+  });
+  add((value) => delete (value.actions as JsonObject[])[0]!.batch_id);
+  add((value) => ((value.actions as JsonObject[])[0]!.exchange_instances = [exchange()]));
+  add((value) => {
+    const action = (value.actions as JsonObject[])[0]!;
+    action.table = 'processes';
+  });
+  add((value) => {
+    const action = (value.actions as JsonObject[])[0]!;
+    action.table = 'processes';
+    action.exchange_instances = [{ ...exchange(), exchange_index: -1 }];
+  });
+  add((value) => {
+    const action = (value.actions as JsonObject[])[0]!;
+    action.table = 'processes';
+    action.exchange_instances = [{ ...exchange(), before_exchange_sha256: 'bad' }];
+  });
+  add((value) => {
+    const action = (value.actions as JsonObject[])[0]!;
+    action.table = 'processes';
+    action.exchange_instances = [{ ...exchange(), direction: 'Sideways' }];
+  });
+  add((value) => {
+    const action = (value.actions as JsonObject[])[0]!;
+    action.table = 'processes';
+    action.exchange_instances = [exchange(), exchange()];
+  });
+  add((value) => {
+    const batches = value.alias_batches as JsonObject[];
+    batches[1]!.batch_id = 'time';
+  });
+  for (const value of invalidValues) {
+    assert.throws(() => parseMaintenanceScope(value));
+  }
+
+  const nonAlias = {
+    schema_version: 1,
+    task_id: 'ordinary',
+    operation: 'delete',
+    account: { user_id: 'owner' },
+    actions: [
+      {
+        action_id: 'delete',
+        action: 'delete',
+        table: 'flows',
+        id: 'flow',
+        version: '1',
+        expected_user_id: 'owner',
+        expected_state_code: 0,
+        reason_code: 'DELETE',
+        reason: 'test',
+        evidence: [],
+        batch_id: 'time',
+      },
+    ],
+  };
+  assert.throws(() => parseMaintenanceScope(nonAlias));
+  delete (nonAlias.actions[0] as JsonObject).batch_id;
+  (nonAlias.actions[0] as JsonObject).exchange_instances = [];
+  assert.throws(() => parseMaintenanceScope(nonAlias));
+});
+
+test('atomic FP alias batches plan 52 rows, use two guarded RPCs, log 59 exchanges, and verify', async () => {
+  const root = mkdtempSync(path.join(os.tmpdir(), 'tg-maintenance-alias-main-'));
+  const remote = new FakeMaintenanceRemote('alias-main');
+  const fixture = seedAliasFixture(remote);
+  const scopePath = path.join(root, 'scope.json');
+  const outDir = path.join(root, 'maintenance');
+  writeFileSync(scopePath, JSON.stringify(fixture.scope));
+  const now = new Date('2026-07-11T07:00:00.000Z');
+  const passingAliasSchemas = {
+    flowproperties: { safeParse: () => ({ success: true as const }) },
+    flows: { safeParse: () => ({ success: true as const }) },
+    processes: { safeParse: () => ({ success: true as const }) },
+  };
+  try {
+    const plan = await runDatasetMaintenancePlan({
+      scopePath,
+      operation: 'merge-support-aliases',
+      outDir,
+      env: remote.env,
+      fetchImpl: remote.fetch,
+      now,
+      supportSchemas: PASSING_SUPPORT_SCHEMAS,
+      aliasSchemas: passingAliasSchemas,
+    });
+    assert.equal(plan.status, 'ready');
+    assert.equal(plan.target_mode, 'owner_draft');
+    assert.equal(
+      plan.alias_batches?.every((batch) =>
+        [
+          batch.target_snapshots.unitgroup,
+          batch.target_snapshots.flowproperty,
+          batch.target_snapshots.source_unitgroup,
+        ].every(
+          (snapshot) =>
+            snapshot?.user_id === remote.userId &&
+            snapshot.state_code === 0 &&
+            typeof snapshot.modified_at === 'string',
+        ),
+      ),
+      true,
+    );
+    assert.equal(plan.summary.actions, 52);
+    assert.equal(plan.summary.update_json_ordered, 52);
+    assert.equal(plan.summary.atomic_batches, 2);
+    assert.equal(plan.summary.scaled_exchanges, 59);
+    assert.equal(plan.summary.scaled_amount_fields, 118);
+    assert.equal(plan.summary.unrelated_exchanges_preserved, 309);
+    assert.deepEqual(
+      plan.alias_batches?.map((batch) => ({
+        batch_id: batch.batch_id,
+        rows: batch.summary.rows,
+        exchanges: batch.summary.exchanges,
+        postconditions: batch.postconditions,
+      })),
+      [
+        {
+          batch_id: 'time',
+          rows: 25,
+          exchanges: 20,
+          postconditions: {
+            source_unitgroup_incoming_refs: 0,
+            source_flowproperty_flow_refs: 0,
+            target_flow_refs: 106,
+            target_exchange_refs: 441,
+          },
+        },
+        {
+          batch_id: 'length_time',
+          rows: 27,
+          exchanges: 39,
+          postconditions: {
+            source_unitgroup_incoming_refs: 0,
+            source_flowproperty_flow_refs: 0,
+            target_flow_refs: 32,
+            target_exchange_refs: 3216,
+          },
+        },
+      ],
+    );
+    assert.equal(
+      plan.alias_batches?.[0]?.exchange_rewrites[0]?.after_mean_amount,
+      '0.000114155251141552510',
+    );
+    assert.equal(plan.alias_batches?.[1]?.exchange_rewrites[0]?.after_mean_amount, '54.9000');
+    assert.equal(parseMaintenancePlan(plan).operation, 'merge-support-aliases');
+    const parsedScope = parseMaintenanceScope(fixture.scope, 'merge-support-aliases');
+    const resetActions = (): DatasetMaintenancePlanAction[] =>
+      structuredClone(plan.actions).map((action) => ({
+        ...action,
+        status: 'ready' as const,
+        blockers: [],
+        desired_payload: null,
+        alias_mutation: undefined,
+      }));
+    const targetSnapshots = new Map(
+      plan.alias_batches!.map((batch) => [batch.batch_id, batch.target_snapshots]),
+    );
+    const emptyBuild = buildAliasRewritePlan({
+      scope: parsedScope,
+      actions: [],
+      accountRows: [],
+      targetSnapshots: new Map(),
+      schemas: passingAliasSchemas,
+    });
+    assert.equal(emptyBuild.batches.length, 2);
+    assert.equal(emptyBuild.desired_payloads.size, 0);
+
+    const schemaBlockedActions = resetActions();
+    buildAliasRewritePlan({
+      scope: parsedScope,
+      actions: schemaBlockedActions,
+      accountRows: aliasRemoteRows(remote),
+      targetSnapshots,
+      schemas: {
+        flowproperties: { safeParse: () => ({ success: false as const }) },
+        flows: { safeParse: () => ({ success: false as const }) },
+        processes: { safeParse: () => ({ success: false as const }) },
+      },
+    });
+    assert.equal(
+      schemaBlockedActions.every((action) => action.status === 'blocked'),
+      true,
+    );
+
+    const closureBlockedActions = resetActions();
+    closureBlockedActions.find((action) => action.table === 'flowproperties')!.id = 'wrong-source';
+    closureBlockedActions.find((action) => action.table === 'processes')!.exchange_instances!.pop();
+    const accountRowsWithoutOneFlow = aliasRemoteRows(remote).filter(
+      (row) => row.id !== plan.actions.find((action) => action.table === 'flows')!.id,
+    );
+    buildAliasRewritePlan({
+      scope: parsedScope,
+      actions: closureBlockedActions,
+      accountRows: accountRowsWithoutOneFlow,
+      targetSnapshots,
+      schemas: passingAliasSchemas,
+    });
+    assert.match(
+      closureBlockedActions
+        .flatMap((action) => action.blockers.map((entry) => entry.code))
+        .join(','),
+      /ALIAS_SOURCE_FLOWPROPERTY_ACTION_MISMATCH|ALIAS_REFERENCE_CLOSURE_MISMATCH|ALIAS_EXCHANGE_COUNT_MISMATCH/u,
+    );
+    assert.equal(
+      readJsonLinesIfPresent(path.join(outDir, 'exchange-rewrite-plan.jsonl')).length,
+      fixture.selected_exchange_count,
+    );
+
+    const applied = await runDatasetMaintenanceApply({
+      planPath: path.join(outDir, 'maintenance-plan.json'),
+      commit: true,
+      approvePlan: plan.plan_sha256,
+      confirm: remote.email,
+      env: remote.env,
+      fetchImpl: remote.fetch,
+      now,
+    });
+    assert.equal(applied.status, 'completed');
+    assert.equal(applied.summary.success, 52);
+    assert.deepEqual(remote.rpcOrder, [
+      'cmd_dataset_alias_batch_guarded',
+      'cmd_dataset_alias_batch_guarded',
+    ]);
+    assert.equal(
+      remote.rpcOrder.some((rpc) => ['cmd_dataset_save_draft', 'cmd_dataset_delete'].includes(rpc)),
+      false,
+    );
+    assert.deepEqual(
+      remote.rpcBodies.map((body) => {
+        const batch = body.p_batch as Record<string, unknown>;
+        return {
+          schema_version: batch.schema_version,
+          target_visibility: batch.target_visibility,
+          dimension: batch.dimension,
+          action_count: (batch.actions as unknown[]).length,
+        };
+      }),
+      [
+        {
+          schema_version: 'dataset-alias-batch.v1',
+          target_visibility: 'owner_draft',
+          dimension: 'time',
+          action_count: 25,
+        },
+        {
+          schema_version: 'dataset-alias-batch.v1',
+          target_visibility: 'owner_draft',
+          dimension: 'length_time',
+          action_count: 27,
+        },
+      ],
+    );
+    const rowProgress = readJsonLinesIfPresent(
+      path.join(outDir, 'apply-progress.jsonl'),
+    ) as JsonObject[];
+    assert.equal(rowProgress.length, 52);
+    assert.equal(
+      rowProgress.every(
+        (entry) =>
+          entry.target_mode === 'owner_draft' &&
+          isJsonObject(entry.audit_context) &&
+          entry.audit_context.target_mode === 'owner_draft',
+      ),
+      true,
+    );
+    assert.equal(
+      readJsonLinesIfPresent(path.join(outDir, 'alias-exchange-progress.jsonl')).length,
+      59,
+    );
+    assert.equal(readJsonLinesIfPresent(path.join(outDir, 'alias-batch-progress.jsonl')).length, 2);
+    assert.equal(
+      (readJsonFile(path.join(outDir, 'approval-record.json'), 'approval') as JsonObject)
+        .target_mode,
+      'owner_draft',
+    );
+
+    const verified = await runDatasetMaintenanceVerify({
+      planPath: path.join(outDir, 'maintenance-plan.json'),
+      outDir: path.join(outDir, 'verify'),
+      env: remote.env,
+      fetchImpl: remote.fetch,
+      now,
+    });
+    assert.equal(verified.status, 'passed');
+    assert.equal(verified.target_mode, 'owner_draft');
+    assert.equal(verified.summary.atomic_batch_successes, 2);
+    assert.equal(verified.summary.exchange_rewrite_logs, 59);
+
+    const rpcCount = remote.rpcOrder.length;
+    const resumed = await runDatasetMaintenanceApply({
+      planPath: path.join(outDir, 'maintenance-plan.json'),
+      commit: true,
+      approvePlan: plan.plan_sha256,
+      confirm: remote.email,
+      env: remote.env,
+      fetchImpl: remote.fetch,
+      now,
+    });
+    assert.equal(resumed.status, 'completed');
+    assert.equal(resumed.summary.resumed_successes, 52);
+    assert.equal(remote.rpcOrder.length, rpcCount);
+  } finally {
+    rmSync(root, { recursive: true, force: true });
+  }
+});
+
+test('atomic alias apply retries the whole exact batch after a committed response is lost', async () => {
+  const root = mkdtempSync(path.join(os.tmpdir(), 'tg-maintenance-alias-replay-'));
+  const remote = new FakeMaintenanceRemote('alias-replay');
+  const fixture = seedAliasFixture(remote);
+  const scopePath = path.join(root, 'scope.json');
+  const outDir = path.join(root, 'maintenance');
+  writeFileSync(scopePath, JSON.stringify(fixture.scope));
+  const now = new Date('2026-07-11T07:30:00.000Z');
+  try {
+    const plan = await runDatasetMaintenancePlan({
+      scopePath,
+      operation: 'merge-support-aliases',
+      outDir,
+      env: remote.env,
+      fetchImpl: remote.fetch,
+      now,
+      supportSchemas: PASSING_SUPPORT_SCHEMAS,
+      aliasSchemas: {
+        flowproperties: { safeParse: () => ({ success: true as const }) },
+        flows: { safeParse: () => ({ success: true as const }) },
+        processes: { safeParse: () => ({ success: true as const }) },
+      },
+    });
+    remote.failAliasResponseAfterCommitOnce = true;
+    const uncertain = await runDatasetMaintenanceApply({
+      planPath: path.join(outDir, 'maintenance-plan.json'),
+      commit: true,
+      approvePlan: plan.plan_sha256,
+      confirm: remote.email,
+      env: remote.env,
+      fetchImpl: remote.fetch,
+      now,
+    });
+    assert.equal(uncertain.status, 'completed_with_failures');
+    assert.equal(uncertain.summary.failed, 25);
+    assert.equal(uncertain.summary.pending, 27);
+    assert.equal(readJsonLinesIfPresent(path.join(outDir, 'apply-progress.jsonl')).length, 0);
+
+    const recovered = await runDatasetMaintenanceApply({
+      planPath: path.join(outDir, 'maintenance-plan.json'),
+      commit: true,
+      approvePlan: plan.plan_sha256,
+      confirm: remote.email,
+      env: remote.env,
+      fetchImpl: remote.fetch,
+      now,
+    });
+    assert.equal(recovered.status, 'completed');
+    assert.deepEqual(remote.rpcOrder, [
+      'cmd_dataset_alias_batch_guarded',
+      'cmd_dataset_alias_batch_guarded',
+      'cmd_dataset_alias_batch_guarded',
+    ]);
+    const batchProgress = readJsonLinesIfPresent(
+      path.join(outDir, 'alias-batch-progress.jsonl'),
+    ) as Array<Record<string, unknown>>;
+    assert.deepEqual(
+      batchProgress.map((entry) => entry.result),
+      ['failed', 'success', 'success'],
+    );
+    assert.equal(batchProgress[1]?.idempotent_replay, true);
+    assert.equal(
+      readJsonLinesIfPresent(path.join(outDir, 'alias-exchange-progress.jsonl')).length,
+      59,
+    );
+  } finally {
+    rmSync(root, { recursive: true, force: true });
+  }
+});
+
+test('alias plan contracts reject stale locks, malformed proofs, and legacy summary drift', async () => {
+  const root = mkdtempSync(path.join(os.tmpdir(), 'tg-maintenance-alias-contract-'));
+  try {
+    const scenario = await prepareAliasScenario(root, 'contract');
+    const staleLock = structuredClone(scenario.plan);
+    staleLock.actions[0]!.before!.modified_at = null;
+    staleLock.plan_sha256 = computePlanSha256(staleLock);
+    assert.throws(() => parseMaintenancePlan(staleLock), /frozen modified_at/u);
+
+    const missingMutation = structuredClone(scenario.plan);
+    delete missingMutation.actions[0]!.alias_mutation;
+    missingMutation.plan_sha256 = computePlanSha256(missingMutation);
+    assert.throws(() => parseMaintenancePlan(missingMutation), /alias plan contract/u);
+
+    const badUnrelatedCount = structuredClone(scenario.plan);
+    badUnrelatedCount.alias_batches![0]!.summary.unrelated_exchanges -= 1;
+    badUnrelatedCount.summary.unrelated_exchanges_preserved =
+      (badUnrelatedCount.summary.unrelated_exchanges_preserved ?? 0) - 1;
+    badUnrelatedCount.plan_sha256 = computePlanSha256(badUnrelatedCount);
+    assert.throws(() => parseMaintenancePlan(badUnrelatedCount), /alias plan contract/u);
+
+    const wrongTargetMode = structuredClone(scenario.plan) as unknown as JsonObject;
+    wrongTargetMode.target_mode = 'public';
+    wrongTargetMode.plan_sha256 = computePlanSha256(
+      wrongTargetMode as unknown as DatasetMaintenancePlan,
+    );
+    assert.throws(() => parseMaintenancePlan(wrongTargetMode), /target_mode=owner_draft/u);
+
+    const blockedWithoutSupportPayload = structuredClone(scenario.plan);
+    const supportBlocker = {
+      code: 'TARGET_SUPPORT_PAYLOAD_MISSING',
+      message: 'Target support payload is unavailable.',
+      action_id: blockedWithoutSupportPayload.actions[0]!.action_id,
+      table: blockedWithoutSupportPayload.actions[0]!.table,
+      id: blockedWithoutSupportPayload.actions[0]!.id,
+      version: blockedWithoutSupportPayload.actions[0]!.version,
+    };
+    blockedWithoutSupportPayload.status = 'blocked';
+    blockedWithoutSupportPayload.actions[0]!.status = 'blocked';
+    blockedWithoutSupportPayload.actions[0]!.blockers = [supportBlocker];
+    blockedWithoutSupportPayload.blockers = [supportBlocker];
+    blockedWithoutSupportPayload.summary.blockers = 1;
+    blockedWithoutSupportPayload.alias_batches![0]!.target_snapshots.unitgroup!.json_ordered = null;
+    blockedWithoutSupportPayload.plan_sha256 = computePlanSha256(blockedWithoutSupportPayload);
+    assert.equal(parseMaintenancePlan(blockedWithoutSupportPayload).status, 'blocked');
+
+    const missingTargetModePlan = structuredClone(scenario.plan);
+    missingTargetModePlan.target_mode = null;
+    await assert.rejects(
+      () =>
+        applyInternals.assertAliasSupportSnapshots({
+          plan: missingTargetModePlan,
+          context: scenario.context,
+        }),
+      /target_mode=owner_draft/u,
+    );
+    assert.throws(
+      () =>
+        applyInternals.buildAliasBatchRequest({
+          plan: missingTargetModePlan,
+          batch: missingTargetModePlan.alias_batches![0]!,
+          planDir: scenario.outDir,
+        }),
+      /target_mode=owner_draft/u,
+    );
+
+    const ordinary = await prepareSeededScenario(root, 'legacy-summary');
+    const legacySummary = structuredClone(ordinary.plan);
+    delete legacySummary.summary.update_json_ordered;
+    delete legacySummary.summary.atomic_batches;
+    delete legacySummary.summary.scaled_exchanges;
+    delete legacySummary.summary.scaled_amount_fields;
+    delete legacySummary.summary.unrelated_exchanges_preserved;
+    legacySummary.plan_sha256 = computePlanSha256(legacySummary);
+    assert.equal(parseMaintenancePlan(legacySummary).operation, 'repair-references');
+
+    assert.throws(
+      () =>
+        applyInternals.validateAliasRpcResult({}, scenario.plan.alias_batches![0]!, scenario.plan),
+      /invalid proof/u,
+    );
+    const proofBatch = scenario.plan.alias_batches![0]!;
+    const numericAuditProof: JsonObject = {
+      ok: true,
+      command: 'cmd_dataset_alias_batch_guarded',
+      target_visibility: 'owner_draft',
+      dimension: proofBatch.dimension,
+      batch_id: proofBatch.batch_id,
+      row_count: proofBatch.summary.rows,
+      exchange_count: proofBatch.summary.exchanges,
+      summary_audit_id: Number('9007199254740993'),
+      batch_request_sha256: 'a'.repeat(64),
+      idempotent_replay: false,
+      audit: proofBatch.action_ids.map((actionId, index) => {
+        const action = scenario.plan.actions.find((entry) => entry.action_id === actionId)!;
+        return {
+          action_id: action.action_id,
+          table: action.table,
+          id: action.id,
+          version: action.version,
+          audit_id: String(index + 1),
+        };
+      }),
+    };
+    assert.throws(
+      () => applyInternals.validateAliasRpcResult(numericAuditProof, proofBatch, scenario.plan),
+      /invalid proof/u,
+    );
+    numericAuditProof.summary_audit_id = '9007199254740993';
+    (numericAuditProof.audit as JsonObject[])[0]!.audit_id = '1';
+    numericAuditProof.target_visibility = 'public';
+    assert.throws(
+      () => applyInternals.validateAliasRpcResult(numericAuditProof, proofBatch, scenario.plan),
+      /invalid proof/u,
+    );
+    numericAuditProof.target_visibility = 'owner_draft';
+    (numericAuditProof.audit as JsonObject[])[0]!.audit_id = Number('9007199254740993');
+    assert.throws(
+      () => applyInternals.validateAliasRpcResult(numericAuditProof, proofBatch, scenario.plan),
+      /invalid proof/u,
+    );
+
+    const invalidBatchProgressPath = path.join(root, 'invalid-alias-batch-progress.jsonl');
+    writeFileSync(invalidBatchProgressPath, '{}\n');
+    assert.throws(
+      () => applyInternals.parseAliasBatchProgress(scenario.plan, invalidBatchProgressPath),
+      /invalid or foreign entry/u,
+    );
+
+    const mixedRows = aliasRemoteRows(scenario.remote);
+    const first = scenario.plan.actions[0]!;
+    const mixed = mixedRows.find(
+      (row) => row.table === first.table && row.id === first.id && row.version === first.version,
+    )!;
+    mixed.json_ordered = applyInternals.loadDesiredPayload(scenario.outDir, first);
+    mixed.modified_at = '2026-07-03T00:00:00.000Z';
+    assert.throws(
+      () =>
+        applyInternals.assertApplyPreconditions({
+          plan: scenario.plan,
+          planDir: scenario.outDir,
+          currentRows: mixedRows,
+          progress: applyInternals.parseProgress(
+            scenario.plan,
+            path.join(root, 'no-progress.jsonl'),
+          ),
+          aliasBatchProgress: applyInternals.parseAliasBatchProgress(
+            scenario.plan,
+            path.join(root, 'no-batch-progress.jsonl'),
+          ),
+        }),
+      /Atomic alias batch row state drifted/u,
+    );
+    const missingRows = aliasRemoteRows(scenario.remote).filter(
+      (row) => !(row.table === first.table && row.id === first.id && row.version === first.version),
+    );
+    assert.throws(
+      () =>
+        applyInternals.assertApplyPreconditions({
+          plan: scenario.plan,
+          planDir: scenario.outDir,
+          currentRows: missingRows,
+          progress: applyInternals.parseProgress(
+            scenario.plan,
+            path.join(root, 'no-progress.jsonl'),
+          ),
+          aliasBatchProgress: applyInternals.parseAliasBatchProgress(
+            scenario.plan,
+            path.join(root, 'no-batch-progress.jsonl'),
+          ),
+        }),
+      /Atomic alias batch row state drifted/u,
+    );
+
+    const target = scenario.plan.alias_batches![0]!.target_snapshots.unitgroup!;
+    const targetRow = scenario.remote.rows
+      .get(target.table)!
+      .find((row) => row.id === target.id && row.version === target.version)!;
+    targetRow.state_code = 100;
+    await assert.rejects(
+      () =>
+        applyInternals.assertAliasSupportSnapshots({
+          plan: scenario.plan,
+          context: scenario.context,
+        }),
+      /support row drifted/u,
+    );
+    scenario.remote.rows.get(target.table)!.splice(
+      scenario.remote.rows
+        .get(target.table)!
+        .findIndex((row) => row.id === target.id && row.version === target.version),
+      1,
+    );
+    await assert.rejects(
+      () =>
+        applyInternals.assertAliasSupportSnapshots({
+          plan: scenario.plan,
+          context: scenario.context,
+        }),
+      /support row drifted/u,
+    );
+
+    const identityRemote = new FakeMaintenanceRemote('alias-identity-mismatch');
+    const identityFixture = seedAliasFixture(identityRemote);
+    const identityFlow = identityRemote.rows.get('flows')!.find((row) => row.state_code === 0)!;
+    const flowInformation = (identityFlow.json_ordered!.flowDataSet as JsonObject)
+      .flowInformation as JsonObject;
+    (flowInformation.dataSetInformation as JsonObject)['common:UUID'] = aliasId(999_998);
+    const identityScopePath = path.join(root, 'identity-scope.json');
+    writeFileSync(identityScopePath, JSON.stringify(identityFixture.scope));
+    const identityPlan = await runDatasetMaintenancePlan({
+      scopePath: identityScopePath,
+      operation: 'merge-support-aliases',
+      outDir: path.join(root, 'identity-plan'),
+      env: identityRemote.env,
+      fetchImpl: identityRemote.fetch,
+      supportSchemas: PASSING_SUPPORT_SCHEMAS,
+      aliasSchemas: {
+        flowproperties: { safeParse: () => ({ success: true as const }) },
+        flows: { safeParse: () => ({ success: true as const }) },
+        processes: { safeParse: () => ({ success: true as const }) },
+      },
+    });
+    assert.match(
+      identityPlan.blockers.map((entry) => entry.code).join(','),
+      /DESIRED_PAYLOAD_IDENTITY_MISMATCH/u,
+    );
+
+    const malformedRemote = new FakeMaintenanceRemote('alias-malformed-support');
+    const malformedFixture = seedAliasFixture(malformedRemote);
+    malformedRemote.rows.get('unitgroups')!.find((row) => row.id === aliasId(3))!.json_ordered = {};
+    malformedRemote.rows.get('unitgroups')!.find((row) => row.id === aliasId(1))!.json_ordered =
+      null;
+    malformedRemote.rows.get('processes')!.find((row) => row.state_code === 0)!.json_ordered = {};
+    malformedRemote.rows.get('processes')!.splice(1, 1);
+    const missingTargetIndex = malformedRemote.rows
+      .get('unitgroups')!
+      .findIndex((row) => row.id === aliasId(103));
+    malformedRemote.rows.get('unitgroups')!.splice(missingTargetIndex, 1);
+    const malformedScopePath = path.join(root, 'malformed-support-scope.json');
+    writeFileSync(malformedScopePath, JSON.stringify(malformedFixture.scope));
+    const malformedPlan = await runDatasetMaintenancePlan({
+      scopePath: malformedScopePath,
+      operation: 'merge-support-aliases',
+      outDir: path.join(root, 'malformed-support-plan'),
+      env: malformedRemote.env,
+      fetchImpl: malformedRemote.fetch,
+      supportSchemas: PASSING_SUPPORT_SCHEMAS,
+      aliasSchemas: {
+        flowproperties: { safeParse: () => ({ success: true as const }) },
+        flows: { safeParse: () => ({ success: true as const }) },
+        processes: { safeParse: () => ({ success: true as const }) },
+      },
+    });
+    assert.equal(malformedPlan.status, 'blocked');
+  } finally {
+    rmSync(root, { recursive: true, force: true });
+  }
+});
+
+test('alias apply rejects invalid RPC/readback proofs and repairs only exact durable logs', async () => {
+  const root = mkdtempSync(path.join(os.tmpdir(), 'tg-maintenance-alias-defensive-'));
+  const now = new Date('2026-07-11T09:00:00.000Z');
+  const apply = async (scenario: Awaited<ReturnType<typeof prepareAliasScenario>>) =>
+    runDatasetMaintenanceApply({
+      planPath: path.join(scenario.outDir, 'maintenance-plan.json'),
+      commit: true,
+      approvePlan: scenario.plan.plan_sha256,
+      confirm: scenario.remote.email,
+      env: scenario.remote.env,
+      fetchImpl: scenario.remote.fetch,
+      now,
+    });
+  try {
+    const invalidProof = await prepareAliasScenario(root, 'invalid-proof');
+    invalidProof.remote.invalidAliasProof = true;
+    await assert.rejects(
+      () =>
+        applyInternals.executeAliasBatch({
+          plan: invalidProof.plan,
+          batch: invalidProof.plan.alias_batches![0]!,
+          planDir: invalidProof.outDir,
+          context: invalidProof.context,
+        }),
+      /invalid proof/u,
+    );
+
+    for (const failure of ['missing', 'mismatch'] as const) {
+      const readback = await prepareAliasScenario(root, `readback-${failure}`);
+      readback.remote.aliasReadbackFailure = failure;
+      await assert.rejects(
+        () =>
+          applyInternals.executeAliasBatch({
+            plan: readback.plan,
+            batch: readback.plan.alias_batches![0]!,
+            planDir: readback.outDir,
+            context: readback.context,
+          }),
+        /readback failed/u,
+      );
+    }
+
+    const partial = await prepareAliasScenario(root, 'partial-log');
+    assert.equal((await apply(partial)).status, 'completed');
+    const partialBatchProgress = applyInternals.parseAliasBatchProgress(
+      partial.plan,
+      path.join(partial.outDir, 'alias-batch-progress.jsonl'),
+    );
+    const incompleteRowProgress = applyInternals.parseProgress(
+      partial.plan,
+      path.join(partial.outDir, 'apply-progress.jsonl'),
+    );
+    incompleteRowProgress.successes.delete(partial.plan.alias_batches![0]!.action_ids[0]!);
+    assert.equal(
+      applyInternals.aliasBatchDerivedLogsComplete({
+        plan: partial.plan,
+        batch: partial.plan.alias_batches![0]!,
+        batchSuccess: partialBatchProgress.successes.get('time')!,
+        progress: incompleteRowProgress,
+        exchangeProgressPath: path.join(partial.outDir, 'alias-exchange-progress.jsonl'),
+      }),
+      false,
+    );
+    const partialExchangePath = path.join(partial.outDir, 'alias-exchange-progress.jsonl');
+    const partialExchangeEntries = readJsonLinesIfPresent(partialExchangePath);
+    writeFileSync(
+      partialExchangePath,
+      `${partialExchangeEntries
+        .slice(0, -1)
+        .map((entry) => JSON.stringify(entry))
+        .join('\n')}\n`,
+    );
+    const repaired = await apply(partial);
+    assert.equal(repaired.status, 'completed');
+    assert.equal(readJsonLinesIfPresent(partialExchangePath).length, 59);
+
+    const rowMismatch = await prepareAliasScenario(root, 'row-proof-mismatch');
+    assert.equal((await apply(rowMismatch)).status, 'completed');
+    const rowProgressPath = path.join(rowMismatch.outDir, 'apply-progress.jsonl');
+    const rowEntries = readJsonLinesIfPresent(rowProgressPath) as JsonObject[];
+    rowEntries[0]!.database_audit_id = '999999';
+    writeFileSync(
+      rowProgressPath,
+      `${rowEntries.map((entry) => JSON.stringify(entry)).join('\n')}\n`,
+    );
+    const rowExchangePath = path.join(rowMismatch.outDir, 'alias-exchange-progress.jsonl');
+    const rowExchangeEntries = readJsonLinesIfPresent(rowExchangePath);
+    let removedTimeExchange = false;
+    writeFileSync(
+      rowExchangePath,
+      `${rowExchangeEntries
+        .filter((entry) => {
+          if (!removedTimeExchange && isJsonObject(entry) && entry.batch_id === 'time') {
+            removedTimeExchange = true;
+            return false;
+          }
+          return true;
+        })
+        .map((entry) => JSON.stringify(entry))
+        .join('\n')}\n`,
+    );
+    const rejectedRowProof = await apply(rowMismatch);
+    assert.equal(rejectedRowProof.status, 'completed_with_failures');
+    assert.match(
+      rejectedRowProof.actions.find((entry) => entry.status === 'failed')?.error ?? '',
+      /row progress does not match replay audit proof/u,
+    );
+
+    const invalidExchange = await prepareAliasScenario(root, 'invalid-exchange-log');
+    assert.equal((await apply(invalidExchange)).status, 'completed');
+    const invalidExchangePath = path.join(invalidExchange.outDir, 'alias-exchange-progress.jsonl');
+    const invalidExchangeEntries = readJsonLinesIfPresent(invalidExchangePath);
+    writeFileSync(
+      invalidExchangePath,
+      `${invalidExchangeEntries
+        .slice(0, -1)
+        .map((entry) => JSON.stringify(entry))
+        .join('\n')}\n{"batch_id":"time"}\n`,
+    );
+    const rejectedExchangeProof = await apply(invalidExchange);
+    assert.equal(rejectedExchangeProof.status, 'completed_with_failures');
+    assert.match(
+      rejectedExchangeProof.actions.find((entry) => entry.status === 'failed')?.error ?? '',
+      /exchange progress contains an invalid or foreign entry/u,
+    );
+
+    const auditMismatch = await prepareAliasScenario(root, 'exchange-audit-mismatch');
+    assert.equal((await apply(auditMismatch)).status, 'completed');
+    const auditMismatchPath = path.join(auditMismatch.outDir, 'alias-exchange-progress.jsonl');
+    const auditMismatchEntries = readJsonLinesIfPresent(auditMismatchPath) as JsonObject[];
+    auditMismatchEntries[0]!.database_audit_id = '999999';
+    writeFileSync(
+      auditMismatchPath,
+      `${auditMismatchEntries.map((entry) => JSON.stringify(entry)).join('\n')}\n`,
+    );
+    const rejectedAuditMismatch = await apply(auditMismatch);
+    assert.equal(rejectedAuditMismatch.status, 'completed_with_failures');
+    assert.match(
+      rejectedAuditMismatch.actions.find((entry) => entry.status === 'failed')?.error ?? '',
+      /exchange progress contains an invalid or foreign entry/u,
+    );
+  } finally {
+    rmSync(root, { recursive: true, force: true });
+  }
+});
+
+test('alias verification reports support drift, failed batches, duplicate proofs, and missing exchanges', async () => {
+  const root = mkdtempSync(path.join(os.tmpdir(), 'tg-maintenance-alias-verify-'));
+  try {
+    const scenario = await prepareAliasScenario(root, 'verify');
+    const now = new Date('2026-07-11T09:30:00.000Z');
+    const applyReport = await runDatasetMaintenanceApply({
+      planPath: path.join(scenario.outDir, 'maintenance-plan.json'),
+      commit: true,
+      approvePlan: scenario.plan.plan_sha256,
+      confirm: scenario.remote.email,
+      env: scenario.remote.env,
+      fetchImpl: scenario.remote.fetch,
+      now,
+    });
+    assert.equal(applyReport.status, 'completed');
+    const target = scenario.plan.alias_batches![0]!.target_snapshots.flowproperty!;
+    const targetRow = scenario.remote.rows
+      .get(target.table)!
+      .find((row) => row.id === target.id && row.version === target.version)!;
+    const targetPayload = targetRow.json_ordered;
+    targetRow.json_ordered = { drifted: true };
+    const supportDrift = await runDatasetMaintenanceVerify({
+      planPath: path.join(scenario.outDir, 'maintenance-plan.json'),
+      outDir: path.join(root, 'support-drift'),
+      env: scenario.remote.env,
+      fetchImpl: scenario.remote.fetch,
+      now,
+    });
+    assert.match(
+      supportDrift.issues.map((entry) => entry.code).join(','),
+      /ALIAS_SUPPORT_READBACK_MISMATCH/u,
+    );
+    targetRow.json_ordered = targetPayload;
+    const targetRows = scenario.remote.rows.get(target.table)!;
+    const targetIndex = targetRows.findIndex(
+      (row) => row.id === target.id && row.version === target.version,
+    );
+    const [removedTarget] = targetRows.splice(targetIndex, 1);
+    const supportMissing = await runDatasetMaintenanceVerify({
+      planPath: path.join(scenario.outDir, 'maintenance-plan.json'),
+      outDir: path.join(root, 'support-missing'),
+      env: scenario.remote.env,
+      fetchImpl: scenario.remote.fetch,
+      now,
+    });
+    assert.match(
+      supportMissing.issues.map((entry) => entry.code).join(','),
+      /ALIAS_SUPPORT_READBACK_MISMATCH/u,
+    );
+    targetRows.splice(targetIndex, 0, removedTarget!);
+
+    const batchProgressPath = path.join(scenario.outDir, 'alias-batch-progress.jsonl');
+    const exchangeProgressPath = path.join(scenario.outDir, 'alias-exchange-progress.jsonl');
+    const batchEntries = readJsonLinesIfPresent(batchProgressPath) as JsonObject[];
+    const failed = {
+      ...batchEntries[1]!,
+      batch_request_sha256: null,
+      idempotent_replay: null,
+      summary_audit_id: null,
+      result: 'failed',
+      error: 'expected failure evidence',
+    };
+    writeFileSync(
+      batchProgressPath,
+      `${JSON.stringify(batchEntries[0])}\n${JSON.stringify(batchEntries[0])}\n${JSON.stringify(failed)}\n{}\n`,
+    );
+    writeFileSync(exchangeProgressPath, '{}\n');
+    const invalidProofs = await runDatasetMaintenanceVerify({
+      planPath: path.join(scenario.outDir, 'maintenance-plan.json'),
+      outDir: path.join(root, 'invalid-proofs'),
+      env: scenario.remote.env,
+      fetchImpl: scenario.remote.fetch,
+      now,
+    });
+    const codes = invalidProofs.issues.map((entry) => entry.code).join(',');
+    assert.match(codes, /ALIAS_BATCH_PROGRESS_INVALID/u);
+    assert.match(codes, /ALIAS_BATCH_SUCCESS_LOG_MISSING/u);
+    assert.match(codes, /ALIAS_EXCHANGE_PROGRESS_INVALID/u);
+    assert.match(codes, /ALIAS_EXCHANGE_SUCCESS_LOG_MISSING/u);
+
+    const auditMismatch = await prepareAliasScenario(root, 'verify-audit-mismatch');
+    assert.equal(
+      (
+        await runDatasetMaintenanceApply({
+          planPath: path.join(auditMismatch.outDir, 'maintenance-plan.json'),
+          commit: true,
+          approvePlan: auditMismatch.plan.plan_sha256,
+          confirm: auditMismatch.remote.email,
+          env: auditMismatch.remote.env,
+          fetchImpl: auditMismatch.remote.fetch,
+          now,
+        })
+      ).status,
+      'completed',
+    );
+    const mismatchPath = path.join(auditMismatch.outDir, 'alias-exchange-progress.jsonl');
+    const mismatchEntries = readJsonLinesIfPresent(mismatchPath) as JsonObject[];
+    mismatchEntries[0]!.database_audit_id = '999999';
+    writeFileSync(
+      mismatchPath,
+      `${mismatchEntries.map((entry) => JSON.stringify(entry)).join('\n')}\n`,
+    );
+    const mismatchVerify = await runDatasetMaintenanceVerify({
+      planPath: path.join(auditMismatch.outDir, 'maintenance-plan.json'),
+      outDir: path.join(root, 'audit-mismatch-verify'),
+      env: auditMismatch.remote.env,
+      fetchImpl: auditMismatch.remote.fetch,
+      now,
+    });
+    assert.match(
+      mismatchVerify.issues.map((entry) => entry.code).join(','),
+      /ALIAS_EXCHANGE_PROGRESS_INVALID/u,
+    );
+
+    const duplicateProgressPath = path.join(auditMismatch.outDir, 'apply-progress.jsonl');
+    const duplicateProgressEntries = readJsonLinesIfPresent(duplicateProgressPath);
+    writeFileSync(
+      duplicateProgressPath,
+      `${duplicateProgressEntries.map((entry) => JSON.stringify(entry)).join('\n')}\n${JSON.stringify(duplicateProgressEntries[0])}\n`,
+    );
+    const duplicateProgressVerify = await runDatasetMaintenanceVerify({
+      planPath: path.join(auditMismatch.outDir, 'maintenance-plan.json'),
+      outDir: path.join(root, 'duplicate-progress-verify'),
+      env: auditMismatch.remote.env,
+      fetchImpl: auditMismatch.remote.fetch,
+      now,
+    });
+    assert.match(
+      duplicateProgressVerify.issues.map((entry) => entry.code).join(','),
+      /APPLY_PROGRESS_SUCCESS_DUPLICATE/u,
+    );
+  } finally {
+    rmSync(root, { recursive: true, force: true });
+  }
+});
+
+test('alias planning blocks non-owner-draft support and sequential execution rejects alias actions', async () => {
+  const root = mkdtempSync(path.join(os.tmpdir(), 'tg-maintenance-alias-blocked-'));
+  const remote = new FakeMaintenanceRemote('alias-blocked');
+  const fixture = seedAliasFixture(remote);
+  const invalidTarget = remote.rows.get('unitgroups')!.find((row) => row.id === aliasId(3))!;
+  invalidTarget.state_code = 100;
+  remote.rows.get('flows')!.find((row) => row.state_code === 0)!.modified_at = null;
+  const scopePath = path.join(root, 'scope.json');
+  const outDir = path.join(root, 'maintenance');
+  writeFileSync(scopePath, JSON.stringify(fixture.scope));
+  const now = new Date('2026-07-11T08:00:00.000Z');
+  try {
+    const plan = await runDatasetMaintenancePlan({
+      scopePath,
+      operation: 'merge-support-aliases',
+      outDir,
+      env: remote.env,
+      fetchImpl: remote.fetch,
+      now,
+      supportSchemas: PASSING_SUPPORT_SCHEMAS,
+      aliasSchemas: {
+        flowproperties: { safeParse: () => ({ success: true as const }) },
+        flows: { safeParse: () => ({ success: true as const }) },
+        processes: { safeParse: () => ({ success: true as const }) },
+      },
+    });
+    assert.equal(plan.status, 'blocked');
+    assert.match(
+      plan.blockers.map((entry) => entry.code).join(','),
+      /ALIAS_SUPPORT_NOT_OWNER_DRAFT/u,
+    );
+    assert.match(
+      plan.blockers.map((entry) => entry.code).join(','),
+      /ALIAS_EXPECTED_MODIFIED_AT_MISSING/u,
+    );
+    assert.equal(parseMaintenancePlan(plan).status, 'blocked');
+    const context = await resolveMaintenanceRemoteContext({
+      env: remote.env,
+      fetchImpl: remote.fetch,
+      now,
+    });
+    await assert.rejects(
+      () =>
+        applyInternals.executeAction({
+          action: plan.actions.find((action) => action.action === 'update_json_ordered')!,
+          plan,
+          planDir: outDir,
+          context,
+        }),
+      /must execute through the batch RPC/u,
+    );
+    assert.equal(remote.rpcOrder.length, 0);
+  } finally {
+    rmSync(root, { recursive: true, force: true });
+  }
+});
+
+test('alias planning rejects foreign source, target, and changed rows before any write', async () => {
+  const root = mkdtempSync(path.join(os.tmpdir(), 'tg-maintenance-alias-foreign-'));
+  const remote = new FakeMaintenanceRemote('alias-foreign');
+  const fixture = seedAliasFixture(remote);
+  const foreignUser = '99999999-9999-4999-8999-999999999999';
+  remote.rows.get('unitgroups')!.find((row) => row.id === aliasId(1))!.user_id = foreignUser;
+  remote.rows.get('flowproperties')!.find((row) => row.id === aliasId(4))!.user_id = foreignUser;
+  remote.rows.get('processes')!.find((row) => row.state_code === 0)!.user_id = foreignUser;
+  const scopePath = path.join(root, 'scope.json');
+  writeFileSync(scopePath, JSON.stringify(fixture.scope));
+  try {
+    const plan = await runDatasetMaintenancePlan({
+      scopePath,
+      operation: 'merge-support-aliases',
+      outDir: path.join(root, 'maintenance'),
+      env: remote.env,
+      fetchImpl: remote.fetch,
+      supportSchemas: PASSING_SUPPORT_SCHEMAS,
+      aliasSchemas: {
+        flowproperties: { safeParse: () => ({ success: true as const }) },
+        flows: { safeParse: () => ({ success: true as const }) },
+        processes: { safeParse: () => ({ success: true as const }) },
+      },
+    });
+    const blockerCodes = plan.blockers.map((entry) => entry.code).join(',');
+    assert.equal(plan.status, 'blocked');
+    assert.match(blockerCodes, /ALIAS_SUPPORT_NOT_OWNER_DRAFT/u);
+    assert.match(blockerCodes, /TARGET_OWNER_MISMATCH|SNAPSHOT_DRIFT/u);
+    assert.equal(remote.rpcOrder.length, 0);
   } finally {
     rmSync(root, { recursive: true, force: true });
   }
@@ -780,9 +2870,18 @@ test('maintenance contract validates every frozen scope guard and immutable arti
       scopeValue(remote, [scopeAction(remote, { expected_user_id: 'other' })]),
       scopeValue(remote, [scopeAction(remote, { evidence: 'no' })]),
       scopeValue(remote, [scopeAction(remote, { action: 'save_draft' })]),
+      scopeValue(remote, [scopeAction(remote, { desired_payload_path: 'unexpected.json' })]),
+      scopeValue(remote, [
+        scopeAction(remote, {
+          action: 'update_json_ordered',
+          table: 'flows',
+          batch_id: 'unexpected-batch',
+        }),
+      ]),
       scopeValue(remote, [scopeAction(remote, { expected_before_sha256: 'bad' })]),
       scopeValue(remote, [scopeAction(remote, { id: ' ' })]),
       scopeValue(remote, [scopeAction(remote)], { operation: 'unsupported' }),
+      scopeValue(remote, [scopeAction(remote)], { target_mode: 'owner_draft' }),
       scopeValue(remote, []),
       scopeValue(remote, [scopeAction(remote), scopeAction(remote)]),
       scopeValue(remote, [

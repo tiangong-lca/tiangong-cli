@@ -16,8 +16,8 @@ checkPaths:
   - README.md
   - src/**
   - test/**
-lastReviewedAt: 2026-07-11
-lastReviewedCommit: 695e6d6fe718cb92d499f3ce8be2dc24c3f6ce29
+lastReviewedAt: 2026-07-12
+lastReviewedCommit: 192ce9cb233af85b8bcf50136d37fd08d4ae8292
 related:
   - ../AGENTS.md
   - ../.docpact/config.yaml
@@ -28,7 +28,7 @@ related:
 
 # TianGong LCA CLI 实施指南
 
-Review note, 2026-07-11: `dataset maintenance plan/apply/verify` 已实现为 v1 current-user RLS row-level maintenance 契约；scope 冻结、全计划 drift preflight、显式审批、逐 action 日志、平台审计关联与独立 readback verification 都由原生 CLI 持有。
+Review note, 2026-07-12: `dataset maintenance plan/apply/verify` 已把 BAFU `time` / `length_time` FP alias 迁移固化为两个不可拆分的 owner-draft guarded batch。scope/plan 强制 `target_mode=owner_draft`，RPC/审计/replay/readback 强制 `target_visibility=owner_draft`；52 行、59 条 exchange、精确十进制换算、309 条无关 exchange、owner/state、payload/modified_at/hash 与目标引用 postcondition 都属于不可变计划契约。该操作不再依赖或执行 FP/UG 发布。
 
 ## 1. 目标
 
@@ -151,7 +151,7 @@ tiangong-lca
 | `tiangong-lca dataset import-lca convert` | 外部 LCA 包转换入口；调用 `tidas-tools import_lca` 生成 TIDAS/ILCD/conversion report；tidas-tools >= 0.0.28 默认产出每个 process 的依赖子目录（可用 `--no-process-bundles` 关闭、`--process-bundles-dir` 自定义目录），便于后续 entity-level curation |
 | `tiangong-lca dataset references rewrite` | 本地 process / lifecyclemodel rows 的 flow reference rewrite、patch evidence 输出，并可选走 state-aware save-draft commit |
 | `tiangong-lca dataset maintenance clear-account` | 已实现的当前账号 draft 清理入口；先生成当前用户 RLS 可见 snapshot，默认 dry-run，只有显式 `--commit --confirm <当前账号邮箱>` 才按 `lifecyclemodels -> processes -> flows -> sources -> contacts` 顺序执行。普通 dataset rows 通过 `app_dataset_delete` / `cmd_dataset_delete` 删除，读回验证剩余行数；`unitgroups` / `flowproperties` 默认保护不删 |
-| `tiangong-lca dataset maintenance plan/apply/verify` | 已实现的 current-user RLS row-level draft 维护入口。`plan` 冻结 exact `id/version` scope、可见快照、保护行、引用影响、不可变计划与 dry-run；`apply` 要求 plan SHA-256 + 当前账号邮箱显式审批，整计划 drift preflight 通过后按 update-before-delete 顺序调用平台 `save_draft` / `delete` 路径并逐 action 留痕；`verify` 独立重新读取受影响行与引用。V1 只允许 current-user `state_code=0` 的 contacts/sources/flows/processes，其他类型与 public/non-owner/non-draft rows 受保护 |
+| `tiangong-lca dataset maintenance plan/apply/verify` | 已实现的 current-user RLS row-level 维护入口。普通 V1 维护冻结 exact draft rows 并通过平台 `save_draft` / `delete`；`merge-support-aliases` 只在 `target_mode=owner_draft` 下执行固定 BAFU time/length-time 两批私有引用与 exchange amount 重写。所有路径共享不可变 plan、显式审批、durable proof 与独立 readback；本操作不发布 FP/UG |
 | `tiangong-lca lifecyclemodel auto-build` | 本地 lifecyclemodel local-run intake、graph 推断、reference process 选择、`json_ordered` artifact 输出 |
 | `tiangong-lca lifecyclemodel validate-build` | 本地 lifecyclemodel build run 校验重跑、per-model 校验报告与 aggregate report 输出 |
 | `tiangong-lca lifecyclemodel publish-build` | 本地 lifecyclemodel publish handoff、publish bundle/request/intent 产出、validation 摘要复用 |
@@ -238,6 +238,7 @@ tiangong-lca
 - 已实现的 `dataset references rewrite` 把 process / lifecyclemodel rows 中的 flow reference rewrite 收口到一个 deterministic 本地入口，默认只写 patch artifacts，只有显式 `--commit` 时才调用 state-aware save-draft 写入路径
 - 已实现的 `dataset maintenance clear-account` 只覆盖当前认证账号的 draft 清空场景：CLI 先写出 `rls-visible-snapshot.json` / `dry-run-report.json`，commit 时要求 `--confirm` 匹配当前账号邮箱，并逐行调用平台 `app_dataset_delete`，最后写出 `approval-record.json`、`commit-report.json` 和 `readback-verify-report.json`。该命令不绕过 RLS，不直接 REST DELETE，不删除默认保护的 `unitgroups` / `flowproperties`。
 - 已实现的 `dataset maintenance plan/apply/verify` 是错误导入清理和 redo 的 row-level 归属面。`plan` 固化 scope manifest、当前用户 RLS 可见快照、引用影响、保护行、不可变 plan 和 dry-run；`apply` 只接受 plan SHA-256 与当前账号邮箱都匹配的显式 commit，先做全计划 drift preflight 并持久化 approval，再按 update-before-delete 顺序通过官方平台路径执行，每条 action 追加日志并用 `p_audit` 关联 plan/action；任一失败立即停止，已成功 action 可由后续重跑识别恢复。`verify` 独立重新读取受影响行和引用，不依赖 apply 的内存或报告结论。Foundry 只保存 task ledger、调用命令和报告，不实现删除逻辑。
+- `merge-support-aliases` 不是通用 alias 合并器：当前只接受 BAFU `time` 与 `length_time` 两个 batch。计划必须精确覆盖 25 + 27 行和 20 + 39 条 exchange，并保留受影响 process 中的 309 条其他 exchange；apply 每个 dimension 只调用一次 `cmd_dataset_alias_batch_guarded`，不会降级成逐行 `save_draft`。
 - 已实现的 `lifecyclemodel auto-build` 走本地只读、artifact-first 路径，输入固定为 local run manifest，不依赖 Python、MCP、KB、LLM 或远端 CRUD
 - `lifecyclemodel auto-build` 当前负责 graph 推断、reference process 选择、`@multiplicationFactor` 计算与 `json_ordered` lifecyclemodel 产物输出，并保留 `run-plan.json`、`resolved-manifest.json`、`selection/selection-brief.md`、`discovery/reference-model-summary.json`、`connections.json`、`process-catalog.json` 等 CLI 契约
 - `lifecyclemodel auto-build` 当前明确不负责 reference-model discovery、任何远端 lifecyclemodel 写入，也不会自动串接 validate-build / publish-build
@@ -279,7 +280,7 @@ tiangong-lca
 ```bash
 tiangong-lca dataset maintenance plan \
   --scope ./maintenance-scope.json \
-  --operation <delete|retire|redo-import|repair-references> \
+  --operation <delete|retire|redo-import|repair-references|merge-support-aliases> \
   --out-dir ./dataset-maintenance \
   [--page-size <n>] \
   [--timeout-ms <n>] \
@@ -304,9 +305,13 @@ tiangong-lca dataset maintenance verify \
 Scope 与保护规则：
 
 - 远端读取和写入都使用当前认证用户 session 与数据库 RLS，不接受 target user 覆盖。
-- 每条 scope row 必须给出表、exact `id`、exact `version`、expected owner、expected `state_code=0` 与 operator-authored intended action/reason；`--operation` 只接受 `delete`、`retire`、`redo-import`、`repair-references`，且不允许只按 broad `state_code=0` 或其他宽过滤器清理。
-- V1 可执行对象只有 `contacts`、`sources`、`flows`、`processes`，可执行 action 只有 `save_draft` 与 `delete`。
-- `lifecyclemodels`、`unitgroups`、`flowproperties`、public/shared、非当前 owner、非 draft、不可见或 exact version 不一致的 rows 一律进入 protected/blocked，不会降级成可执行 action。
+- 每条 scope row 必须给出表、exact `id`、exact `version`、expected owner、expected `state_code=0` 与 operator-authored intended action/reason；`--operation` 只接受 `delete`、`retire`、`redo-import`、`repair-references`、`merge-support-aliases`，且不允许只按 broad `state_code=0` 或其他宽过滤器清理。
+- `contacts`、`sources`、`flows`、`processes` 的普通维护只允许 `save_draft` 与 `delete`；`merge-support-aliases` 只允许固定 BAFU closure 内的 `flowproperties`、`flows`、`processes` 执行 `update_json_ordered`。
+- `merge-support-aliases` scope 必须显式给出 `target_mode: "owner_draft"`，其他 operation 禁止携带该字段。计划、审批、本地 proof 与 RPC request 都保留该 mode；数据库只接受匹配的 `target_visibility: "owner_draft"`。
+- `merge-support-aliases` 与 `update_json_ordered` 双向强绑定。scope 必须提供恰好两个 batch：`time` 因子 `0.00011415525114155251`，含 1 FP、10 flows、14 processes、20 exchanges；`length_time` 因子 `1000`，含 1 FP、13 flows、13 processes、39 exchanges。每个 process selector 必须冻结 exchange index、internal id、flow id/version、direction、before exchange SHA-256、before mean/resulting amount。
+- alias 计划使用任意精度十进制字符串同时换算 `meanAmount` 和 `resultingAmount`，不经过 JavaScript `number`。计划还必须证明 309 条未选择 exchange 不变，source UG incoming refs 与 source FP flow refs 都归零，以及 time / length-time 的 target flow/exchange refs 分别达到 `106/441` 与 `32/3216`。
+- 每个 batch 冻结 current-owner draft target FP、target UG、source UG 的 exact payload、`modified_at`、row hash 与 owner/state；所有 52 个 desired payload 都必须通过对应 TIDAS schema，且 payload 内嵌 `common:UUID` 与 version 必须继续匹配数据库 row。该 operation 只重写 source FP 的 UG 引用、23 个 flow 的 FP 引用和 59 个 exchange 的 amount，不删除 support rows、不改变 `state_code=0`。
+- `lifecyclemodels`、不匹配的 action/table、public/shared、foreign owner、mixed visibility、非 draft、不可见或 exact version 不一致的 rows 一律进入 protected/blocked，不会降级成可执行 action。
 - CLI 只执行人工/上游已经做出的清洗决策，不判断 public canonical、语义重复、引用替代或 redo 内容是否正确。
 
 `plan` 在任何 mutation 之前写出并固定：
@@ -317,6 +322,7 @@ Scope 与保护规则：
 - `reference-impact-report.json`
 - `maintenance-plan.json`
 - `dry-run-report.json`
+- alias operation 额外输出 `exchange-rewrite-plan.jsonl`
 
 `maintenance-plan.json` 的 canonical SHA-256 是后续审批身份。plan 生成后不得原地编辑；需要变更 scope 或 action 时重新运行 `plan` 并重新审批。
 
@@ -325,11 +331,13 @@ Scope 与保护规则：
 1. 重新认证当前用户并校验账号邮箱。
 2. 对整份计划重新抓取 exact rows 与引用，任何 drift 都在首写前阻断。
 3. 在首写前持久化 `approval-record.json`。
-4. 先执行 `save_draft`，再执行 `delete`；所有写入都通过平台 dataset command path，而不是 raw REST mutation。
+4. 普通 action 按 `save_draft`、`delete` 的固定顺序执行；alias operation 则按 `time`、`length_time` 各调用一次带 `target_visibility=owner_draft` 的 `cmd_dataset_alias_batch_guarded`，绝不逐行执行。所有写入都通过平台 dataset command path，而不是 raw REST mutation。
 5. 为每条尝试的 action 向 `apply-progress.jsonl` 追加 durable log，并在平台命令的 `p_audit` 中带入 plan/action correlation id。每行至少记录 `plan_sha256`、`operation_id`、`action_id`、table/id/version、actor、started/finished、`before_sha256`、`after_sha256`、result/error 与 rollback。
 6. 任一 action 失败即停止后续动作并写出 `commit-report.json`；已成功 action 保留在日志中，重跑时据此识别已完成状态，避免盲目重复写入。
 
-`verify` 必须启动独立 remote readback，重新读取受影响 rows 和 references，并写出 `readback-verify-report.json`；它不能把 apply report 当作数据库事实。
+Alias RPC 在同一事务中锁定 target/source support 与全部 action rows，逐行比较 authenticated actor、expected owner/state 0、`modified_at`、payload，并再次计算 submitted flow/process closure；少一条或多一条 source-flow / exchange 引用都阻断。成功与 replay 结果必须回显 `target_visibility=owner_draft`，并返回 batch request SHA-256、summary audit id 和每行 audit id。数据库将 bigint audit id 显式转换为 text，CLI 只接受正整数字符串，避免 JavaScript number 精度损失。CLI 先追加 52 条 `apply-progress.jsonl` 与 59 条 `alias-exchange-progress.jsonl`，最后才追加 2 条 `alias-batch-progress.jsonl`。若事务已经提交但响应或本地派生日志丢失，只允许提交同一整批请求进行 audit-proven replay，并逐项比对既有 audit id 与 after hash。
+
+`verify` 必须启动独立 remote readback，重新读取受影响 rows 和 references，并写出 `readback-verify-report.json`；它不能把 apply report 当作数据库事实。Alias verify 还要求 target/source support 未漂移、52 行 desired payload 全部匹配、两条 batch success proof 完整、59 条 exchange proof 唯一且与 frozen rewrite 一致。CLI 校验 RPC 返回 audit id 与本地 proof chain 的关联，但当前不会独立查询 `public.command_audit_log`；audit row 创建与 replay 证明仍由 guarded RPC 负责。
 
 安全边界是强约束：不允许 direct SQL、service-role credential、raw REST mutation 或 Foundry 私有 DB maintenance 代码。Foundry 和 skills 只能准备 scope、编排 CLI、保存 task ledger 与上述 artifacts。
 

@@ -32,8 +32,8 @@ checkPaths:
   - scripts/docpact
   - scripts/docpact-gate.sh
   - scripts/install-git-hooks.sh
-lastReviewedAt: 2026-07-11
-lastReviewedCommit: 695e6d6fe718cb92d499f3ce8be2dc24c3f6ce29
+lastReviewedAt: 2026-07-12
+lastReviewedCommit: 192ce9cb233af85b8bcf50136d37fd08d4ae8292
 related:
   - .docpact/config.yaml
   - docs/agents/repo-validation.md
@@ -58,6 +58,8 @@ Review note, 2026-06-07: release 0.0.14 keeps the CLI-owned dataset classificati
 Review note, 2026-06-11: release 0.0.15 keeps command nouns/verbs, repo ownership, and release workflow boundaries unchanged. `dataset import-lca convert` now matches the tidas-tools 0.0.28 import_lca CLI surface: the wrapper no longer passes a bare `--process-bundles` flag, forwards `--no-process-bundles` when bundles are disabled, and derives report bundle/mapping file fields from on-disk state.
 
 Review note, 2026-07-11: `dataset maintenance plan/apply/verify` is now the CLI-owned v1 row-level maintenance contract. It freezes exact current-user RLS scope and audit artifacts before any write, executes only approved `save_draft` / `delete` actions through platform command paths, and verifies the result with an independent readback.
+
+Review note, 2026-07-12: the maintenance contract owns the fixed BAFU FP alias operation `merge-support-aliases` in explicit `target_mode=owner_draft`. Source/target FP/UG and all changed flow/process rows must be current-owner `state_code=0`; each frozen dimension batch is applied through one guarded RPC with exact closure, payload/timestamp locks, audit-bound replay, and independent private-state readback. Publication remains a separate future workflow and is not a prerequisite of this operation.
 
 ## Bootstrap Order
 
@@ -114,7 +116,7 @@ Route those tasks to:
 - Newly added process-maintenance commands such as `process identity-preflight`, `process build-plan`, `process scope-statistics`, `process dedup-review`, `process refresh-references`, and `process verify-rows` still belong to the native CLI command surface in `src/cli.ts` and `src/lib/process-*.ts` / shared CLI-native helpers.
 - `process save-draft` now has a local `ProcessSchema` validation gate before any commit path writes remote state, and `--target-user-id` is a hard current-session/visible-draft owner guard for account-scoped batch imports.
 - Dataset-level local governance commands such as `dataset validate`, `dataset curation-queue build/next/verify`, and `dataset references rewrite` belong to the same native CLI command surface in `src/cli.ts` and `src/lib/dataset-*.ts`.
-- `dataset maintenance plan/apply/verify` owns current-user RLS-scoped row maintenance in `src/lib/dataset-maintenance-{contract,remote,plan,apply,verify}.ts`. V1 requires exact `id` + `version`, `state_code=0`, and current-session ownership; it can plan `save_draft` / `delete` actions only for `contacts`, `sources`, `flows`, and `processes`. `lifecyclemodels`, `unitgroups`, `flowproperties`, public rows, non-owner rows, and non-draft rows are protected.
+- `dataset maintenance plan/apply/verify` owns current-user RLS-scoped row maintenance in `src/lib/dataset-maintenance-{contract,remote,plan,apply,verify}.ts` plus the fixed alias transformation in `src/lib/dataset-maintenance-alias-rewrite.ts`. V1 requires exact `id` + `version`, `state_code=0`, and current-session ownership. Ordinary maintenance can plan `save_draft` / `delete` actions only for `contacts`, `sources`, `flows`, and `processes`; `merge-support-aliases` additionally requires scope/plan `target_mode=owner_draft` and can only execute the frozen two-batch BAFU time/length-time rewrite through a matching `target_visibility=owner_draft` guarded RPC. Public/shared, foreign-owner, mixed-visibility, non-draft, lifecyclemodel, and every other support-table mutation remain protected.
 - `lifecyclemodel save-draft` validates canonical lifecyclemodel payloads with `LifeCycleModelSchema` before any commit path writes remote state; `lifecyclemodel graph` remains a local artifact command.
 - `flow publish-version` validates canonical flow payloads with `FlowSchema` before remote visibility planning or writes, and emits `flow-publish-version-gate-report.json` as the blocking ruleset artifact.
 - `process publish-build` validates canonical process payloads with `ProcessSchema` before publish handoff artifacts are written, and emits `reports/process-publish-schema-gate.json`.
@@ -131,6 +133,8 @@ Route those tasks to:
 - Do not add orchestration frameworks or new npm dependencies without explicit approval
 - Do not publish `@tiangong-lca/cli` from a local workstation for routine releases; local npm auth state is not part of the release contract.
 - Do not implement dataset maintenance through direct SQL, service-role credentials, raw REST mutation, or Foundry-local database code. Foundry and skills may prepare scope and orchestrate the CLI, but the native CLI must own current-user RLS preflight, platform-command mutation, per-action audit logging, and independent readback verification.
+- Do not generalize `merge-support-aliases` beyond its reviewed two-dimension BAFU profile without a new tracked contract. The fixed factors, 52-row/59-exchange closure, 309 preserved exchanges, and postcondition counts are safety invariants.
+- Do not remove or reinterpret the `target_mode=owner_draft` / `target_visibility=owner_draft` binding. The alias operation must never mutate public, foreign-owner, or mixed-visibility support or parent rows.
 - Do not move business logic into skill wrappers when the native `tiangong-lca` CLI should own it
 - Do not weaken the coverage gate with ignore pragmas; cover the branch or remove dead code
 - Do not treat governed docs as optional when command-surface, validation, or release-gate behavior changes; `docpact` should either require a matching source-doc update or record explicit review evidence.

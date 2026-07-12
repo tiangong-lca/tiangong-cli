@@ -656,7 +656,7 @@ test('executeCli dispatches dataset maintenance plan, apply, and verify', async 
       '--scope',
       './maintenance-scope.json',
       '--operation',
-      'repair-references',
+      'merge-support-aliases',
       '--out-dir',
       './maintenance-run',
       '--page-size',
@@ -677,7 +677,7 @@ test('executeCli dispatches dataset maintenance plan, apply, and verify', async 
   assert.deepEqual(JSON.parse(planResult.stdout), { status: 'ready', marker: 'plan' });
   assert.deepEqual(observedPlanOptions, {
     scopePath: './maintenance-scope.json',
-    operation: 'repair-references',
+    operation: 'merge-support-aliases',
     outDir: './maintenance-run',
     pageSize: 250,
     timeoutMs: 12000,
