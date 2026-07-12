@@ -1,8 +1,9 @@
 version: 1
 layout: repo
 # Review note, 2026-06-11: release 0.0.15 keeps existing command-family, validation, and release routing. The dataset import-lca wrapper now targets the tidas-tools 0.0.28 process-bundle CLI surface; routing and ownership are unchanged.
-lastReviewedAt: "2026-07-11"
-lastReviewedCommit: "b11482ca0dae414719336525c580cab1126897cd"
+# Review note, 2026-07-12: owner-draft BAFU `merge-support-aliases` now sends both frozen dimensions through one whole-plan RPC; it remains inside the existing dataset-maintenance command/runtime domain, and wildcard routing already covers its request/proof adapter, alias-rewrite, tests, and governed command/validation docs, so no ownership or route changes are required.
+lastReviewedAt: "2026-07-12"
+lastReviewedCommit: "afcd941537cbaeb355e2c753a2e2b847b4c1909e"
 
 catalog:
   repos:

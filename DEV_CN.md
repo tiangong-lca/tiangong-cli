@@ -18,8 +18,8 @@ checkPaths:
   - src/**
   - scripts/**
   - .github/workflows/**
-lastReviewedAt: 2026-06-29
-lastReviewedCommit: 695e6d6fe718cb92d499f3ce8be2dc24c3f6ce29
+lastReviewedAt: 2026-07-12
+lastReviewedCommit: afcd941537cbaeb355e2c753a2e2b847b4c1909e
 related:
   - AGENTS.md
   - .docpact/config.yaml
@@ -40,6 +40,8 @@ Review note, 2026-06-07: release 0.0.14 keeps maintainer runtime and release gui
 Review note, 2026-06-11: release 0.0.15 keeps maintainer runtime and release guidance unchanged. `dataset import-lca convert` now adapts to the tidas-tools 0.0.28 process-bundle flags (no bare `--process-bundles`, `--no-process-bundles` only when disabled) and reports bundle/mapping files from actual on-disk state.
 
 Review note, 2026-07-11: `dataset maintenance plan/apply/verify` is now an implemented current-user RLS command family. It adds no environment variables or release-path changes; commit remains bound to an immutable plan hash, current account confirmation, append-only per-action logs, and independent readback verification.
+
+Review note, 2026-07-12: BAFU `merge-support-aliases` 已改为显式 `target_mode=owner_draft`。source/target FP/UG 与全部受改 flow/process 必须属于当前账号且保持 `state_code=0`；RPC 请求、数据库审计、replay proof、本地 approval/progress 和独立 readback 都绑定 `target_visibility=owner_draft`。公开发布不再是本操作的前置或副作用。
 
 设计原则：
 
@@ -293,9 +295,9 @@ npm exec tiangong-lca -- admin embedding-run --input ./jobs.json --dry-run
 
 ## process / review / publish / validation 边界
 
-`tiangong-lca dataset maintenance plan/apply/verify` 是错误导入后 row-level 修复的 CLI-owned 入口。`plan` 冻结当前用户 RLS 可见快照、保护行、引用影响、desired payload 和 canonical plan SHA-256；`apply` 只允许精确 `id + version` 的当前账号 `state_code=0` draft，通过 `cmd_dataset_save_draft` / `cmd_dataset_delete` 执行，并把相同 plan/action correlation 写入 `p_audit` 和本地 `apply-progress.jsonl`；`verify` 独立读回 payload、owner/state、保护行和引用闭包。Foundry/skills 只能编排这些命令，不得实现私有 SQL、service-role 或 raw REST mutation。
+`tiangong-lca dataset maintenance plan/apply/verify` 是错误导入后 row-level 修复的 CLI-owned 入口。`plan` 冻结当前用户 RLS 可见快照、保护行、引用影响、desired payload 和 canonical plan SHA-256；普通操作只允许精确 `id + version` 的当前账号 `state_code=0` draft 通过 `cmd_dataset_save_draft` / `cmd_dataset_delete` 执行。BAFU alias operation 还要求 scope/plan `target_mode=owner_draft`，冻结 source/target FP/UG、52 个 changed row、59 条 exchange、118 个 amount 字段和 309 条不变 exchange，再以 `target_visibility=owner_draft` 一次调用 `cmd_dataset_alias_plan_guarded`。所有路径都把 plan/action/mode correlation 写入数据库审计与本地 durable proof；`verify` 独立读回 payload、owner/state、保护行和引用闭包。Foundry/skills 只能编排这些命令，不得实现私有 SQL、service-role 或 raw REST mutation。
 
-`apply` 是 commit-only：必须同时提供 `--commit`、精确 `--approve-plan <sha256>` 和 `--confirm <current-account-email>`。首写前会持久化 approval 并做全计划 drift preflight，每条 pending action 在 RPC 前再做 exact read；update 先于 delete，首个失败会停止后续动作，同一计划可从已记录成功项安全续跑。`lifecyclemodels`、`unitgroups`、`flowproperties`、public/shared、非 owner、非 draft 和不可见行在 v1 中一律保护或阻断。
+`apply` 是 commit-only：必须同时提供 `--commit`、精确 `--approve-plan <sha256>` 和 `--confirm <current-account-email>`。首写前会持久化 approval 并做全计划 drift preflight；alias 必须把 `time`、`length_time` 依次装入同一 `dataset-alias-plan.v1` 请求并只调用一次 whole-plan RPC。任一维失败都回滚 52 行的全部变更，丢失响应时也只能重放同一整计划，不能从第二维续跑。public/shared、foreign owner、mixed visibility、非 draft、不可见行和其他 support mutation 在该操作中一律保护或阻断。
 
 `tiangong-lca process get` 现在是统一 CLI 持有的只读 process 详情命令，负责：
 

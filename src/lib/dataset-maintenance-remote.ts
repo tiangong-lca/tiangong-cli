@@ -277,7 +277,7 @@ export async function fetchMaintenanceAccountRows(options: {
 
 async function invokeMaintenanceRpc(options: {
   context: DatasetMaintenanceRemoteContext;
-  rpc: 'cmd_dataset_save_draft' | 'cmd_dataset_delete';
+  rpc: 'cmd_dataset_save_draft' | 'cmd_dataset_delete' | 'cmd_dataset_alias_plan_guarded';
   body: JsonObject;
 }): Promise<JsonObject> {
   const url = `${options.context.rest_base_url}/rpc/${options.rpc}`;
@@ -299,6 +299,17 @@ async function invokeMaintenanceRpc(options: {
     });
   }
   return body;
+}
+
+export async function applyMaintenanceAliasPlan(options: {
+  context: DatasetMaintenanceRemoteContext;
+  plan: JsonObject;
+}): Promise<JsonObject> {
+  return invokeMaintenanceRpc({
+    context: options.context,
+    rpc: 'cmd_dataset_alias_plan_guarded',
+    body: { p_plan: options.plan },
+  });
 }
 
 export async function saveDraftMaintenanceRow(options: {

@@ -17,15 +17,15 @@ checkPaths:
   - bin/**
   - src/cli.ts
   - src/main.ts
-lastReviewedAt: 2026-07-11
-lastReviewedCommit: 695e6d6fe718cb92d499f3ce8be2dc24c3f6ce29
+lastReviewedAt: 2026-07-12
+lastReviewedCommit: 192ce9cb233af85b8bcf50136d37fd08d4ae8292
 ---
 
 # TianGong LCA CLI
 
 Package: `@tiangong-lca/cli` Executable: `tiangong-lca` Node: `24.x`
 
-Review note, 2026-07-11: `dataset maintenance plan/apply/verify` is an implemented v1 command family for current-user RLS-scoped, exact-row draft maintenance with immutable plans, explicit approval, per-action logs, platform audit correlation, and independent readback verification.
+Review note, 2026-07-12: `dataset maintenance plan/apply/verify` provides current-user RLS-scoped exact-row maintenance with immutable plans, explicit approval, per-action logs, platform audit correlation, and independent readback. `merge-support-aliases` now runs only in `target_mode=owner_draft`: source/target support and all changed rows stay private `state_code=0`; publication is a separate future workflow.
 
 ## Run
 
@@ -322,12 +322,12 @@ For `dataset references rewrite`, `--commit` executes the state-aware save-draft
 
 ## Dataset Maintenance
 
-`dataset maintenance plan/apply/verify` is the v1 row-level cleanup surface for bad imports. It runs as the currently authenticated user and relies on RLS for visibility and ownership enforcement.
+`dataset maintenance plan/apply/verify` is the row-level cleanup surface for bad imports and the fixed BAFU private alias rewrite. It runs as the currently authenticated user and relies on RLS for visibility and ownership enforcement.
 
 ```bash
 tiangong-lca dataset maintenance plan \
   --scope ./maintenance-scope.json \
-  --operation redo-import \
+  --operation merge-support-aliases \
   --out-dir ./dataset-maintenance \
   --page-size 1000 \
   --timeout-ms 10000 \
@@ -349,19 +349,21 @@ tiangong-lca dataset maintenance verify \
   --json
 ```
 
-V1 scope is intentionally narrow:
+The scope is intentionally narrow:
 
 - Each requested row must name its table, exact `id`, exact `version`, expected current owner, and draft `state_code=0` state.
-- `--operation` accepts `delete`, `retire`, `redo-import`, or `repair-references`; it records the operator's maintenance intent and does not broaden the eligible row actions.
+- `--operation` accepts `delete`, `retire`, `redo-import`, `repair-references`, or `merge-support-aliases`; it records the operator's maintenance intent and does not broaden the eligible row actions.
 - Only current-user `contacts`, `sources`, `flows`, and `processes` can become `save_draft` or `delete` actions.
-- `lifecyclemodels`, `unitgroups`, `flowproperties`, public/shared rows, non-owner rows, and non-draft rows are protected.
+- `merge-support-aliases` requires top-level `target_mode: "owner_draft"` and accepts only two named batches, `time` and `length_time`. The scope must bind reviewed current-owner draft source and target FP/UG exact ids/versions to 52 `update_json_ordered` actions: 25 time rows (1 FP, 10 flows, 14 processes) and 27 length-time rows (1 FP, 13 flows, 13 processes). Process actions freeze every selected exchange index, internal id, flow id/version, direction, before hash, and both amount strings.
+- The alias factors are exact decimal strings: `0.00011415525114155251` for time and `1000` for length-time. Planning requires exactly 20 and 39 selected exchanges, preserves exactly 309 other exchanges in the affected processes, and proves the fixed source-zero/target-reference postconditions. The transformation changes references and the selected `meanAmount`/`resultingAmount`; it does not delete the source FP/UG rows.
+- Source alias support, target FP/UG, and every changed flow/process must all belong to the authenticated account at `state_code=0`. Public/shared, foreign-owner, mixed-visibility, non-draft, lifecyclemodel, and unsupported action/table rows remain protected.
 - The CLI classifies and executes an operator-authored scope; it does not decide whether rows are semantically duplicates, canonical replacements, or safe business-level cleanup targets.
 
-`plan` writes the frozen `maintenance-scope.json`, `rls-visible-snapshot.json`, `protected-rows.jsonl`, `reference-impact-report.json`, `maintenance-plan.json`, and `dry-run-report.json`. The plan SHA-256 is the approval identity; do not edit the plan after review.
+`plan` writes the frozen `maintenance-scope.json`, `rls-visible-snapshot.json`, `protected-rows.jsonl`, `reference-impact-report.json`, `maintenance-plan.json`, and `dry-run-report.json`. Alias plans additionally write `exchange-rewrite-plan.jsonl`, freeze current-owner state-0 target FP, target UG, and source UG snapshots for each batch, derive schema-valid desired payloads with matching embedded UUID/version, and include the exact closure, `modified_at`, hashes, conversion evidence, and postconditions in the approved plan. The plan SHA-256 is the approval identity; do not edit or recompute the plan after review.
 
-`apply` is write-disabled unless all three commit guards are present: `--commit`, `--approve-plan <sha256>`, and `--confirm <current-account-email>`. Before the first write it re-checks the whole plan for drift and persists `approval-record.json`. It then executes updates before deletes through the platform dataset command path, correlates the plan and action ids in `p_audit`, and appends one durable record per attempted action to `apply-progress.jsonl`. Each record includes at least the plan SHA-256, operation/action ids, exact table/id/version, actor, start/finish times, before/after SHA-256, result or error, and rollback guidance. `commit-report.json` summarizes the ledger. A failure stops later actions; recorded successful actions are recognized on a safe rerun.
+`apply` is write-disabled unless all three commit guards are present: `--commit`, `--approve-plan <sha256>`, and `--confirm <current-account-email>`. Before the first write it re-checks the whole plan for drift and persists `approval-record.json`. Ordinary draft updates/deletes use their platform paths. The ordered `time` plus `length_time` alias request is sent once to `cmd_dataset_alias_plan_guarded` with `target_visibility=owner_draft`; the CLI has neither a per-dimension fallback nor a 52-write sequential fallback. The RPC locks and validates the complete 52-row/59-exchange closure before both dimensions commit, so a second-dimension failure rolls back the first. It checks actor ownership, state 0, exact payload/timestamp locks and embedded UUID/version, rejects missing or phantom flow/exchange references, and returns one plan summary audit id plus both batch and per-row audit proofs. The CLI writes `alias-plan-progress.jsonl` together with plan-bound per-batch, per-row, and per-exchange ledgers. A lost response or incomplete derived ledger is repaired only by replaying the same whole plan and matching every returned plan and batch proof.
 
-`verify` performs a fresh remote readback rather than trusting the apply report and writes `readback-verify-report.json` in its own output directory.
+`verify` performs a fresh remote readback rather than trusting the apply report and writes `readback-verify-report.json` in its own output directory. For alias plans it also requires both successful batch records, all 52 correlated row records, all 59 unique exchange records, unchanged support snapshots, and exact desired row payloads. It validates the RPC-returned audit ids against the local proof chain; it does not independently query `public.command_audit_log`.
 
 Foundry and skills may prepare the scope, invoke these commands, and retain their artifacts. They must not replace the CLI with direct SQL, service-role access, raw REST mutation, or private Supabase delete/update code.
 

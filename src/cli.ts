@@ -553,7 +553,7 @@ Examples:
   tiangong-lca dataset evidence-search run --input ./evidence-search.request.json --results ./search-results.json --out-dir ./evidence-search
   tiangong-lca dataset references rewrite --input ./rows.jsonl --from flow:<old-id>@<old-version> --to flow:<new-id>@<new-version> --out-dir /abs/path/to/dataset-rewrite
   tiangong-lca dataset maintenance clear-account --out-dir /abs/path/to/account-clear --json
-  tiangong-lca dataset maintenance plan --scope ./maintenance-scope.json --operation redo-import --out-dir /abs/path/to/dataset-maintenance
+  tiangong-lca dataset maintenance plan --scope ./maintenance-scope.json --operation merge-support-aliases --out-dir /abs/path/to/dataset-maintenance
   tiangong-lca lifecyclemodel auto-build --input ./lifecyclemodel-auto-build.request.json --out-dir /abs/path/to/lifecyclemodel-run
   tiangong-lca lifecyclemodel validate-build --run-dir /abs/path/to/lifecyclemodel-run
   tiangong-lca lifecyclemodel publish-build --run-dir /abs/path/to/lifecyclemodel-run
@@ -738,7 +738,7 @@ Examples:
   tiangong-lca dataset references rewrite --input ./rows.jsonl --from flow:<old-id>@<old-version> --to flow:<new-id>@<new-version> --out-dir ./dataset-rewrite --help
   tiangong-lca dataset references refresh-remote --input ./rows.jsonl --out ./rows.refreshed.jsonl --out-dir ./dataset-reference-refresh --help
   tiangong-lca dataset maintenance clear-account --out-dir ./account-clear --json --help
-  tiangong-lca dataset maintenance plan --scope ./maintenance-scope.json --operation redo-import --out-dir ./dataset-maintenance --help
+  tiangong-lca dataset maintenance plan --scope ./maintenance-scope.json --operation merge-support-aliases --out-dir ./dataset-maintenance --help
 `.trim();
 }
 
@@ -768,7 +768,7 @@ Required Artifact Contract:
 Examples:
   tiangong-lca dataset maintenance clear-account --out-dir ./account-clear --json
   tiangong-lca dataset maintenance clear-account --commit --confirm user@example.com --out-dir ./account-clear
-  tiangong-lca dataset maintenance plan --scope ./maintenance-scope.json --operation redo-import --out-dir ./dataset-maintenance
+  tiangong-lca dataset maintenance plan --scope ./maintenance-scope.json --operation merge-support-aliases --out-dir ./dataset-maintenance
   tiangong-lca dataset maintenance apply --plan ./dataset-maintenance/maintenance-plan.json --commit --approve-plan <sha256> --confirm user@example.com
   tiangong-lca dataset maintenance verify --plan ./dataset-maintenance/maintenance-plan.json --out-dir ./dataset-maintenance/verify
 `.trim();
@@ -779,7 +779,7 @@ function renderDatasetMaintenancePlanHelp(): string {
   tiangong-lca dataset maintenance plan --scope <file> --operation <operation> --out-dir <dir> [options]
 
 Operations:
-  delete | retire | redo-import | repair-references
+  delete | retire | redo-import | repair-references | merge-support-aliases
 
 Options:
   --scope <file>       Maintenance scope manifest
@@ -3843,10 +3843,12 @@ function parseDatasetMaintenancePlanFlags(args: string[]): {
   const rawOperation = typeof values.operation === 'string' ? values.operation : null;
   if (
     rawOperation !== null &&
-    !['delete', 'retire', 'redo-import', 'repair-references'].includes(rawOperation)
+    !['delete', 'retire', 'redo-import', 'repair-references', 'merge-support-aliases'].includes(
+      rawOperation,
+    )
   ) {
     throw new CliError(
-      "--operation must be 'delete', 'retire', 'redo-import', or 'repair-references'.",
+      "--operation must be 'delete', 'retire', 'redo-import', 'repair-references', or 'merge-support-aliases'.",
       {
         code: 'DATASET_MAINTENANCE_OPERATION_INVALID',
         exitCode: 2,
