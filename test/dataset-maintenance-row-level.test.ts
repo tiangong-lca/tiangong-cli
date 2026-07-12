@@ -70,6 +70,102 @@ const PASSING_SUPPORT_SCHEMAS = {
   flowproperties: { safeParse: () => ({ success: true as const }) },
 };
 
+function assertExactKeySet(value: JsonObject, expected: readonly string[], label: string): void {
+  assert.deepEqual(
+    Object.keys(value).sort(),
+    [...expected].sort(),
+    `${label} must match the DB #234 JSON allowlist exactly`,
+  );
+}
+
+function assertExactAliasBatchRequestContract(batch: JsonObject): void {
+  assertExactKeySet(
+    batch,
+    [
+      'schema_version',
+      'plan_sha256',
+      'operation_id',
+      'batch_id',
+      'dimension',
+      'factor',
+      'target_visibility',
+      'target',
+      'actions',
+    ],
+    'alias batch',
+  );
+  assert.equal(batch.schema_version, 'dataset-alias-batch.v1');
+  assert.equal(batch.target_visibility, 'owner_draft');
+
+  assert.ok(isJsonObject(batch.target));
+  assertExactKeySet(batch.target, ['flowproperty', 'unitgroup', 'source_unitgroup'], 'target');
+  for (const [name, target] of Object.entries(batch.target)) {
+    assert.ok(isJsonObject(target));
+    assertExactKeySet(
+      target,
+      ['id', 'version', 'expected_modified_at', 'expected_json_ordered'],
+      `target.${name}`,
+    );
+  }
+
+  assert.ok(Array.isArray(batch.actions));
+  for (const [index, action] of batch.actions.entries()) {
+    assert.ok(isJsonObject(action));
+    assertExactKeySet(
+      action,
+      [
+        'action_id',
+        'action',
+        'table',
+        'id',
+        'version',
+        'expected_state_code',
+        'expected_modified_at',
+        'expected_json_ordered',
+        'desired_json_ordered',
+        'mutation',
+      ],
+      `actions[${index}]`,
+    );
+    assert.equal(action.action, 'update_json_ordered');
+    assert.equal(action.expected_state_code, 0);
+    assert.ok(isJsonObject(action.mutation));
+    if (action.table === 'flowproperties') {
+      assertExactKeySet(action.mutation, ['kind'], `actions[${index}].mutation`);
+    } else if (action.table === 'flows') {
+      assertExactKeySet(
+        action.mutation,
+        [
+          'kind',
+          'flow_property_internal_id',
+          'source_flowproperty_id',
+          'source_flowproperty_version',
+        ],
+        `actions[${index}].mutation`,
+      );
+    } else {
+      assert.equal(action.table, 'processes');
+      assertExactKeySet(action.mutation, ['kind', 'exchanges'], `actions[${index}].mutation`);
+      assert.ok(Array.isArray(action.mutation.exchanges));
+      for (const [exchangeIndex, exchange] of action.mutation.exchanges.entries()) {
+        assert.ok(isJsonObject(exchange));
+        assertExactKeySet(
+          exchange,
+          [
+            'index',
+            'internal_id',
+            'flow_id',
+            'flow_version',
+            'direction',
+            'before_exchange_sha256',
+          ],
+          `actions[${index}].mutation.exchanges[${exchangeIndex}]`,
+        );
+      }
+    }
+  }
+}
+
 function jsonResponse(body: unknown, status = 200): ResponseLike {
   return {
     ok: status >= 200 && status < 300,
@@ -641,14 +737,9 @@ class FakeMaintenanceRemote {
       this.rpcBodies.push(body);
       if (rpc === 'cmd_dataset_alias_batch_guarded') {
         const batch = body.p_batch as Record<string, unknown>;
+        assertExactAliasBatchRequestContract(batch);
         const actions = batch.actions as Array<Record<string, unknown>>;
-        assert.equal(batch.target_visibility, 'owner_draft');
-        for (const target of Object.values(batch.target as Record<string, JsonObject>)) {
-          assert.equal(target.expected_user_id, this.userId);
-          assert.equal(target.expected_state_code, 0);
-        }
         for (const action of actions) {
-          assert.equal(action.expected_user_id, this.userId);
           assert.equal(action.expected_state_code, 0);
         }
         const auditKey = JSON.stringify({
@@ -1650,6 +1741,27 @@ test('alias scope parser rejects malformed batches, bindings, and exchange locat
   delete (nonAlias.actions[0] as JsonObject).batch_id;
   (nonAlias.actions[0] as JsonObject).exchange_instances = [];
   assert.throws(() => parseMaintenanceScope(nonAlias));
+});
+
+test('alias batch request serializes exactly the DB #234 allowlist', async () => {
+  const root = mkdtempSync(path.join(os.tmpdir(), 'tg-maintenance-alias-rpc-contract-'));
+  try {
+    const scenario = await prepareAliasScenario(root, 'rpc-contract');
+    for (const batch of scenario.plan.alias_batches!) {
+      const request = applyInternals.buildAliasBatchRequest({
+        plan: scenario.plan,
+        batch,
+        planDir: scenario.outDir,
+      });
+      assertExactAliasBatchRequestContract(request);
+
+      const serialized = stableJsonText(request);
+      assert.equal(serialized.includes('"expected_user_id"'), false);
+      assertExactAliasBatchRequestContract(JSON.parse(serialized) as JsonObject);
+    }
+  } finally {
+    rmSync(root, { recursive: true, force: true });
+  }
 });
 
 test('atomic FP alias batches plan 52 rows, use two guarded RPCs, log 59 exchanges, and verify', async () => {

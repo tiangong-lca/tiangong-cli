@@ -539,8 +539,6 @@ function buildAliasBatchRequest(options: {
     return {
       id: snapshot.id,
       version: snapshot.version,
-      expected_user_id: options.plan.account.user_id,
-      expected_state_code: 0,
       expected_modified_at: snapshot.modified_at!,
       expected_json_ordered: snapshot.json_ordered!,
     };
@@ -553,7 +551,6 @@ function buildAliasBatchRequest(options: {
       table: action.table,
       id: action.id,
       version: action.version,
-      expected_user_id: action.expected_user_id,
       expected_state_code: 0,
       expected_modified_at: action.before!.modified_at!,
       expected_json_ordered: action.before!.json_ordered!,
