@@ -282,7 +282,8 @@ async function invokeMaintenanceRpc(options: {
     | 'cmd_dataset_save_draft'
     | 'cmd_dataset_delete'
     | 'cmd_dataset_publish_guarded'
-    | 'cmd_dataset_support_approve_guarded';
+    | 'cmd_dataset_support_approve_guarded'
+    | 'qry_dataset_publish_guarded_proof';
   body: JsonObject;
 }): Promise<JsonObject> {
   const url = `${options.context.rest_base_url}/rpc/${options.rpc}`;
@@ -385,6 +386,35 @@ export async function publishMaintenanceRow(options: {
   return invokeMaintenanceRpc({
     context: options.context,
     rpc: 'cmd_dataset_publish_guarded',
+    body: {
+      p_table: options.table,
+      p_id: options.id,
+      p_version: options.version,
+      p_expected_modified_at: options.expectedModifiedAt,
+      p_expected_json_ordered: options.expectedPayload,
+      p_audit: options.audit,
+    },
+  });
+}
+
+export async function verifyMaintenancePublishProof(options: {
+  context: DatasetMaintenanceRemoteContext;
+  table: DatasetMaintenancePublishTable;
+  id: string;
+  version: string;
+  expectedModifiedAt: string;
+  expectedPayload: JsonObject;
+  audit: {
+    plan_sha256: string;
+    operation_id: string;
+    action_id: string;
+    approval_audit_id: string;
+    publish_audit_id: string;
+  };
+}): Promise<JsonObject> {
+  return invokeMaintenanceRpc({
+    context: options.context,
+    rpc: 'qry_dataset_publish_guarded_proof',
     body: {
       p_table: options.table,
       p_id: options.id,

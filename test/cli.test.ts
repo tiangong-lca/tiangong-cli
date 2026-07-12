@@ -518,6 +518,7 @@ test('executeCli exposes dataset and lifecyclemodel friction-fix commands', asyn
   );
   assert.equal(datasetMaintenanceVerifyHelp.exitCode, 0);
   assert.match(datasetMaintenanceVerifyHelp.stdout, /readback-verify-report\.json/u);
+  assert.match(datasetMaintenanceVerifyHelp.stdout, /qry_dataset_publish_guarded_proof/u);
 
   let observedClearAccountOptions: unknown = null;
   const clearAccountDeps = makeDeps();

@@ -18,8 +18,8 @@ checkPaths:
   - src/**
   - scripts/**
   - .github/workflows/**
-lastReviewedAt: 2026-07-11
-lastReviewedCommit: 192ce9cb233af85b8bcf50136d37fd08d4ae8292
+lastReviewedAt: 2026-07-12
+lastReviewedCommit: 6ca035564bc2bdc3e1693e991a3035c617bffa25
 related:
   - AGENTS.md
   - .docpact/config.yaml
@@ -44,6 +44,8 @@ Review note, 2026-07-11: `dataset maintenance plan/apply/verify` is now an imple
 Review note, 2026-07-11: maintenance 现新增显式 `publish-support` 操作，只允许把通过 TIDAS schema 与根 id/version 校验的当前账号 draft `unitgroups` / `flowproperties` 发布为 `state_code=100`。执行通过 `cmd_dataset_publish_guarded` 在同一事务内完成行锁、时间戳/payload 前置条件、状态更新和审计写入，并支持基于数据库审计证明的丢失响应重试。
 
 Review note, 2026-07-12: `dataset maintenance approve-support` 现在把独立 review-admin 授权和 owner 自己的 apply 确认分开。reviewer RPC 对每条 frozen action/snapshot 写入不可伪造的数据库审计；apply 只传递该 audit id，本地两个 approval artifact 都不是授权源。
+
+Review note, 2026-07-12: support promotion 的每条 approval audit id 现在必须全局一一对应 action；apply 校验并记录数据库返回的 reviewer UUID/email、publish audit id 与 `idempotent_replay`，verify 再通过只读 `qry_dataset_publish_guarded_proof` 逐 action 核验数据库权威证明。本地 approval/progress/commit artifact 只能做 correlation，不能自行证明发布。
 
 设计原则：
 
@@ -299,7 +301,7 @@ npm exec tiangong-lca -- admin embedding-run --input ./jobs.json --dry-run
 
 ## process / review / publish / validation 边界
 
-`tiangong-lca dataset maintenance plan/approve-support/apply/verify` 是错误导入后 row-level 修复与未来 public support promotion 的 CLI-owned 入口。`plan` 冻结当前 owner 的 RLS 可见快照、保护行、引用影响、desired payload 和 canonical plan SHA-256；普通操作只允许精确 `id + version` 的当前账号 `state_code=0` draft 通过 `cmd_dataset_save_draft` / `cmd_dataset_delete` 执行。显式 `publish-support` 只接受 `unitgroups` / `flowproperties` 的 `publish` action；另一个 review-admin 账号必须先运行 `approve-support`，由 `cmd_dataset_support_approve_guarded` 把 reviewer、owner、exact snapshot 和 plan/action 写入 `command_audit_log`。owner apply 再把每条 approval audit id 传给 `cmd_dataset_publish_guarded`，数据库重新验证批准不可伪造、未过期且属于同一 action 后才发布。`verify` 独立读回 payload、owner/state、保护行、引用闭包和 approval/publish audit correlation。Foundry/skills 只能编排命令，不得实现私有 SQL、service-role 或 raw REST mutation。
+`tiangong-lca dataset maintenance plan/approve-support/apply/verify` 是错误导入后 row-level 修复与未来 public support promotion 的 CLI-owned 入口。`plan` 冻结当前 owner 的 RLS 可见快照、保护行、引用影响、desired payload 和 canonical plan SHA-256；普通操作只允许精确 `id + version` 的当前账号 `state_code=0` draft 通过 `cmd_dataset_save_draft` / `cmd_dataset_delete` 执行。显式 `publish-support` 只接受 `unitgroups` / `flowproperties` 的 `publish` action；另一个 review-admin 账号必须先运行 `approve-support`，由 `cmd_dataset_support_approve_guarded` 把 reviewer、owner、exact snapshot 和 plan/action 写入 `command_audit_log`。owner apply 再把每条唯一 approval audit id 与预期 reviewer UUID/email 传给 `cmd_dataset_publish_guarded`，数据库重新验证批准不可伪造、未过期且属于同一 reviewer/action 后才发布；CLI 只在响应中的 approval/publish audit、reviewer UUID/email 与 replay 决策精确一致时记录成功。`verify` 独立读回 payload、owner/state、保护行、引用闭包，并调用 `qry_dataset_publish_guarded_proof` 取得逐 action 数据库证明。Foundry/skills 只能编排命令，不得实现私有 SQL、service-role 或 raw REST mutation。
 
 `apply` 是 commit-only：必须同时提供 `--commit`、精确 `--approve-plan <sha256>` 和 `--confirm <owner-email>`。`approval-record.json` 仅表示 owner 确认执行；publish-support 还必须读取 `support-approval-record.json`，它只携带数据库 reviewer audit id，不自行授予权限。首写前会做全计划 drift preflight，每条 pending action 在 RPC 前再做 exact read；save/update、support publish、delete 按固定顺序执行，首个失败会停止后续动作，同一计划可从已记录成功项安全续跑。
 

@@ -32,8 +32,8 @@ checkPaths:
   - scripts/docpact
   - scripts/docpact-gate.sh
   - scripts/install-git-hooks.sh
-lastReviewedAt: 2026-07-11
-lastReviewedCommit: 192ce9cb233af85b8bcf50136d37fd08d4ae8292
+lastReviewedAt: 2026-07-12
+lastReviewedCommit: 6ca035564bc2bdc3e1693e991a3035c617bffa25
 related:
   - .docpact/config.yaml
   - docs/agents/repo-validation.md
@@ -62,6 +62,8 @@ Review note, 2026-07-11: `dataset maintenance plan/apply/verify` is now the CLI-
 Review note, 2026-07-11: the maintenance contract now also has an explicit `publish-support` operation limited to schema-valid, root-identity-matching current-owner draft `unitgroups` and `flowproperties`. Apply delegates locked payload/timestamp preconditions, state transition, and audit-proven replay to `cmd_dataset_publish_guarded`; all other support mutations remain protected.
 
 Review note, 2026-07-12: `dataset maintenance approve-support` separates independent review-admin authorization from the dataset owner's apply confirmation. The reviewer RPC records an immutable, exact action/snapshot approval in `command_audit_log`; `apply` passes that audit id to `cmd_dataset_publish_guarded`, and local approval artifacts are correlation handoffs rather than authorization sources.
+
+Review note, 2026-07-12: support-promotion verification now calls `qry_dataset_publish_guarded_proof` for every publish action. Reviewer UUID/email, globally unique approval audit ids, publish audit ids, and replay metadata must agree across the database proof, reviewer handoff, progress ledger, commit report, and fresh target readback.
 
 `publish-support` and `approve-support` are future public-promotion tools. They are not prerequisites for owner-draft cleanup, account-local FP/UG use, or the private-incubation Step 2 workflow.
 
@@ -120,7 +122,7 @@ Route those tasks to:
 - Newly added process-maintenance commands such as `process identity-preflight`, `process build-plan`, `process scope-statistics`, `process dedup-review`, `process refresh-references`, and `process verify-rows` still belong to the native CLI command surface in `src/cli.ts` and `src/lib/process-*.ts` / shared CLI-native helpers.
 - `process save-draft` now has a local `ProcessSchema` validation gate before any commit path writes remote state, and `--target-user-id` is a hard current-session/visible-draft owner guard for account-scoped batch imports.
 - Dataset-level local governance commands such as `dataset validate`, `dataset curation-queue build/next/verify`, and `dataset references rewrite` belong to the same native CLI command surface in `src/cli.ts` and `src/lib/dataset-*.ts`.
-- `dataset maintenance plan/approve-support/apply/verify` owns current-user RLS-scoped row maintenance in `src/lib/dataset-maintenance-{contract,remote,plan,approve-support,apply,verify}.ts`. V1 requires exact `id` + `version`, `state_code=0`, and current-session ownership. Ordinary maintenance can plan `save_draft` / `delete` actions only for `contacts`, `sources`, `flows`, and `processes`; the separate `publish-support` operation requires an independent review-admin audit before it can publish schema-valid exact drafts in `unitgroups` and `flowproperties` through `cmd_dataset_publish_guarded`. `lifecyclemodels`, public rows, non-owner rows, non-draft rows, and every other support-table mutation remain protected.
+- `dataset maintenance plan/approve-support/apply/verify` owns current-user RLS-scoped row maintenance in `src/lib/dataset-maintenance-{contract,remote,plan,approve-support,apply,verify}.ts`. V1 requires exact `id` + `version`, `state_code=0`, and current-session ownership. Ordinary maintenance can plan `save_draft` / `delete` actions only for `contacts`, `sources`, `flows`, and `processes`; the separate `publish-support` operation requires an independent review-admin audit before it can publish schema-valid exact drafts in `unitgroups` and `flowproperties` through `cmd_dataset_publish_guarded`, then proves the exact committed audit with `qry_dataset_publish_guarded_proof`. `lifecyclemodels`, public rows, non-owner rows, non-draft rows, and every other support-table mutation remain protected.
 - `lifecyclemodel save-draft` validates canonical lifecyclemodel payloads with `LifeCycleModelSchema` before any commit path writes remote state; `lifecyclemodel graph` remains a local artifact command.
 - `flow publish-version` validates canonical flow payloads with `FlowSchema` before remote visibility planning or writes, and emits `flow-publish-version-gate-report.json` as the blocking ruleset artifact.
 - `process publish-build` validates canonical process payloads with `ProcessSchema` before publish handoff artifacts are written, and emits `reports/process-publish-schema-gate.json`.
@@ -137,7 +139,7 @@ Route those tasks to:
 - Do not add orchestration frameworks or new npm dependencies without explicit approval
 - Do not publish `@tiangong-lca/cli` from a local workstation for routine releases; local npm auth state is not part of the release contract.
 - Do not implement dataset maintenance through direct SQL, service-role credentials, raw REST mutation, or Foundry-local database code. Foundry and skills may prepare scope and orchestrate the CLI, but the native CLI must own current-user RLS preflight, platform-command mutation, per-action audit logging, and independent readback verification.
-- Do not treat `support-approval-record.json` or the owner's `approval-record.json` as publication authority. Only the exact independent reviewer entry created by `cmd_dataset_support_approve_guarded` and revalidated by `cmd_dataset_publish_guarded` authorizes FP/UG publication.
+- Do not treat `support-approval-record.json`, `apply-progress.jsonl`, `commit-report.json`, or the owner's `approval-record.json` as publication authority. Only the exact independent reviewer entry revalidated by `cmd_dataset_publish_guarded` authorizes FP/UG publication, and only `qry_dataset_publish_guarded_proof` can prove the exact committed publish audit during verification.
 - Do not move business logic into skill wrappers when the native `tiangong-lca` CLI should own it
 - Do not weaken the coverage gate with ignore pragmas; cover the branch or remove dead code
 - Do not treat governed docs as optional when command-surface, validation, or release-gate behavior changes; `docpact` should either require a matching source-doc update or record explicit review evidence.

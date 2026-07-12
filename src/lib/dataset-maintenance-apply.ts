@@ -180,7 +180,9 @@ function progressApprovalMatches(options: {
     auditContext?.approval_audit_id === options.binding.action.approval_audit_id &&
     correlation.reviewer_user_id === options.binding.reviewer.user_id &&
     correlation.reviewer_email === options.binding.reviewer.email &&
-    (options.value.result === 'success' ? publishAuditId !== null : publishAuditId === null)
+    (options.value.result === 'success'
+      ? publishAuditId !== null && typeof correlation.publish_idempotent_replay === 'boolean'
+      : publishAuditId === null && correlation.publish_idempotent_replay === null)
   );
 }
 
@@ -205,14 +207,24 @@ function parseProgress(
       typeof value.action_id !== 'string' ||
       !action ||
       value.action !== action.action ||
+      value.table !== action.table ||
+      value.id !== action.id ||
+      value.version !== action.version ||
       value.reason_code !== action.reason_code ||
-      typeof value.before_sha256 !== 'string' ||
+      value.before_sha256 !== action.before?.row_sha256 ||
+      typeof value.started_at_utc !== 'string' ||
+      typeof value.ended_at_utc !== 'string' ||
+      !isJsonObject(value.actor) ||
+      value.actor.user_id !== plan.account.user_id ||
+      value.actor.email !== plan.account.email ||
       !isJsonObject(value.audit_context) ||
       value.audit_context.plan_sha256 !== plan.plan_sha256 ||
       value.audit_context.operation_id !== plan.operation_id ||
       value.audit_context.action_id !== action.action_id ||
       value.audit_context.reason_code !== action.reason_code ||
       value.audit_context.source !== 'tiangong-lca dataset maintenance apply' ||
+      !isJsonObject(value.rollback) ||
+      sha256Json(value.rollback) !== sha256Json(action.rollback) ||
       !progressApprovalMatches({
         value,
         action,
@@ -456,6 +468,7 @@ function loadSupportApproval(options: {
 function progressApprovalCorrelation(
   binding: SupportApprovalBinding | null,
   publishAuditId: string | null,
+  publishIdempotentReplay: boolean | null,
 ): DatasetMaintenanceProgressApprovalCorrelation | null {
   return binding
     ? {
@@ -463,6 +476,7 @@ function progressApprovalCorrelation(
         reviewer_user_id: binding.reviewer.user_id,
         reviewer_email: binding.reviewer.email,
         publish_audit_id: publishAuditId,
+        publish_idempotent_replay: publishIdempotentReplay,
       }
     : null;
 }
@@ -584,6 +598,8 @@ async function executeAction(options: {
       audit: {
         ...audit,
         approval_audit_id: options.supportApproval.action.approval_audit_id,
+        approval_reviewer_user_id: options.supportApproval.reviewer.user_id,
+        approval_reviewer_email: options.supportApproval.reviewer.email,
       },
     });
     const approvalAuditId = normalizeMaintenanceAuditId(
@@ -594,9 +610,20 @@ async function executeAction(options: {
       remoteResult.audit_id,
       `Publish audit id for ${options.action.action_id}`,
     );
+    if (typeof remoteResult.idempotent_replay !== 'boolean') {
+      throw new CliError(
+        `Publish RPC did not return an idempotent replay decision for ${options.action.action_id}.`,
+        {
+          code: 'DATASET_MAINTENANCE_PUBLISH_REPLAY_CORRELATION_MISSING',
+          exitCode: 1,
+          details: remoteResult,
+        },
+      );
+    }
     if (
       approvalAuditId !== options.supportApproval.action.approval_audit_id ||
-      remoteResult.approval_reviewer_user_id !== options.supportApproval.reviewer.user_id
+      remoteResult.approval_reviewer_user_id !== options.supportApproval.reviewer.user_id ||
+      remoteResult.approval_reviewer_email !== options.supportApproval.reviewer.email
     ) {
       throw new CliError(
         `Publish RPC approval correlation mismatch for ${options.action.action_id}.`,
@@ -636,7 +663,11 @@ async function executeAction(options: {
     return {
       afterSha256: readbackSnapshot.row_sha256,
       remoteResultSha256: sha256Json(remoteResult),
-      supportApproval: progressApprovalCorrelation(options.supportApproval, publishAuditId),
+      supportApproval: progressApprovalCorrelation(
+        options.supportApproval,
+        publishAuditId,
+        remoteResult.idempotent_replay,
+      ),
     };
   }
   const remoteResult = await deleteMaintenanceRow({
@@ -862,7 +893,7 @@ export async function runDatasetMaintenanceApply(
             result: 'failed',
             error: errorMessage(error),
             rollback: action.rollback,
-            support_approval: progressApprovalCorrelation(binding, null),
+            support_approval: progressApprovalCorrelation(binding, null, null),
           };
           appendStableJsonLine(progressPath, entry);
           progress.entries.push(entry);

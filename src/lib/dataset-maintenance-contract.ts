@@ -190,6 +190,7 @@ export type DatasetMaintenanceSupportApprovalAction = {
   operation_id: string;
   approval_audit_id: string;
   reviewer_user_id: string;
+  reviewer_email: string;
   idempotent_replay: boolean;
 };
 
@@ -223,6 +224,7 @@ export type DatasetMaintenanceProgressApprovalCorrelation = {
   reviewer_user_id: string;
   reviewer_email: string;
   publish_audit_id: string | null;
+  publish_idempotent_replay: boolean | null;
 };
 
 export type DatasetMaintenanceProgressEntry = {
@@ -299,9 +301,6 @@ export function sha256Json(value: unknown): string {
 export function normalizeMaintenanceAuditId(value: unknown, label: string): string {
   if (typeof value === 'string' && /^[1-9][0-9]{0,17}$/u.test(value)) {
     return value;
-  }
-  if (typeof value === 'number' && Number.isSafeInteger(value) && value > 0) {
-    return String(value);
   }
   throw new CliError(`${label} must be a positive integer string.`, {
     code: 'DATASET_MAINTENANCE_AUDIT_ID_INVALID',
@@ -894,6 +893,7 @@ export function parseMaintenanceSupportApprovalRecord(
   }
 
   const normalizedActions: DatasetMaintenanceSupportApprovalAction[] = [];
+  const approvalAuditIds = new Set<string>();
   for (const action of plan.actions) {
     const rawAction = actionsById.get(action.action_id);
     if (
@@ -916,6 +916,7 @@ export function parseMaintenanceSupportApprovalRecord(
       rawAction.plan_sha256 !== plan.plan_sha256 ||
       rawAction.operation_id !== plan.operation_id ||
       rawAction.reviewer_user_id !== value.reviewer.user_id ||
+      rawAction.reviewer_email !== value.reviewer.email ||
       typeof rawAction.idempotent_replay !== 'boolean'
     ) {
       throw new CliError(`Support approval does not exactly bind action ${action.action_id}.`, {
@@ -924,6 +925,18 @@ export function parseMaintenanceSupportApprovalRecord(
         details: { action_id: action.action_id },
       });
     }
+    const approvalAuditId = normalizeMaintenanceAuditId(
+      rawAction.approval_audit_id,
+      `Support approval audit id for ${action.action_id}`,
+    );
+    if (approvalAuditIds.has(approvalAuditId)) {
+      throw new CliError('Support approval audit ids must map one-to-one to plan actions.', {
+        code: 'DATASET_MAINTENANCE_SUPPORT_APPROVAL_AUDIT_ID_DUPLICATE',
+        exitCode: 1,
+        details: { action_id: action.action_id, approval_audit_id: approvalAuditId },
+      });
+    }
+    approvalAuditIds.add(approvalAuditId);
     normalizedActions.push({
       ordinal: action.ordinal,
       action_id: action.action_id,
@@ -939,11 +952,9 @@ export function parseMaintenanceSupportApprovalRecord(
       expected_payload_sha256: action.before.payload_sha256,
       plan_sha256: plan.plan_sha256,
       operation_id: plan.operation_id,
-      approval_audit_id: normalizeMaintenanceAuditId(
-        rawAction.approval_audit_id,
-        `Support approval audit id for ${action.action_id}`,
-      ),
+      approval_audit_id: approvalAuditId,
       reviewer_user_id: value.reviewer.user_id,
+      reviewer_email: value.reviewer.email,
       idempotent_replay: rawAction.idempotent_replay,
     });
   }

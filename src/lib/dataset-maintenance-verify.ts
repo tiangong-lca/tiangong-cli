@@ -17,6 +17,7 @@ import {
   snapshotRemoteRow,
   type DatasetMaintenancePlan,
   type DatasetMaintenancePlanAction,
+  type DatasetMaintenanceProgressApprovalCorrelation,
   type DatasetMaintenanceRemoteRow,
   type DatasetMaintenanceSupportApprovalRecord,
   type JsonObject,
@@ -27,6 +28,7 @@ import {
   fetchMaintenanceExactRows,
   normalizeMaintenancePageSize,
   resolveMaintenanceRemoteContext,
+  verifyMaintenancePublishProof,
 } from './dataset-maintenance-remote.js';
 
 export type DatasetMaintenanceVerifyIssue = {
@@ -55,6 +57,7 @@ export type DatasetMaintenanceVerifyReport = {
     protected_checks_passed: number;
     progress_successes: number;
     support_approval_checks_passed: number;
+    database_publish_proof_checks_passed: number;
     dangling_deleted_target_references: number;
     issues: number;
   };
@@ -62,6 +65,15 @@ export type DatasetMaintenanceVerifyReport = {
     action_id: string;
     status: 'passed' | 'failed';
     observed: 'desired_payload' | 'published' | 'absent' | 'mismatch';
+  }>;
+  database_publish_proofs: Array<{
+    action_id: string;
+    status: 'passed' | 'failed';
+    proof_verified: boolean;
+    approval_audit_id: string | null;
+    publish_audit_id: string | null;
+    reviewer_user_id: string | null;
+    reviewer_email: string | null;
   }>;
   issues: DatasetMaintenanceVerifyIssue[];
   artifacts: {
@@ -73,6 +85,35 @@ export type DatasetMaintenanceVerifyReport = {
     report: string;
   };
 };
+
+function normalizeProofTarget(
+  action: DatasetMaintenancePlanAction,
+  value: unknown,
+): DatasetMaintenanceRemoteRow | null {
+  if (
+    !isJsonObject(value) ||
+    value.id !== action.id ||
+    value.version !== action.version ||
+    typeof value.user_id !== 'string' ||
+    typeof value.state_code !== 'number' ||
+    typeof value.modified_at !== 'string' ||
+    !isJsonObject(value.json_ordered)
+  ) {
+    return null;
+  }
+  return {
+    table: action.table,
+    id: value.id,
+    version: value.version,
+    user_id: value.user_id,
+    state_code: value.state_code,
+    modified_at: value.modified_at,
+    json_ordered: value.json_ordered,
+    model_id: typeof value.model_id === 'string' ? value.model_id : null,
+    rule_verification:
+      typeof value.rule_verification === 'boolean' ? value.rule_verification : null,
+  };
+}
 
 export type RunDatasetMaintenanceVerifyOptions = {
   planPath: string;
@@ -222,6 +263,7 @@ export async function runDatasetMaintenanceVerify(
   });
   const currentByKey = new Map(current.rows.map((row) => [maintenanceRowKey(row), row]));
   const actionChecks: DatasetMaintenanceVerifyReport['action_checks'] = [];
+  const observedRowsByActionId = new Map<string, DatasetMaintenanceRemoteRow>();
   for (const action of plan.actions) {
     const exact = await fetchMaintenanceExactRows({
       context,
@@ -245,6 +287,9 @@ export async function runDatasetMaintenanceVerify(
     }
     if (action.action === 'publish') {
       const row = exact.rows.length === 1 ? exact.rows[0] : null;
+      if (row) {
+        observedRowsByActionId.set(action.action_id, row);
+      }
       const snapshot = row ? snapshotRemoteRow(row) : null;
       const passed = Boolean(
         row &&
@@ -385,6 +430,7 @@ export async function runDatasetMaintenanceVerify(
     (supportApprovalRecord?.actions ?? []).map((action) => [action.action_id, action]),
   );
   const successfulActionIds = new Set<string>();
+  const successfulProgressByActionId = new Map<string, JsonObject>();
   let supportApprovalChecksPassed = 0;
   for (const [index, entry] of progress.entries()) {
     const action =
@@ -420,7 +466,10 @@ export async function runDatasetMaintenanceVerify(
             supportApproval.approval_audit_id,
             'Verification approval audit id',
           ) === plannedSupportApproval.approval_audit_id &&
-          (entryResult === 'success' ? publishAuditId !== null : publishAuditId === null) &&
+          (entryResult === 'success'
+            ? publishAuditId !== null &&
+              typeof supportApproval.publish_idempotent_replay === 'boolean'
+            : publishAuditId === null && supportApproval.publish_idempotent_replay === null) &&
           supportApproval.reviewer_user_id === supportApprovalRecord?.reviewer.user_id &&
           supportApproval.reviewer_email === supportApprovalRecord.reviewer.email &&
           auditContext.approval_audit_id === plannedSupportApproval.approval_audit_id;
@@ -474,7 +523,18 @@ export async function runDatasetMaintenanceVerify(
       continue;
     }
     if (isJsonObject(entry) && entry.result === 'success' && action) {
+      if (successfulProgressByActionId.has(action.action_id)) {
+        problems.push(
+          issue(
+            'APPLY_PROGRESS_SUCCESS_DUPLICATE',
+            'Multiple successful apply-progress entries exist for one action.',
+            action,
+          ),
+        );
+        continue;
+      }
       successfulActionIds.add(action.action_id);
+      successfulProgressByActionId.set(action.action_id, entry);
       if (action.action === 'publish' && validSupportApproval) {
         supportApprovalChecksPassed += 1;
       }
@@ -487,13 +547,14 @@ export async function runDatasetMaintenanceVerify(
       );
     }
   }
+  let commitActionsById = new Map<string, JsonObject>();
   if (!existsSync(commitReportPath)) {
     problems.push({ code: 'COMMIT_REPORT_MISSING', message: 'commit-report.json is missing.' });
   } else {
     const commitReport = readJsonFile(commitReportPath, 'Maintenance commit report');
     const commitActions =
       isJsonObject(commitReport) && Array.isArray(commitReport.actions) ? commitReport.actions : [];
-    const commitActionsById = new Map(
+    commitActionsById = new Map(
       commitActions
         .filter(
           (entry): entry is JsonObject =>
@@ -506,19 +567,26 @@ export async function runDatasetMaintenanceVerify(
       commitActionsById.size === plan.actions.length &&
       plan.actions.every((action) => {
         const entry = commitActionsById.get(action.action_id);
+        const progressEntry = successfulProgressByActionId.get(action.action_id);
         return Boolean(
           entry &&
+          progressEntry &&
           entry.action === action.action &&
           entry.table === action.table &&
           entry.id === action.id &&
           entry.version === action.version &&
           entry.status === 'success' &&
           entry.error === null &&
+          sha256Json(entry.support_approval ?? null) ===
+            sha256Json(progressEntry.support_approval ?? null) &&
           (action.action !== 'publish' ||
             (isJsonObject(entry.support_approval) &&
               entry.support_approval.approval_audit_id ===
                 supportApprovalsById.get(action.action_id)?.approval_audit_id &&
-              typeof entry.support_approval.publish_audit_id === 'string')),
+              entry.support_approval.reviewer_user_id === supportApprovalRecord?.reviewer.user_id &&
+              entry.support_approval.reviewer_email === supportApprovalRecord?.reviewer.email &&
+              typeof entry.support_approval.publish_audit_id === 'string' &&
+              typeof entry.support_approval.publish_idempotent_replay === 'boolean')),
         );
       });
     if (
@@ -546,6 +614,148 @@ export async function runDatasetMaintenanceVerify(
     }
   }
 
+  const databasePublishProofs: DatasetMaintenanceVerifyReport['database_publish_proofs'] = [];
+  let databasePublishProofChecksPassed = 0;
+  for (const action of plan.actions.filter((entry) => entry.action === 'publish')) {
+    const approvedAction = supportApprovalsById.get(action.action_id);
+    const progressEntry = successfulProgressByActionId.get(action.action_id);
+    const progressCorrelation =
+      progressEntry && isJsonObject(progressEntry.support_approval)
+        ? (progressEntry.support_approval as DatasetMaintenanceProgressApprovalCorrelation)
+        : null;
+    const commitEntry = commitActionsById.get(action.action_id);
+    const commitCorrelation =
+      commitEntry && isJsonObject(commitEntry.support_approval)
+        ? (commitEntry.support_approval as DatasetMaintenanceProgressApprovalCorrelation)
+        : null;
+    const observedRow = observedRowsByActionId.get(action.action_id);
+    if (
+      !approvedAction ||
+      !supportApprovalRecord ||
+      !progressCorrelation ||
+      !commitCorrelation ||
+      !observedRow ||
+      typeof action.before?.modified_at !== 'string' ||
+      !isJsonObject(action.before.json_ordered) ||
+      progressCorrelation.publish_audit_id === null
+    ) {
+      problems.push(
+        issue(
+          'PUBLISH_DATABASE_PROOF_LOCAL_CORRELATION_MISSING',
+          'A complete local approval/progress/commit correlation is required before database proof verification.',
+          action,
+        ),
+      );
+      databasePublishProofs.push({
+        action_id: action.action_id,
+        status: 'failed',
+        proof_verified: false,
+        approval_audit_id: approvedAction?.approval_audit_id ?? null,
+        publish_audit_id: progressCorrelation?.publish_audit_id ?? null,
+        reviewer_user_id: supportApprovalRecord?.reviewer.user_id ?? null,
+        reviewer_email: supportApprovalRecord?.reviewer.email ?? null,
+      });
+      continue;
+    }
+
+    try {
+      const proofResult = await verifyMaintenancePublishProof({
+        context,
+        table: action.table as 'unitgroups' | 'flowproperties',
+        id: action.id,
+        version: action.version,
+        expectedModifiedAt: action.before.modified_at,
+        expectedPayload: action.before.json_ordered,
+        audit: {
+          plan_sha256: plan.plan_sha256,
+          operation_id: plan.operation_id,
+          action_id: action.action_id,
+          approval_audit_id: approvedAction.approval_audit_id,
+          publish_audit_id: progressCorrelation.publish_audit_id,
+        },
+      });
+      const proofData = isJsonObject(proofResult.data) ? proofResult.data : null;
+      const approvalAuditId = normalizeMaintenanceAuditId(
+        proofData?.approval_audit_id,
+        `Database proof approval audit id for ${action.action_id}`,
+      );
+      const publishAuditId = normalizeMaintenanceAuditId(
+        proofData?.publish_audit_id,
+        `Database proof publish audit id for ${action.action_id}`,
+      );
+      const proofTarget = normalizeProofTarget(action, proofData?.target);
+      const reviewerUserId =
+        typeof proofData?.approval_reviewer_user_id === 'string'
+          ? proofData.approval_reviewer_user_id
+          : null;
+      const reviewerEmail =
+        typeof proofData?.approval_reviewer_email === 'string'
+          ? proofData.approval_reviewer_email
+          : null;
+      const proofMatches =
+        proofData?.proof_verified === true &&
+        approvalAuditId === approvedAction.approval_audit_id &&
+        approvalAuditId === progressCorrelation.approval_audit_id &&
+        approvalAuditId === commitCorrelation.approval_audit_id &&
+        publishAuditId === progressCorrelation.publish_audit_id &&
+        publishAuditId === commitCorrelation.publish_audit_id &&
+        reviewerUserId === supportApprovalRecord.reviewer.user_id &&
+        reviewerUserId === progressCorrelation.reviewer_user_id &&
+        reviewerUserId === commitCorrelation.reviewer_user_id &&
+        reviewerEmail === supportApprovalRecord.reviewer.email &&
+        reviewerEmail === progressCorrelation.reviewer_email &&
+        reviewerEmail === commitCorrelation.reviewer_email &&
+        progressCorrelation.publish_idempotent_replay ===
+          commitCorrelation.publish_idempotent_replay &&
+        proofTarget !== null &&
+        sha256Json(proofTarget) === sha256Json(observedRow);
+      databasePublishProofs.push({
+        action_id: action.action_id,
+        status: proofMatches ? 'passed' : 'failed',
+        proof_verified: proofData?.proof_verified === true,
+        approval_audit_id: approvalAuditId,
+        publish_audit_id: publishAuditId,
+        reviewer_user_id: reviewerUserId,
+        reviewer_email: reviewerEmail,
+      });
+      if (proofMatches) {
+        databasePublishProofChecksPassed += 1;
+      } else {
+        problems.push(
+          issue(
+            'PUBLISH_DATABASE_PROOF_MISMATCH',
+            'Database publish proof does not exactly match the plan, reviewer approval, progress, commit report, and fresh target readback.',
+            action,
+            {
+              approval_audit_id: approvalAuditId,
+              publish_audit_id: publishAuditId,
+              reviewer_user_id: reviewerUserId,
+              reviewer_email: reviewerEmail,
+            },
+          ),
+        );
+      }
+    } catch (error) {
+      databasePublishProofs.push({
+        action_id: action.action_id,
+        status: 'failed',
+        proof_verified: false,
+        approval_audit_id: approvedAction.approval_audit_id,
+        publish_audit_id: progressCorrelation.publish_audit_id,
+        reviewer_user_id: supportApprovalRecord.reviewer.user_id,
+        reviewer_email: supportApprovalRecord.reviewer.email,
+      });
+      problems.push(
+        issue(
+          'PUBLISH_DATABASE_PROOF_FAILED',
+          'Database rejected or could not return the exact guarded-publish proof.',
+          action,
+          String(error),
+        ),
+      );
+    }
+  }
+
   const report: DatasetMaintenanceVerifyReport = {
     schema_version: 1,
     generated_at_utc: (options.now ?? new Date()).toISOString(),
@@ -562,10 +772,12 @@ export async function runDatasetMaintenanceVerify(
       protected_checks_passed: protectedPassed,
       progress_successes: successfulActionIds.size,
       support_approval_checks_passed: supportApprovalChecksPassed,
+      database_publish_proof_checks_passed: databasePublishProofChecksPassed,
       dangling_deleted_target_references: danglingReferences.length,
       issues: problems.length,
     },
     action_checks: actionChecks,
+    database_publish_proofs: databasePublishProofs,
     issues: problems,
     artifacts: {
       plan: planPath,
@@ -584,4 +796,5 @@ export const __testInternals = {
   deletedTargetReferences,
   desiredPayload,
   issue,
+  normalizeProofTarget,
 };

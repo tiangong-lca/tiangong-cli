@@ -759,7 +759,8 @@ Actions:
   verify  Re-fetch affected rows and references, then prove that deleted, updated, skipped, protected, and redone rows match the plan.
 
 Safety:
-  plan and verify are read-only. approve-support writes only immutable reviewer audit entries.
+  plan and verify are read-only. verify proves every support publication through qry_dataset_publish_guarded_proof.
+  approve-support writes only immutable reviewer audit entries.
   apply is commit-only and still requires the owner's exact plan SHA-256 and account email.
   publish-support apply requires both the owner's apply confirmation and a separate reviewer support-approval-record.json; the database audit, not the local file, is authoritative.
 
@@ -836,6 +837,8 @@ Behavior:
   Commit-only. The command rejects dry-run mode, a missing --commit flag, a plan hash mismatch,
   or a confirmation email that does not match the current authenticated owner account. publish-support
   additionally requires a complete independent reviewer artifact whose database audit ids bind one-to-one to the plan.
+  The publish RPC revalidates the artifact's expected reviewer UUID/email before mutation and returns an exact
+  approval/publish audit plus idempotent-replay correlation that is persisted in progress and commit artifacts.
 
 Options:
   --plan <file>          Immutable maintenance-plan.json
@@ -856,6 +859,11 @@ function renderDatasetMaintenanceVerifyHelp(): string {
   return `Usage:
   tiangong-lca dataset maintenance verify --plan <file> [options]
 
+Behavior:
+  Re-fetches every affected row, validates approval/progress/commit correlation, and calls
+  qry_dataset_publish_guarded_proof for each publish action. Only that database proof can establish
+  the exact plan/action, approval audit, reviewer UUID/email, publish audit, and published target.
+
 Options:
   --plan <file>       Immutable maintenance-plan.json
   --out-dir <dir>     Optional verification artifact directory
@@ -865,7 +873,7 @@ Options:
   --json              Print compact JSON
   -h, --help
 
-Outputs include readback-verify-report.json with affected-row and reference checks.
+  Outputs include readback-verify-report.json with affected-row, reference, and database-proof checks.
 `.trim();
 }
 

@@ -40,6 +40,10 @@ function clock(options: RunDatasetMaintenanceApproveSupportOptions): string {
   return (options.now ?? new Date()).toISOString();
 }
 
+function canonicalReviewerEmail(value: string): string {
+  return value.trim().toLowerCase();
+}
+
 function assertApprovablePlan(plan: DatasetMaintenancePlan, approvePlan: string): void {
   if (plan.operation !== 'publish-support') {
     throw new CliError('approve-support accepts only publish-support maintenance plans.', {
@@ -116,6 +120,7 @@ async function approveAction(options: {
       },
     );
   }
+  const reviewerEmail = canonicalReviewerEmail(options.context.account.email);
   const result = await approveMaintenanceSupportRow({
     context: options.context,
     table: options.action.table as DatasetMaintenancePublishTable,
@@ -145,6 +150,7 @@ async function approveAction(options: {
   if (
     responseAuditId !== approvalAuditId ||
     data?.reviewer_user_id !== options.context.account.user_id ||
+    data?.reviewer_email !== reviewerEmail ||
     data?.target_owner_user_id !== options.action.expected_user_id ||
     typeof result.idempotent_replay !== 'boolean' ||
     !target ||
@@ -180,6 +186,7 @@ async function approveAction(options: {
     operation_id: options.plan.operation_id,
     approval_audit_id: approvalAuditId,
     reviewer_user_id: options.context.account.user_id,
+    reviewer_email: reviewerEmail,
     idempotent_replay: result.idempotent_replay,
   };
 }
@@ -194,7 +201,8 @@ function sameDurableApprovals(
     return Boolean(
       prior &&
       prior.approval_audit_id === action.approval_audit_id &&
-      prior.reviewer_user_id === action.reviewer_user_id,
+      prior.reviewer_user_id === action.reviewer_user_id &&
+      prior.reviewer_email === action.reviewer_email,
     );
   });
 }
@@ -231,6 +239,7 @@ export async function runDatasetMaintenanceApproveSupport(
         timeoutMs: options.timeoutMs,
         now: options.now,
       });
+      const reviewerEmail = canonicalReviewerEmail(context.account.email);
       if (options.confirm !== context.account.email) {
         throw new CliError('confirm must exactly match the current authenticated reviewer email.', {
           code: 'DATASET_MAINTENANCE_REVIEWER_CONFIRMATION_REQUIRED',
@@ -246,7 +255,7 @@ export async function runDatasetMaintenanceApproveSupport(
       if (
         existing &&
         (existing.reviewer.user_id !== context.account.user_id ||
-          existing.reviewer.email !== context.account.email)
+          existing.reviewer.email !== reviewerEmail)
       ) {
         throw new CliError('Existing support approval belongs to a different reviewer.', {
           code: 'DATASET_MAINTENANCE_SUPPORT_APPROVAL_REVIEWER_MISMATCH',
@@ -257,6 +266,12 @@ export async function runDatasetMaintenanceApproveSupport(
       const actions: DatasetMaintenanceSupportApprovalAction[] = [];
       for (const action of [...plan.actions].sort((left, right) => left.ordinal - right.ordinal)) {
         actions.push(await approveAction({ action, plan, context }));
+      }
+      if (new Set(actions.map((action) => action.approval_audit_id)).size !== actions.length) {
+        throw new CliError('Approval RPC audit ids must map one-to-one to plan actions.', {
+          code: 'DATASET_MAINTENANCE_SUPPORT_APPROVAL_AUDIT_ID_DUPLICATE',
+          exitCode: 1,
+        });
       }
       if (existing) {
         if (!sameDurableApprovals(existing, actions)) {
@@ -286,7 +301,7 @@ export async function runDatasetMaintenanceApproveSupport(
         },
         reviewer: {
           user_id: context.account.user_id,
-          email: context.account.email,
+          email: reviewerEmail,
         },
         authority: {
           source: 'public.command_audit_log',
@@ -304,6 +319,7 @@ export async function runDatasetMaintenanceApproveSupport(
 export const __testInternals = {
   approveAction,
   assertApprovablePlan,
+  canonicalReviewerEmail,
   clock,
   normalizedTargetRow,
   sameDurableApprovals,
