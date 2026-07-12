@@ -8,11 +8,17 @@ import {
   runDatasetMaintenanceApply,
 } from '../src/lib/dataset-maintenance-apply.js';
 import {
+  __testInternals as approveSupportInternals,
+  runDatasetMaintenanceApproveSupport,
+} from '../src/lib/dataset-maintenance-approve-support.js';
+import {
   appendStableJsonLine,
   computePlanSha256,
   isJsonObject,
   maintenanceRowKey,
+  normalizeMaintenanceAuditId,
   parseMaintenancePlan,
+  parseMaintenanceSupportApprovalRecord,
   parseMaintenanceScope,
   readJsonFile,
   readJsonLinesIfPresent,
@@ -216,15 +222,34 @@ function flowPropertyPayload(id: string, version = '01.00.000'): JsonObject {
 class FakeMaintenanceRemote {
   readonly userId = '11111111-1111-4111-8111-111111111111';
   readonly email = 'owner@example.com';
+  readonly reviewerUserId = '77777777-7777-4777-8777-777777777777';
+  readonly reviewerEmail = 'reviewer@example.com';
   readonly env: NodeJS.ProcessEnv;
   readonly rows = new Map<string, StoredRow[]>();
   readonly rpcOrder: string[] = [];
   readonly rpcBodies: Record<string, unknown>[] = [];
   readonly publishAuditKeys = new Set<string>();
+  readonly approvalAuditIds = new Map<string, string>();
+  readonly publishAuditIds = new Map<string, string>();
+  activeUserId = this.userId;
+  activeEmail = this.email;
   failDeleteOnce = false;
   failPublishResponseAfterCommitOnce = false;
   publishReadbackFailure: 'missing' | 'mismatch' | null = null;
+  approvalResponseReviewerOverride: string | null = null;
+  publishResponseReviewerOverride: string | null = null;
+  forcedApprovalAuditId: string | null = null;
   invalidJson = false;
+
+  useOwner(): void {
+    this.activeUserId = this.userId;
+    this.activeEmail = this.email;
+  }
+
+  useReviewer(): void {
+    this.activeUserId = this.reviewerUserId;
+    this.activeEmail = this.reviewerEmail;
+  }
 
   constructor(label: string) {
     this.env = buildSupabaseTestEnv({
@@ -262,10 +287,10 @@ class FakeMaintenanceRemote {
   readonly fetch: FetchLike = async (input, init) => {
     const textUrl = String(input);
     if (isSupabaseAuthTokenUrl(textUrl)) {
-      return makeSupabaseAuthResponse({ email: this.email, userId: this.userId });
+      return makeSupabaseAuthResponse({ email: this.activeEmail, userId: this.activeUserId });
     }
     if (textUrl.endsWith('/auth/v1/user')) {
-      return jsonResponse({ id: this.userId, email: this.email });
+      return jsonResponse({ id: this.activeUserId, email: this.activeEmail });
     }
     if (this.invalidJson) {
       return {
@@ -292,6 +317,37 @@ class FakeMaintenanceRemote {
       const rowIndex = tableRows.findIndex(
         (row) => row.id === body.p_id && row.version === body.p_version,
       );
+      if (rpc === 'cmd_dataset_support_approve_guarded' && rowIndex >= 0) {
+        const audit = body.p_audit as Record<string, unknown>;
+        const current = tableRows[rowIndex]!;
+        const approvalKey = JSON.stringify({
+          reviewer_user_id: this.activeUserId,
+          table,
+          id: body.p_id,
+          version: body.p_version,
+          expected_modified_at: body.p_expected_modified_at,
+          expected_json_ordered: body.p_expected_json_ordered,
+          plan_sha256: audit.plan_sha256,
+          operation_id: audit.operation_id,
+          action_id: audit.action_id,
+        });
+        const prior = this.approvalAuditIds.get(approvalKey);
+        const approvalAuditId =
+          prior ?? this.forcedApprovalAuditId ?? String(1000 + this.approvalAuditIds.size);
+        this.approvalAuditIds.set(approvalKey, approvalAuditId);
+        return jsonResponse({
+          ok: true,
+          data: {
+            approval_audit_id: approvalAuditId,
+            reviewer_user_id: this.approvalResponseReviewerOverride ?? this.activeUserId,
+            target_owner_user_id: current.user_id,
+            target: current,
+          },
+          audit_id: approvalAuditId,
+          idempotent_replay: Boolean(prior),
+        });
+      }
+      let publishResult: Record<string, unknown> | null = null;
       if (rpc === 'cmd_dataset_delete') {
         if (rowIndex >= 0) {
           tableRows.splice(rowIndex, 1);
@@ -305,6 +361,7 @@ class FakeMaintenanceRemote {
           plan_sha256: audit.plan_sha256,
           operation_id: audit.operation_id,
           action_id: audit.action_id,
+          approval_audit_id: audit.approval_audit_id,
         });
         const current = tableRows[rowIndex]!;
         if (current.state_code === 100) {
@@ -323,10 +380,24 @@ class FakeMaintenanceRemote {
             };
           }
         }
+        const priorPublishAuditId = this.publishAuditIds.get(auditKey);
+        const publishAuditId = priorPublishAuditId ?? String(2000 + this.publishAuditIds.size);
+        this.publishAuditIds.set(auditKey, publishAuditId);
         if (this.failPublishResponseAfterCommitOnce) {
           this.failPublishResponseAfterCommitOnce = false;
           return jsonResponse({ message: 'response lost after commit' }, 500);
         }
+        const approved = [...this.approvalAuditIds.values()].includes(
+          String(audit.approval_audit_id),
+        );
+        publishResult = {
+          ok: approved,
+          audit_id: publishAuditId,
+          approval_audit_id: String(audit.approval_audit_id),
+          approval_reviewer_user_id: this.publishResponseReviewerOverride ?? this.reviewerUserId,
+          idempotent_replay: Boolean(priorPublishAuditId),
+          data: rowIndex >= 0 ? tableRows[rowIndex] : null,
+        };
       } else if (rowIndex >= 0) {
         tableRows[rowIndex] = {
           ...tableRows[rowIndex]!,
@@ -336,11 +407,13 @@ class FakeMaintenanceRemote {
           modified_at: '2026-07-02T00:00:00.000Z',
         };
       }
-      return jsonResponse({
-        ok: true,
-        audit: body.p_audit,
-        data: rowIndex >= 0 ? tableRows[rowIndex] : null,
-      });
+      return jsonResponse(
+        publishResult ?? {
+          ok: true,
+          audit: body.p_audit,
+          data: rowIndex >= 0 ? tableRows[rowIndex] : null,
+        },
+      );
     }
     const table = url.pathname.split('/rest/v1/')[1] ?? '';
     let values = [...(this.rows.get(table) ?? [])];
@@ -354,6 +427,76 @@ class FakeMaintenanceRemote {
     const limit = Number(url.searchParams.get('limit') ?? values.length);
     return jsonResponse(values.slice(offset, offset + limit));
   };
+}
+
+async function approvePublishPlan(options: {
+  remote: FakeMaintenanceRemote;
+  plan: DatasetMaintenancePlan;
+  outDir: string;
+  now?: Date;
+}): Promise<
+  ReturnType<typeof runDatasetMaintenanceApproveSupport> extends Promise<infer T> ? T : never
+> {
+  options.remote.useReviewer();
+  try {
+    return await runDatasetMaintenanceApproveSupport({
+      planPath: path.join(options.outDir, 'maintenance-plan.json'),
+      approvePlan: options.plan.plan_sha256,
+      confirm: options.remote.reviewerEmail,
+      env: options.remote.env,
+      fetchImpl: options.remote.fetch,
+      now: options.now,
+    });
+  } finally {
+    options.remote.useOwner();
+  }
+}
+
+async function buildSinglePublishScenario(options: { root: string; label: string }): Promise<{
+  remote: FakeMaintenanceRemote;
+  outDir: string;
+  plan: DatasetMaintenancePlan;
+  now: Date;
+}> {
+  const remote = new FakeMaintenanceRemote(options.label);
+  const id = 'eeeeeeee-eeee-4eee-8eee-eeeeeeeeeeee';
+  remote.add('unitgroups', id, unitGroupPayload(id));
+  const scopePath = path.join(options.root, `${options.label}-scope.json`);
+  const outDir = path.join(options.root, `${options.label}-maintenance`);
+  writeFileSync(
+    scopePath,
+    JSON.stringify({
+      schema_version: 1,
+      task_id: options.label,
+      operation: 'publish-support',
+      account: { user_id: remote.userId, email: remote.email },
+      actions: [
+        {
+          action_id: 'publish-unitgroup',
+          action: 'publish',
+          table: 'unitgroups',
+          id,
+          version: '01.00.000',
+          expected_user_id: remote.userId,
+          expected_state_code: 0,
+          reason_code: 'PUBLISH_SUPPORT',
+          reason: 'Exercise independent support approval.',
+          evidence: [],
+        },
+      ],
+    }),
+  );
+  const now = new Date('2026-07-11T03:00:00.000Z');
+  const plan = await runDatasetMaintenancePlan({
+    scopePath,
+    operation: 'publish-support',
+    outDir,
+    env: remote.env,
+    fetchImpl: remote.fetch,
+    now,
+    publishSchemas: PASSING_PUBLISH_SCHEMAS,
+  });
+  return { remote, outDir, plan, now };
 }
 
 function buildScopeFiles(options: {
@@ -638,6 +781,19 @@ test('row-level maintenance plans update-first closure, resumes failure, and ver
     assert.equal(verified.summary.action_checks_passed, 2);
     assert.equal(verified.summary.protected_checks_passed, 1);
     assert.equal(verified.summary.dangling_deleted_target_references, 0);
+    const unexpectedSupportApproval = await runDatasetMaintenanceVerify({
+      planPath: path.join(files.outDir, 'maintenance-plan.json'),
+      outDir: path.join(files.outDir, 'verify-unexpected-support-approval'),
+      supportApprovalPath: path.join(files.outDir, 'unexpected-support-approval.json'),
+      env: remote.env,
+      fetchImpl: remote.fetch,
+      now,
+    });
+    assert.equal(unexpectedSupportApproval.status, 'failed');
+    assert.match(
+      unexpectedSupportApproval.issues.map((entry) => entry.code).join(','),
+      /SUPPORT_APPROVAL_UNEXPECTED/u,
+    );
   } finally {
     rmSync(root, { recursive: true, force: true });
   }
@@ -760,6 +916,35 @@ test('support publication plans publish exact FP/UG drafts, resume safely, and v
       /requires a frozen modified_at value/u,
     );
 
+    const supportApproval = await approvePublishPlan({ remote, plan, outDir, now });
+    assert.equal(supportApproval.reviewer.user_id, remote.reviewerUserId);
+    assert.equal(supportApproval.actions.length, 2);
+    assert.equal(supportApproval.authority.local_artifact_is_authority, false);
+    assert.throws(
+      () => parseMaintenanceSupportApprovalRecord({}, plan),
+      /does not match the immutable publish-support plan/u,
+    );
+    const duplicateApproval = structuredClone(supportApproval);
+    duplicateApproval.actions[1]!.action_id = duplicateApproval.actions[0]!.action_id;
+    assert.throws(
+      () => parseMaintenanceSupportApprovalRecord(duplicateApproval, plan),
+      /duplicate or invalid actions/u,
+    );
+    const mismatchedApproval = structuredClone(supportApproval);
+    mismatchedApproval.actions[0]!.expected_payload_sha256 = 'f'.repeat(64);
+    assert.throws(
+      () => parseMaintenanceSupportApprovalRecord(mismatchedApproval, plan),
+      /does not exactly bind action/u,
+    );
+    const numericApproval = structuredClone(supportApproval);
+    (numericApproval.actions[0] as unknown as Record<string, unknown>).approval_audit_id = 123;
+    assert.equal(
+      parseMaintenanceSupportApprovalRecord(numericApproval, plan).actions[0]?.approval_audit_id,
+      '123',
+    );
+    assert.equal(normalizeMaintenanceAuditId(456, 'test audit id'), '456');
+    assert.throws(() => normalizeMaintenanceAuditId(Number.MAX_SAFE_INTEGER + 1, 'test audit id'));
+
     const applied = await runDatasetMaintenanceApply({
       planPath: path.join(outDir, 'maintenance-plan.json'),
       commit: true,
@@ -772,17 +957,20 @@ test('support publication plans publish exact FP/UG drafts, resume safely, and v
     assert.equal(applied.status, 'completed');
     assert.equal(applied.summary.success, 2);
     assert.deepEqual(remote.rpcOrder, [
+      'cmd_dataset_support_approve_guarded',
+      'cmd_dataset_support_approve_guarded',
       'cmd_dataset_publish_guarded',
       'cmd_dataset_publish_guarded',
     ]);
-    assert.equal(remote.rpcBodies[0]?.p_expected_modified_at, '2026-07-01T00:00:00.000Z');
-    assert.deepEqual(remote.rpcBodies[0]?.p_expected_json_ordered, unitGroupPayload(unitGroupId));
-    assert.deepEqual(remote.rpcBodies[0]?.p_audit, {
+    assert.equal(remote.rpcBodies[2]?.p_expected_modified_at, '2026-07-01T00:00:00.000Z');
+    assert.deepEqual(remote.rpcBodies[2]?.p_expected_json_ordered, unitGroupPayload(unitGroupId));
+    assert.deepEqual(remote.rpcBodies[2]?.p_audit, {
       plan_sha256: plan.plan_sha256,
       operation_id: plan.operation_id,
       action_id: 'publish-units-time',
       reason_code: 'FPUG_001_PUBLISH_TARGET',
       source: 'tiangong-lca dataset maintenance apply',
+      approval_audit_id: supportApproval.actions[0]?.approval_audit_id,
     });
     assert.deepEqual(
       ['unitgroups', 'flowproperties'].map((table) => remote.rows.get(table)?.[0]?.state_code),
@@ -803,6 +991,14 @@ test('support publication plans publish exact FP/UG drafts, resume safely, and v
     );
     assert.equal(
       progress.every((entry) => entry.rollback.strategy === 'manual_review_published_state'),
+      true,
+    );
+    assert.equal(
+      progress.every(
+        (entry) =>
+          typeof (entry as { support_approval?: { approval_audit_id?: unknown } }).support_approval
+            ?.approval_audit_id === 'string',
+      ),
       true,
     );
 
@@ -831,6 +1027,8 @@ test('support publication plans publish exact FP/UG drafts, resume safely, and v
     assert.equal(resumed.status, 'completed');
     assert.equal(resumed.summary.resumed_successes, 2);
     assert.deepEqual(remote.rpcOrder, [
+      'cmd_dataset_support_approve_guarded',
+      'cmd_dataset_support_approve_guarded',
       'cmd_dataset_publish_guarded',
       'cmd_dataset_publish_guarded',
     ]);
@@ -861,7 +1059,16 @@ test('support publication plans publish exact FP/UG drafts, resume safely, and v
           plan,
           planDir: outDir,
           currentRows: driftRows.rows,
-          progress: applyInternals.parseProgress(plan, path.join(outDir, 'apply-progress.jsonl')),
+          progress: applyInternals.parseProgress(
+            plan,
+            path.join(outDir, 'apply-progress.jsonl'),
+            new Map(
+              supportApproval.actions.map((action) => [
+                action.action_id,
+                { action, reviewer: supportApproval.reviewer },
+              ]),
+            ),
+          ),
         }),
       /Previously published row drifted/u,
     );
@@ -893,6 +1100,350 @@ test('support publication plans publish exact FP/UG drafts, resume safely, and v
     });
     assert.equal(missing.status, 'failed');
     assert.match(missing.issues.map((entry) => entry.code).join(','), /PUBLISH_READBACK/u);
+
+    const invalidApprovalProgress = structuredClone(
+      readJsonLinesIfPresent(path.join(outDir, 'apply-progress.jsonl'))[0],
+    ) as Record<string, unknown>;
+    (invalidApprovalProgress.support_approval as Record<string, unknown>).publish_audit_id =
+      'invalid';
+    appendStableJsonLine(path.join(outDir, 'apply-progress.jsonl'), invalidApprovalProgress);
+    const invalidProgressVerify = await runDatasetMaintenanceVerify({
+      planPath: path.join(outDir, 'maintenance-plan.json'),
+      outDir: path.join(outDir, 'verify-invalid-approval-progress'),
+      env: remote.env,
+      fetchImpl: remote.fetch,
+      now,
+    });
+    assert.match(
+      invalidProgressVerify.issues.map((entry) => entry.code).join(','),
+      /APPLY_PROGRESS_ENTRY_INVALID/u,
+    );
+  } finally {
+    rmSync(root, { recursive: true, force: true });
+  }
+});
+
+test('support approval requires an independent reviewer and replays immutable audit bindings', async () => {
+  const root = mkdtempSync(path.join(os.tmpdir(), 'tg-maintenance-support-approval-'));
+  try {
+    const { remote, outDir, plan, now } = await buildSinglePublishScenario({
+      root,
+      label: 'support-approval-edges',
+    });
+    const planPath = path.join(outDir, 'maintenance-plan.json');
+    const customApprovalPath = path.join(root, 'handoff', 'support-approval.json');
+
+    assert.throws(
+      () =>
+        approveSupportInternals.assertApprovablePlan(
+          { ...plan, operation: 'delete' },
+          plan.plan_sha256,
+        ),
+      /accepts only publish-support/u,
+    );
+    assert.throws(
+      () => approveSupportInternals.assertApprovablePlan(plan, 'wrong'),
+      /exactly match/u,
+    );
+    assert.throws(
+      () =>
+        approveSupportInternals.assertApprovablePlan(
+          { ...plan, status: 'blocked', blockers: [{ code: 'BLOCKED', message: 'blocked' }] },
+          plan.plan_sha256,
+        ),
+      /ready, publish-only/u,
+    );
+    assert.throws(
+      () =>
+        approveSupportInternals.assertApprovablePlan(
+          {
+            ...plan,
+            actions: [{ ...plan.actions[0]!, action: 'delete' }],
+          },
+          plan.plan_sha256,
+        ),
+      /ready, publish-only/u,
+    );
+    assert.equal(approveSupportInternals.normalizedTargetRow(plan.actions[0]!, null), null);
+    const before = plan.actions[0]!.before!;
+    assert.deepEqual(
+      approveSupportInternals.normalizedTargetRow(plan.actions[0]!, {
+        ...before,
+        model_id: 'model',
+        rule_verification: true,
+      }),
+      {
+        table: plan.actions[0]!.table,
+        id: before.id,
+        version: before.version,
+        user_id: before.user_id,
+        state_code: before.state_code,
+        modified_at: before.modified_at,
+        json_ordered: before.json_ordered,
+        model_id: 'model',
+        rule_verification: true,
+      },
+    );
+    assert.equal(typeof approveSupportInternals.clock({} as never), 'string');
+    await assert.rejects(
+      () =>
+        approveSupportInternals.approveAction({
+          action: { ...plan.actions[0]!, before: null },
+          plan,
+          context: {} as never,
+        }),
+      /missing its frozen snapshot/u,
+    );
+    await assert.rejects(
+      () =>
+        runDatasetMaintenanceApproveSupport({
+          planPath,
+          approvePlan: plan.plan_sha256,
+          confirm: remote.email,
+          outPath: planPath,
+          env: remote.env,
+          fetchImpl: remote.fetch,
+          now,
+        }),
+      /cannot overwrite/u,
+    );
+    await assert.rejects(
+      () =>
+        runDatasetMaintenanceApproveSupport({
+          planPath,
+          approvePlan: plan.plan_sha256,
+          confirm: 'wrong@example.com',
+          outPath: customApprovalPath,
+          env: remote.env,
+          fetchImpl: remote.fetch,
+          now,
+        }),
+      /authenticated reviewer email/u,
+    );
+    await assert.rejects(
+      () =>
+        runDatasetMaintenanceApproveSupport({
+          planPath,
+          approvePlan: plan.plan_sha256,
+          confirm: remote.email,
+          outPath: customApprovalPath,
+          env: remote.env,
+          fetchImpl: remote.fetch,
+          now,
+        }),
+      /cannot approve their own/u,
+    );
+
+    remote.useReviewer();
+    const reviewerContext = await resolveMaintenanceRemoteContext({
+      env: remote.env,
+      fetchImpl: remote.fetch,
+      now,
+    });
+    await assert.rejects(
+      () =>
+        approveSupportInternals.approveAction({
+          action: plan.actions[0]!,
+          plan,
+          context: {
+            ...reviewerContext,
+            fetch_impl: async () =>
+              jsonResponse({ ok: true, data: null, audit_id: '1000', idempotent_replay: false }),
+          },
+        }),
+      /audit id/u,
+    );
+    await assert.rejects(
+      () =>
+        approveSupportInternals.approveAction({
+          action: plan.actions[0]!,
+          plan,
+          context: {
+            ...reviewerContext,
+            fetch_impl: async () =>
+              jsonResponse({
+                ok: true,
+                data: {
+                  approval_audit_id: '1000',
+                  reviewer_user_id: reviewerContext.account.user_id,
+                  target_owner_user_id: plan.account.user_id,
+                  target: null,
+                },
+                audit_id: '1000',
+                idempotent_replay: false,
+              }),
+          },
+        }),
+      /exact reviewer, target, snapshot, and audit binding/u,
+    );
+    remote.approvalResponseReviewerOverride = remote.userId;
+    await assert.rejects(
+      () =>
+        approveSupportInternals.approveAction({
+          action: plan.actions[0]!,
+          plan,
+          context: reviewerContext,
+        }),
+      /exact reviewer, target, snapshot, and audit binding/u,
+    );
+    remote.approvalResponseReviewerOverride = null;
+    remote.approvalAuditIds.clear();
+    const approved = await runDatasetMaintenanceApproveSupport({
+      planPath,
+      approvePlan: plan.plan_sha256,
+      confirm: remote.reviewerEmail,
+      outPath: customApprovalPath,
+      env: remote.env,
+      fetchImpl: remote.fetch,
+      now,
+    });
+    const replayed = await runDatasetMaintenanceApproveSupport({
+      planPath,
+      approvePlan: plan.plan_sha256,
+      confirm: remote.reviewerEmail,
+      outPath: customApprovalPath,
+      env: remote.env,
+      fetchImpl: remote.fetch,
+      now,
+    });
+    assert.deepEqual(replayed, approved);
+
+    remote.activeUserId = '99999999-9999-4999-8999-999999999999';
+    remote.activeEmail = 'other-reviewer@example.com';
+    await assert.rejects(
+      () =>
+        runDatasetMaintenanceApproveSupport({
+          planPath,
+          approvePlan: plan.plan_sha256,
+          confirm: remote.activeEmail,
+          outPath: customApprovalPath,
+          env: remote.env,
+          fetchImpl: remote.fetch,
+          now,
+        }),
+      /different reviewer/u,
+    );
+
+    remote.useReviewer();
+    remote.approvalAuditIds.clear();
+    remote.forcedApprovalAuditId = '9999';
+    await assert.rejects(
+      () =>
+        runDatasetMaintenanceApproveSupport({
+          planPath,
+          approvePlan: plan.plan_sha256,
+          confirm: remote.reviewerEmail,
+          outPath: customApprovalPath,
+          env: remote.env,
+          fetchImpl: remote.fetch,
+          now,
+        }),
+      /replay does not match/u,
+    );
+  } finally {
+    rmSync(root, { recursive: true, force: true });
+  }
+});
+
+test('publish apply and verify reject missing, malformed, or mismatched approval correlation', async () => {
+  const root = mkdtempSync(path.join(os.tmpdir(), 'tg-maintenance-approval-correlation-'));
+  try {
+    const { remote, outDir, plan, now } = await buildSinglePublishScenario({
+      root,
+      label: 'approval-correlation',
+    });
+    const planPath = path.join(outDir, 'maintenance-plan.json');
+    await assert.rejects(
+      () =>
+        runDatasetMaintenanceApply({
+          planPath,
+          commit: true,
+          approvePlan: plan.plan_sha256,
+          confirm: remote.email,
+          env: remote.env,
+          fetchImpl: remote.fetch,
+          now,
+        }),
+      /requires a support approval artifact/u,
+    );
+
+    const missingApprovalVerify = await runDatasetMaintenanceVerify({
+      planPath,
+      outDir: path.join(outDir, 'verify-missing-approval'),
+      env: remote.env,
+      fetchImpl: remote.fetch,
+      now,
+    });
+    assert.match(
+      missingApprovalVerify.issues.map((entry) => entry.code).join(','),
+      /SUPPORT_APPROVAL_RECORD_MISSING/u,
+    );
+
+    const malformedApprovalPath = path.join(root, 'malformed-support-approval.json');
+    writeFileSync(malformedApprovalPath, '{}');
+    const malformedApprovalVerify = await runDatasetMaintenanceVerify({
+      planPath,
+      outDir: path.join(outDir, 'verify-malformed-approval'),
+      supportApprovalPath: malformedApprovalPath,
+      env: remote.env,
+      fetchImpl: remote.fetch,
+      now,
+    });
+    assert.match(
+      malformedApprovalVerify.issues.map((entry) => entry.code).join(','),
+      /SUPPORT_APPROVAL_RECORD_INVALID/u,
+    );
+
+    const approval = await approvePublishPlan({ remote, plan, outDir, now });
+    const loaded = applyInternals.loadSupportApproval({
+      plan,
+      planDir: outDir,
+      supportApprovalPath: path.join(outDir, 'support-approval-record.json'),
+    });
+    const binding = loaded.byActionId.get(plan.actions[0]!.action_id)!;
+    assert.equal(
+      applyInternals.progressApprovalMatches({
+        value: { audit_context: {}, support_approval: null },
+        action: plan.actions[0]!,
+        binding: null,
+      }),
+      false,
+    );
+    assert.equal(
+      applyInternals.progressApprovalMatches({
+        value: {
+          result: 'success',
+          audit_context: { approval_audit_id: binding.action.approval_audit_id },
+          support_approval: {
+            approval_audit_id: 'invalid',
+            reviewer_user_id: approval.reviewer.user_id,
+            reviewer_email: approval.reviewer.email,
+            publish_audit_id: '2000',
+          },
+        },
+        action: plan.actions[0]!,
+        binding,
+      }),
+      false,
+    );
+
+    const context = await resolveMaintenanceRemoteContext({
+      env: remote.env,
+      fetchImpl: remote.fetch,
+      now,
+    });
+    remote.publishResponseReviewerOverride = remote.userId;
+    await assert.rejects(
+      () =>
+        applyInternals.executeAction({
+          action: plan.actions[0]!,
+          plan,
+          planDir: outDir,
+          context,
+          supportApproval: binding,
+        }),
+      /approval correlation mismatch/u,
+    );
   } finally {
     rmSync(root, { recursive: true, force: true });
   }
@@ -947,6 +1498,17 @@ test('support publication apply rejects missing and mismatched immediate readbac
         fetchImpl: remote.fetch,
         now,
       });
+      await assert.rejects(
+        () =>
+          applyInternals.executeAction({
+            action: plan.actions[0]!,
+            plan,
+            planDir: outDir,
+            context,
+          }),
+        /lacks an independent support approval/u,
+      );
+      const supportApproval = await approvePublishPlan({ remote, plan, outDir, now });
       remote.publishReadbackFailure = failure;
       await assert.rejects(
         () =>
@@ -955,6 +1517,10 @@ test('support publication apply rejects missing and mismatched immediate readbac
             plan,
             planDir: outDir,
             context,
+            supportApproval: {
+              action: supportApproval.actions[0]!,
+              reviewer: supportApproval.reviewer,
+            },
           }),
         failure === 'missing' ? /publish readback failed/u : /publish readback mismatch/u,
       );
@@ -1005,6 +1571,7 @@ test('support publication safely replays an audit-proven commit after its respon
       now,
       publishSchemas: PASSING_PUBLISH_SCHEMAS,
     });
+    await approvePublishPlan({ remote, plan, outDir, now });
     remote.failPublishResponseAfterCommitOnce = true;
     const uncertain = await runDatasetMaintenanceApply({
       planPath: path.join(outDir, 'maintenance-plan.json'),
@@ -1031,6 +1598,7 @@ test('support publication safely replays an audit-proven commit after its respon
     assert.equal(recovered.status, 'completed');
     assert.equal(recovered.summary.success, 1);
     assert.deepEqual(remote.rpcOrder, [
+      'cmd_dataset_support_approve_guarded',
       'cmd_dataset_publish_guarded',
       'cmd_dataset_publish_guarded',
     ]);
@@ -1047,7 +1615,7 @@ test('support publication safely replays an audit-proven commit after its respon
       fetchImpl: remote.fetch,
       now,
     });
-    assert.equal(verified.status, 'passed');
+    assert.equal(verified.status, 'passed', JSON.stringify(verified.issues));
   } finally {
     rmSync(root, { recursive: true, force: true });
   }
@@ -1787,6 +2355,23 @@ test('maintenance apply guards reject artifact, preflight, approval, and just-in
     const emptyProgress = applyInternals.parseProgress(plan, path.join(root, 'no-progress.jsonl'));
     const saveAction = plan.actions.find((action) => action.action === 'save_draft')!;
     const deleteAction = plan.actions.find((action) => action.action === 'delete')!;
+    assert.throws(
+      () =>
+        applyInternals.loadSupportApproval({
+          plan,
+          planDir,
+          supportApprovalPath: path.join(root, 'unexpected-support-approval.json'),
+        }),
+      /valid only for publish-support/u,
+    );
+    assert.equal(
+      applyInternals.progressApprovalMatches({
+        value: { audit_context: 'invalid', support_approval: null },
+        action: saveAction,
+        binding: null,
+      }),
+      true,
+    );
 
     assert.equal(applyInternals.clock({ now } as never), now.toISOString());
     assert.equal(typeof applyInternals.clock({} as never), 'string');

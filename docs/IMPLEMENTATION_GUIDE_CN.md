@@ -30,6 +30,8 @@ related:
 
 Review note, 2026-07-11: `dataset maintenance plan/apply/verify` 已实现为 current-user RLS row-level maintenance 契约；scope 冻结、全计划 drift preflight、显式审批、逐 action 日志、平台审计关联与独立 readback verification 都由原生 CLI 持有，`publish-support` 仅扩展 exact draft FP/UG 的既有 RPC 发布路径。
 
+Review note, 2026-07-12: `dataset maintenance approve-support` 已加入独立 review-admin 阶段。owner apply confirmation、reviewer handoff artifact 与数据库授权三者分离；只有 `cmd_dataset_support_approve_guarded` 生成且被 publish RPC 重新验证的 audit row 能授权 FP/UG publication。
+
 ## 1. 目标
 
 `tiangong-lca-cli` 是 TianGong 的统一执行面。
@@ -151,7 +153,7 @@ tiangong-lca
 | `tiangong-lca dataset import-lca convert` | 外部 LCA 包转换入口；调用 `tidas-tools import_lca` 生成 TIDAS/ILCD/conversion report；tidas-tools >= 0.0.28 默认产出每个 process 的依赖子目录（可用 `--no-process-bundles` 关闭、`--process-bundles-dir` 自定义目录），便于后续 entity-level curation |
 | `tiangong-lca dataset references rewrite` | 本地 process / lifecyclemodel rows 的 flow reference rewrite、patch evidence 输出，并可选走 state-aware save-draft commit |
 | `tiangong-lca dataset maintenance clear-account` | 已实现的当前账号 draft 清理入口；先生成当前用户 RLS 可见 snapshot，默认 dry-run，只有显式 `--commit --confirm <当前账号邮箱>` 才按 `lifecyclemodels -> processes -> flows -> sources -> contacts` 顺序执行。普通 dataset rows 通过 `app_dataset_delete` / `cmd_dataset_delete` 删除，读回验证剩余行数；`unitgroups` / `flowproperties` 默认保护不删 |
-| `tiangong-lca dataset maintenance plan/apply/verify` | 已实现的 current-user RLS row-level draft 维护入口。`plan` 冻结 exact `id/version` scope、可见快照、保护行、引用影响、不可变计划与 dry-run；`apply` 要求 plan SHA-256 + 当前账号邮箱显式审批，整计划 drift preflight 通过后按 update-before-delete 顺序调用平台 `save_draft` / `delete` 路径并逐 action 留痕；`verify` 独立重新读取受影响行与引用。V1 只允许 current-user `state_code=0` 的 contacts/sources/flows/processes，其他类型与 public/non-owner/non-draft rows 受保护 |
+| `tiangong-lca dataset maintenance plan/approve-support/apply/verify` | 已实现的 current-user RLS row-level draft 维护与 support promotion 入口。`plan` 冻结 exact scope/snapshot；`approve-support` 仅允许不同 review-admin 为 exact FP/UG publish action 写入数据库审批；owner `apply` 做 drift preflight 并携带逐 action approval audit id；`verify` 独立读取 rows/references 并校验 reviewer/publish correlation。普通维护仍只允许 owner draft contacts/sources/flows/processes，其他 rows 受保护 |
 | `tiangong-lca lifecyclemodel auto-build` | 本地 lifecyclemodel local-run intake、graph 推断、reference process 选择、`json_ordered` artifact 输出 |
 | `tiangong-lca lifecyclemodel validate-build` | 本地 lifecyclemodel build run 校验重跑、per-model 校验报告与 aggregate report 输出 |
 | `tiangong-lca lifecyclemodel publish-build` | 本地 lifecyclemodel publish handoff、publish bundle/request/intent 产出、validation 摘要复用 |
@@ -216,6 +218,7 @@ tiangong-lca
 - `tiangong-lca dataset curation-queue verify` 已可执行
 - `tiangong-lca dataset references rewrite` 已可执行
 - `tiangong-lca dataset maintenance plan` 已可执行
+- `tiangong-lca dataset maintenance approve-support` 已可执行
 - `tiangong-lca dataset maintenance apply` 已可执行
 - `tiangong-lca dataset maintenance verify` 已可执行
 
@@ -272,7 +275,7 @@ tiangong-lca
 - 现有命令族里已经没有残留的 Python / shell validation fallback；其余 review / build / publish CLI 面已经进入可执行状态，未迁移子命令只剩 `auth` / `job` 这类 placeholder surface
 - 这样做的目的不是“假装已完成”，而是先固定命令树，再逐个把 workflow 迁入 TypeScript CLI
 
-### 2.1.1 `dataset maintenance plan/apply/verify` v1 契约
+### 2.1.1 `dataset maintenance plan/approve-support/apply/verify` v1 契约
 
 公开命令面固定为：
 
@@ -285,11 +288,20 @@ tiangong-lca dataset maintenance plan \
   [--timeout-ms <n>] \
   [--json]
 
+tiangong-lca dataset maintenance approve-support \
+  --plan ./dataset-maintenance/maintenance-plan.json \
+  --approve-plan <sha256> \
+  --confirm <reviewer-email> \
+  [--out ./dataset-maintenance/support-approval-record.json] \
+  [--timeout-ms <n>] \
+  [--json]
+
 tiangong-lca dataset maintenance apply \
   --plan ./dataset-maintenance/maintenance-plan.json \
   --commit \
   --approve-plan <sha256> \
-  --confirm <current-account-email> \
+  --confirm <owner-email> \
+  [--support-approval ./dataset-maintenance/support-approval-record.json] \
   [--timeout-ms <n>] \
   [--json]
 
@@ -298,6 +310,7 @@ tiangong-lca dataset maintenance verify \
   [--out-dir ./dataset-maintenance/verify] \
   [--page-size <n>] \
   [--timeout-ms <n>] \
+  [--support-approval ./dataset-maintenance/support-approval-record.json] \
   [--json]
 ```
 
@@ -306,7 +319,7 @@ Scope 与保护规则：
 - 远端读取和写入都使用当前认证用户 session 与数据库 RLS，不接受 target user 覆盖。
 - 每条 scope row 必须给出表、exact `id`、exact `version`、expected owner、expected `state_code=0` 与 operator-authored intended action/reason；`--operation` 只接受 `delete`、`retire`、`redo-import`、`repair-references`、`publish-support`，且不允许只按 broad `state_code=0` 或其他宽过滤器清理。
 - `contacts`、`sources`、`flows`、`processes` 只允许 `save_draft` 与 `delete`；`publish-support` 只允许对 current-user draft 的 `unitgroups`、`flowproperties` 执行 exact `publish`。
-- `publish` 与 `publish-support` 双向强绑定，不能把 `publish` 混入其他 operation，也不能把 `save_draft` / `delete` 混入 `publish-support`。计划阶段先验证 FP/UG TIDAS schema 与 payload root UUID/version；写入仅调用 `cmd_dataset_publish_guarded`，由数据库在行锁内比较 approved `modified_at` 与 `json_ordered`。已是 public 的重试只有在 command audit 能证明同一 plan/operation/action 已提交时才幂等成功。
+- `publish` 与 `publish-support` 双向强绑定。计划阶段先验证 FP/UG TIDAS schema 与 payload root UUID/version；之后必须由不同的 review-admin 调用 `cmd_dataset_support_approve_guarded`，把 exact id/version/owner/modified_at/payload/plan/action 写入不可变 audit。owner apply 只能把对应 audit id 交给 `cmd_dataset_publish_guarded`，数据库重新验证 reviewer 角色与完整绑定后才在行锁内发布。已是 public 的重试还必须有同一 approval 与 publish audit 证明。
 - `lifecyclemodels`、不匹配的 action/table、public/shared、非当前 owner、非 draft、不可见或 exact version 不一致的 rows 一律进入 protected/blocked，不会降级成可执行 action。
 - CLI 只执行人工/上游已经做出的清洗决策，不判断 public canonical、语义重复、引用替代或 redo 内容是否正确。
 
@@ -321,16 +334,20 @@ Scope 与保护规则：
 
 `maintenance-plan.json` 的 canonical SHA-256 是后续审批身份。plan 生成后不得原地编辑；需要变更 scope 或 action 时重新运行 `plan` 并重新审批。
 
-`apply` 的 commit gate 同时要求 `--commit`、`--approve-plan <sha256>` 与 `--confirm <current-account-email>`。执行顺序固定为：
+`approve-support` 输出 `support-approval-record.json`，记录 reviewer id/email、每条 action 的 exact snapshot hash、approval audit id 与 replay 状态。它只是 handoff artifact；数据库 audit 才是授权源，伪造本地 JSON 无法通过 publish RPC。
+
+该命令只服务未来 public promotion；owner-draft 私有清洗、账号内 FP/UG 使用与 Step 2 不依赖 `publish-support` 或 `approve-support`。
+
+`apply` 的 owner commit gate 同时要求 `--commit`、`--approve-plan <sha256>` 与 `--confirm <owner-email>`；publish-support 还要求 reviewer artifact 对计划 action 一一覆盖。执行顺序固定为：
 
 1. 重新认证当前用户并校验账号邮箱。
 2. 对整份计划重新抓取 exact rows 与引用，任何 drift 都在首写前阻断。
-3. 在首写前持久化 `approval-record.json`。
-4. 按 `save_draft`、`publish`、`delete` 的固定顺序执行；所有写入都通过平台 dataset command path，而不是 raw REST mutation。`publish` 日志保留发布前 payload，并明确标记为需要人工审查的回退，因为维护命令不会静默把 public data 降回 draft。
-5. 为每条尝试的 action 向 `apply-progress.jsonl` 追加 durable log，并在平台命令的 `p_audit` 中带入 plan/action correlation id。每行至少记录 `plan_sha256`、`operation_id`、`action_id`、table/id/version、actor、started/finished、`before_sha256`、`after_sha256`、result/error 与 rollback。
+3. 在首写前持久化 owner-only `approval-record.json`，明确标记为 execution confirmation，不把它当 reviewer 授权。
+4. 对 publish action 校验 reviewer artifact 一一覆盖并把 `approval_audit_id` 传给数据库；按 `save_draft`、`publish`、`delete` 的固定顺序执行。
+5. 为每条尝试向 `apply-progress.jsonl` 追加 durable log；publish 行额外记录 approval audit id、reviewer id/email 和数据库返回的 publish audit id。
 6. 任一 action 失败即停止后续动作并写出 `commit-report.json`；已成功 action 保留在日志中，重跑时据此识别已完成状态，避免盲目重复写入。
 
-`verify` 必须启动独立 remote readback，重新读取受影响 rows 和 references，并写出 `readback-verify-report.json`；它不能把 apply report 当作数据库事实。
+`verify` 必须启动独立 remote readback，重新读取受影响 rows/references，并校验 support approval artifact、progress ledger 与 commit report 中的 reviewer/action/audit correlation；它不能把 apply report 或本地 artifact 当作数据库授权事实。
 
 安全边界是强约束：不允许 direct SQL、service-role credential、raw REST mutation 或 Foundry 私有 DB maintenance 代码。Foundry 和 skills 只能准备 scope、编排 CLI、保存 task ledger 与上述 artifacts。
 

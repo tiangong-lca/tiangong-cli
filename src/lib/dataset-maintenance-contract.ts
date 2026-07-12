@@ -170,6 +170,61 @@ export type DatasetMaintenancePlan = {
   blockers: DatasetMaintenanceBlocker[];
 };
 
+export const DATASET_MAINTENANCE_SUPPORT_APPROVAL_SCHEMA =
+  'tiangong-lca.dataset-maintenance.support-approval.v1' as const;
+
+export type DatasetMaintenanceSupportApprovalAction = {
+  ordinal: number;
+  action_id: string;
+  action: 'publish';
+  table: DatasetMaintenancePublishTable;
+  id: string;
+  version: string;
+  reason_code: string;
+  expected_user_id: string;
+  expected_state_code: 0;
+  expected_modified_at: string;
+  expected_before_sha256: string;
+  expected_payload_sha256: string;
+  plan_sha256: string;
+  operation_id: string;
+  approval_audit_id: string;
+  reviewer_user_id: string;
+  idempotent_replay: boolean;
+};
+
+export type DatasetMaintenanceSupportApprovalRecord = {
+  schema: typeof DATASET_MAINTENANCE_SUPPORT_APPROVAL_SCHEMA;
+  schema_version: 1;
+  approved_at_utc: string;
+  plan_path: string;
+  plan_sha256: string;
+  task_id: string;
+  operation: 'publish-support';
+  operation_id: string;
+  target_owner: {
+    user_id: string;
+    email: string | null;
+  };
+  reviewer: {
+    user_id: string;
+    email: string;
+  };
+  authority: {
+    source: 'public.command_audit_log';
+    rpc: 'cmd_dataset_support_approve_guarded';
+    local_artifact_is_authority: false;
+  };
+  actions: DatasetMaintenanceSupportApprovalAction[];
+};
+
+export type DatasetMaintenanceProgressApprovalCorrelation = {
+  approval_audit_id: string;
+  reviewer_user_id: string;
+  reviewer_email: string;
+  publish_audit_id: string | null;
+};
+
 export type DatasetMaintenanceProgressEntry = {
   schema_version: 1;
   plan_sha256: string;
@@ -186,6 +241,7 @@ export type DatasetMaintenanceProgressEntry = {
     action_id: string;
     reason_code: string;
     source: 'tiangong-lca dataset maintenance apply';
+    approval_audit_id?: string;
   };
   actor: {
     user_id: string;
@@ -199,6 +255,7 @@ export type DatasetMaintenanceProgressEntry = {
   result: 'success' | 'failed';
   error: string | null;
   rollback: DatasetMaintenancePlanAction['rollback'];
+  support_approval?: DatasetMaintenanceProgressApprovalCorrelation | null;
 };
 
 function token(value: unknown): string | null {
@@ -237,6 +294,20 @@ export function sha256Text(value: string): string {
 
 export function sha256Json(value: unknown): string {
   return sha256Text(stableJsonText(value));
+}
+
+export function normalizeMaintenanceAuditId(value: unknown, label: string): string {
+  if (typeof value === 'string' && /^[1-9][0-9]{0,17}$/u.test(value)) {
+    return value;
+  }
+  if (typeof value === 'number' && Number.isSafeInteger(value) && value > 0) {
+    return String(value);
+  }
+  throw new CliError(`${label} must be a positive integer string.`, {
+    code: 'DATASET_MAINTENANCE_AUDIT_ID_INVALID',
+    exitCode: 1,
+    details: value,
+  });
 }
 
 export function snapshotRemoteRow(row: DatasetMaintenanceRemoteRow): DatasetMaintenanceRowSnapshot {
@@ -762,4 +833,143 @@ export function parseMaintenancePlan(value: unknown): DatasetMaintenancePlan {
     });
   }
   return plan;
+}
+
+export function parseMaintenanceSupportApprovalRecord(
+  value: unknown,
+  plan: DatasetMaintenancePlan,
+): DatasetMaintenanceSupportApprovalRecord {
+  if (
+    !isJsonObject(value) ||
+    value.schema !== DATASET_MAINTENANCE_SUPPORT_APPROVAL_SCHEMA ||
+    value.schema_version !== 1 ||
+    value.operation !== 'publish-support' ||
+    plan.operation !== 'publish-support' ||
+    value.plan_sha256 !== plan.plan_sha256 ||
+    value.task_id !== plan.task_id ||
+    value.operation_id !== plan.operation_id ||
+    typeof value.approved_at_utc !== 'string' ||
+    !value.approved_at_utc.trim() ||
+    typeof value.plan_path !== 'string' ||
+    !value.plan_path.trim() ||
+    !isJsonObject(value.target_owner) ||
+    value.target_owner.user_id !== plan.account.user_id ||
+    value.target_owner.email !== plan.account.email ||
+    !isJsonObject(value.reviewer) ||
+    typeof value.reviewer.user_id !== 'string' ||
+    !value.reviewer.user_id.trim() ||
+    typeof value.reviewer.email !== 'string' ||
+    !value.reviewer.email.trim() ||
+    value.reviewer.user_id === plan.account.user_id ||
+    !isJsonObject(value.authority) ||
+    value.authority.source !== 'public.command_audit_log' ||
+    value.authority.rpc !== 'cmd_dataset_support_approve_guarded' ||
+    value.authority.local_artifact_is_authority !== false ||
+    !Array.isArray(value.actions) ||
+    value.actions.length !== plan.actions.length
+  ) {
+    throw new CliError(
+      'Support approval record does not match the immutable publish-support plan.',
+      {
+        code: 'DATASET_MAINTENANCE_SUPPORT_APPROVAL_INVALID',
+        exitCode: 1,
+      },
+    );
+  }
+
+  const rawActions = value.actions;
+  const actionsById = new Map<string, JsonObject>();
+  for (const rawAction of rawActions) {
+    if (
+      !isJsonObject(rawAction) ||
+      typeof rawAction.action_id !== 'string' ||
+      actionsById.has(rawAction.action_id)
+    ) {
+      throw new CliError('Support approval record has duplicate or invalid actions.', {
+        code: 'DATASET_MAINTENANCE_SUPPORT_APPROVAL_INVALID',
+        exitCode: 1,
+      });
+    }
+    actionsById.set(rawAction.action_id, rawAction);
+  }
+
+  const normalizedActions: DatasetMaintenanceSupportApprovalAction[] = [];
+  for (const action of plan.actions) {
+    const rawAction = actionsById.get(action.action_id);
+    if (
+      action.action !== 'publish' ||
+      !action.before ||
+      typeof action.before.modified_at !== 'string' ||
+      typeof action.before.payload_sha256 !== 'string' ||
+      !rawAction ||
+      rawAction.ordinal !== action.ordinal ||
+      rawAction.action !== action.action ||
+      rawAction.table !== action.table ||
+      rawAction.id !== action.id ||
+      rawAction.version !== action.version ||
+      rawAction.reason_code !== action.reason_code ||
+      rawAction.expected_user_id !== action.expected_user_id ||
+      rawAction.expected_state_code !== 0 ||
+      rawAction.expected_modified_at !== action.before.modified_at ||
+      rawAction.expected_before_sha256 !== action.before.row_sha256 ||
+      rawAction.expected_payload_sha256 !== action.before.payload_sha256 ||
+      rawAction.plan_sha256 !== plan.plan_sha256 ||
+      rawAction.operation_id !== plan.operation_id ||
+      rawAction.reviewer_user_id !== value.reviewer.user_id ||
+      typeof rawAction.idempotent_replay !== 'boolean'
+    ) {
+      throw new CliError(`Support approval does not exactly bind action ${action.action_id}.`, {
+        code: 'DATASET_MAINTENANCE_SUPPORT_APPROVAL_ACTION_MISMATCH',
+        exitCode: 1,
+        details: { action_id: action.action_id },
+      });
+    }
+    normalizedActions.push({
+      ordinal: action.ordinal,
+      action_id: action.action_id,
+      action: 'publish',
+      table: action.table as DatasetMaintenancePublishTable,
+      id: action.id,
+      version: action.version,
+      reason_code: action.reason_code,
+      expected_user_id: action.expected_user_id,
+      expected_state_code: 0,
+      expected_modified_at: action.before.modified_at,
+      expected_before_sha256: action.before.row_sha256,
+      expected_payload_sha256: action.before.payload_sha256,
+      plan_sha256: plan.plan_sha256,
+      operation_id: plan.operation_id,
+      approval_audit_id: normalizeMaintenanceAuditId(
+        rawAction.approval_audit_id,
+        `Support approval audit id for ${action.action_id}`,
+      ),
+      reviewer_user_id: value.reviewer.user_id,
+      idempotent_replay: rawAction.idempotent_replay,
+    });
+  }
+
+  return {
+    schema: DATASET_MAINTENANCE_SUPPORT_APPROVAL_SCHEMA,
+    schema_version: 1,
+    approved_at_utc: value.approved_at_utc,
+    plan_path: value.plan_path,
+    plan_sha256: plan.plan_sha256,
+    task_id: plan.task_id,
+    operation: 'publish-support',
+    operation_id: plan.operation_id,
+    target_owner: {
+      user_id: plan.account.user_id,
+      email: plan.account.email,
+    },
+    reviewer: {
+      user_id: value.reviewer.user_id,
+      email: value.reviewer.email,
+    },
+    authority: {
+      source: 'public.command_audit_log',
+      rpc: 'cmd_dataset_support_approve_guarded',
+      local_artifact_is_authority: false,
+    },
+    actions: normalizedActions,
+  };
 }

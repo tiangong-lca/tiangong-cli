@@ -76,6 +76,8 @@ Review note, 2026-07-11: `dataset maintenance plan/apply/verify` adds focused pr
 
 Review note, 2026-07-11: `publish-support` validation additionally proves operation/action/table binding, FP/UG schema and root identity, exact draft owner/version eligibility, guarded-RPC compare-and-publish, audit-proven retry after a lost response/log, payload-preserving `state_code=100` readback, and rejection of mixed save/delete or unsupported publish targets.
 
+Review note, 2026-07-12: publish-support proof now also requires a different review-admin actor, exact reviewer audit binding for every action/snapshot, owner/reviewer artifact separation, rejection of missing/tampered/mixed approvals, publish RPC correlation readback, and idempotent reviewer/publisher replay.
+
 ## Validation Matrix
 
 | Change type | Minimum local proof | Additional proof when risk is higher | Notes |

@@ -54,6 +54,8 @@ Review note, 2026-07-11: row-level dataset maintenance is implemented in the nat
 
 Review note, 2026-07-11: the same maintenance modules now support a deliberately narrow `publish-support` operation. It permits only schema-valid, identity-matching current-owner draft `unitgroups` and `flowproperties`, delegates atomic compare-and-publish plus audit-proven retry to `cmd_dataset_publish_guarded`, and keeps approval, append-only logs, resume checks, and state-100 readback within the existing plan/apply/verify boundary.
 
+Review note, 2026-07-12: `dataset-maintenance-approve-support.ts` adds an independent reviewer phase without adding a new transport layer. Reviewer authorization is written by `cmd_dataset_support_approve_guarded`; apply and verify carry its exact audit correlation, while the owner's local confirmation remains a distinct non-authoritative artifact.
+
 ## Stable Path Map
 
 | Path group | Role |
@@ -141,7 +143,7 @@ Dataset-local governance now uses the same CLI-native command layer:
 - `src/lib/dataset-curation-queue.ts`
 - `src/lib/dataset-references-rewrite.ts`
 - `src/lib/dataset-maintenance-clear-account.ts`
-- `src/lib/dataset-maintenance-{contract,remote,plan,apply,verify}.ts`
+- `src/lib/dataset-maintenance-{contract,remote,plan,approve-support,apply,verify}.ts`
 - `src/lib/dataset-local.ts`
 - `src/lib/lifecyclemodel-save-draft-run.ts`
 - `src/lib/lifecyclemodel-graph.ts`
@@ -153,7 +155,8 @@ The row-level maintenance family is deliberately split by responsibility:
 - `contract` owns the versioned scope, immutable plan, action, approval, and report shapes.
 - `remote` owns current-session authentication, current-user RLS reads, exact `id` + `version` row lookup, reference-impact reads, platform `save_draft` / `delete` command execution, and audit correlation.
 - `plan` freezes `maintenance-scope.json`, `rls-visible-snapshot.json`, `protected-rows.jsonl`, `reference-impact-report.json`, `maintenance-plan.json`, and `dry-run-report.json` before any write.
-- `apply` re-runs a full-plan drift preflight, verifies `--approve-plan <sha256>` and `--confirm <email>`, persists approval before the first write, appends one durable `apply-progress.jsonl` record per action, executes updates before deletes, and stops on the first failure so a rerun can resume from the recorded outcomes. Each ledger row carries at least the plan SHA-256, operation/action ids, exact entity ref, actor, start/finish times, before/after SHA-256, result/error, and rollback guidance.
+- `approve-support` authenticates a reviewer distinct from the owner and calls the review-admin-only RPC for each exact publish action, emitting `support-approval-record.json` as a non-authoritative handoff for the immutable database audit ids.
+- `apply` re-runs a full-plan drift preflight, verifies the owner's `--approve-plan <sha256>` and `--confirm <email>`, persists an owner-only execution confirmation before the first write, and requires one exact reviewer audit id per publish action. It appends reviewer and publish audit correlation to `apply-progress.jsonl`, executes updates before deletes, and stops on the first failure so a rerun can resume from recorded outcomes.
 - `verify` performs a fresh readback independently of apply and writes `readback-verify-report.json`.
 
 V1 only permits current-user, `state_code=0`, exact-version `contacts`, `sources`, `flows`, and `processes` to become `save_draft` or `delete` actions. `lifecyclemodels`, `unitgroups`, `flowproperties`, public/shared rows, rows owned by another account, and non-draft rows stay protected. The CLI records the operator-supplied maintenance operation but does not make semantic cleanup or canonicalization decisions.

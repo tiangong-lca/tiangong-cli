@@ -7,7 +7,9 @@ import type { FetchLike } from './http.js';
 import {
   isJsonObject,
   maintenanceRowKey,
+  normalizeMaintenanceAuditId,
   parseMaintenancePlan,
+  parseMaintenanceSupportApprovalRecord,
   readJsonFile,
   readJsonLinesIfPresent,
   resolveMaintenancePlanArtifactPath,
@@ -16,6 +18,7 @@ import {
   type DatasetMaintenancePlan,
   type DatasetMaintenancePlanAction,
   type DatasetMaintenanceRemoteRow,
+  type DatasetMaintenanceSupportApprovalRecord,
   type JsonObject,
 } from './dataset-maintenance-contract.js';
 import { maintenanceProjectedReferenceFingerprint } from './dataset-maintenance-plan.js';
@@ -51,6 +54,7 @@ export type DatasetMaintenanceVerifyReport = {
     protected_rows: number;
     protected_checks_passed: number;
     progress_successes: number;
+    support_approval_checks_passed: number;
     dangling_deleted_target_references: number;
     issues: number;
   };
@@ -63,6 +67,7 @@ export type DatasetMaintenanceVerifyReport = {
   artifacts: {
     plan: string;
     approval_record: string;
+    support_approval_record: string | null;
     apply_progress: string;
     commit_report: string;
     report: string;
@@ -74,6 +79,7 @@ export type RunDatasetMaintenanceVerifyOptions = {
   outDir?: string;
   pageSize?: number;
   timeoutMs?: number;
+  supportApprovalPath?: string;
   env: NodeJS.ProcessEnv;
   fetchImpl: FetchLike;
   now?: Date;
@@ -157,10 +163,16 @@ export async function runDatasetMaintenanceVerify(
   const outDir = path.resolve(options.outDir ?? path.join(planDir, 'verify'));
   const reportPath = path.join(outDir, 'readback-verify-report.json');
   const approvalRecordPath = path.join(planDir, 'approval-record.json');
+  const plan = parseMaintenancePlan(readJsonFile(planPath, 'Maintenance plan'));
+  const supportApprovalRecordPath =
+    plan.operation === 'publish-support'
+      ? path.resolve(
+          options.supportApprovalPath ?? path.join(planDir, 'support-approval-record.json'),
+        )
+      : null;
   const progressPath = path.join(planDir, 'apply-progress.jsonl');
   const commitReportPath = path.join(planDir, 'commit-report.json');
   const pageSize = normalizeMaintenancePageSize(options.pageSize);
-  const plan = parseMaintenancePlan(readJsonFile(planPath, 'Maintenance plan'));
   const context = await resolveMaintenanceRemoteContext({
     env: options.env,
     fetchImpl: options.fetchImpl,
@@ -178,6 +190,31 @@ export async function runDatasetMaintenanceVerify(
   }
 
   const problems: DatasetMaintenanceVerifyIssue[] = [];
+  let supportApprovalRecord: DatasetMaintenanceSupportApprovalRecord | null = null;
+  if (plan.operation !== 'publish-support' && options.supportApprovalPath) {
+    problems.push({
+      code: 'SUPPORT_APPROVAL_UNEXPECTED',
+      message: '--support-approval is valid only for publish-support plans.',
+    });
+  } else if (supportApprovalRecordPath && !existsSync(supportApprovalRecordPath)) {
+    problems.push({
+      code: 'SUPPORT_APPROVAL_RECORD_MISSING',
+      message: 'support-approval-record.json is missing.',
+    });
+  } else if (supportApprovalRecordPath) {
+    try {
+      supportApprovalRecord = parseMaintenanceSupportApprovalRecord(
+        readJsonFile(supportApprovalRecordPath, 'Support approval record'),
+        plan,
+      );
+    } catch (error) {
+      problems.push({
+        code: 'SUPPORT_APPROVAL_RECORD_INVALID',
+        message: 'support-approval-record.json does not exactly match the immutable plan.',
+        details: String(error),
+      });
+    }
+  }
   const current = await fetchMaintenanceAccountRows({
     context,
     userId: plan.account.user_id,
@@ -330,6 +367,8 @@ export async function runDatasetMaintenanceVerify(
       approvalRecord.account.user_id !== plan.account.user_id ||
       approvalRecord.account.email !== plan.account.email ||
       approvalRecord.confirmed_email !== plan.account.email ||
+      approvalRecord.approval_kind !== 'owner_apply_confirmation' ||
+      approvalRecord.authority !== 'operator_confirmation_only' ||
       !isJsonObject(approvalRecord.row_counts) ||
       sha256Json(approvalRecord.row_counts) !== sha256Json(plan.summary)
     ) {
@@ -342,12 +381,53 @@ export async function runDatasetMaintenanceVerify(
 
   const progress = readJsonLinesIfPresent(progressPath);
   const actionsById = new Map(plan.actions.map((action) => [action.action_id, action]));
+  const supportApprovalsById = new Map(
+    (supportApprovalRecord?.actions ?? []).map((action) => [action.action_id, action]),
+  );
   const successfulActionIds = new Set<string>();
+  let supportApprovalChecksPassed = 0;
   for (const [index, entry] of progress.entries()) {
     const action =
       isJsonObject(entry) && typeof entry.action_id === 'string'
         ? actionsById.get(entry.action_id)
         : null;
+    const supportApproval =
+      isJsonObject(entry) && isJsonObject(entry.support_approval) ? entry.support_approval : null;
+    const auditContext =
+      isJsonObject(entry) && isJsonObject(entry.audit_context) ? entry.audit_context : null;
+    const entryResult = isJsonObject(entry) ? entry.result : null;
+    const plannedSupportApproval = action
+      ? (supportApprovalsById.get(action.action_id) ?? null)
+      : null;
+    let validSupportApproval = action?.action !== 'publish';
+    if (
+      action?.action === 'publish' &&
+      plannedSupportApproval &&
+      supportApproval &&
+      supportApprovalRecord &&
+      auditContext
+    ) {
+      try {
+        const publishAuditId =
+          supportApproval.publish_audit_id === null
+            ? null
+            : normalizeMaintenanceAuditId(
+                supportApproval.publish_audit_id,
+                'Verification publish audit id',
+              );
+        validSupportApproval =
+          normalizeMaintenanceAuditId(
+            supportApproval.approval_audit_id,
+            'Verification approval audit id',
+          ) === plannedSupportApproval.approval_audit_id &&
+          (entryResult === 'success' ? publishAuditId !== null : publishAuditId === null) &&
+          supportApproval.reviewer_user_id === supportApprovalRecord?.reviewer.user_id &&
+          supportApproval.reviewer_email === supportApprovalRecord.reviewer.email &&
+          auditContext.approval_audit_id === plannedSupportApproval.approval_audit_id;
+      } catch {
+        validSupportApproval = false;
+      }
+    }
     const valid = Boolean(
       isJsonObject(entry) &&
       entry.schema_version === 1 &&
@@ -373,6 +453,7 @@ export async function runDatasetMaintenanceVerify(
       entry.audit_context.source === 'tiangong-lca dataset maintenance apply' &&
       isJsonObject(entry.rollback) &&
       sha256Json(entry.rollback) === sha256Json(action.rollback) &&
+      validSupportApproval &&
       (entry.result === 'success' || entry.result === 'failed') &&
       (entry.result === 'success'
         ? typeof entry.remote_result_sha256 === 'string' &&
@@ -394,6 +475,9 @@ export async function runDatasetMaintenanceVerify(
     }
     if (isJsonObject(entry) && entry.result === 'success' && action) {
       successfulActionIds.add(action.action_id);
+      if (action.action === 'publish' && validSupportApproval) {
+        supportApprovalChecksPassed += 1;
+      }
     }
   }
   for (const action of plan.actions) {
@@ -429,7 +513,12 @@ export async function runDatasetMaintenanceVerify(
           entry.id === action.id &&
           entry.version === action.version &&
           entry.status === 'success' &&
-          entry.error === null,
+          entry.error === null &&
+          (action.action !== 'publish' ||
+            (isJsonObject(entry.support_approval) &&
+              entry.support_approval.approval_audit_id ===
+                supportApprovalsById.get(action.action_id)?.approval_audit_id &&
+              typeof entry.support_approval.publish_audit_id === 'string')),
         );
       });
     if (
@@ -472,6 +561,7 @@ export async function runDatasetMaintenanceVerify(
       protected_rows: plan.protected_rows.length,
       protected_checks_passed: protectedPassed,
       progress_successes: successfulActionIds.size,
+      support_approval_checks_passed: supportApprovalChecksPassed,
       dangling_deleted_target_references: danglingReferences.length,
       issues: problems.length,
     },
@@ -480,6 +570,7 @@ export async function runDatasetMaintenanceVerify(
     artifacts: {
       plan: planPath,
       approval_record: approvalRecordPath,
+      support_approval_record: supportApprovalRecordPath,
       apply_progress: progressPath,
       commit_report: commitReportPath,
       report: reportPath,
