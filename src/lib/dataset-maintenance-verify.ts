@@ -52,6 +52,7 @@ export type DatasetMaintenanceVerifyReport = {
     protected_rows: number;
     protected_checks_passed: number;
     progress_successes: number;
+    atomic_plan_proofs?: number;
     atomic_batches?: number;
     atomic_batch_successes?: number;
     exchange_rewrite_logs?: number;
@@ -69,6 +70,9 @@ export type DatasetMaintenanceVerifyReport = {
     approval_record: string;
     apply_progress: string;
     commit_report: string;
+    alias_plan_progress?: string;
+    alias_batch_progress?: string;
+    alias_exchange_progress?: string;
     report: string;
   };
 };
@@ -165,6 +169,7 @@ export async function runDatasetMaintenanceVerify(
   const approvalRecordPath = path.join(planDir, 'approval-record.json');
   const progressPath = path.join(planDir, 'apply-progress.jsonl');
   const commitReportPath = path.join(planDir, 'commit-report.json');
+  const aliasPlanProgressPath = path.join(planDir, 'alias-plan-progress.jsonl');
   const aliasBatchProgressPath = path.join(planDir, 'alias-batch-progress.jsonl');
   const aliasExchangeProgressPath = path.join(planDir, 'alias-exchange-progress.jsonl');
   const pageSize = normalizeMaintenancePageSize(options.pageSize);
@@ -247,11 +252,116 @@ export async function runDatasetMaintenanceVerify(
 
   let aliasBatchSuccesses = 0;
   let aliasExchangeLogs = 0;
+  let aliasPlanProofs = 0;
+  let aliasPlanProof: {
+    plan_request_sha256: string;
+    summary_audit_id: string;
+    batches: Map<string, { batch_request_sha256: string; summary_audit_id: string }>;
+  } | null = null;
   const aliasBatchProofs = new Map<
     string,
-    { batch_request_sha256: string; summary_audit_id: string }
+    {
+      batch_request_sha256: string;
+      summary_audit_id: string;
+      plan_request_sha256: string;
+      plan_summary_audit_id: string;
+    }
   >();
   if (plan.operation === 'merge-support-aliases') {
+    const orderedBatches = [
+      plan.alias_batches!.find((batch) => batch.dimension === 'time')!,
+      plan.alias_batches!.find((batch) => batch.dimension === 'length_time')!,
+    ];
+    let successfulPlanSeen = false;
+    for (const [index, entry] of readJsonLinesIfPresent(aliasPlanProgressPath).entries()) {
+      const batchProofs = isJsonObject(entry) && Array.isArray(entry.batches) ? entry.batches : [];
+      const validSuccessBatches =
+        batchProofs.length === 2 &&
+        batchProofs.every((proof, batchIndex) => {
+          const batch = orderedBatches[batchIndex]!;
+          return Boolean(
+            isJsonObject(proof) &&
+            proof.batch_id === batch.batch_id &&
+            proof.dimension === batch.dimension &&
+            typeof proof.batch_request_sha256 === 'string' &&
+            /^[a-f0-9]{64}$/u.test(proof.batch_request_sha256) &&
+            typeof proof.summary_audit_id === 'string' &&
+            POSITIVE_INTEGER_TEXT.test(proof.summary_audit_id),
+          );
+        });
+      const batchRequestHashes = batchProofs
+        .filter(isJsonObject)
+        .map((proof) => proof.batch_request_sha256);
+      const batchSummaryAuditIds = batchProofs
+        .filter(isJsonObject)
+        .map((proof) => proof.summary_audit_id);
+      const valid = Boolean(
+        isJsonObject(entry) &&
+        entry.schema_version === 1 &&
+        entry.plan_sha256 === plan.plan_sha256 &&
+        entry.operation_id === plan.operation_id &&
+        entry.target_mode === 'owner_draft' &&
+        isJsonObject(entry.actor) &&
+        entry.actor.user_id === plan.account.user_id &&
+        entry.actor.email === plan.account.email &&
+        typeof entry.started_at_utc === 'string' &&
+        typeof entry.ended_at_utc === 'string' &&
+        entry.batch_count === 2 &&
+        entry.row_count === 52 &&
+        entry.exchange_count === 59 &&
+        (entry.result === 'success' || entry.result === 'failed') &&
+        (entry.result === 'success'
+          ? !successfulPlanSeen &&
+            typeof entry.plan_request_sha256 === 'string' &&
+            /^[a-f0-9]{64}$/u.test(entry.plan_request_sha256) &&
+            typeof entry.idempotent_replay === 'boolean' &&
+            typeof entry.summary_audit_id === 'string' &&
+            POSITIVE_INTEGER_TEXT.test(entry.summary_audit_id) &&
+            validSuccessBatches &&
+            new Set(batchRequestHashes).size === 2 &&
+            new Set(batchSummaryAuditIds).size === 2 &&
+            !batchSummaryAuditIds.includes(entry.summary_audit_id) &&
+            entry.error === null
+          : entry.plan_request_sha256 === null &&
+            entry.idempotent_replay === null &&
+            entry.summary_audit_id === null &&
+            batchProofs.length === 0 &&
+            typeof entry.error === 'string'),
+      );
+      if (!valid) {
+        problems.push({
+          code: 'ALIAS_PLAN_PROGRESS_INVALID',
+          message: 'alias-plan-progress.jsonl contains an invalid or foreign entry.',
+          details: { line: index + 1 },
+        });
+      } else if (isJsonObject(entry) && entry.result === 'success') {
+        successfulPlanSeen = true;
+        aliasPlanProof = {
+          plan_request_sha256: entry.plan_request_sha256 as string,
+          summary_audit_id: entry.summary_audit_id as string,
+          batches: new Map(
+            batchProofs.map((proof) => {
+              const value = proof as JsonObject;
+              return [
+                value.batch_id as string,
+                {
+                  batch_request_sha256: value.batch_request_sha256 as string,
+                  summary_audit_id: value.summary_audit_id as string,
+                },
+              ] as const;
+            }),
+          ),
+        };
+      }
+    }
+    if (!aliasPlanProof) {
+      problems.push({
+        code: 'ALIAS_PLAN_SUCCESS_LOG_MISSING',
+        message: 'No successful whole-plan progress proof exists.',
+      });
+    } else {
+      aliasPlanProofs = 1;
+    }
     for (const batch of plan.alias_batches!) {
       for (const snapshot of [
         batch.target_snapshots.unitgroup!,
@@ -290,6 +400,7 @@ export async function runDatasetMaintenanceVerify(
         isJsonObject(entry) && typeof entry.batch_id === 'string'
           ? batchesById.get(entry.batch_id)
           : null;
+      const planBatchProof = batch ? aliasPlanProof?.batches.get(batch.batch_id) : null;
       const valid = Boolean(
         isJsonObject(entry) &&
         entry.schema_version === 1 &&
@@ -306,19 +417,19 @@ export async function runDatasetMaintenanceVerify(
         entry.actor.email === plan.account.email &&
         typeof entry.started_at_utc === 'string' &&
         typeof entry.ended_at_utc === 'string' &&
-        (entry.result === 'success' || entry.result === 'failed') &&
-        (entry.result !== 'success' || !successfulBatches.has(batch.batch_id)) &&
-        (entry.result === 'success'
-          ? typeof entry.batch_request_sha256 === 'string' &&
-            /^[a-f0-9]{64}$/u.test(entry.batch_request_sha256) &&
-            typeof entry.idempotent_replay === 'boolean' &&
-            typeof entry.summary_audit_id === 'string' &&
-            POSITIVE_INTEGER_TEXT.test(entry.summary_audit_id) &&
-            entry.error === null
-          : entry.batch_request_sha256 === null &&
-            entry.idempotent_replay === null &&
-            entry.summary_audit_id === null &&
-            typeof entry.error === 'string'),
+        entry.result === 'success' &&
+        !successfulBatches.has(batch.batch_id) &&
+        planBatchProof &&
+        typeof entry.batch_request_sha256 === 'string' &&
+        /^[a-f0-9]{64}$/u.test(entry.batch_request_sha256) &&
+        entry.batch_request_sha256 === planBatchProof.batch_request_sha256 &&
+        typeof entry.idempotent_replay === 'boolean' &&
+        typeof entry.summary_audit_id === 'string' &&
+        POSITIVE_INTEGER_TEXT.test(entry.summary_audit_id) &&
+        entry.summary_audit_id === planBatchProof.summary_audit_id &&
+        entry.plan_request_sha256 === aliasPlanProof?.plan_request_sha256 &&
+        entry.plan_summary_audit_id === aliasPlanProof?.summary_audit_id &&
+        entry.error === null,
       );
       if (!valid) {
         problems.push({
@@ -331,6 +442,8 @@ export async function runDatasetMaintenanceVerify(
         aliasBatchProofs.set(batch.batch_id, {
           batch_request_sha256: entry.batch_request_sha256 as string,
           summary_audit_id: entry.summary_audit_id as string,
+          plan_request_sha256: entry.plan_request_sha256 as string,
+          plan_summary_audit_id: entry.plan_summary_audit_id as string,
         });
       }
     }
@@ -412,6 +525,10 @@ export async function runDatasetMaintenanceVerify(
         POSITIVE_INTEGER_TEXT.test(entry.database_audit_id) &&
         entry.database_audit_id === rowAuditId &&
         entry.summary_audit_id === batchProof.summary_audit_id &&
+        entry.plan_request_sha256 === batchProof.plan_request_sha256 &&
+        entry.plan_request_sha256 === aliasPlanProof?.plan_request_sha256 &&
+        entry.plan_summary_audit_id === batchProof.plan_summary_audit_id &&
+        entry.plan_summary_audit_id === aliasPlanProof?.summary_audit_id &&
         isJsonObject(entry.actor) &&
         entry.actor.user_id === plan.account.user_id &&
         entry.actor.email === plan.account.email &&
@@ -577,14 +694,20 @@ export async function runDatasetMaintenanceVerify(
           entry.batch_request_sha256 === aliasProof.batch_request_sha256 &&
           typeof entry.database_audit_id === 'string' &&
           POSITIVE_INTEGER_TEXT.test(entry.database_audit_id) &&
-          entry.summary_audit_id === aliasProof.summary_audit_id)) &&
+          entry.summary_audit_id === aliasProof.summary_audit_id &&
+          entry.plan_request_sha256 === aliasProof.plan_request_sha256 &&
+          entry.plan_request_sha256 === aliasPlanProof?.plan_request_sha256 &&
+          entry.plan_summary_audit_id === aliasProof.plan_summary_audit_id &&
+          entry.plan_summary_audit_id === aliasPlanProof?.summary_audit_id)) &&
       (action.action === 'update_json_ordered' ||
         (!('target_mode' in entry) &&
           !('target_mode' in entry.audit_context) &&
           !('batch_id' in entry) &&
           !('batch_request_sha256' in entry) &&
           !('database_audit_id' in entry) &&
-          !('summary_audit_id' in entry))) &&
+          !('summary_audit_id' in entry) &&
+          !('plan_request_sha256' in entry) &&
+          !('plan_summary_audit_id' in entry))) &&
       isJsonObject(entry.rollback) &&
       sha256Json(entry.rollback) === sha256Json(action.rollback) &&
       (entry.result === 'success' || entry.result === 'failed') &&
@@ -654,6 +777,23 @@ export async function runDatasetMaintenanceVerify(
           entry.error === null,
         );
       });
+    const aliasCommitProofMatches =
+      plan.operation !== 'merge-support-aliases' ||
+      Boolean(
+        isJsonObject(commitReport) &&
+        isJsonObject(commitReport.alias_plan_proof) &&
+        aliasPlanProof &&
+        commitReport.alias_plan_proof.plan_request_sha256 === aliasPlanProof.plan_request_sha256 &&
+        commitReport.alias_plan_proof.summary_audit_id === aliasPlanProof.summary_audit_id &&
+        commitReport.alias_plan_proof.batch_count === 2 &&
+        commitReport.alias_plan_proof.row_count === 52 &&
+        commitReport.alias_plan_proof.exchange_count === 59 &&
+        typeof commitReport.alias_plan_proof.idempotent_replay === 'boolean' &&
+        isJsonObject(commitReport.artifacts) &&
+        commitReport.artifacts.alias_plan_progress === aliasPlanProgressPath &&
+        commitReport.artifacts.alias_batch_progress === aliasBatchProgressPath &&
+        commitReport.artifacts.alias_exchange_progress === aliasExchangeProgressPath,
+      );
     if (
       !isJsonObject(commitReport) ||
       commitReport.schema_version !== 1 ||
@@ -671,7 +811,8 @@ export async function runDatasetMaintenanceVerify(
       commitReport.summary.success !== plan.actions.length ||
       commitReport.summary.failed !== 0 ||
       commitReport.summary.pending !== 0 ||
-      !commitActionsMatch
+      !commitActionsMatch ||
+      !aliasCommitProofMatches
     ) {
       problems.push({
         code: 'COMMIT_REPORT_INCOMPLETE',
@@ -698,6 +839,7 @@ export async function runDatasetMaintenanceVerify(
       progress_successes: successfulActionIds.size,
       ...(plan.operation === 'merge-support-aliases'
         ? {
+            atomic_plan_proofs: aliasPlanProofs,
             atomic_batches: plan.alias_batches!.length,
             atomic_batch_successes: aliasBatchSuccesses,
             exchange_rewrite_logs: aliasExchangeLogs,
@@ -713,6 +855,13 @@ export async function runDatasetMaintenanceVerify(
       approval_record: approvalRecordPath,
       apply_progress: progressPath,
       commit_report: commitReportPath,
+      ...(plan.operation === 'merge-support-aliases'
+        ? {
+            alias_plan_progress: aliasPlanProgressPath,
+            alias_batch_progress: aliasBatchProgressPath,
+            alias_exchange_progress: aliasExchangeProgressPath,
+          }
+        : {}),
       report: reportPath,
     },
   };

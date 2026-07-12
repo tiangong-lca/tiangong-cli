@@ -307,6 +307,8 @@ export type DatasetMaintenanceProgressEntry = {
   batch_request_sha256?: string;
   database_audit_id?: string;
   summary_audit_id?: string;
+  plan_request_sha256?: string;
+  plan_summary_audit_id?: string;
 };
 
 function token(value: unknown): string | null {

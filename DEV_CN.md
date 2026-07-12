@@ -295,9 +295,9 @@ npm exec tiangong-lca -- admin embedding-run --input ./jobs.json --dry-run
 
 ## process / review / publish / validation 边界
 
-`tiangong-lca dataset maintenance plan/apply/verify` 是错误导入后 row-level 修复的 CLI-owned 入口。`plan` 冻结当前用户 RLS 可见快照、保护行、引用影响、desired payload 和 canonical plan SHA-256；普通操作只允许精确 `id + version` 的当前账号 `state_code=0` draft 通过 `cmd_dataset_save_draft` / `cmd_dataset_delete` 执行。BAFU alias operation 还要求 scope/plan `target_mode=owner_draft`，冻结 source/target FP/UG、52 个 changed row、59 条 exchange、118 个 amount 字段和 309 条不变 exchange，再以 `target_visibility=owner_draft` 调用 guarded batch RPC。所有路径都把 plan/action/mode correlation 写入数据库审计与本地 durable proof；`verify` 独立读回 payload、owner/state、保护行和引用闭包。Foundry/skills 只能编排这些命令，不得实现私有 SQL、service-role 或 raw REST mutation。
+`tiangong-lca dataset maintenance plan/apply/verify` 是错误导入后 row-level 修复的 CLI-owned 入口。`plan` 冻结当前用户 RLS 可见快照、保护行、引用影响、desired payload 和 canonical plan SHA-256；普通操作只允许精确 `id + version` 的当前账号 `state_code=0` draft 通过 `cmd_dataset_save_draft` / `cmd_dataset_delete` 执行。BAFU alias operation 还要求 scope/plan `target_mode=owner_draft`，冻结 source/target FP/UG、52 个 changed row、59 条 exchange、118 个 amount 字段和 309 条不变 exchange，再以 `target_visibility=owner_draft` 一次调用 `cmd_dataset_alias_plan_guarded`。所有路径都把 plan/action/mode correlation 写入数据库审计与本地 durable proof；`verify` 独立读回 payload、owner/state、保护行和引用闭包。Foundry/skills 只能编排这些命令，不得实现私有 SQL、service-role 或 raw REST mutation。
 
-`apply` 是 commit-only：必须同时提供 `--commit`、精确 `--approve-plan <sha256>` 和 `--confirm <current-account-email>`。首写前会持久化 approval 并做全计划 drift preflight，每条 pending action 在 RPC 前再做 exact read；alias 每个 dimension 只允许一次原子 batch RPC，首个失败会停止后续 batch，同一计划只可通过审计证明的整批 replay 修复丢失响应。public/shared、foreign owner、mixed visibility、非 draft、不可见行和其他 support mutation 在该操作中一律保护或阻断。
+`apply` 是 commit-only：必须同时提供 `--commit`、精确 `--approve-plan <sha256>` 和 `--confirm <current-account-email>`。首写前会持久化 approval 并做全计划 drift preflight；alias 必须把 `time`、`length_time` 依次装入同一 `dataset-alias-plan.v1` 请求并只调用一次 whole-plan RPC。任一维失败都回滚 52 行的全部变更，丢失响应时也只能重放同一整计划，不能从第二维续跑。public/shared、foreign owner、mixed visibility、非 draft、不可见行和其他 support mutation 在该操作中一律保护或阻断。
 
 `tiangong-lca process get` 现在是统一 CLI 持有的只读 process 详情命令，负责：
 
