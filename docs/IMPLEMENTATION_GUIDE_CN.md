@@ -16,7 +16,7 @@ checkPaths:
   - README.md
   - src/**
   - test/**
-lastReviewedAt: 2026-06-29
+lastReviewedAt: 2026-07-11
 lastReviewedCommit: 695e6d6fe718cb92d499f3ce8be2dc24c3f6ce29
 related:
   - ../AGENTS.md
@@ -27,6 +27,8 @@ related:
 ---
 
 # TianGong LCA CLI 实施指南
+
+Review note, 2026-07-11: `dataset maintenance plan/apply/verify` 已实现为 v1 current-user RLS row-level maintenance 契约；scope 冻结、全计划 drift preflight、显式审批、逐 action 日志、平台审计关联与独立 readback verification 都由原生 CLI 持有。
 
 ## 1. 目标
 
@@ -91,7 +93,9 @@ tiangong-lca
     curation-queue next
     curation-queue verify
     references rewrite
-    maintenance plan/apply/verify（规划中）
+    maintenance plan
+    maintenance apply
+    maintenance verify
   lifecyclemodel
     auto-build
     validate-build
@@ -147,7 +151,7 @@ tiangong-lca
 | `tiangong-lca dataset import-lca convert` | 外部 LCA 包转换入口；调用 `tidas-tools import_lca` 生成 TIDAS/ILCD/conversion report；tidas-tools >= 0.0.28 默认产出每个 process 的依赖子目录（可用 `--no-process-bundles` 关闭、`--process-bundles-dir` 自定义目录），便于后续 entity-level curation |
 | `tiangong-lca dataset references rewrite` | 本地 process / lifecyclemodel rows 的 flow reference rewrite、patch evidence 输出，并可选走 state-aware save-draft commit |
 | `tiangong-lca dataset maintenance clear-account` | 已实现的当前账号 draft 清理入口；先生成当前用户 RLS 可见 snapshot，默认 dry-run，只有显式 `--commit --confirm <当前账号邮箱>` 才按 `lifecyclemodels -> processes -> flows -> sources -> contacts` 顺序执行。普通 dataset rows 通过 `app_dataset_delete` / `cmd_dataset_delete` 删除，读回验证剩余行数；`unitgroups` / `flowproperties` 默认保护不删 |
-| `tiangong-lca dataset maintenance plan/apply/verify` | 规划中的用户 RLS 约束 row-level 数据维护入口；用于错误导入后的删除、退役、重新导入和引用修复。必须先生成不可变 maintenance plan、当前用户可见 snapshot、protected rows、reference impact、dry-run、commit 与 readback verify artifacts；不得绕过 RLS，也不得由 Foundry 私有实现 delete |
+| `tiangong-lca dataset maintenance plan/apply/verify` | 已实现的 current-user RLS row-level draft 维护入口。`plan` 冻结 exact `id/version` scope、可见快照、保护行、引用影响、不可变计划与 dry-run；`apply` 要求 plan SHA-256 + 当前账号邮箱显式审批，整计划 drift preflight 通过后按 update-before-delete 顺序调用平台 `save_draft` / `delete` 路径并逐 action 留痕；`verify` 独立重新读取受影响行与引用。V1 只允许 current-user `state_code=0` 的 contacts/sources/flows/processes，其他类型与 public/non-owner/non-draft rows 受保护 |
 | `tiangong-lca lifecyclemodel auto-build` | 本地 lifecyclemodel local-run intake、graph 推断、reference process 选择、`json_ordered` artifact 输出 |
 | `tiangong-lca lifecyclemodel validate-build` | 本地 lifecyclemodel build run 校验重跑、per-model 校验报告与 aggregate report 输出 |
 | `tiangong-lca lifecyclemodel publish-build` | 本地 lifecyclemodel publish handoff、publish bundle/request/intent 产出、validation 摘要复用 |
@@ -211,6 +215,9 @@ tiangong-lca
 - `tiangong-lca dataset curation-queue next` 已可执行
 - `tiangong-lca dataset curation-queue verify` 已可执行
 - `tiangong-lca dataset references rewrite` 已可执行
+- `tiangong-lca dataset maintenance plan` 已可执行
+- `tiangong-lca dataset maintenance apply` 已可执行
+- `tiangong-lca dataset maintenance verify` 已可执行
 
 注意：
 
@@ -230,7 +237,7 @@ tiangong-lca
 - 已实现的 `dataset curation-queue build/next/verify` 把 Foundry external dataset import 的 support / flow / process rows 收口成 entity-level queue artifact contract：`build` 生成 `curation-queue-manifest.json`、`curation-queue-tasks.jsonl`、`curation-queue-locks.json`、`curation-queue-blockers.jsonl`，以及每个 entity 的 `input.jsonl`、`closure.json`、`entity-run-plan.json`；`next` 读取 task checkpoint 并返回下一条 runnable entity task；`verify` 确认目标 scope 的 checkpoint 完成且没有 build blocker。CLI 只负责稳定状态机、依赖闭包、锁和 blocker；AI authoring 仍必须通过 skill/Codex 输出 structured patch 或 build plan，并在 deterministic apply、schema/QA、prewrite verify、readback 后才允许进入远端写入。
 - 已实现的 `dataset references rewrite` 把 process / lifecyclemodel rows 中的 flow reference rewrite 收口到一个 deterministic 本地入口，默认只写 patch artifacts，只有显式 `--commit` 时才调用 state-aware save-draft 写入路径
 - 已实现的 `dataset maintenance clear-account` 只覆盖当前认证账号的 draft 清空场景：CLI 先写出 `rls-visible-snapshot.json` / `dry-run-report.json`，commit 时要求 `--confirm` 匹配当前账号邮箱，并逐行调用平台 `app_dataset_delete`，最后写出 `approval-record.json`、`commit-report.json` 和 `readback-verify-report.json`。该命令不绕过 RLS，不直接 REST DELETE，不删除默认保护的 `unitgroups` / `flowproperties`。
-- 规划中的 `dataset maintenance plan/apply/verify` 是错误导入清理和 redo 的 row-level 归属面。`plan` 固化 scope manifest、当前用户 RLS 可见快照、引用影响和保护行；`apply` 只能按计划通过官方平台路径执行显式 commit；`verify` 重新读取受影响行和引用，证明 deleted/updated/skipped/protected/redone rows 与计划一致。Foundry 只保存 task ledger、调用命令和报告，不实现删除逻辑。
+- 已实现的 `dataset maintenance plan/apply/verify` 是错误导入清理和 redo 的 row-level 归属面。`plan` 固化 scope manifest、当前用户 RLS 可见快照、引用影响、保护行、不可变 plan 和 dry-run；`apply` 只接受 plan SHA-256 与当前账号邮箱都匹配的显式 commit，先做全计划 drift preflight 并持久化 approval，再按 update-before-delete 顺序通过官方平台路径执行，每条 action 追加日志并用 `p_audit` 关联 plan/action；任一失败立即停止，已成功 action 可由后续重跑识别恢复。`verify` 独立重新读取受影响行和引用，不依赖 apply 的内存或报告结论。Foundry 只保存 task ledger、调用命令和报告，不实现删除逻辑。
 - 已实现的 `lifecyclemodel auto-build` 走本地只读、artifact-first 路径，输入固定为 local run manifest，不依赖 Python、MCP、KB、LLM 或远端 CRUD
 - `lifecyclemodel auto-build` 当前负责 graph 推断、reference process 选择、`@multiplicationFactor` 计算与 `json_ordered` lifecyclemodel 产物输出，并保留 `run-plan.json`、`resolved-manifest.json`、`selection/selection-brief.md`、`discovery/reference-model-summary.json`、`connections.json`、`process-catalog.json` 等 CLI 契约
 - `lifecyclemodel auto-build` 当前明确不负责 reference-model discovery、任何远端 lifecyclemodel 写入，也不会自动串接 validate-build / publish-build
@@ -264,6 +271,67 @@ tiangong-lca
 - 已实现的 `flow validate-processes` 把治理后 patched process rows 的独立校验切片收口到 CLI，固定 original/patched/scope 三类输入契约，并直接写出 `validation-report.json` / `validation-failures.jsonl`
 - 现有命令族里已经没有残留的 Python / shell validation fallback；其余 review / build / publish CLI 面已经进入可执行状态，未迁移子命令只剩 `auth` / `job` 这类 placeholder surface
 - 这样做的目的不是“假装已完成”，而是先固定命令树，再逐个把 workflow 迁入 TypeScript CLI
+
+### 2.1.1 `dataset maintenance plan/apply/verify` v1 契约
+
+公开命令面固定为：
+
+```bash
+tiangong-lca dataset maintenance plan \
+  --scope ./maintenance-scope.json \
+  --operation <delete|retire|redo-import|repair-references> \
+  --out-dir ./dataset-maintenance \
+  [--page-size <n>] \
+  [--timeout-ms <n>] \
+  [--json]
+
+tiangong-lca dataset maintenance apply \
+  --plan ./dataset-maintenance/maintenance-plan.json \
+  --commit \
+  --approve-plan <sha256> \
+  --confirm <current-account-email> \
+  [--timeout-ms <n>] \
+  [--json]
+
+tiangong-lca dataset maintenance verify \
+  --plan ./dataset-maintenance/maintenance-plan.json \
+  [--out-dir ./dataset-maintenance/verify] \
+  [--page-size <n>] \
+  [--timeout-ms <n>] \
+  [--json]
+```
+
+Scope 与保护规则：
+
+- 远端读取和写入都使用当前认证用户 session 与数据库 RLS，不接受 target user 覆盖。
+- 每条 scope row 必须给出表、exact `id`、exact `version`、expected owner、expected `state_code=0` 与 operator-authored intended action/reason；`--operation` 只接受 `delete`、`retire`、`redo-import`、`repair-references`，且不允许只按 broad `state_code=0` 或其他宽过滤器清理。
+- V1 可执行对象只有 `contacts`、`sources`、`flows`、`processes`，可执行 action 只有 `save_draft` 与 `delete`。
+- `lifecyclemodels`、`unitgroups`、`flowproperties`、public/shared、非当前 owner、非 draft、不可见或 exact version 不一致的 rows 一律进入 protected/blocked，不会降级成可执行 action。
+- CLI 只执行人工/上游已经做出的清洗决策，不判断 public canonical、语义重复、引用替代或 redo 内容是否正确。
+
+`plan` 在任何 mutation 之前写出并固定：
+
+- `maintenance-scope.json`
+- `rls-visible-snapshot.json`
+- `protected-rows.jsonl`
+- `reference-impact-report.json`
+- `maintenance-plan.json`
+- `dry-run-report.json`
+
+`maintenance-plan.json` 的 canonical SHA-256 是后续审批身份。plan 生成后不得原地编辑；需要变更 scope 或 action 时重新运行 `plan` 并重新审批。
+
+`apply` 的 commit gate 同时要求 `--commit`、`--approve-plan <sha256>` 与 `--confirm <current-account-email>`。执行顺序固定为：
+
+1. 重新认证当前用户并校验账号邮箱。
+2. 对整份计划重新抓取 exact rows 与引用，任何 drift 都在首写前阻断。
+3. 在首写前持久化 `approval-record.json`。
+4. 先执行 `save_draft`，再执行 `delete`；所有写入都通过平台 dataset command path，而不是 raw REST mutation。
+5. 为每条尝试的 action 向 `apply-progress.jsonl` 追加 durable log，并在平台命令的 `p_audit` 中带入 plan/action correlation id。每行至少记录 `plan_sha256`、`operation_id`、`action_id`、table/id/version、actor、started/finished、`before_sha256`、`after_sha256`、result/error 与 rollback。
+6. 任一 action 失败即停止后续动作并写出 `commit-report.json`；已成功 action 保留在日志中，重跑时据此识别已完成状态，避免盲目重复写入。
+
+`verify` 必须启动独立 remote readback，重新读取受影响 rows 和 references，并写出 `readback-verify-report.json`；它不能把 apply report 当作数据库事实。
+
+安全边界是强约束：不允许 direct SQL、service-role credential、raw REST mutation 或 Foundry 私有 DB maintenance 代码。Foundry 和 skills 只能准备 scope、编排 CLI、保存 task ledger 与上述 artifacts。
 
 ### 2.2 已经固定的工程约束
 

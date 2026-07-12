@@ -26,7 +26,7 @@ checkPaths:
   - scripts/docpact
   - scripts/docpact-gate.sh
   - scripts/install-git-hooks.sh
-lastReviewedAt: 2026-06-29
+lastReviewedAt: 2026-07-11
 lastReviewedCommit: 695e6d6fe718cb92d499f3ce8be2dc24c3f6ce29
 related:
   - ../../AGENTS.md
@@ -49,6 +49,8 @@ Review note, 2026-06-06: release 0.0.13 keeps the release architecture unchanged
 Review note, 2026-06-07: release 0.0.14 keeps the architecture in the existing TypeScript dataset classification command family. The location apply helper now creates only explicit schema-derived missing location targets and does not introduce a new orchestration layer or release path.
 
 Review note, 2026-06-11: release 0.0.15 keeps the import-lca wrapper inside the existing TypeScript dataset command family. Only the tidas-tools spawn argument construction and report file derivation changed to match tidas-tools 0.0.28; no new orchestration layer or release path.
+
+Review note, 2026-07-11: row-level dataset maintenance is implemented in the native CLI as `dataset maintenance plan/apply/verify`. The architecture keeps scope freezing, current-user RLS reads, protected-row classification, approved platform-command writes, append-only action logging, and independent verification in separate maintenance modules.
 
 ## Stable Path Map
 
@@ -137,11 +139,24 @@ Dataset-local governance now uses the same CLI-native command layer:
 - `src/lib/dataset-curation-queue.ts`
 - `src/lib/dataset-references-rewrite.ts`
 - `src/lib/dataset-maintenance-clear-account.ts`
+- `src/lib/dataset-maintenance-{contract,remote,plan,apply,verify}.ts`
 - `src/lib/dataset-local.ts`
 - `src/lib/lifecyclemodel-save-draft-run.ts`
 - `src/lib/lifecyclemodel-graph.ts`
 
-These modules keep validation, entity-level curation queue build/next/verify state, reference rewrites, RLS-scoped account cleanup, save-draft preparation, graph extraction, and local artifact reports inside the CLI instead of routing through skills or MCP transports.
+These modules keep validation, entity-level curation queue build/next/verify state, reference rewrites, RLS-scoped account and exact-row maintenance, save-draft preparation, graph extraction, and local artifact reports inside the CLI instead of routing through skills or MCP transports.
+
+The row-level maintenance family is deliberately split by responsibility:
+
+- `contract` owns the versioned scope, immutable plan, action, approval, and report shapes.
+- `remote` owns current-session authentication, current-user RLS reads, exact `id` + `version` row lookup, reference-impact reads, platform `save_draft` / `delete` command execution, and audit correlation.
+- `plan` freezes `maintenance-scope.json`, `rls-visible-snapshot.json`, `protected-rows.jsonl`, `reference-impact-report.json`, `maintenance-plan.json`, and `dry-run-report.json` before any write.
+- `apply` re-runs a full-plan drift preflight, verifies `--approve-plan <sha256>` and `--confirm <email>`, persists approval before the first write, appends one durable `apply-progress.jsonl` record per action, executes updates before deletes, and stops on the first failure so a rerun can resume from the recorded outcomes. Each ledger row carries at least the plan SHA-256, operation/action ids, exact entity ref, actor, start/finish times, before/after SHA-256, result/error, and rollback guidance.
+- `verify` performs a fresh readback independently of apply and writes `readback-verify-report.json`.
+
+V1 only permits current-user, `state_code=0`, exact-version `contacts`, `sources`, `flows`, and `processes` to become `save_draft` or `delete` actions. `lifecyclemodels`, `unitgroups`, `flowproperties`, public/shared rows, rows owned by another account, and non-draft rows stay protected. The CLI records the operator-supplied maintenance operation but does not make semantic cleanup or canonicalization decisions.
+
+All mutation continues through the public platform dataset command path. Direct SQL, service-role access, raw REST mutation, and Foundry-local delete/update implementations are outside this architecture; Foundry may only prepare scope, invoke the CLI, and retain its artifacts.
 
 ### Artifact and filesystem behavior
 
