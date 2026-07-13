@@ -2,6 +2,10 @@ import crypto from 'node:crypto';
 import { appendFileSync, existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
 import path from 'node:path';
 import { inspectMaintenanceSupportPayload } from './dataset-maintenance-support-validation.js';
+import {
+  isDatasetMaintenanceSnapshotCompleteness,
+  type DatasetMaintenanceSnapshotCompleteness,
+} from './dataset-maintenance-pagination.js';
 import { CliError } from './errors.js';
 
 export type JsonObject = Record<string, unknown>;
@@ -240,6 +244,7 @@ export type DatasetMaintenancePlan = {
   status: 'ready' | 'blocked';
   scope_sha256: string;
   visible_snapshot_sha256: string;
+  snapshot_completeness?: DatasetMaintenanceSnapshotCompleteness<DatasetMaintenanceScanTable>;
   projected_reference_sha256: string;
   plan_sha256: string;
   summary: {
@@ -891,6 +896,15 @@ export function parseMaintenancePlan(value: unknown): DatasetMaintenancePlan {
     });
   }
   const plan = value as DatasetMaintenancePlan;
+  if (
+    plan.snapshot_completeness !== undefined &&
+    !isDatasetMaintenanceSnapshotCompleteness(plan.snapshot_completeness, MAINTENANCE_SCAN_TABLES)
+  ) {
+    throw new CliError('Maintenance plan snapshot completeness proof is invalid.', {
+      code: 'DATASET_MAINTENANCE_PLAN_INVALID',
+      exitCode: 2,
+    });
+  }
   const expected = computePlanSha256(plan);
   if (plan.plan_sha256 !== expected) {
     throw new CliError('Maintenance plan hash does not match its canonical contents.', {

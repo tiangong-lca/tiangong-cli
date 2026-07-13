@@ -22,8 +22,8 @@ checkPaths:
   - scripts/docpact
   - scripts/docpact-gate.sh
   - scripts/install-git-hooks.sh
-lastReviewedAt: 2026-07-12
-lastReviewedCommit: d580282ce85d332c77086b49f70834915b9216f9
+lastReviewedAt: 2026-07-13
+lastReviewedCommit: 4c79df4623e3cf296bc8d1baeea688d78351570a
 related:
   - ../AGENTS.md
   - ../.docpact/config.yaml
@@ -57,6 +57,8 @@ Before starting a release:
 Review note, 2026-06-02: dataset curation queue command additions follow the existing feature-then-release flow; release prep still remains a separate package metadata bump.
 
 Review note, 2026-06-04: `dataset curation-queue next/verify` follows the same feature-then-release flow; no release command or tag semantics changed.
+
+Review note, 2026-07-13: exact-count maintenance pagination follows the same feature-then-release flow. It changes runtime completeness checks and artifacts but does not change version-bump, tag, npm Trusted Publishing, or workspace follow-up semantics.
 
 Release 0.0.11 note, 2026-06-02: prechecks are `node ./scripts/ci/release-version.cjs assert-unpublished --version 0.0.11`, `npm run prepush:gate`, and `npm pack --dry-run`.
 

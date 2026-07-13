@@ -4,6 +4,7 @@ import { mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import { executeCli } from '../src/cli.js';
+import type { DatasetMaintenanceSnapshotCompleteness } from '../src/lib/dataset-maintenance-pagination.js';
 import type { DotEnvLoadResult } from '../src/lib/dotenv.js';
 import type { FetchLike } from '../src/lib/http.js';
 import type { RunFlowReviewedPublishDataOptions } from '../src/lib/flow-publish-reviewed-data.js';
@@ -486,6 +487,7 @@ test('executeCli exposes dataset and lifecyclemodel friction-fix commands', asyn
     /tiangong-lca dataset maintenance clear-account/u,
   );
   assert.match(datasetMaintenanceClearHelp.stdout, /--confirm <email>/u);
+  assert.match(datasetMaintenanceClearHelp.stdout, /1-5000.*exact counts/u);
   assert.doesNotMatch(datasetMaintenanceClearHelp.stdout, /Planned command/u);
 
   const datasetMaintenancePlanHelp = await executeCli(
@@ -494,6 +496,7 @@ test('executeCli exposes dataset and lifecyclemodel friction-fix commands', asyn
   );
   assert.equal(datasetMaintenancePlanHelp.exitCode, 0);
   assert.match(datasetMaintenancePlanHelp.stdout, /--operation <operation>/u);
+  assert.match(datasetMaintenancePlanHelp.stdout, /1-5000.*exact counts/u);
 
   const datasetMaintenanceApplyHelp = await executeCli(
     ['dataset', 'maintenance', 'apply', '--help'],
@@ -509,8 +512,27 @@ test('executeCli exposes dataset and lifecyclemodel friction-fix commands', asyn
   );
   assert.equal(datasetMaintenanceVerifyHelp.exitCode, 0);
   assert.match(datasetMaintenanceVerifyHelp.stdout, /readback-verify-report\.json/u);
+  assert.match(datasetMaintenanceVerifyHelp.stdout, /1-5000.*exact counts/u);
 
   let observedClearAccountOptions: unknown = null;
+  const emptyClearCompleteness: DatasetMaintenanceSnapshotCompleteness<
+    'lifecyclemodels' | 'processes' | 'flows' | 'sources' | 'contacts'
+  > = {
+    status: 'complete',
+    complete: true,
+    strategy: 'postgrest_exact_count_multi_request',
+    requested_page_size: 1000,
+    page_count: 5,
+    row_count: 0,
+    entity_counts: {
+      lifecyclemodels: 0,
+      processes: 0,
+      flows: 0,
+      sources: 0,
+      contacts: 0,
+    },
+    tables: [],
+  };
   const clearAccountDeps = makeDeps();
   const datasetMaintenanceClear = await executeCli(
     [
@@ -545,6 +567,9 @@ test('executeCli exposes dataset and lifecyclemodel friction-fix commands', asyn
             state_codes: [0],
             page_size: 1000,
           },
+          snapshot_completeness: emptyClearCompleteness,
+          readback_completeness: emptyClearCompleteness,
+          readback_error: null,
           summary: {
             total_candidates: 0,
             total_deleted: 0,
@@ -591,6 +616,9 @@ test('executeCli exposes dataset and lifecyclemodel friction-fix commands', asyn
       state_codes: [0],
       page_size: 1000,
     },
+    snapshot_completeness: emptyClearCompleteness,
+    readback_completeness: emptyClearCompleteness,
+    readback_error: null,
     summary: {
       total_candidates: 0,
       total_deleted: 0,

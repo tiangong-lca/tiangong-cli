@@ -19,8 +19,8 @@ checkPaths:
   - scripts/docpact
   - scripts/docpact-gate.sh
   - scripts/install-git-hooks.sh
-lastReviewedAt: 2026-07-12
-lastReviewedCommit: d580282ce85d332c77086b49f70834915b9216f9
+lastReviewedAt: 2026-07-13
+lastReviewedCommit: 4c79df4623e3cf296bc8d1baeea688d78351570a
 related:
   - ../AGENTS.md
   - ../.docpact/config.yaml
@@ -48,6 +48,8 @@ Current workflow files:
 - `.github/workflows/publish.yml`
 
 Review note, 2026-06-04: `dataset curation-queue next/verify` does not change release workflow files, token names, Trusted Publishing settings, or tag semantics.
+
+Review note, 2026-07-13: exact-count maintenance pagination requires no repository secret, Trusted Publisher, environment, workflow filename, or tag-semantics change.
 
 Important constraint:
 

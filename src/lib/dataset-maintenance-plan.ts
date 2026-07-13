@@ -543,6 +543,7 @@ export async function runDatasetMaintenancePlan(
     status: allBlockers.length ? 'blocked' : 'ready',
     scope_sha256: scopeSha256,
     visible_snapshot_sha256: sha256Json(snapshotRows),
+    snapshot_completeness: accountSnapshot.completeness,
     projected_reference_sha256: sha256Json(maintenanceProjectedReferenceFingerprint(intendedRows)),
     plan_sha256: '',
     summary: {
@@ -589,6 +590,7 @@ export async function runDatasetMaintenancePlan(
       session_source: context.account.session_source,
     },
     page_size: pageSize,
+    completeness: accountSnapshot.completeness,
     source_urls: accountSnapshot.source_urls,
     row_count: snapshotRows.length,
     snapshot_sha256: plan.visible_snapshot_sha256,
@@ -628,6 +630,7 @@ export async function runDatasetMaintenancePlan(
     task_id: plan.task_id,
     plan_sha256: plan.plan_sha256,
     account: plan.account,
+    snapshot_completeness: accountSnapshot.completeness,
     summary: plan.summary,
     actions: plan.actions.map((action) => ({
       action_id: action.action_id,

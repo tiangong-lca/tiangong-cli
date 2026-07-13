@@ -785,7 +785,7 @@ Options:
   --scope <file>       Maintenance scope manifest
   --operation <value> Intended row-level maintenance operation
   --out-dir <dir>      Artifact directory
-  --page-size <n>      Snapshot page size
+  --page-size <n>      Requested snapshot page size, 1-5000 (default: 1000); server caps are followed using exact counts
   --timeout-ms <n>     Request timeout in milliseconds
   --json               Print compact JSON
   -h, --help
@@ -823,7 +823,7 @@ function renderDatasetMaintenanceVerifyHelp(): string {
 Options:
   --plan <file>       Immutable maintenance-plan.json
   --out-dir <dir>     Optional verification artifact directory
-  --page-size <n>     Readback page size
+  --page-size <n>     Requested readback page size, 1-5000 (default: 1000); server caps are followed using exact counts
   --timeout-ms <n>    Request timeout in milliseconds
   --json              Print compact JSON
   -h, --help
@@ -844,7 +844,7 @@ Behavior:
 Options:
   --state-code <n>    Optional repeatable state_code filter. Omit to clear all state codes for the current account.
   --out-dir <dir>     Artifact directory (default: ./dataset-maintenance/clear-account)
-  --page-size <n>     Snapshot page size, 1-5000 (default: 1000)
+  --page-size <n>     Requested snapshot page size, 1-5000 (default: 1000); server caps are followed using exact counts
   --timeout-ms <n>    Request timeout in milliseconds (default: 10000)
   --commit            Execute deletion. Without this flag the command only writes a dry-run report.
   --dry-run           Explicit dry-run mode
@@ -858,6 +858,8 @@ Outputs written under --out-dir:
   - approval-record.json       (commit only)
   - commit-report.json         (commit only)
   - readback-verify-report.json (commit only)
+
+Every snapshot/readback must prove complete exact-count pagination before an artifact or delete is accepted.
 `.trim();
 }
 

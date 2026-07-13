@@ -8,6 +8,12 @@ import {
 import { CliError } from './errors.js';
 import type { FetchLike, ResponseLike } from './http.js';
 import {
+  buildSnapshotCompleteness,
+  fetchCompletePostgrestPages,
+  type DatasetMaintenanceSnapshotCompleteness,
+  type DatasetMaintenanceTableCompleteness,
+} from './dataset-maintenance-pagination.js';
+import {
   buildSupabaseAuthHeaders,
   deriveSupabaseProjectBaseUrl,
   requireSupabaseRestRuntime,
@@ -58,6 +64,9 @@ export type DatasetMaintenanceClearAccountReport = {
     state_codes: number[] | null;
     page_size: number;
   };
+  snapshot_completeness: DatasetMaintenanceSnapshotCompleteness<DatasetMaintenanceClearAccountTable>;
+  readback_completeness: DatasetMaintenanceSnapshotCompleteness<DatasetMaintenanceClearAccountTable> | null;
+  readback_error: string | null;
   summary: {
     total_candidates: number;
     total_deleted: number;
@@ -299,51 +308,92 @@ async function fetchTableRows(options: {
   accessToken: string;
   fetchImpl: FetchLike;
   timeoutMs: number;
-}): Promise<{ rows: DatasetMaintenanceClearAccountRow[]; sourceUrls: string[] }> {
-  const rows: DatasetMaintenanceClearAccountRow[] = [];
-  const sourceUrls: string[] = [];
-  let offset = 0;
+}): Promise<{
+  rows: DatasetMaintenanceClearAccountRow[];
+  sourceUrls: string[];
+  completeness: DatasetMaintenanceTableCompleteness;
+}> {
+  const result = await fetchCompletePostgrestPages({
+    table: options.table,
+    requestedPageSize: options.pageSize,
+    rowIdentity: (row: DatasetMaintenanceClearAccountRow) => `${row.id!}\u0000${row.version!}`,
+    fetchPage: async (offset) => {
+      const url = buildTableFilterUrl(options);
+      url.searchParams.set('order', 'id.asc,version.asc');
+      url.searchParams.set('limit', String(options.pageSize));
+      url.searchParams.set('offset', String(offset));
 
-  while (true) {
-    const url = buildTableFilterUrl(options);
-    url.searchParams.set('order', 'id.asc,version.asc');
-    url.searchParams.set('limit', String(options.pageSize));
-    url.searchParams.set('offset', String(offset));
-
-    const sourceUrl = url.toString();
-    const response = await fetchJson({
-      url: sourceUrl,
-      init: {
-        method: 'GET',
-        headers: buildSupabaseAuthHeaders(options.publishableKey, options.accessToken),
-      },
-      fetchImpl: options.fetchImpl,
-      timeoutMs: options.timeoutMs,
-      label: `${options.table} RLS visible snapshot`,
-    });
-
-    if (!Array.isArray(response.body)) {
-      throw new CliError(`Remote ${options.table} snapshot response was not an array.`, {
-        code: 'DATASET_MAINTENANCE_SNAPSHOT_INVALID',
-        exitCode: 1,
-        details: response.body,
+      const sourceUrl = url.toString();
+      const response = await fetchJson({
+        url: sourceUrl,
+        init: {
+          method: 'GET',
+          headers: {
+            ...buildSupabaseAuthHeaders(options.publishableKey, options.accessToken),
+            Prefer: 'count=exact',
+          },
+        },
+        fetchImpl: options.fetchImpl,
+        timeoutMs: options.timeoutMs,
+        label: `${options.table} RLS visible snapshot`,
       });
-    }
 
-    const pageRows = response.body
-      .map((row) => normalizeRow(options.table, row))
-      .filter((row): row is DatasetMaintenanceClearAccountRow => row !== null);
-    rows.push(...pageRows);
-    sourceUrls.push(sourceUrl);
+      if (!Array.isArray(response.body)) {
+        throw new CliError(`Remote ${options.table} snapshot response was not an array.`, {
+          code: 'DATASET_MAINTENANCE_SNAPSHOT_INVALID',
+          exitCode: 1,
+          details: response.body,
+        });
+      }
 
-    if (response.body.length < options.pageSize) {
-      break;
-    }
+      const pageRows = response.body.map((row) => normalizeRow(options.table, row));
+      if (
+        pageRows.some(
+          (row) => row === null || !row.id || !row.version || row.user_id !== options.userId,
+        )
+      ) {
+        throw new CliError(`Remote ${options.table} snapshot contained an invalid account row.`, {
+          code: 'DATASET_MAINTENANCE_SNAPSHOT_INVALID',
+          exitCode: 1,
+        });
+      }
+      return {
+        rows: pageRows as DatasetMaintenanceClearAccountRow[],
+        source_url: sourceUrl,
+        content_range: response.headers.get('content-range'),
+      };
+    },
+  });
+  return { rows: result.rows, sourceUrls: result.source_urls, completeness: result.completeness };
+}
 
-    offset += options.pageSize;
-  }
-
-  return { rows, sourceUrls };
+async function fetchAccountSnapshot(
+  options: Omit<Parameters<typeof fetchTableRows>[0], 'table'>,
+): Promise<{
+  tables: Array<{
+    table: DatasetMaintenanceClearAccountTable;
+    rows: DatasetMaintenanceClearAccountRow[];
+    sourceUrls: string[];
+    completeness: DatasetMaintenanceTableCompleteness;
+  }>;
+  rows: DatasetMaintenanceClearAccountRow[];
+  completeness: DatasetMaintenanceSnapshotCompleteness<DatasetMaintenanceClearAccountTable>;
+}> {
+  const tables = await Promise.all(
+    CLEAR_ACCOUNT_TABLES.map(async (table) => ({
+      table,
+      ...(await fetchTableRows({ ...options, table })),
+    })),
+  );
+  return {
+    tables,
+    rows: tables.flatMap((table) => table.rows),
+    completeness: buildSnapshotCompleteness({
+      tables: CLEAR_ACCOUNT_TABLES,
+      requestedPageSize: options.pageSize,
+      results: tables,
+    }),
+  };
 }
 
 async function deleteTableRows(options: {
@@ -399,6 +449,7 @@ async function deleteTableRows(options: {
 
 function buildSummary(
   tables: DatasetMaintenanceClearAccountTableReport[],
+  additionalFailures = 0,
 ): DatasetMaintenanceClearAccountReport['summary'] {
   const byTable = Object.fromEntries(
     CLEAR_ACCOUNT_TABLES.map((table) => {
@@ -419,7 +470,7 @@ function buildSummary(
     total_candidates: tables.reduce((sum, table) => sum + table.candidates, 0),
     total_deleted: tables.reduce((sum, table) => sum + table.deleted, 0),
     total_remaining: tables.reduce((sum, table) => sum + (table.remaining ?? 0), 0),
-    total_failures: tables.filter((table) => table.status === 'failed').length,
+    total_failures: tables.filter((table) => table.status === 'failed').length + additionalFailures,
     by_table: byTable,
   };
 }
@@ -474,24 +525,19 @@ export async function runDatasetMaintenanceClearAccount(
     );
   }
 
-  const snapshotTables = await Promise.all(
-    CLEAR_ACCOUNT_TABLES.map(async (table) => {
-      const snapshot = await fetchTableRows({
-        restBaseUrl,
-        table,
-        userId: currentUser.id,
-        stateCodes,
-        pageSize,
-        publishableKey: runtime.publishableKey,
-        accessToken: session.accessToken,
-        fetchImpl: options.fetchImpl,
-        timeoutMs,
-      });
-      return { table, ...snapshot };
-    }),
-  );
-
-  const snapshotRows = snapshotTables.flatMap((table) => table.rows);
+  const initialSnapshot = await fetchAccountSnapshot({
+    restBaseUrl,
+    userId: currentUser.id,
+    stateCodes,
+    pageSize,
+    publishableKey: runtime.publishableKey,
+    accessToken: session.accessToken,
+    fetchImpl: options.fetchImpl,
+    timeoutMs,
+  });
+  const snapshotTables = initialSnapshot.tables;
+  const snapshotRows = initialSnapshot.rows;
+  const snapshotCompleteness = initialSnapshot.completeness;
   const artifacts: DatasetMaintenanceClearAccountReport['artifacts'] = {
     rls_visible_snapshot: path.join(outDir, 'rls-visible-snapshot.json'),
     dry_run_report: path.join(outDir, 'dry-run-report.json'),
@@ -513,6 +559,7 @@ export async function runDatasetMaintenanceClearAccount(
       state_codes: stateCodes,
       page_size: pageSize,
     },
+    completeness: snapshotCompleteness,
     row_count: snapshotRows.length,
     rows: snapshotRows,
   });
@@ -589,9 +636,7 @@ export async function runDatasetMaintenanceClearAccount(
         .slice(0, 5)
         .map(
           (failure) =>
-            `${failure.row.table}:${failure.row.id ?? '?'}@${failure.row.version ?? '?'} ${
-              failure.error
-            }`,
+            `${failure.row.table}:${failure.row.id!}@${failure.row.version!} ${failure.error}`,
         );
 
       tableReports.push({
@@ -629,14 +674,48 @@ export async function runDatasetMaintenanceClearAccount(
     }
   }
 
-  const summary = buildSummary(tableReports);
+  let readbackCompleteness: DatasetMaintenanceClearAccountReport['readback_completeness'] = null;
+  let readbackError: string | null = null;
+  if (commit) {
+    try {
+      const finalReadback = await fetchAccountSnapshot({
+        restBaseUrl,
+        userId: currentUser.id,
+        stateCodes,
+        pageSize,
+        publishableKey: runtime.publishableKey,
+        accessToken: session.accessToken,
+        fetchImpl: options.fetchImpl,
+        timeoutMs,
+      });
+      readbackCompleteness = finalReadback.completeness;
+      for (const table of CLEAR_ACCOUNT_TABLES) {
+        const tableReadback = finalReadback.tables.find((entry) => entry.table === table)!;
+        const tableReport = tableReports.find((entry) => entry.table === table)!;
+        tableReport.remaining = tableReadback.rows.length;
+        tableReport.source_urls.push(...tableReadback.sourceUrls);
+        if (tableReadback.rows.length > 0) {
+          const message = `${tableReadback.rows.length} row(s) remained in the final all-table readback.`;
+          tableReport.status = 'failed';
+          tableReport.error = [tableReport.error, message].filter(Boolean).join(' ');
+        }
+      }
+    } catch (error) {
+      readbackError = `Final all-table readback could not prove account state: ${caughtErrorMessage(
+        error,
+      )}`;
+    }
+  }
+
+  const summary = buildSummary(tableReports, readbackError ? 1 : 0);
+  const finalReadbackPassed = readbackCompleteness !== null && readbackCompleteness.row_count === 0;
   const report: DatasetMaintenanceClearAccountReport = {
     schema_version: 1,
     generated_at_utc: generatedAtUtc,
     status: commit
-      ? summary.total_failures > 0 || summary.total_remaining > 0
-        ? 'completed_with_failures'
-        : 'cleared_account'
+      ? summary.total_failures === 0 && summary.total_remaining === 0 && finalReadbackPassed
+        ? 'cleared_account'
+        : 'completed_with_failures'
       : 'planned_account_clear',
     mode: commit ? 'commit' : 'dry-run',
     account: {
@@ -649,6 +728,9 @@ export async function runDatasetMaintenanceClearAccount(
       state_codes: stateCodes,
       page_size: pageSize,
     },
+    snapshot_completeness: snapshotCompleteness,
+    readback_completeness: readbackCompleteness,
+    readback_error: readbackError,
     summary,
     tables: tableReports,
     artifacts,
@@ -674,12 +756,16 @@ export async function runDatasetMaintenanceClearAccount(
       confirmed_email: options.confirm,
       filters: report.filters,
       candidate_count: summary.total_candidates,
+      snapshot_completeness: snapshotCompleteness,
     });
     writeJsonArtifact(artifacts.commit_report, report);
     writeJsonArtifact(artifacts.readback_verify_report, {
       schema_version: 1,
       generated_at_utc: generatedAtUtc,
       status: report.status,
+      initial_snapshot_completeness: snapshotCompleteness,
+      readback_completeness: readbackCompleteness,
+      readback_error: readbackError,
       tables: tableReports.map((table) => ({
         table: table.table,
         candidates: table.candidates,
@@ -699,6 +785,7 @@ export const __testInternals = {
   buildTableFilterUrl,
   caughtErrorMessage,
   deleteTableRows,
+  fetchAccountSnapshot,
   fetchCurrentUser,
   fetchJson,
   fetchTableRows,

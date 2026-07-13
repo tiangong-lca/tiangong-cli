@@ -26,8 +26,8 @@ checkPaths:
   - scripts/docpact
   - scripts/docpact-gate.sh
   - scripts/install-git-hooks.sh
-lastReviewedAt: 2026-07-12
-lastReviewedCommit: d580282ce85d332c77086b49f70834915b9216f9
+lastReviewedAt: 2026-07-13
+lastReviewedCommit: 4c79df4623e3cf296bc8d1baeea688d78351570a
 related:
   - ../../AGENTS.md
   - ../../.docpact/config.yaml
@@ -53,6 +53,8 @@ Review note, 2026-06-11: release 0.0.15 keeps the import-lca wrapper inside the 
 Review note, 2026-07-11: row-level dataset maintenance is implemented in the native CLI as `dataset maintenance plan/apply/verify`. The architecture keeps scope freezing, current-user RLS reads, protected-row classification, approved platform-command writes, append-only action logging, and independent verification in separate maintenance modules.
 
 Review note, 2026-07-12: `merge-support-aliases` is one fixed BAFU owner-draft transformation inside the maintenance boundary. Scope and plan require `target_mode=owner_draft`; planning freezes exact current-owner state-0 source/target support and exchange closure; apply sends ordered `time` and `length_time` batches in one `target_visibility=owner_draft` whole-plan guarded RPC; verify re-reads private state and validates the mode-bound plan/batch/row/exchange proof chain. Publication is a separate future workflow.
+
+Review note, 2026-07-13: account-wide maintenance reads now share one exact-count paginator. Requested page size is not treated as the server's effective page size; actual returned lengths advance offsets, exact `Content-Range` totals and strict row identities prove pagination completeness under stable filtered membership/order, and incomplete scans fail before artifacts or writes. The aggregate proof describes a multi-request traversal, not transaction-level/MVCC snapshot isolation.
 
 ## Stable Path Map
 
@@ -142,6 +144,7 @@ Dataset-local governance now uses the same CLI-native command layer:
 - `src/lib/dataset-references-rewrite.ts`
 - `src/lib/dataset-maintenance-clear-account.ts`
 - `src/lib/dataset-maintenance-{contract,remote,plan,apply,verify}.ts`
+- `src/lib/dataset-maintenance-pagination.ts`
 - `src/lib/dataset-maintenance-alias-rewrite.ts`
 - `src/lib/dataset-maintenance-support-validation.ts`
 - `src/lib/dataset-local.ts`
@@ -153,12 +156,15 @@ These modules keep validation, entity-level curation queue build/next/verify sta
 The row-level maintenance family is deliberately split by responsibility:
 
 - `contract` owns the versioned scope, immutable plan, action, approval, and report shapes.
+- `pagination` owns fail-closed PostgREST exact-count traversal for maintenance account scans and clear-account readbacks. It treats page size as a requested maximum, advances by actual returned length, verifies exact totals/ranges plus strict `id`/`version` identities, and builds per-table and aggregate completeness proofs.
 - `remote` owns current-session authentication, current-user RLS reads, exact `id` + `version` row lookup, reference-impact reads, platform `save_draft` / `delete` / guarded owner-draft alias-plan RPC execution, and audit correlation. It exposes no direct alias-dimension RPC fallback.
 - `alias-rewrite` owns the fixed two-dimension BAFU profile, reviewed target-reference derivation, closure counting, and arbitrary-precision decimal scaling. It never uses JavaScript binary floating point for exchange amounts.
 - `support-validation` validates frozen owner-draft FP/UG payload schemas plus embedded root UUID/version without importing publication behavior.
-- `plan` freezes `maintenance-scope.json`, `rls-visible-snapshot.json`, `protected-rows.jsonl`, `reference-impact-report.json`, `maintenance-plan.json`, and `dry-run-report.json` before any write. Alias plans additionally freeze `exchange-rewrite-plan.jsonl`, three support snapshots per batch, per-process exchange locators/hashes, desired payloads, and exact postconditions.
-- `apply` re-runs a full-plan drift preflight, verifies `--approve-plan <sha256>` and `--confirm <email>`, and persists approval before the first write. Ordinary actions remain sequential; the complete ordered alias plan is submitted once to `cmd_dataset_alias_plan_guarded` and is never decomposed into dimension or per-row writes. Apply records `alias-plan-progress.jsonl` plus plan-bound row, exchange, and batch ledgers, and repairs a lost-response/log gap only through an audit-proven whole-plan replay.
-- `verify` performs a fresh readback independently of apply, validates the immutable support snapshots and exact durable proof chain, and writes `readback-verify-report.json`.
+- `plan` requires a complete exact-count account scan before writing `maintenance-scope.json`, `rls-visible-snapshot.json`, `protected-rows.jsonl`, `reference-impact-report.json`, `maintenance-plan.json`, and `dry-run-report.json`; newly generated plans bind the aggregate completeness proof into the plan hash. Alias plans additionally freeze `exchange-rewrite-plan.jsonl`, three support snapshots per batch, per-process exchange locators/hashes, desired payloads, and exact postconditions.
+- `apply` requires another complete exact-count scan before approval or mutation, then re-runs a full-plan drift preflight, verifies `--approve-plan <sha256>` and `--confirm <email>`, and persists approval with the current proof. Ordinary actions remain sequential; the complete ordered alias plan is submitted once to `cmd_dataset_alias_plan_guarded` and is never decomposed into dimension or per-row writes. Apply records `alias-plan-progress.jsonl` plus plan-bound row, exchange, and batch ledgers, and repairs a lost-response/log gap only through an audit-proven whole-plan replay.
+- `verify` performs a fresh complete account readback independently of apply, records its completeness proof, validates the immutable support snapshots and exact durable proof chain, and writes `readback-verify-report.json`.
+
+`clear-account` applies the same paginator to its initial five-table snapshot, per-table commit checks, and one final fresh scan of all five tables. It reports success only when the final aggregate proof exists with zero rows; a failed final proof is preserved as `completed_with_failures` because earlier deletes may already have committed. An incomplete initial scan produces no snapshot/approval and cannot reach deletion. These proofs establish pagination completeness only while filtered membership/order is stable; they do not provide transaction-level or MVCC snapshot isolation, so hash/timestamp drift guards and quiescent-account operation remain part of the safety model.
 
 Ordinary V1 maintenance only permits current-user, `state_code=0`, exact-version `contacts`, `sources`, `flows`, and `processes` to become `save_draft` or `delete` actions. `merge-support-aliases` is narrower still: exactly two owner-draft batches (`time`, `length_time`), 52 draft rows, 59 selected exchanges, and 309 unrelated exchanges preserved, with reviewed factors and postcondition counts encoded as contract invariants. Source and target FP/UG plus all changed parents must be the current actor's `state_code=0`; public, foreign, or mixed visibility is rejected. It rewrites references and exchange amounts but does not delete support rows or change visibility.
 

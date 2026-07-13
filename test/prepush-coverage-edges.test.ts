@@ -89,6 +89,19 @@ function writeJsonl(filePath: string, rows: unknown[]): void {
   writeFileSync(filePath, `${rows.map((row) => JSON.stringify(row)).join('\n')}\n`, 'utf8');
 }
 
+function maintenanceJsonHeaders(body: unknown) {
+  const contentRange = Array.isArray(body)
+    ? body.length > 0
+      ? `0-${body.length - 1}/${body.length}`
+      : '*/0'
+    : null;
+  return {
+    get(name: string): string | null {
+      return name.toLowerCase() === 'content-range' ? contentRange : 'application/json';
+    },
+  };
+}
+
 function sampleProcessRow(id = 'proc-1', version = '00.00.001') {
   return {
     processDataSet: {
@@ -1463,7 +1476,7 @@ test('prepush coverage covers maintenance delete failures and readback catch', a
           return {
             ok: true,
             status: 200,
-            headers: { get: () => 'application/json' },
+            headers: maintenanceJsonHeaders(body),
             text: async () => JSON.stringify(body),
           };
         }
@@ -1545,27 +1558,31 @@ test('prepush coverage covers maintenance delete failures and readback catch', a
         }
         if (url.includes('/rest/v1/processes?')) {
           deleteFailureReadCount += 1;
+          const body =
+            deleteFailureReadCount === 1
+              ? [
+                  {
+                    id: 'proc-delete-failure',
+                    version: '01.00.000',
+                    user_id: 'user-1',
+                    state_code: 0,
+                  },
+                ]
+              : [];
           return {
             ok: true,
             status: 200,
-            headers: { get: () => 'application/json' },
-            text: async () =>
-              JSON.stringify([
-                {
-                  id: 'proc-delete-failure',
-                  version: '01.00.000',
-                  user_id: 'user-1',
-                  state_code: 0,
-                },
-              ]),
+            headers: maintenanceJsonHeaders(body),
+            text: async () => JSON.stringify(body),
           };
         }
         if (url.includes('/rest/v1/')) {
+          const body: unknown[] = [];
           return {
             ok: true,
             status: 200,
-            headers: { get: () => 'application/json' },
-            text: async () => JSON.stringify([]),
+            headers: maintenanceJsonHeaders(body),
+            text: async () => JSON.stringify(body),
           };
         }
         if (url.endsWith('/functions/v1/app_dataset_delete')) {
@@ -1589,40 +1606,39 @@ test('prepush coverage covers maintenance delete failures and readback catch', a
       (table) => table.table === 'processes',
     );
     assert.match(processDeleteFailure?.error ?? '', /row delete request/u);
-    assert.match(processDeleteFailure?.error ?? '', /remained after delete readback/u);
+    assert.doesNotMatch(processDeleteFailure?.error ?? '', /remained after delete readback/u);
     assert.match(processDeleteFailure?.error ?? '', /proc-delete-failure/u);
 
     let invalidIdentityReadCount = 0;
-    const invalidIdentityDeleteReport = await runDatasetMaintenanceClearAccount({
-      outDir: path.join(dir, 'delete-invalid-identity'),
-      stateCodes: [0],
-      pageSize: 2,
-      commit: true,
-      confirm: 'private-account@example.test',
-      now: new Date('2026-06-04T00:00:00.000Z'),
-      env: buildSupabaseTestEnv({ TIANGONG_LCA_API_BASE_URL: 'https://example.com/functions/v1' }),
-      fetchImpl: async (input) => {
-        const url = String(input);
-        if (isSupabaseAuthTokenUrl(url)) {
-          return makeSupabaseAuthResponse({ email: 'private-account@example.test' });
-        }
-        if (url.endsWith('/auth/v1/user')) {
-          return {
-            ok: true,
-            status: 200,
-            headers: { get: () => 'application/json' },
-            text: async () =>
-              JSON.stringify({ id: 'user-1', email: 'private-account@example.test' }),
-          };
-        }
-        if (url.includes('/rest/v1/processes?')) {
-          invalidIdentityReadCount += 1;
-          return {
-            ok: true,
-            status: 200,
-            headers: { get: () => 'application/json' },
-            text: async () =>
-              JSON.stringify(
+    await assert.rejects(
+      () =>
+        runDatasetMaintenanceClearAccount({
+          outDir: path.join(dir, 'delete-invalid-identity'),
+          stateCodes: [0],
+          pageSize: 2,
+          commit: true,
+          confirm: 'private-account@example.test',
+          now: new Date('2026-06-04T00:00:00.000Z'),
+          env: buildSupabaseTestEnv({
+            TIANGONG_LCA_API_BASE_URL: 'https://example.com/functions/v1',
+          }),
+          fetchImpl: async (input) => {
+            const url = String(input);
+            if (isSupabaseAuthTokenUrl(url)) {
+              return makeSupabaseAuthResponse({ email: 'private-account@example.test' });
+            }
+            if (url.endsWith('/auth/v1/user')) {
+              return {
+                ok: true,
+                status: 200,
+                headers: { get: () => 'application/json' },
+                text: async () =>
+                  JSON.stringify({ id: 'user-1', email: 'private-account@example.test' }),
+              };
+            }
+            if (url.includes('/rest/v1/processes?')) {
+              invalidIdentityReadCount += 1;
+              const body =
                 invalidIdentityReadCount === 1
                   ? [
                       {
@@ -1630,33 +1646,32 @@ test('prepush coverage covers maintenance delete failures and readback catch', a
                         state_code: 0,
                       },
                     ]
-                  : [],
-              ),
-          };
-        }
-        if (url.includes('/rest/v1/')) {
-          return {
-            ok: true,
-            status: 200,
-            headers: { get: () => 'application/json' },
-            text: async () => JSON.stringify([]),
-          };
-        }
-        return {
-          ok: false,
-          status: 500,
-          headers: { get: () => 'application/json' },
-          text: async () => JSON.stringify({ error: 'unexpected' }),
-        };
-      },
-    });
-    const invalidIdentityProcessTable = invalidIdentityDeleteReport.tables.find(
-      (table) => table.table === 'processes',
-    );
-    assert.match(invalidIdentityProcessTable?.error ?? '', /processes:\?@\?/u);
-    assert.doesNotMatch(
-      invalidIdentityProcessTable?.error ?? '',
-      /remained after delete readback/u,
+                  : [];
+              return {
+                ok: true,
+                status: 200,
+                headers: maintenanceJsonHeaders(body),
+                text: async () => JSON.stringify(body),
+              };
+            }
+            if (url.includes('/rest/v1/')) {
+              const body: unknown[] = [];
+              return {
+                ok: true,
+                status: 200,
+                headers: maintenanceJsonHeaders(body),
+                text: async () => JSON.stringify(body),
+              };
+            }
+            return {
+              ok: false,
+              status: 500,
+              headers: { get: () => 'application/json' },
+              text: async () => JSON.stringify({ error: 'unexpected' }),
+            };
+          },
+        }),
+      /invalid account row/u,
     );
   } finally {
     rmSync(dir, { recursive: true, force: true });
