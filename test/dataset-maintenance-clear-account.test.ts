@@ -15,13 +15,27 @@ import {
   makeSupabaseAuthResponse,
 } from './helpers/supabase-auth.js';
 
-function jsonResponse(body: unknown, status = 200): ResponseLike {
+function jsonResponse(
+  body: unknown,
+  status = 200,
+  headers: Record<string, string> = {},
+): ResponseLike {
+  const defaultContentRange = Array.isArray(body)
+    ? body.length > 0
+      ? `0-${body.length - 1}/${body.length}`
+      : '*/0'
+    : null;
   return {
     ok: status >= 200 && status < 300,
     status,
     headers: {
       get(name: string): string | null {
-        return name.toLowerCase() === 'content-type' ? 'application/json' : null;
+        const normalized = name.toLowerCase();
+        if (normalized === 'content-type') return 'application/json';
+        if (normalized === 'content-range') {
+          return headers['content-range'] ?? defaultContentRange;
+        }
+        return headers[normalized] ?? null;
       },
     },
     async text(): Promise<string> {
@@ -109,6 +123,18 @@ test('runDatasetMaintenanceClearAccount writes a dry-run account snapshot', asyn
   assert.equal(report.summary.by_table.flows.candidates, 1);
   assert.equal(existsSync(report.artifacts.rls_visible_snapshot), true);
   assert.equal(existsSync(report.artifacts.dry_run_report), true);
+  assert.equal(report.snapshot_completeness.complete, true);
+  assert.deepEqual(report.snapshot_completeness.entity_counts, {
+    lifecyclemodels: 0,
+    processes: 1,
+    flows: 1,
+    sources: 0,
+    contacts: 0,
+  });
+  const snapshotArtifact = JSON.parse(
+    readFileSync(report.artifacts.rls_visible_snapshot, 'utf8'),
+  ) as Record<string, unknown>;
+  assert.equal((snapshotArtifact.completeness as { complete?: boolean }).complete, true);
   assert.match(readFileSync(report.artifacts.rls_visible_snapshot, 'utf8'), /proc-1/u);
   assert.equal(observedUrls.filter((url) => url.includes('/rest/v1/processes')).length, 1);
   assert.match(observedUrls.join('\n'), /state_code=in.%280%29/u);
@@ -162,11 +188,16 @@ test('runDatasetMaintenanceClearAccount deletes account rows and verifies readba
   assert.equal(report.status, 'cleared_account');
   assert.equal(report.mode, 'commit');
   assert.deepEqual(deletedTables, ['processes', 'flows']);
-  assert.equal(readbackCounts.get('processes'), 1);
-  assert.equal(readbackCounts.get('flows'), 1);
+  assert.equal(readbackCounts.get('processes'), 2);
+  assert.equal(readbackCounts.get('flows'), 2);
   assert.equal(report.summary.total_candidates, 2);
   assert.equal(report.summary.total_deleted, 2);
   assert.equal(report.summary.total_remaining, 0);
+  assert.equal(report.snapshot_completeness.complete, true);
+  assert.equal(report.readback_completeness?.complete, true);
+  assert.equal(report.readback_completeness?.tables.length, 5);
+  assert.equal(report.readback_completeness?.row_count, 0);
+  assert.equal(report.readback_error, null);
   assert.equal(existsSync(report.artifacts.approval_record!), true);
   assert.equal(existsSync(report.artifacts.commit_report!), true);
   assert.equal(existsSync(report.artifacts.readback_verify_report!), true);
@@ -303,7 +334,7 @@ test('dataset maintenance internals page through rows and protect delete request
     },
   });
   assert.equal(rows.rows.length, 1);
-  assert.deepEqual(observedOffsets, ['0', '1']);
+  assert.deepEqual(observedOffsets, ['0']);
   await assert.rejects(
     () =>
       __testInternals.fetchTableRows({
@@ -318,6 +349,21 @@ test('dataset maintenance internals page through rows and protect delete request
         fetchImpl: async () => jsonResponse({ rows: [] }),
       }),
     /snapshot response was not an array/u,
+  );
+  await assert.rejects(
+    () =>
+      __testInternals.fetchTableRows({
+        restBaseUrl: 'https://example.test/rest/v1',
+        table: 'flows',
+        userId: 'user-1',
+        stateCodes: null,
+        pageSize: 100,
+        publishableKey: 'anon',
+        accessToken: 'token',
+        timeoutMs: 1000,
+        fetchImpl: async () => jsonResponse([null]),
+      }),
+    /invalid account row/u,
   );
 
   const observedDeletes: unknown[] = [];
@@ -445,11 +491,203 @@ test('runDatasetMaintenanceClearAccount blocks later tables after delete readbac
       'skipped_empty',
     );
     assert.equal(report.tables.find((table) => table.table === 'processes')?.status, 'failed');
-    assert.equal(
-      report.tables.find((table) => table.table === 'flows')?.status,
-      'skipped_after_failure',
+    assert.equal(report.tables.find((table) => table.table === 'flows')?.status, 'failed');
+    assert.match(
+      report.tables.find((table) => table.table === 'flows')?.error ?? '',
+      /final all-table readback/u,
     );
+    assert.equal(report.readback_completeness?.tables.length, 5);
+    assert.equal(report.readback_completeness?.row_count, 2);
     assert.deepEqual(deletedTables, ['processes']);
+  } finally {
+    rmSync(outDir, { recursive: true, force: true });
+  }
+});
+
+test('clear-account paginator follows a 1000-row server cap for a requested page size of 5000', async () => {
+  const rows = Array.from({ length: 2_203 }, (_, index) => ({
+    id: `flow-${String(index).padStart(5, '0')}`,
+    version: '00.00.001',
+    user_id: 'user-1',
+    state_code: 0,
+    modified_at: '2026-07-13T00:00:00.000Z',
+  }));
+  const offsets: number[] = [];
+  const preferHeaders: string[] = [];
+  const result = await __testInternals.fetchTableRows({
+    restBaseUrl: 'https://example.test/rest/v1',
+    table: 'flows',
+    userId: 'user-1',
+    stateCodes: [0],
+    pageSize: 5_000,
+    publishableKey: 'anon',
+    accessToken: 'token',
+    timeoutMs: 1_000,
+    fetchImpl: async (input, init) => {
+      const url = new URL(String(input));
+      const offset = Number(url.searchParams.get('offset') ?? 0);
+      const page = rows.slice(offset, offset + 1_000);
+      offsets.push(offset);
+      preferHeaders.push(new Headers(init?.headers).get('prefer') ?? '');
+      return jsonResponse(page, 200, {
+        'content-range': `${offset}-${offset + page.length - 1}/${rows.length}`,
+      });
+    },
+  });
+
+  assert.deepEqual(offsets, [0, 1_000, 2_000]);
+  assert.equal(
+    preferHeaders.every((value) => value === 'count=exact'),
+    true,
+  );
+  assert.equal(result.rows.length, 2_203);
+  assert.equal(result.completeness.complete, true);
+  assert.equal(result.completeness.effective_page_size, 1_000);
+  assert.equal(result.completeness.pages_fetched, 3);
+});
+
+test('clear-account refuses an unproven snapshot before writing artifacts or deleting rows', async () => {
+  const outDir = mkdtempSync(path.join(os.tmpdir(), 'tg-clear-account-incomplete-'));
+  let deleteRequests = 0;
+  const withoutContentRange = (body: unknown): ResponseLike => ({
+    ok: true,
+    status: 200,
+    headers: {
+      get(name: string): string | null {
+        return name.toLowerCase() === 'content-type' ? 'application/json' : null;
+      },
+    },
+    async text(): Promise<string> {
+      return JSON.stringify(body);
+    },
+  });
+  try {
+    await assert.rejects(
+      () =>
+        runDatasetMaintenanceClearAccount({
+          outDir,
+          commit: true,
+          confirm: 'user@example.com',
+          env: buildSupabaseTestEnv({
+            TIANGONG_LCA_API_BASE_URL: 'https://example.supabase.co/functions/v1',
+            TIANGONG_LCA_DISABLE_SESSION_CACHE: '1',
+          }),
+          fetchImpl: async (input, init) => {
+            const url = String(input);
+            if (isSupabaseAuthTokenUrl(url)) {
+              return makeSupabaseAuthResponse({ email: 'user@example.com', userId: 'user-1' });
+            }
+            if (url.endsWith('/auth/v1/user')) {
+              return jsonResponse({ id: 'user-1', email: 'user@example.com' });
+            }
+            if (init?.method === 'POST') deleteRequests += 1;
+            return withoutContentRange([]);
+          },
+        }),
+      (error: unknown) => {
+        assert.equal((error as { code?: string }).code, 'DATASET_MAINTENANCE_SNAPSHOT_INCOMPLETE');
+        return true;
+      },
+    );
+    assert.equal(deleteRequests, 0);
+    assert.equal(existsSync(path.join(outDir, 'rls-visible-snapshot.json')), false);
+    assert.equal(existsSync(path.join(outDir, 'approval-record.json')), false);
+  } finally {
+    rmSync(outDir, { recursive: true, force: true });
+  }
+});
+
+test('clear-account final all-table readback catches rows added after an empty initial snapshot', async () => {
+  const outDir = mkdtempSync(path.join(os.tmpdir(), 'tg-clear-account-final-row-'));
+  const reads = new Map<string, number>();
+  let deleteRequests = 0;
+  try {
+    const report = await runDatasetMaintenanceClearAccount({
+      outDir,
+      commit: true,
+      confirm: 'user@example.com',
+      env: buildSupabaseTestEnv({
+        TIANGONG_LCA_API_BASE_URL: 'https://example.supabase.co/functions/v1',
+        TIANGONG_LCA_DISABLE_SESSION_CACHE: '1',
+      }),
+      fetchImpl: async (input, init) => {
+        const url = String(input);
+        if (isSupabaseAuthTokenUrl(url)) {
+          return makeSupabaseAuthResponse({ email: 'user@example.com', userId: 'user-1' });
+        }
+        if (url.endsWith('/auth/v1/user')) {
+          return jsonResponse({ id: 'user-1', email: 'user@example.com' });
+        }
+        if (init?.method === 'POST') deleteRequests += 1;
+        const table = new URL(url).pathname.split('/').pop() ?? '';
+        const count = (reads.get(table) ?? 0) + 1;
+        reads.set(table, count);
+        return jsonResponse(
+          table === 'processes' && count === 2
+            ? [
+                {
+                  id: 'late-process',
+                  version: '01.00.000',
+                  user_id: 'user-1',
+                  state_code: 0,
+                },
+              ]
+            : [],
+        );
+      },
+    });
+
+    assert.equal(deleteRequests, 0);
+    assert.equal(report.status, 'completed_with_failures');
+    assert.equal(report.readback_completeness?.tables.length, 5);
+    assert.equal(report.readback_completeness?.row_count, 1);
+    assert.equal(report.tables.find((table) => table.table === 'processes')?.candidates, 0);
+    assert.equal(report.tables.find((table) => table.table === 'processes')?.remaining, 1);
+    assert.equal(report.tables.find((table) => table.table === 'processes')?.status, 'failed');
+  } finally {
+    rmSync(outDir, { recursive: true, force: true });
+  }
+});
+
+test('clear-account records a failed final completeness proof after commit mode starts', async () => {
+  const outDir = mkdtempSync(path.join(os.tmpdir(), 'tg-clear-account-final-incomplete-'));
+  const reads = new Map<string, number>();
+  try {
+    const report = await runDatasetMaintenanceClearAccount({
+      outDir,
+      commit: true,
+      confirm: 'user@example.com',
+      env: buildSupabaseTestEnv({
+        TIANGONG_LCA_API_BASE_URL: 'https://example.supabase.co/functions/v1',
+        TIANGONG_LCA_DISABLE_SESSION_CACHE: '1',
+      }),
+      fetchImpl: async (input) => {
+        const url = String(input);
+        if (isSupabaseAuthTokenUrl(url)) {
+          return makeSupabaseAuthResponse({ email: 'user@example.com', userId: 'user-1' });
+        }
+        if (url.endsWith('/auth/v1/user')) {
+          return jsonResponse({ id: 'user-1', email: 'user@example.com' });
+        }
+        const table = new URL(url).pathname.split('/').pop() ?? '';
+        const count = (reads.get(table) ?? 0) + 1;
+        reads.set(table, count);
+        if (table === 'processes' && count === 2) {
+          return {
+            ...jsonResponse([]),
+            headers: { get: () => null },
+          };
+        }
+        return jsonResponse([]);
+      },
+    });
+
+    assert.equal(report.status, 'completed_with_failures');
+    assert.equal(report.readback_completeness, null);
+    assert.match(report.readback_error ?? '', /could not prove account state/u);
+    assert.equal(report.summary.total_failures, 1);
+    assert.equal(existsSync(report.artifacts.commit_report!), true);
+    assert.equal(existsSync(report.artifacts.readback_verify_report!), true);
   } finally {
     rmSync(outDir, { recursive: true, force: true });
   }

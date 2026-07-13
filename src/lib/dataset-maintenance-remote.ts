@@ -1,5 +1,10 @@
 import { CliError } from './errors.js';
-import type { FetchLike } from './http.js';
+import type { FetchLike, ResponseLike } from './http.js';
+import {
+  buildSnapshotCompleteness,
+  fetchCompletePostgrestPages,
+  type DatasetMaintenanceSnapshotCompleteness,
+} from './dataset-maintenance-pagination.js';
 import {
   buildSupabaseAuthHeaders,
   deriveSupabaseProjectBaseUrl,
@@ -72,7 +77,7 @@ export function normalizeMaintenanceTimeout(value?: number): number {
   return normalized;
 }
 
-async function fetchJson(options: {
+async function fetchJsonResponse(options: {
   context: Pick<
     DatasetMaintenanceRemoteContext,
     'publishable_key' | 'access_token' | 'fetch_impl' | 'timeout_ms'
@@ -80,7 +85,7 @@ async function fetchJson(options: {
   url: string;
   init?: RequestInit;
   label: string;
-}): Promise<unknown> {
+}): Promise<{ body: unknown; headers: ResponseLike['headers'] }> {
   const response = await options.context.fetch_impl(options.url, {
     ...options.init,
     headers: {
@@ -98,10 +103,10 @@ async function fetchJson(options: {
     });
   }
   if (!text.trim()) {
-    return null;
+    return { body: null, headers: response.headers };
   }
   try {
-    return JSON.parse(text);
+    return { body: JSON.parse(text), headers: response.headers };
   } catch (error) {
     throw new CliError(`Remote response was not valid JSON for ${options.label}`, {
       code: 'DATASET_MAINTENANCE_REMOTE_INVALID_JSON',
@@ -112,6 +117,18 @@ async function fetchJson(options: {
       },
     });
   }
+}
+
+async function fetchJson(options: {
+  context: Pick<
+    DatasetMaintenanceRemoteContext,
+    'publishable_key' | 'access_token' | 'fetch_impl' | 'timeout_ms'
+  >;
+  url: string;
+  init?: RequestInit;
+  label: string;
+}): Promise<unknown> {
+  return (await fetchJsonResponse(options)).body;
 }
 
 function selectForTable(table: DatasetMaintenanceScanTable): string {
@@ -244,35 +261,62 @@ export async function fetchMaintenanceAccountRows(options: {
   context: DatasetMaintenanceRemoteContext;
   userId: string;
   pageSize?: number;
-}): Promise<{ rows: DatasetMaintenanceRemoteRow[]; source_urls: string[] }> {
+}): Promise<{
+  rows: DatasetMaintenanceRemoteRow[];
+  source_urls: string[];
+  completeness: DatasetMaintenanceSnapshotCompleteness<DatasetMaintenanceScanTable>;
+}> {
   const pageSize = normalizeMaintenancePageSize(options.pageSize);
-  const rows: DatasetMaintenanceRemoteRow[] = [];
-  const sourceUrls: string[] = [];
+  const tableResults: Array<{
+    table: DatasetMaintenanceScanTable;
+    rows: DatasetMaintenanceRemoteRow[];
+    source_urls: string[];
+    completeness: Awaited<ReturnType<typeof fetchCompletePostgrestPages>>['completeness'];
+  }> = [];
   for (const table of MAINTENANCE_SCAN_TABLES) {
-    let offset = 0;
-    while (true) {
-      const url = new URL(`${options.context.rest_base_url}/${table}`);
-      url.searchParams.set('select', selectForTable(table));
-      url.searchParams.set('user_id', `eq.${options.userId}`);
-      url.searchParams.set('order', 'id.asc,version.asc');
-      url.searchParams.set('limit', String(pageSize));
-      url.searchParams.set('offset', String(offset));
-      const sourceUrl = url.toString();
-      const body = await fetchJson({
-        context: options.context,
-        url: sourceUrl,
-        label: `${table} account maintenance snapshot`,
-      });
-      const page = normalizeRemoteRows(table, body, sourceUrl);
-      rows.push(...page);
-      sourceUrls.push(sourceUrl);
-      if (page.length < pageSize) {
-        break;
-      }
-      offset += pageSize;
-    }
+    const result = await fetchCompletePostgrestPages({
+      table,
+      requestedPageSize: pageSize,
+      rowIdentity: (row: DatasetMaintenanceRemoteRow) => `${row.id}\u0000${row.version}`,
+      fetchPage: async (offset) => {
+        const url = new URL(`${options.context.rest_base_url}/${table}`);
+        url.searchParams.set('select', selectForTable(table));
+        url.searchParams.set('user_id', `eq.${options.userId}`);
+        url.searchParams.set('order', 'id.asc,version.asc');
+        url.searchParams.set('limit', String(pageSize));
+        url.searchParams.set('offset', String(offset));
+        const sourceUrl = url.toString();
+        const response = await fetchJsonResponse({
+          context: options.context,
+          url: sourceUrl,
+          init: { headers: { Prefer: 'count=exact' } },
+          label: `${table} account maintenance snapshot`,
+        });
+        const rows = normalizeRemoteRows(table, response.body, sourceUrl);
+        if (rows.some((row) => row.user_id !== options.userId)) {
+          throw new CliError(`Remote ${table} snapshot contained a foreign account row.`, {
+            code: 'DATASET_MAINTENANCE_REMOTE_ROW_INVALID',
+            exitCode: 1,
+          });
+        }
+        return {
+          rows,
+          source_url: sourceUrl,
+          content_range: response.headers.get('content-range'),
+        };
+      },
+    });
+    tableResults.push({ table, ...result });
   }
-  return { rows, source_urls: sourceUrls };
+  return {
+    rows: tableResults.flatMap((result) => result.rows),
+    source_urls: tableResults.flatMap((result) => result.source_urls),
+    completeness: buildSnapshotCompleteness({
+      tables: MAINTENANCE_SCAN_TABLES,
+      requestedPageSize: pageSize,
+      results: tableResults,
+    }),
+  };
 }
 
 async function invokeMaintenanceRpc(options: {
@@ -358,6 +402,7 @@ export async function deleteMaintenanceRow(options: {
 
 export const __testInternals = {
   fetchJson,
+  fetchJsonResponse,
   normalizeRemoteRow,
   normalizeRemoteRows,
   selectForTable,

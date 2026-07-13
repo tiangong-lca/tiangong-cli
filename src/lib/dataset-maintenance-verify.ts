@@ -5,6 +5,7 @@ import { collectRemoteReferences } from './dataset-remote-verify.js';
 import { CliError } from './errors.js';
 import type { FetchLike } from './http.js';
 import {
+  MAINTENANCE_SCAN_TABLES,
   isJsonObject,
   maintenanceRowKey,
   parseMaintenancePlan,
@@ -19,6 +20,10 @@ import {
   type JsonObject,
 } from './dataset-maintenance-contract.js';
 import { maintenanceProjectedReferenceFingerprint } from './dataset-maintenance-plan.js';
+import {
+  isSnapshotCompletenessCompatible,
+  type DatasetMaintenanceSnapshotCompleteness,
+} from './dataset-maintenance-pagination.js';
 import {
   fetchMaintenanceAccountRows,
   fetchMaintenanceExactRows,
@@ -46,6 +51,7 @@ export type DatasetMaintenanceVerifyReport = {
   target_mode: DatasetMaintenancePlan['target_mode'];
   plan_sha256: string;
   actor: { user_id: string; email: string };
+  snapshot_completeness: DatasetMaintenanceSnapshotCompleteness;
   summary: {
     actions: number;
     action_checks_passed: number;
@@ -645,7 +651,12 @@ export async function runDatasetMaintenanceVerify(
       approvalRecord.account.email !== plan.account.email ||
       approvalRecord.confirmed_email !== plan.account.email ||
       !isJsonObject(approvalRecord.row_counts) ||
-      sha256Json(approvalRecord.row_counts) !== sha256Json(plan.summary)
+      sha256Json(approvalRecord.row_counts) !== sha256Json(plan.summary) ||
+      !isSnapshotCompletenessCompatible(
+        approvalRecord.snapshot_completeness,
+        plan.snapshot_completeness,
+        MAINTENANCE_SCAN_TABLES,
+      )
     ) {
       problems.push({
         code: 'APPROVAL_RECORD_INVALID',
@@ -831,6 +842,7 @@ export async function runDatasetMaintenanceVerify(
     target_mode: plan.target_mode,
     plan_sha256: plan.plan_sha256,
     actor: { user_id: context.account.user_id, email: context.account.email },
+    snapshot_completeness: current.completeness,
     summary: {
       actions: plan.actions.length,
       action_checks_passed: actionChecks.filter((check) => check.status === 'passed').length,

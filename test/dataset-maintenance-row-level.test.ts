@@ -190,13 +190,27 @@ function assertExactAliasPlanRequestContract(plan: JsonObject): void {
   }
 }
 
-function jsonResponse(body: unknown, status = 200): ResponseLike {
+function jsonResponse(
+  body: unknown,
+  status = 200,
+  headers: Record<string, string> = {},
+): ResponseLike {
+  const defaultContentRange = Array.isArray(body)
+    ? body.length > 0
+      ? `0-${body.length - 1}/${body.length}`
+      : '*/0'
+    : null;
   return {
     ok: status >= 200 && status < 300,
     status,
     headers: {
       get(name: string): string | null {
-        return name.toLowerCase() === 'content-type' ? 'application/json' : null;
+        const normalized = name.toLowerCase();
+        if (normalized === 'content-type') return 'application/json';
+        if (normalized === 'content-range') {
+          return headers['content-range'] ?? defaultContentRange;
+        }
+        return headers[normalized] ?? null;
       },
     },
     async text(): Promise<string> {
@@ -702,6 +716,8 @@ class FakeMaintenanceRemote {
   aliasReadbackFailure: 'missing' | 'mismatch' | null = null;
   invalidAliasProof = false;
   invalidJson = false;
+  serverPageCap = 1_000;
+  duplicateExactLookup = false;
 
   constructor(label: string) {
     this.env = buildSupabaseTestEnv({
@@ -925,9 +941,19 @@ class FakeMaintenanceRemote {
     if (id) values = values.filter((row) => row.id === id);
     if (version) values = values.filter((row) => row.version === version);
     if (userId) values = values.filter((row) => row.user_id === userId);
+    if (id && this.duplicateExactLookup) values = [...values, ...values];
+    values.sort((left, right) =>
+      `${left.id}\u0000${left.version}`.localeCompare(`${right.id}\u0000${right.version}`),
+    );
     const offset = Number(url.searchParams.get('offset') ?? 0);
     const limit = Number(url.searchParams.get('limit') ?? values.length);
-    return jsonResponse(values.slice(offset, offset + limit));
+    const page = values.slice(offset, offset + Math.min(limit, this.serverPageCap));
+    return jsonResponse(page, 200, {
+      'content-range':
+        page.length > 0
+          ? `${offset}-${offset + page.length - 1}/${values.length}`
+          : `*/${values.length}`,
+    });
   };
 }
 
@@ -1145,6 +1171,21 @@ function successProgressEntry(
   };
 }
 
+function stripMaintenanceContentRange(fetchImpl: FetchLike): FetchLike {
+  return async (input, init) => {
+    const response = await fetchImpl(input, init);
+    if (!String(input).includes('/rest/v1/')) return response;
+    return {
+      ...response,
+      headers: {
+        get(name: string): string | null {
+          return name.toLowerCase() === 'content-range' ? null : response.headers.get(name);
+        },
+      },
+    };
+  };
+}
+
 test('row-level maintenance plans update-first closure, resumes failure, and verifies readback', async () => {
   const root = mkdtempSync(path.join(os.tmpdir(), 'tg-maintenance-row-'));
   const remote = new FakeMaintenanceRemote('row-maintenance-main');
@@ -1171,6 +1212,19 @@ test('row-level maintenance plans update-first closure, resumes failure, and ver
     assert.equal(parseMaintenancePlan(plan).plan_sha256, plan.plan_sha256);
     assert.equal(existsSync(path.join(files.outDir, 'maintenance-scope.json')), true);
     assert.equal(existsSync(path.join(files.outDir, 'protected-rows.jsonl')), true);
+    assert.equal(plan.snapshot_completeness?.complete, true);
+    assert.equal(plan.snapshot_completeness?.row_count, 3);
+    const snapshotArtifact = JSON.parse(
+      readFileSync(path.join(files.outDir, 'rls-visible-snapshot.json'), 'utf8'),
+    ) as JsonObject;
+    assert.ok(isJsonObject(snapshotArtifact.completeness));
+    assert.equal(snapshotArtifact.completeness.complete, true);
+    assert.equal(snapshotArtifact.completeness.row_count, 3);
+    const dryRunArtifact = JSON.parse(
+      readFileSync(path.join(files.outDir, 'dry-run-report.json'), 'utf8'),
+    ) as JsonObject;
+    assert.ok(isJsonObject(dryRunArtifact.snapshot_completeness));
+    assert.equal(dryRunArtifact.snapshot_completeness.complete, true);
 
     remote.failDeleteOnce = true;
     const partial = await runDatasetMaintenanceApply({
@@ -1253,6 +1307,7 @@ test('row-level maintenance plans update-first closure, resumes failure, and ver
     assert.equal(verified.summary.action_checks_passed, 2);
     assert.equal(verified.summary.protected_checks_passed, 1);
     assert.equal(verified.summary.dangling_deleted_target_references, 0);
+    assert.equal(verified.snapshot_completeness.complete, true);
   } finally {
     rmSync(root, { recursive: true, force: true });
   }
@@ -3194,6 +3249,25 @@ test('maintenance contracts and remote adapters reject unsafe inputs and invalid
     pageSize: 1,
   });
   assert.equal(account.rows.length, 3);
+  await assert.rejects(
+    () =>
+      fetchMaintenanceAccountRows({
+        context: {
+          ...context,
+          fetch_impl: async () =>
+            jsonResponse([
+              {
+                id: 'foreign-contact',
+                version: '01.00.000',
+                user_id: 'other-user',
+                state_code: 0,
+              },
+            ]),
+        },
+        userId: remote.userId,
+      }),
+    /foreign account row/u,
+  );
   await saveDraftMaintenanceRow({
     context,
     table: 'processes',
@@ -3336,6 +3410,132 @@ test('maintenance contracts and remote adapters reject unsafe inputs and invalid
       }),
     /unexpected response/u,
   );
+});
+
+test('account maintenance snapshot follows a 1000-row server cap for a requested page size of 5000', async () => {
+  const visibleFlows: StoredRow[] = Array.from({ length: 2_203 }, (_, index) => {
+    const id = `flow-${String(index).padStart(5, '0')}`;
+    return {
+      id,
+      version: '00.00.001',
+      user_id: 'user-1',
+      state_code: 0,
+      modified_at: '2026-07-13T00:00:00.000Z',
+      json_ordered: flowPayload(id, '00.00.001'),
+      model_id: null,
+      rule_verification: null,
+    };
+  });
+  const flowOffsets: number[] = [];
+  const preferHeaders: string[] = [];
+  const fetchImpl: FetchLike = async (input, init) => {
+    const url = new URL(String(input));
+    const table = url.pathname.split('/rest/v1/')[1] ?? '';
+    const rows = table === 'flows' ? visibleFlows : [];
+    const offset = Number(url.searchParams.get('offset') ?? 0);
+    const requestedLimit = Number(url.searchParams.get('limit') ?? rows.length);
+    const page = rows.slice(offset, offset + Math.min(requestedLimit, 1_000));
+    if (table === 'flows') flowOffsets.push(offset);
+    preferHeaders.push(new Headers(init?.headers).get('prefer') ?? '');
+    return jsonResponse(page, 200, {
+      'content-range':
+        page.length > 0
+          ? `${offset}-${offset + page.length - 1}/${rows.length}`
+          : `*/${rows.length}`,
+    });
+  };
+  const snapshot = await fetchMaintenanceAccountRows({
+    context: {
+      rest_base_url: 'https://example.test/rest/v1',
+      publishable_key: 'publishable',
+      access_token: 'access',
+      account: { user_id: 'user-1', email: 'user@example.com', session_source: 'credentials' },
+      fetch_impl: fetchImpl,
+      timeout_ms: 1_000,
+    },
+    userId: 'user-1',
+    pageSize: 5_000,
+  });
+
+  assert.equal(snapshot.rows.length, 2_203);
+  assert.deepEqual(flowOffsets, [0, 1_000, 2_000]);
+  assert.equal(
+    preferHeaders.every((value) => value === 'count=exact'),
+    true,
+  );
+  assert.equal(snapshot.completeness.complete, true);
+  assert.equal(snapshot.completeness.requested_page_size, 5_000);
+  assert.equal(snapshot.completeness.entity_counts.flows, 2_203);
+  assert.equal(snapshot.completeness.entity_counts.lifecyclemodels, 0);
+  assert.equal(snapshot.completeness.page_count, 9);
+});
+
+test('plan, apply, and verify fail closed when account pagination completeness is unproven', async () => {
+  const root = mkdtempSync(path.join(os.tmpdir(), 'tg-maintenance-incomplete-pagination-'));
+  try {
+    const planningRemote = new FakeMaintenanceRemote('incomplete-plan');
+    seed(planningRemote);
+    const planningRoot = path.join(root, 'plan');
+    mkdirSync(planningRoot, { recursive: true });
+    const planningFiles = buildScopeFiles({
+      root: planningRoot,
+      remote: planningRemote,
+    });
+    await assert.rejects(
+      () =>
+        runDatasetMaintenancePlan({
+          scopePath: planningFiles.scopePath,
+          operation: 'repair-references',
+          outDir: planningFiles.outDir,
+          env: planningRemote.env,
+          fetchImpl: stripMaintenanceContentRange(planningRemote.fetch),
+        }),
+      (error: unknown) => {
+        assert.equal((error as { code?: string }).code, 'DATASET_MAINTENANCE_SNAPSHOT_INCOMPLETE');
+        return true;
+      },
+    );
+    assert.equal(existsSync(path.join(planningFiles.outDir, 'maintenance-plan.json')), false);
+
+    const scenario = await prepareSeededScenario(root, 'apply-verify');
+    const planPath = path.join(scenario.files.outDir, 'maintenance-plan.json');
+    const rpcCount = scenario.remote.rpcOrder.length;
+    await assert.rejects(
+      () =>
+        runDatasetMaintenanceApply({
+          planPath,
+          commit: true,
+          approvePlan: scenario.plan.plan_sha256,
+          confirm: scenario.remote.email,
+          env: scenario.remote.env,
+          fetchImpl: stripMaintenanceContentRange(scenario.remote.fetch),
+        }),
+      (error: unknown) => {
+        assert.equal((error as { code?: string }).code, 'DATASET_MAINTENANCE_SNAPSHOT_INCOMPLETE');
+        return true;
+      },
+    );
+    assert.equal(scenario.remote.rpcOrder.length, rpcCount);
+    assert.equal(existsSync(path.join(scenario.files.outDir, 'approval-record.json')), false);
+
+    const verifyOut = path.join(root, 'verify');
+    await assert.rejects(
+      () =>
+        runDatasetMaintenanceVerify({
+          planPath,
+          outDir: verifyOut,
+          env: scenario.remote.env,
+          fetchImpl: stripMaintenanceContentRange(scenario.remote.fetch),
+        }),
+      (error: unknown) => {
+        assert.equal((error as { code?: string }).code, 'DATASET_MAINTENANCE_SNAPSHOT_INCOMPLETE');
+        return true;
+      },
+    );
+    assert.equal(existsSync(path.join(verifyOut, 'readback-verify-report.json')), false);
+  } finally {
+    rmSync(root, { recursive: true, force: true });
+  }
 });
 
 test('maintenance contract validates every frozen scope guard and immutable artifact edge', () => {
@@ -3503,6 +3703,29 @@ test('maintenance plan parser rejects tampered action, snapshot, summary, and bl
     withImportRun.source_import_run_id = 'bafu-import-run';
     withImportRun.plan_sha256 = computePlanSha256(withImportRun);
     assert.equal(parseMaintenancePlan(withImportRun).source_import_run_id, 'bafu-import-run');
+
+    const legacyPlan = structuredClone(basePlan);
+    delete legacyPlan.snapshot_completeness;
+    legacyPlan.plan_sha256 = computePlanSha256(legacyPlan);
+    assert.equal(parseMaintenancePlan(legacyPlan).snapshot_completeness, undefined);
+    invalidPlan((plan) => {
+      plan.snapshot_completeness!.complete = false as true;
+    });
+    invalidPlan((plan) => {
+      plan.snapshot_completeness!.entity_counts.flows += 1;
+    });
+    invalidPlan((plan) => {
+      Object.assign(plan.snapshot_completeness!, { entity_counts: [] });
+    });
+    invalidPlan((plan) => {
+      Object.assign(plan.snapshot_completeness!.entity_counts, { flows: 'not-a-count' });
+    });
+    invalidPlan((plan) => {
+      Object.assign(plan, { snapshot_completeness: null });
+    });
+    invalidPlan((plan) => {
+      plan.snapshot_completeness!.tables[1]!.table = plan.snapshot_completeness!.tables[0]!.table;
+    });
 
     invalidPlan((plan) => Object.assign(plan.actions[0]!, { table: 'unitgroups' }));
     invalidPlan((plan) => Object.assign(plan.actions[0]!, { expected_user_id: 'other-user' }));
@@ -3787,6 +4010,26 @@ test('maintenance apply guards reject artifact, preflight, approval, and just-in
       () => applyInternals.validateApprovalRecord({ path: approvalPath, plan, context }),
       /does not match/u,
     );
+    const validApproval = {
+      plan_sha256: plan.plan_sha256,
+      target_mode: plan.target_mode,
+      account: context.account,
+      snapshot_completeness: plan.snapshot_completeness,
+    };
+    writeFileSync(approvalPath, JSON.stringify(validApproval));
+    applyInternals.validateApprovalRecord({ path: approvalPath, plan, context });
+    writeFileSync(
+      approvalPath,
+      JSON.stringify({
+        plan_sha256: plan.plan_sha256,
+        target_mode: plan.target_mode,
+        account: context.account,
+      }),
+    );
+    assert.throws(
+      () => applyInternals.validateApprovalRecord({ path: approvalPath, plan, context }),
+      /does not match/u,
+    );
     applyInternals.validateApprovalRecord({
       path: path.join(root, 'missing-approval.json'),
       plan,
@@ -3924,11 +4167,7 @@ test('maintenance planning records target visibility, ownership, draft, payload,
       '33333333-3333-4333-8333-333333333333',
       sourcePayload('33333333-3333-4333-8333-333333333333'),
     );
-    duplicateRemote.add(
-      'sources',
-      '33333333-3333-4333-8333-333333333333',
-      sourcePayload('33333333-3333-4333-8333-333333333333'),
-    );
+    duplicateRemote.duplicateExactLookup = true;
     const duplicate = await planScenario('duplicate', duplicateRemote, scopeValue(duplicateRemote));
     assert.match(duplicate.blockers.map((entry) => entry.code).join(','), /TARGET_NOT_UNIQUE/u);
 
@@ -4407,7 +4646,23 @@ test('maintenance verify reports every incomplete readback proof without mutatin
     assert.match(codes, /ACTION_SUCCESS_LOG_MISSING/u);
     assert.match(codes, /COMMIT_REPORT_MISSING/u);
 
-    writeFileSync(path.join(scenario.files.outDir, 'approval-record.json'), '{}');
+    const invalidApprovalCompleteness = structuredClone(scenario.plan.snapshot_completeness!);
+    invalidApprovalCompleteness.tables[1]!.table = invalidApprovalCompleteness.tables[0]!.table;
+    writeFileSync(
+      path.join(scenario.files.outDir, 'approval-record.json'),
+      JSON.stringify({
+        schema_version: 1,
+        plan_sha256: scenario.plan.plan_sha256,
+        task_id: scenario.plan.task_id,
+        operation: scenario.plan.operation,
+        operation_id: scenario.plan.operation_id,
+        target_mode: scenario.plan.target_mode,
+        account: scenario.plan.account,
+        confirmed_email: scenario.plan.account.email,
+        row_counts: scenario.plan.summary,
+        snapshot_completeness: invalidApprovalCompleteness,
+      }),
+    );
     const malformedRollbackEntry = {
       ...successProgressEntry(scenario.plan, scenario.plan.actions[0]!),
       rollback: null,

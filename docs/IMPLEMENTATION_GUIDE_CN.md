@@ -16,8 +16,8 @@ checkPaths:
   - README.md
   - src/**
   - test/**
-lastReviewedAt: 2026-07-12
-lastReviewedCommit: afcd941537cbaeb355e2c753a2e2b847b4c1909e
+lastReviewedAt: 2026-07-13
+lastReviewedCommit: 4c79df4623e3cf296bc8d1baeea688d78351570a
 related:
   - ../AGENTS.md
   - ../.docpact/config.yaml
@@ -29,6 +29,8 @@ related:
 # TianGong LCA CLI 实施指南
 
 Review note, 2026-07-12: `dataset maintenance plan/apply/verify` 已把 BAFU `time` / `length_time` FP alias 迁移固化为两个不可拆分的 owner-draft guarded batch。scope/plan 强制 `target_mode=owner_draft`，RPC/审计/replay/readback 强制 `target_visibility=owner_draft`；52 行、59 条 exchange、精确十进制换算、309 条无关 exchange、owner/state、payload/modified_at/hash 与目标引用 postcondition 都属于不可变计划契约。该操作不再依赖或执行 FP/UG 发布。
+
+Review note, 2026-07-13: maintenance account scan 已统一为 fail-closed exact-count paginator。requested page size 可以大于 PostgREST 实际 cap，offset 以实际返回行数推进；只有 `Content-Range` exact total、range/body、严格排序、行身份和全表汇总全部证明完整后，plan/approval/readback artifact 或 mutation 才能继续。该多请求证明不等于事务级/MVCC 同时点快照。
 
 ## 1. 目标
 
@@ -236,8 +238,8 @@ tiangong-lca
 - 已实现的 `dataset classification` 从 CLI bundled TIDAS schema 提供分类/位置编码治理：`children` 支持按 parent code 步进列子类，`path` 解析 code 的规范 path，`audit --type location` 按 bundled TIDAS schema 派生位置编码字段，并覆盖 TIDAS LCIA geography 和 lifecyclemodel connection location 字段，检查其值是否属于 `tidas_locations_category.json`；`apply --type location` 把 AI/human structured decision 确定性写回 rows 并输出 evidence，当 decision 明确给出 schema-derived location 字段的 `target_path`（如 `flowDataSet.flowInformation.geography.locationOfSupply`）时可创建缺失父对象和字段，缺少 target 或非 location 路径仍保持阻断
 - 已实现的 `dataset curation-queue build/next/verify` 把 Foundry external dataset import 的 support / flow / process rows 收口成 entity-level queue artifact contract：`build` 生成 `curation-queue-manifest.json`、`curation-queue-tasks.jsonl`、`curation-queue-locks.json`、`curation-queue-blockers.jsonl`，以及每个 entity 的 `input.jsonl`、`closure.json`、`entity-run-plan.json`；`next` 读取 task checkpoint 并返回下一条 runnable entity task；`verify` 确认目标 scope 的 checkpoint 完成且没有 build blocker。CLI 只负责稳定状态机、依赖闭包、锁和 blocker；AI authoring 仍必须通过 skill/Codex 输出 structured patch 或 build plan，并在 deterministic apply、schema/QA、prewrite verify、readback 后才允许进入远端写入。
 - 已实现的 `dataset references rewrite` 把 process / lifecyclemodel rows 中的 flow reference rewrite 收口到一个 deterministic 本地入口，默认只写 patch artifacts，只有显式 `--commit` 时才调用 state-aware save-draft 写入路径
-- 已实现的 `dataset maintenance clear-account` 只覆盖当前认证账号的 draft 清空场景：CLI 先写出 `rls-visible-snapshot.json` / `dry-run-report.json`，commit 时要求 `--confirm` 匹配当前账号邮箱，并逐行调用平台 `app_dataset_delete`，最后写出 `approval-record.json`、`commit-report.json` 和 `readback-verify-report.json`。该命令不绕过 RLS，不直接 REST DELETE，不删除默认保护的 `unitgroups` / `flowproperties`。
-- 已实现的 `dataset maintenance plan/apply/verify` 是错误导入清理和 redo 的 row-level 归属面。`plan` 固化 scope manifest、当前用户 RLS 可见快照、引用影响、保护行、不可变 plan 和 dry-run；`apply` 只接受 plan SHA-256 与当前账号邮箱都匹配的显式 commit，先做全计划 drift preflight 并持久化 approval，再按 update-before-delete 顺序通过官方平台路径执行，每条 action 追加日志并用 `p_audit` 关联 plan/action；任一失败立即停止，已成功 action 可由后续重跑识别恢复。`verify` 独立重新读取受影响行和引用，不依赖 apply 的内存或报告结论。Foundry 只保存 task ledger、调用命令和报告，不实现删除逻辑。
+- 已实现的 `dataset maintenance clear-account` 只覆盖当前认证账号的 draft 清空场景：CLI 必须先以 exact-count 分页证明五个可删除表的 RLS 可见快照完整，才写出 `rls-visible-snapshot.json` / `dry-run-report.json`；commit 时要求 `--confirm` 匹配当前账号邮箱，并逐行调用平台 `app_dataset_delete`。除逐表检查外，结束时必须重新扫描全部五表，只有完整 aggregate proof 且 `row_count=0` 才报告成功；若终检失败而之前已有删除，仍写出 `completed_with_failures` 审计报告。初始扫描不完整时不生成快照/approval，且零删除。该命令不绕过 RLS，不直接 REST DELETE，不删除默认保护的 `unitgroups` / `flowproperties`。
+- 已实现的 `dataset maintenance plan/apply/verify` 是错误导入清理和 redo 的 row-level 归属面。`plan` 先证明当前用户 account scan 完整，再固化 scope manifest、RLS 可见快照、completeness proof、引用影响、保护行、不可变 plan 和 dry-run；`apply` 只接受 plan SHA-256 与当前账号邮箱都匹配的显式 commit，在 approval 或 mutation 前完成新的 exact-count scan 与全计划 drift preflight，再按 update-before-delete 顺序通过官方平台路径执行，每条 action 追加日志并用 `p_audit` 关联 plan/action；任一失败立即停止，已成功 action 可由后续重跑识别恢复。`verify` 以新的完整 account readback 独立检查受影响行和引用，不依赖 apply 的内存或报告结论。Foundry 只保存 task ledger、调用命令和报告，不实现删除逻辑。
 - `merge-support-aliases` 不是通用 alias 合并器：当前只接受 BAFU `time` 与 `length_time` 两个 batch。计划必须精确覆盖 25 + 27 行和 20 + 39 条 exchange，并保留受影响 process 中的 309 条其他 exchange；apply 将两个 batch 按固定顺序装入一个 `dataset-alias-plan.v1` 请求，只调用一次 `cmd_dataset_alias_plan_guarded`，不会降级成逐 dimension 或逐行 `save_draft`。
 - 已实现的 `lifecyclemodel auto-build` 走本地只读、artifact-first 路径，输入固定为 local run manifest，不依赖 Python、MCP、KB、LLM 或远端 CRUD
 - `lifecyclemodel auto-build` 当前负责 graph 推断、reference process 选择、`@multiplicationFactor` 计算与 `json_ordered` lifecyclemodel 产物输出，并保留 `run-plan.json`、`resolved-manifest.json`、`selection/selection-brief.md`、`discovery/reference-model-summary.json`、`connections.json`、`process-catalog.json` 等 CLI 契约
@@ -314,6 +316,14 @@ Scope 与保护规则：
 - `lifecyclemodels`、不匹配的 action/table、public/shared、foreign owner、mixed visibility、非 draft、不可见或 exact version 不一致的 rows 一律进入 protected/blocked，不会降级成可执行 action。
 - CLI 只执行人工/上游已经做出的清洗决策，不判断 public canonical、语义重复、引用替代或 redo 内容是否正确。
 
+Account scan 与分页证明：
+
+- `plan`、apply preflight、`verify` 和 `clear-account` 使用 `src/lib/dataset-maintenance-pagination.ts` 的同一 fail-closed paginator。请求带 `Prefer: count=exact`；`--page-size` 允许 `1-5000`，但只表示 requested maximum，不假定 PostgREST 会返回同样大的页。
+- 每个表按 `id.asc,version.asc` 读取。下一页 offset 使用当前页实际返回行数推进；例如请求 5000、服务端 cap 1000 时，offset 必须是 `0,1000,2000...`，不能跳到 5000。
+- 每页必须有可解析的 exact `Content-Range`；total 在所有页保持不变，range 必须与 offset/body 长度一致，行身份必须存在并严格递增。累计行数恰好达到 exact total 才结束；提前空页、缺失/变化的 total、重复/乱序身份、超出 total、缺表或聚合计数不一致都抛出 `DATASET_MAINTENANCE_SNAPSHOT_INCOMPLETE`。
+- 完整 proof 记录 strategy、requested/effective page size、page count、rows fetched、exact total、终止原因、range/order/duplicate 检查，以及全表 aggregate entity counts。新 `maintenance-plan.json` 将 proof 纳入 canonical hash；snapshot、dry-run、apply approval 和 verify/readback artifacts 也保留适用的 proof。
+- proof 的语义是“在该表过滤成员与排序键稳定的前提下完成了多请求分页遍历”，不是“所有行来自同一个 PostgreSQL transaction/MVCC snapshot”。total 与顺序校验可发现截断及部分并发变化，但同数量的一删一增仍可能绕过检查；mutation 仍依赖 fresh preflight、plan hash、payload/`modified_at` locks 与 RPC transaction，且操作期间应避免同账号并发维护。
+
 `plan` 在任何 mutation 之前写出并固定：
 
 - `maintenance-scope.json`
@@ -329,7 +339,7 @@ Scope 与保护规则：
 `apply` 的 commit gate 同时要求 `--commit`、`--approve-plan <sha256>` 与 `--confirm <current-account-email>`。执行顺序固定为：
 
 1. 重新认证当前用户并校验账号邮箱。
-2. 对整份计划重新抓取 exact rows 与引用，任何 drift 都在首写前阻断。
+2. 先完成新的 exact-count account scan，再对整份计划重新抓取 exact rows 与引用；分页不完整或任何 drift 都在 approval 与首写前阻断。
 3. 在首写前持久化 `approval-record.json`。
 4. 普通 action 按 `save_draft`、`delete` 的固定顺序执行；alias operation 则按 `time`、`length_time` 组装两个嵌套 batch，再一次调用带 `target_visibility=owner_draft` 的 `cmd_dataset_alias_plan_guarded`，绝不逐 dimension 或逐行执行。所有写入都通过平台 dataset command path，而不是 raw REST mutation。
 5. 为每条尝试的 action 向 `apply-progress.jsonl` 追加 durable log，并在平台命令的 `p_audit` 中带入 plan/action correlation id。每行至少记录 `plan_sha256`、`operation_id`、`action_id`、table/id/version、actor、started/finished、`before_sha256`、`after_sha256`、result/error 与 rollback。

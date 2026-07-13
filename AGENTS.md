@@ -32,8 +32,8 @@ checkPaths:
   - scripts/docpact
   - scripts/docpact-gate.sh
   - scripts/install-git-hooks.sh
-lastReviewedAt: 2026-07-12
-lastReviewedCommit: d580282ce85d332c77086b49f70834915b9216f9
+lastReviewedAt: 2026-07-13
+lastReviewedCommit: 4c79df4623e3cf296bc8d1baeea688d78351570a
 related:
   - .docpact/config.yaml
   - docs/agents/repo-validation.md
@@ -60,6 +60,8 @@ Review note, 2026-06-11: release 0.0.15 keeps command nouns/verbs, repo ownershi
 Review note, 2026-07-11: `dataset maintenance plan/apply/verify` is now the CLI-owned v1 row-level maintenance contract. It freezes exact current-user RLS scope and audit artifacts before any write, executes only approved `save_draft` / `delete` actions through platform command paths, and verifies the result with an independent readback.
 
 Review note, 2026-07-12: the maintenance contract owns the fixed BAFU FP alias operation `merge-support-aliases` in explicit `target_mode=owner_draft`. Source/target FP/UG and all changed flow/process rows must be current-owner `state_code=0`; the ordered `time` plus `length_time` plan is applied through one whole-plan guarded RPC with exact closure, payload/timestamp locks, plan/batch audit-bound replay, and independent private-state readback. Publication remains a separate future workflow and is not a prerequisite of this operation.
+
+Review note, 2026-07-13: maintenance account scans now require exact-count PostgREST pagination. `--page-size` is a requested maximum that may exceed the server cap; the CLI follows the actual returned row count, validates each `Content-Range` exact total and strict `id`/`version` order, and emits per-table plus aggregate completeness proof before accepting artifacts, approval, or writes. This proves pagination completeness while the filtered membership/order is stable; it is not a transaction-level or MVCC snapshot.
 
 ## Bootstrap Order
 
@@ -117,6 +119,7 @@ Route those tasks to:
 - `process save-draft` now has a local `ProcessSchema` validation gate before any commit path writes remote state, and `--target-user-id` is a hard current-session/visible-draft owner guard for account-scoped batch imports.
 - Dataset-level local governance commands such as `dataset validate`, `dataset curation-queue build/next/verify`, and `dataset references rewrite` belong to the same native CLI command surface in `src/cli.ts` and `src/lib/dataset-*.ts`.
 - `dataset maintenance plan/apply/verify` owns current-user RLS-scoped row maintenance in `src/lib/dataset-maintenance-{contract,remote,plan,apply,verify}.ts` plus the fixed alias transformation in `src/lib/dataset-maintenance-alias-rewrite.ts`. V1 requires exact `id` + `version`, `state_code=0`, and current-session ownership. Ordinary maintenance can plan `save_draft` / `delete` actions only for `contacts`, `sources`, `flows`, and `processes`; `merge-support-aliases` additionally requires scope/plan `target_mode=owner_draft` and can only execute the frozen two-batch BAFU time/length-time rewrite through one matching `target_visibility=owner_draft` whole-plan guarded RPC. The direct dimension RPC is not an authenticated CLI path. Public/shared, foreign-owner, mixed-visibility, non-draft, lifecyclemodel, and every other support-table mutation remain protected.
+- `src/lib/dataset-maintenance-pagination.ts` owns fail-closed account-scan pagination for row-level maintenance and `clear-account`. It requests `Prefer: count=exact`, treats the configured page size as a requested maximum rather than a guaranteed response size, advances offsets by the number of rows actually returned, and accepts a scan only when exact totals, ranges, ordering, identities, and aggregate entity counts prove pagination completeness under stable filtered membership/order. Incomplete scans stop before maintenance artifacts or mutation gates; the resulting proof does not claim transaction-level snapshot isolation across requests.
 - `lifecyclemodel save-draft` validates canonical lifecyclemodel payloads with `LifeCycleModelSchema` before any commit path writes remote state; `lifecyclemodel graph` remains a local artifact command.
 - `flow publish-version` validates canonical flow payloads with `FlowSchema` before remote visibility planning or writes, and emits `flow-publish-version-gate-report.json` as the blocking ruleset artifact.
 - `process publish-build` validates canonical process payloads with `ProcessSchema` before publish handoff artifacts are written, and emits `reports/process-publish-schema-gate.json`.

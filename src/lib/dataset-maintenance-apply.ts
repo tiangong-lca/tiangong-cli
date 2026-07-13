@@ -5,6 +5,7 @@ import { CliError } from './errors.js';
 import type { FetchLike } from './http.js';
 import { withStateFileLock } from './state-lock.js';
 import {
+  MAINTENANCE_SCAN_TABLES,
   appendStableJsonLine,
   isJsonObject,
   maintenanceRowKey,
@@ -24,6 +25,7 @@ import {
   type JsonObject,
 } from './dataset-maintenance-contract.js';
 import { maintenanceProjectedReferenceFingerprint } from './dataset-maintenance-plan.js';
+import { isSnapshotCompletenessCompatible } from './dataset-maintenance-pagination.js';
 import {
   applyMaintenanceAliasPlan,
   deleteMaintenanceRow,
@@ -630,7 +632,12 @@ function validateApprovalRecord(options: {
     record.target_mode !== options.plan.target_mode ||
     !isJsonObject(record.account) ||
     record.account.user_id !== options.context.account.user_id ||
-    record.account.email !== options.context.account.email
+    record.account.email !== options.context.account.email ||
+    !isSnapshotCompletenessCompatible(
+      record.snapshot_completeness,
+      options.plan.snapshot_completeness,
+      MAINTENANCE_SCAN_TABLES,
+    )
   ) {
     throw new CliError('Existing approval record does not match this plan and actor.', {
       code: 'DATASET_MAINTENANCE_APPROVAL_RECORD_MISMATCH',
@@ -1653,6 +1660,7 @@ export async function runDatasetMaintenanceApply(
           },
           confirmed_email: options.confirm,
           row_counts: plan.summary,
+          snapshot_completeness: current.completeness,
           redo_rows_ready:
             plan.operation === 'redo-import'
               ? Boolean(plan.source_import_run_id || plan.source_lineage !== null)
