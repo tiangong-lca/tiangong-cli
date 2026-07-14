@@ -29,9 +29,34 @@ export type DatasetMaintenanceOperation =
   | 'retire'
   | 'redo-import'
   | 'repair-references'
-  | 'merge-support-aliases';
-export type DatasetMaintenanceActionKind = 'save_draft' | 'delete' | 'update_json_ordered';
+  | 'merge-support-aliases'
+  | 'rebuild-derivatives';
+export type DatasetMaintenanceActionKind =
+  | 'save_draft'
+  | 'delete'
+  | 'update_json_ordered'
+  | 'rebuild_derivatives';
 export type DatasetMaintenanceTargetMode = 'owner_draft';
+
+export const DERIVATIVE_REBUILD_COMPONENTS = ['extracted_md', 'embedding_ft'] as const;
+export type DatasetMaintenanceDerivativeComponent = (typeof DERIVATIVE_REBUILD_COMPONENTS)[number];
+
+export type DatasetMaintenanceDerivativeSnapshot = {
+  schema_version: 'dataset-derivative-snapshot.v1';
+  table: 'processes';
+  id: string;
+  version: string;
+  user_id: string;
+  state_code: 0;
+  modified_at: string;
+  json_sha256: string;
+  json_ordered_sha256: string;
+  extracted_text_sha256: string;
+  extracted_md_sha256: string | null;
+  embedding_ft_sha256: string | null;
+  embedding_ft_at: string | null;
+  snapshot_sha256: string;
+};
 
 export type DatasetMaintenanceAliasDimension = 'time' | 'length_time';
 
@@ -100,6 +125,7 @@ export type DatasetMaintenanceScopeAction = {
   exchange_instances?: DatasetMaintenanceExchangeInstance[];
   desired_payload_path?: string;
   expected_before_sha256?: string;
+  components?: DatasetMaintenanceDerivativeComponent[];
 };
 
 export type DatasetMaintenanceScope = {
@@ -177,11 +203,13 @@ export type DatasetMaintenancePlanAction = DatasetMaintenanceScopeAction & {
   } | null;
   blockers: DatasetMaintenanceBlocker[];
   alias_mutation?: DatasetMaintenanceAliasMutation;
+  derivative_before?: DatasetMaintenanceDerivativeSnapshot;
   rollback: {
     strategy:
       | 'save_before_snapshot'
       | 'restore_deleted_before_snapshot'
-      | 'restore_atomic_alias_before_snapshot';
+      | 'restore_atomic_alias_before_snapshot'
+      | 'none_derivative_only';
     before_payload_sha256: string | null;
     before_payload: JsonObject | null;
     model_id: string | null;
@@ -252,6 +280,7 @@ export type DatasetMaintenancePlan = {
     save_draft: number;
     delete: number;
     update_json_ordered?: number;
+    rebuild_derivatives?: number;
     atomic_batches?: number;
     scaled_exchanges?: number;
     scaled_amount_fields?: number;
@@ -270,6 +299,7 @@ export type DatasetMaintenancePlan = {
     dry_run_report: string;
     payload_dir: string;
     exchange_rewrite_plan?: string;
+    derivative_baseline?: string;
   };
   actions: DatasetMaintenancePlanAction[];
   alias_batches?: DatasetMaintenanceAliasBatchPlan[];
@@ -502,16 +532,19 @@ function parseAction(
   }
   const action = requireToken(value.action, `actions[${index}].action`);
   const table = requireToken(value.table, `actions[${index}].table`);
-  if (!['save_draft', 'delete', 'update_json_ordered'].includes(action)) {
+  if (!['save_draft', 'delete', 'update_json_ordered', 'rebuild_derivatives'].includes(action)) {
     throw new CliError(`Unsupported maintenance action: ${action}`, {
       code: 'DATASET_MAINTENANCE_ACTION_UNSUPPORTED',
       exitCode: 2,
     });
   }
   const aliasAction = action === 'update_json_ordered';
-  const allowedTable = aliasAction
-    ? ['flowproperties', 'flows', 'processes'].includes(table)
-    : (MAINTENANCE_MUTABLE_TABLES as readonly string[]).includes(table);
+  const derivativeAction = action === 'rebuild_derivatives';
+  const allowedTable = derivativeAction
+    ? table === 'processes'
+    : aliasAction
+      ? ['flowproperties', 'flows', 'processes'].includes(table)
+      : (MAINTENANCE_MUTABLE_TABLES as readonly string[]).includes(table);
   if (!allowedTable) {
     throw new CliError(
       `Maintenance cannot mutate protected or unsupported dataset table: ${table}`,
@@ -523,7 +556,9 @@ function parseAction(
   }
   if (
     (operation === 'merge-support-aliases' && !aliasAction) ||
-    (operation !== 'merge-support-aliases' && aliasAction)
+    (operation === 'rebuild-derivatives' && !derivativeAction) ||
+    (!['merge-support-aliases', 'rebuild-derivatives'].includes(operation) &&
+      (aliasAction || derivativeAction))
   ) {
     throw new CliError(`Maintenance operation ${operation} cannot contain ${action} actions.`, {
       code: 'DATASET_MAINTENANCE_OPERATION_ACTION_MISMATCH',
@@ -601,6 +636,32 @@ function parseAction(
       exitCode: 2,
     });
   }
+  const components = Array.isArray(value.components)
+    ? value.components.map((component, componentIndex) =>
+        requireToken(component, `actions[${index}].components[${componentIndex}]`),
+      )
+    : [];
+  if (
+    derivativeAction &&
+    (components.length !== DERIVATIVE_REBUILD_COMPONENTS.length ||
+      components.some(
+        (component, componentIndex) => component !== DERIVATIVE_REBUILD_COMPONENTS[componentIndex],
+      ))
+  ) {
+    throw new CliError(
+      `Derivative rebuild action ${index} requires components in exact order: ${DERIVATIVE_REBUILD_COMPONENTS.join(', ')}.`,
+      {
+        code: 'DATASET_MAINTENANCE_DERIVATIVE_COMPONENTS_INVALID',
+        exitCode: 2,
+      },
+    );
+  }
+  if (!derivativeAction && 'components' in value) {
+    throw new CliError(`Maintenance non-derivative action ${index} cannot include components.`, {
+      code: 'DATASET_MAINTENANCE_DERIVATIVE_COMPONENTS_INVALID',
+      exitCode: 2,
+    });
+  }
   const exchangeKeys = new Set(
     exchangeInstances.map(
       (entry) => `${entry.exchange_index}\u0000${entry.data_set_internal_id}\u0000${entry.flow_id}`,
@@ -635,6 +696,7 @@ function parseAction(
     ...(exchangeInstances.length ? { exchange_instances: exchangeInstances } : {}),
     ...(desiredPayloadPath ? { desired_payload_path: desiredPayloadPath } : {}),
     ...(expectedBeforeSha256 ? { expected_before_sha256: expectedBeforeSha256 } : {}),
+    ...(derivativeAction ? { components: [...DERIVATIVE_REBUILD_COMPONENTS] } : {}),
   };
 }
 
@@ -650,9 +712,14 @@ export function parseMaintenanceScope(
   }
   const operation = requireToken(value.operation, 'operation');
   if (
-    !['delete', 'retire', 'redo-import', 'repair-references', 'merge-support-aliases'].includes(
-      operation,
-    )
+    ![
+      'delete',
+      'retire',
+      'redo-import',
+      'repair-references',
+      'merge-support-aliases',
+      'rebuild-derivatives',
+    ].includes(operation)
   ) {
     throw new CliError(`Unsupported maintenance operation: ${operation}`, {
       code: 'DATASET_MAINTENANCE_OPERATION_UNSUPPORTED',
@@ -680,11 +747,12 @@ export function parseMaintenanceScope(
   );
   const targetMode = token(value.target_mode);
   if (
-    (operation === 'merge-support-aliases' && targetMode !== 'owner_draft') ||
-    (operation !== 'merge-support-aliases' && targetMode !== null)
+    (['merge-support-aliases', 'rebuild-derivatives'].includes(operation) &&
+      targetMode !== 'owner_draft') ||
+    (!['merge-support-aliases', 'rebuild-derivatives'].includes(operation) && targetMode !== null)
   ) {
     throw new CliError(
-      'merge-support-aliases requires target_mode=owner_draft; other operations forbid target_mode.',
+      'merge-support-aliases and rebuild-derivatives require target_mode=owner_draft; other operations forbid target_mode.',
       {
         code: 'DATASET_MAINTENANCE_TARGET_MODE_INVALID',
         exitCode: 2,
@@ -706,6 +774,12 @@ export function parseMaintenanceScope(
         exitCode: 2,
       },
     );
+  }
+  if (operation === 'rebuild-derivatives' && actions.length !== 1) {
+    throw new CliError('rebuild-derivatives requires exactly one action.', {
+      code: 'DATASET_MAINTENANCE_DERIVATIVE_ACTION_COUNT_INVALID',
+      exitCode: 2,
+    });
   }
   if (aliasBatches.length) {
     const batchIds = new Set(aliasBatches.map((batch) => batch.batch_id));
@@ -880,6 +954,39 @@ export function computePlanSha256(plan: DatasetMaintenancePlan): string {
   return sha256Json(body);
 }
 
+function validDerivativeSnapshot(
+  value: unknown,
+  action: DatasetMaintenancePlanAction,
+): value is DatasetMaintenanceDerivativeSnapshot {
+  if (!isJsonObject(value)) return false;
+  const requiredHashes = [
+    value.json_sha256,
+    value.json_ordered_sha256,
+    value.extracted_text_sha256,
+    value.snapshot_sha256,
+  ];
+  const nullableHashes = [value.extracted_md_sha256, value.embedding_ft_sha256];
+  return Boolean(
+    value.schema_version === 'dataset-derivative-snapshot.v1' &&
+    value.table === 'processes' &&
+    value.id === action.id &&
+    value.version === action.version &&
+    value.user_id === action.expected_user_id &&
+    value.state_code === 0 &&
+    value.modified_at === action.before?.modified_at &&
+    typeof value.modified_at === 'string' &&
+    Number.isFinite(Date.parse(value.modified_at)) &&
+    requiredHashes.every((hash) => typeof hash === 'string' && /^[a-f0-9]{64}$/u.test(hash)) &&
+    nullableHashes.every(
+      (hash) => hash === null || (typeof hash === 'string' && /^[a-f0-9]{64}$/u.test(hash)),
+    ) &&
+    value.json_sha256 === value.json_ordered_sha256 &&
+    (value.embedding_ft_at === null ||
+      (typeof value.embedding_ft_at === 'string' &&
+        Number.isFinite(Date.parse(value.embedding_ft_at)))),
+  );
+}
+
 export function parseMaintenancePlan(value: unknown): DatasetMaintenancePlan {
   if (
     !isJsonObject(value) ||
@@ -1014,15 +1121,23 @@ export function parseMaintenancePlan(value: unknown): DatasetMaintenancePlan {
           ? 'save_before_snapshot'
           : action.action === 'delete'
             ? 'restore_deleted_before_snapshot'
-            : 'restore_atomic_alias_before_snapshot';
-      if (
-        action.rollback.strategy !== expectedRollbackStrategy ||
-        action.rollback.before_payload_sha256 !== before.payload_sha256 ||
-        !isJsonObject(action.rollback.before_payload) ||
-        sha256Json(action.rollback.before_payload) !== before.payload_sha256 ||
-        action.rollback.model_id !== before.model_id ||
-        action.rollback.rule_verification !== before.rule_verification
-      ) {
+            : action.action === 'update_json_ordered'
+              ? 'restore_atomic_alias_before_snapshot'
+              : 'none_derivative_only';
+      const derivativeRollback = action.action === 'rebuild_derivatives';
+      const rollbackMatches = derivativeRollback
+        ? action.rollback.strategy === expectedRollbackStrategy &&
+          action.rollback.before_payload_sha256 === null &&
+          action.rollback.before_payload === null &&
+          action.rollback.model_id === null &&
+          action.rollback.rule_verification === null
+        : action.rollback.strategy === expectedRollbackStrategy &&
+          action.rollback.before_payload_sha256 === before.payload_sha256 &&
+          isJsonObject(action.rollback.before_payload) &&
+          sha256Json(action.rollback.before_payload) === before.payload_sha256 &&
+          action.rollback.model_id === before.model_id &&
+          action.rollback.rule_verification === before.rule_verification;
+      if (!rollbackMatches) {
         throw new CliError('Ready maintenance plan action rollback snapshot is invalid.', {
           code: 'DATASET_MAINTENANCE_PLAN_INVALID',
           exitCode: 2,
@@ -1055,6 +1170,8 @@ export function parseMaintenancePlan(value: unknown): DatasetMaintenancePlan {
     plan.summary.delete === plan.actions.filter((action) => action.action === 'delete').length &&
     (plan.summary.update_json_ordered ?? 0) ===
       plan.actions.filter((action) => action.action === 'update_json_ordered').length &&
+    (plan.summary.rebuild_derivatives ?? 0) ===
+      plan.actions.filter((action) => action.action === 'rebuild_derivatives').length &&
     (plan.summary.atomic_batches ?? 0) === (plan.alias_batches?.length ?? 0) &&
     (plan.summary.scaled_exchanges ?? 0) ===
       (plan.alias_batches?.reduce((sum, batch) => sum + batch.summary.exchanges, 0) ?? 0) &&
@@ -1301,6 +1418,35 @@ export function parseMaintenancePlan(value: unknown): DatasetMaintenancePlan {
         exitCode: 2,
       });
     }
+  }
+  if (plan.operation === 'rebuild-derivatives') {
+    const action = plan.actions[0];
+    const validDerivativePlan = Boolean(
+      plan.target_mode === 'owner_draft' &&
+      plan.actions.length === 1 &&
+      !plan.alias_batches &&
+      plan.artifacts.derivative_baseline === 'derivative-baseline.json' &&
+      action?.action === 'rebuild_derivatives' &&
+      action.table === 'processes' &&
+      sha256Json(action.components) === sha256Json(DERIVATIVE_REBUILD_COMPONENTS) &&
+      action.desired_payload === null &&
+      action.rollback.strategy === 'none_derivative_only' &&
+      (action.status === 'blocked' || validDerivativeSnapshot(action.derivative_before, action)),
+    );
+    if (!validDerivativePlan) {
+      throw new CliError('Maintenance derivative rebuild plan contract is inconsistent.', {
+        code: 'DATASET_MAINTENANCE_PLAN_INVALID',
+        exitCode: 2,
+      });
+    }
+  } else if (
+    plan.actions.some((action) => action.derivative_before !== undefined) ||
+    plan.artifacts.derivative_baseline !== undefined
+  ) {
+    throw new CliError('Non-derivative maintenance plan contains derivative-only fields.', {
+      code: 'DATASET_MAINTENANCE_PLAN_INVALID',
+      exitCode: 2,
+    });
   }
   return plan;
 }

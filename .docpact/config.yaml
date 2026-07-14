@@ -3,8 +3,9 @@ layout: repo
 # Review note, 2026-06-11: release 0.0.15 keeps existing command-family, validation, and release routing. The dataset import-lca wrapper now targets the tidas-tools 0.0.28 process-bundle CLI surface; routing and ownership are unchanged.
 # Review note, 2026-07-12: owner-draft BAFU `merge-support-aliases` now sends both frozen dimensions through one whole-plan RPC; it remains inside the existing dataset-maintenance command/runtime domain, and wildcard routing already covers its request/proof adapter, alias-rewrite, tests, and governed command/validation docs, so no ownership or route changes are required.
 # Review note, 2026-07-13: exact-count maintenance pagination remains inside the existing dataset-maintenance command/runtime domain. Wildcard routing already covers its shared paginator, account scans, tests, and governed command/validation docs, so no ownership or route changes are required.
-lastReviewedAt: '2026-07-13'
-lastReviewedCommit: '0bb51e1fe17a5caf08d1fdc341f519a685e48fc6'
+# Review note, 2026-07-14: derivative rebuild remains inside the existing dataset-maintenance command/runtime and remote-adapter domains. Existing `src/lib/dataset-*.ts`, `src/cli.ts`, and `test/**` wildcards already cover its guarded-RPC adapter, action-scoped snapshot, terminal verification, and proof tests; no ownership or route changes are required.
+lastReviewedAt: '2026-07-14'
+lastReviewedCommit: 'ce8c18f270725adad789ada8f4582ca0e97e4117'
 
 catalog:
   repos:

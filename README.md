@@ -17,8 +17,8 @@ checkPaths:
   - bin/**
   - src/cli.ts
   - src/main.ts
-lastReviewedAt: 2026-07-13
-lastReviewedCommit: 4c79df4623e3cf296bc8d1baeea688d78351570a
+lastReviewedAt: 2026-07-14
+lastReviewedCommit: ce8c18f270725adad789ada8f4582ca0e97e4117
 ---
 
 # TianGong LCA CLI
@@ -28,6 +28,8 @@ Package: `@tiangong-lca/cli` Executable: `tiangong-lca` Node: `24.x`
 Review note, 2026-07-12: `dataset maintenance plan/apply/verify` provides current-user RLS-scoped exact-row maintenance with immutable plans, explicit approval, per-action logs, platform audit correlation, and independent readback. `merge-support-aliases` now runs only in `target_mode=owner_draft`: source/target support and all changed rows stay private `state_code=0`; publication is a separate future workflow.
 
 Review note, 2026-07-13: maintenance scans now prove exact-count pagination even when PostgREST returns fewer rows than the requested `--page-size`. An incomplete or inconsistent scan fails before artifacts, approval, or mutation; under stable filtered membership/order the proof represents a complete ordered multi-request traversal, not one transaction-level/MVCC snapshot.
+
+Review note, 2026-07-14: maintenance now includes the protected derivative-only `rebuild-derivatives` operation. V1 plans exactly one current-owner state-0 process with `action=rebuild_derivatives`, `target_mode=owner_draft`, and components `extracted_md` plus `embedding_ft`. Apply only proves guarded-RPC admission (`accepted`/`queued`); independent verify reports `pending`, `passed`, or `failed`.
 
 ## Run
 
@@ -278,6 +280,7 @@ tiangong-lca dataset evidence-search plan --query "中国2026年电力结构数�
 tiangong-lca dataset evidence-search run --input ./evidence-search.request.json --results ./search-results.json --out-dir /abs/path/to/evidence-search --json
 tiangong-lca dataset references rewrite --input ./rows.jsonl --from flow:<old-id>@<old-version> --to flow:<new-id>@<new-version> --out-dir /abs/path/to/dataset-rewrite --json
 tiangong-lca dataset maintenance plan --scope ./maintenance-scope.json --operation redo-import --out-dir /abs/path/to/dataset-maintenance --page-size 1000 --timeout-ms 10000 --json
+tiangong-lca dataset maintenance plan --scope ./derivative-rebuild-scope.json --operation rebuild-derivatives --out-dir /abs/path/to/derivative-rebuild --json
 tiangong-lca dataset maintenance apply --plan /abs/path/to/dataset-maintenance/maintenance-plan.json --commit --approve-plan <sha256> --confirm <current-account-email> --timeout-ms 10000 --json
 tiangong-lca dataset maintenance verify --plan /abs/path/to/dataset-maintenance/maintenance-plan.json --out-dir /abs/path/to/dataset-maintenance/verify --page-size 1000 --timeout-ms 10000 --json
 tiangong-lca lifecyclemodel auto-build --input ./examples/lifecyclemodel-auto-build.request.json --out-dir /abs/path/to/lifecyclemodel-run --json
@@ -324,7 +327,7 @@ For `dataset references rewrite`, `--commit` executes the state-aware save-draft
 
 ## Dataset Maintenance
 
-`dataset maintenance plan/apply/verify` is the row-level cleanup surface for bad imports and the fixed BAFU private alias rewrite. It runs as the currently authenticated user and relies on RLS for visibility and ownership enforcement.
+`dataset maintenance plan/apply/verify` is the row-level cleanup surface for bad imports, the fixed BAFU private alias rewrite, and one protected derivative-only process rebuild. It runs as the currently authenticated user and relies on RLS for visibility and ownership enforcement.
 
 ```bash
 tiangong-lca dataset maintenance plan \
@@ -351,6 +354,8 @@ tiangong-lca dataset maintenance verify \
   --json
 ```
 
+For the derivative-only profile, use the same three commands with `--operation rebuild-derivatives`. Its scope must contain exactly one `processes` action with `action: "rebuild_derivatives"`, `target_mode: "owner_draft"`, expected current owner, expected `state_code: 0`, and the exact component set `extracted_md` plus `embedding_ft`.
+
 `--page-size` accepts `1-5000` and is only the requested maximum. PostgREST may enforce a lower server-side cap. The CLI requests `Prefer: count=exact`, validates the exact total and returned range from each `Content-Range`, advances the next offset by the number of rows actually returned, and requires strict `id`/`version` ordering without missing or duplicate identities. Each accepted scan records per-table requested/effective page size, page count, rows fetched, exact total, and aggregate entity counts.
 
 This completeness proof means the CLI traversed the filtered result while that table's membership and ordering keys remained stable. Because the tables are read through multiple HTTP requests, it is not a transaction-level or MVCC snapshot of one instant; same-cardinality delete/insert churn can evade total and ordering checks. Plan hashes and apply-time drift checks provide the later mutation guard, and operators must avoid concurrent maintenance of the same account while planning or clearing it.
@@ -358,18 +363,21 @@ This completeness proof means the CLI traversed the filtered result while that t
 The scope is intentionally narrow:
 
 - Each requested row must name its table, exact `id`, exact `version`, expected current owner, and draft `state_code=0` state.
-- `--operation` accepts `delete`, `retire`, `redo-import`, `repair-references`, or `merge-support-aliases`; it records the operator's maintenance intent and does not broaden the eligible row actions.
+- `--operation` accepts `delete`, `retire`, `redo-import`, `repair-references`, `merge-support-aliases`, or `rebuild-derivatives`; it records the operator's maintenance intent and does not broaden the eligible row actions.
 - Only current-user `contacts`, `sources`, `flows`, and `processes` can become `save_draft` or `delete` actions.
 - `merge-support-aliases` requires top-level `target_mode: "owner_draft"` and accepts only two named batches, `time` and `length_time`. The scope must bind reviewed current-owner draft source and target FP/UG exact ids/versions to 52 `update_json_ordered` actions: 25 time rows (1 FP, 10 flows, 14 processes) and 27 length-time rows (1 FP, 13 flows, 13 processes). Process actions freeze every selected exchange index, internal id, flow id/version, direction, before hash, and both amount strings.
 - The alias factors are exact decimal strings: `0.00011415525114155251` for time and `1000` for length-time. Planning requires exactly 20 and 39 selected exchanges, preserves exactly 309 other exchanges in the affected processes, and proves the fixed source-zero/target-reference postconditions. The transformation changes references and the selected `meanAmount`/`resultingAmount`; it does not delete the source FP/UG rows.
 - Source alias support, target FP/UG, and every changed flow/process must all belong to the authenticated account at `state_code=0`. Public/shared, foreign-owner, mixed-visibility, non-draft, lifecyclemodel, and unsupported action/table rows remain protected.
+- `rebuild-derivatives` accepts exactly one exact-version `processes` row and is bidirectionally bound to `action=rebuild_derivatives`, `target_mode=owner_draft`, and components `extracted_md` plus `embedding_ft`. It cannot target a public/shared row, a foreign owner, a non-draft row, another table, multiple actions, or a partial/different component set. It rebuilds derivatives only; the primary process payload, owner/state, and `modified_at` remain unchanged.
 - The CLI classifies and executes an operator-authored scope; it does not decide whether rows are semantically duplicates, canonical replacements, or safe business-level cleanup targets.
 
-`plan` accepts the account scan only after its exact-count proof is complete, then writes the frozen `maintenance-scope.json`, `rls-visible-snapshot.json`, `protected-rows.jsonl`, `reference-impact-report.json`, `maintenance-plan.json`, and `dry-run-report.json`. The snapshot, dry-run report, and newly generated plan carry the aggregate completeness proof, so it is bound into the plan SHA-256. Alias plans additionally write `exchange-rewrite-plan.jsonl`, freeze current-owner state-0 target FP, target UG, and source UG snapshots for each batch, derive schema-valid desired payloads with matching embedded UUID/version, and include the exact closure, `modified_at`, hashes, conversion evidence, and postconditions in the approved plan. The plan SHA-256 is the approval identity; do not edit or recompute the plan after review.
+`plan` accepts the account scan only after its exact-count proof is complete, then writes the frozen `maintenance-scope.json`, `rls-visible-snapshot.json`, `protected-rows.jsonl`, `reference-impact-report.json`, `maintenance-plan.json`, and `dry-run-report.json`. The snapshot, dry-run report, and newly generated plan carry the aggregate completeness proof, so it is bound into the plan SHA-256. Alias plans additionally write `exchange-rewrite-plan.jsonl`, freeze current-owner state-0 target FP, target UG, and source UG snapshots for each batch, derive schema-valid desired payloads with matching embedded UUID/version, and include the exact closure, `modified_at`, hashes, conversion evidence, and postconditions in the approved plan. A derivative rebuild plan additionally obtains a database-produced snapshot for only the exact target action and binds its primary and derivative preconditions into the plan; large markdown/vector fields are not added to the account-wide scan. The plan SHA-256 is the approval identity; do not edit or recompute the plan after review.
 
 `apply` is write-disabled unless all three commit guards are present: `--commit`, `--approve-plan <sha256>`, and `--confirm <current-account-email>`. Before approval is persisted or any write runs, it requires a fresh complete exact-count account scan and re-checks the whole plan for drift; the current completeness proof is recorded in `approval-record.json`. Ordinary draft updates/deletes use their platform paths. The ordered `time` plus `length_time` alias request is sent once to `cmd_dataset_alias_plan_guarded` with `target_visibility=owner_draft`; the CLI has neither a per-dimension fallback nor a 52-write sequential fallback. The RPC locks and validates the complete 52-row/59-exchange closure before both dimensions commit, so a second-dimension failure rolls back the first. It checks actor ownership, state 0, exact payload/timestamp locks and embedded UUID/version, rejects missing or phantom flow/exchange references, and returns one plan summary audit id plus both batch and per-row audit proofs. The CLI writes `alias-plan-progress.jsonl` together with plan-bound per-batch, per-row, and per-exchange ledgers. A lost response or incomplete derived ledger is repaired only by replaying the same whole plan and matching every returned plan and batch proof.
 
-`verify` requires another complete exact-count account readback rather than trusting the apply report, records its completeness proof, and writes `readback-verify-report.json` in its own output directory. For alias plans it also requires both successful batch records, all 52 correlated row records, all 59 unique exchange records, unchanged support snapshots, and exact desired row payloads. It validates the RPC-returned audit ids against the local proof chain; it does not independently query `public.command_audit_log`.
+For `rebuild-derivatives`, apply submits the frozen single-action plan only to the authenticated guarded RPC. The database admission envelope must report `queued`; the CLI records that durable admission as an `accepted` action with queued proof. It does not mean markdown or embedding generation has completed. Replay must return the same durable request/proof rather than enqueueing a second rebuild. There is no fallback to a direct Edge call, `admin embedding-run`, a raw queue, SQL, service-role credentials, or raw REST mutation.
+
+`verify` requires another complete exact-count account readback rather than trusting the apply report, records its completeness proof, and writes `readback-verify-report.json` in its own output directory. For alias plans it also requires both successful batch records, all 52 correlated row records, all 59 unique exchange records, unchanged support snapshots, and exact desired row payloads. It validates the RPC-returned audit ids against the local proof chain; it does not independently query `public.command_audit_log`. For derivative rebuild plans, verify reads the durable request plus a fresh action-scoped process snapshot and reports only `pending`, `passed`, or `failed`. Database statuses `queued`, `dispatching`, `markdown_pending`, and `embedding_pending` map to `pending`; `completed` maps to `passed` only when both requested derivatives are current and every frozen primary-field precondition remains unchanged; `stale` and `failed` map to `failed`. The raw status proof, including `phase` and `fence_active`, is preserved in the report. A failed rebuild does not by itself prove that the primary-row write fence has been released.
 
 `dataset maintenance clear-account` uses the same exact-count rule for its initial five-table snapshot, per-table commit checks, and a final fresh scan of all five tables. It reports `cleared_account` only when that final aggregate proof exists with `row_count=0`; if the final proof fails after deletions begin, it still writes a `completed_with_failures` audit report. If the initial scan cannot prove completeness, it writes no snapshot or approval artifact and performs zero deletes.
 

@@ -496,6 +496,7 @@ test('executeCli exposes dataset and lifecyclemodel friction-fix commands', asyn
   );
   assert.equal(datasetMaintenancePlanHelp.exitCode, 0);
   assert.match(datasetMaintenancePlanHelp.stdout, /--operation <operation>/u);
+  assert.match(datasetMaintenancePlanHelp.stdout, /rebuild-derivatives/u);
   assert.match(datasetMaintenancePlanHelp.stdout, /1-5000.*exact counts/u);
 
   const datasetMaintenanceApplyHelp = await executeCli(
@@ -505,6 +506,7 @@ test('executeCli exposes dataset and lifecyclemodel friction-fix commands', asyn
   assert.equal(datasetMaintenanceApplyHelp.exitCode, 0);
   assert.match(datasetMaintenanceApplyHelp.stdout, /--approve-plan <sha256>/u);
   assert.match(datasetMaintenanceApplyHelp.stdout, /Commit-only/u);
+  assert.match(datasetMaintenanceApplyHelp.stdout, /guarded admission is queued/u);
 
   const datasetMaintenanceVerifyHelp = await executeCli(
     ['dataset', 'maintenance', 'verify', '--help'],
@@ -513,6 +515,7 @@ test('executeCli exposes dataset and lifecyclemodel friction-fix commands', asyn
   assert.equal(datasetMaintenanceVerifyHelp.exitCode, 0);
   assert.match(datasetMaintenanceVerifyHelp.stdout, /readback-verify-report\.json/u);
   assert.match(datasetMaintenanceVerifyHelp.stdout, /1-5000.*exact counts/u);
+  assert.match(datasetMaintenanceVerifyHelp.stdout, /pending, passed, or failed/u);
 
   let observedClearAccountOptions: unknown = null;
   const emptyClearCompleteness: DatasetMaintenanceSnapshotCompleteness<
@@ -713,6 +716,34 @@ test('executeCli dispatches dataset maintenance plan, apply, and verify', async 
     fetchImpl: deps.fetchImpl,
   });
 
+  const derivativePlanResult = await executeCli(
+    [
+      'dataset',
+      'maintenance',
+      'plan',
+      '--scope',
+      './derivative-scope.json',
+      '--operation',
+      'rebuild-derivatives',
+      '--out-dir',
+      './derivative-run',
+      '--json',
+    ],
+    {
+      ...deps,
+      runDatasetMaintenancePlanImpl: async (options) =>
+        ({
+          status: 'ready',
+          operation: options.operation,
+        }) as never,
+    },
+  );
+  assert.equal(derivativePlanResult.exitCode, 0);
+  assert.deepEqual(JSON.parse(derivativePlanResult.stdout), {
+    status: 'ready',
+    operation: 'rebuild-derivatives',
+  });
+
   const approvePlan = 'a'.repeat(64);
   let observedApplyOptions: unknown = null;
   const applyResult = await executeCli(
@@ -785,6 +816,14 @@ test('executeCli dispatches dataset maintenance plan, apply, and verify', async 
     env: deps.env,
     fetchImpl: deps.fetchImpl,
   });
+  const pendingVerify = await executeCli(
+    ['dataset', 'maintenance', 'verify', '--plan', './derivative-run/maintenance-plan.json'],
+    {
+      ...deps,
+      runDatasetMaintenanceVerifyImpl: async () => ({ status: 'pending' }) as never,
+    },
+  );
+  assert.equal(pendingVerify.exitCode, 1);
 });
 
 test('executeCli dispatches dataset and lifecyclemodel friction-fix commands', async () => {

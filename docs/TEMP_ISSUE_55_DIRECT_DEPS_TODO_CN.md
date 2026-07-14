@@ -16,8 +16,8 @@ checkPaths:
   - src/lib/supabase-client.ts
   - src/lib/tidas-sdk-package-validator.ts
   - test/**
-lastReviewedAt: 2026-07-13
-lastReviewedCommit: 4c79df4623e3cf296bc8d1baeea688d78351570a
+lastReviewedAt: 2026-07-14
+lastReviewedCommit: ce8c18f270725adad789ada8f4582ca0e97e4117
 related:
   - ../AGENTS.md
   - ../.docpact/config.yaml
@@ -44,6 +44,8 @@ related:
 - 直到 repo 级验证、PR、workspace integration 全部完成，才算结束。
 
 当前状态：
+
+2026-07-14 复核：`dataset maintenance rebuild-derivatives` 复用现有 `@supabase/supabase-js` 用户 session / RPC 适配层，不新增依赖，也不改变 TIDAS SDK direct dependency 结论；本文件保持历史 TODO 记录用途。
 
 2026-06-11 复核：release 0.0.15 的 import-lca 包装层适配不改变 Supabase JS 或 TIDAS SDK direct dependency 结论；本文件保持历史 TODO 记录用途。
 

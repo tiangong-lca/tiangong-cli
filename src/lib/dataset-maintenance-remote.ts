@@ -321,7 +321,13 @@ export async function fetchMaintenanceAccountRows(options: {
 
 async function invokeMaintenanceRpc(options: {
   context: DatasetMaintenanceRemoteContext;
-  rpc: 'cmd_dataset_save_draft' | 'cmd_dataset_delete' | 'cmd_dataset_alias_plan_guarded';
+  rpc:
+    | 'cmd_dataset_save_draft'
+    | 'cmd_dataset_delete'
+    | 'cmd_dataset_alias_plan_guarded'
+    | 'cmd_dataset_derivative_rebuild_snapshot'
+    | 'cmd_dataset_derivative_rebuild_plan_guarded'
+    | 'cmd_dataset_derivative_rebuild_read';
   body: JsonObject;
 }): Promise<JsonObject> {
   const url = `${options.context.rest_base_url}/rpc/${options.rpc}`;
@@ -343,6 +349,44 @@ async function invokeMaintenanceRpc(options: {
     });
   }
   return body;
+}
+
+export async function fetchMaintenanceDerivativeSnapshot(options: {
+  context: DatasetMaintenanceRemoteContext;
+  id: string;
+  version: string;
+}): Promise<JsonObject> {
+  return invokeMaintenanceRpc({
+    context: options.context,
+    rpc: 'cmd_dataset_derivative_rebuild_snapshot',
+    body: {
+      p_table: 'processes',
+      p_id: options.id,
+      p_version: options.version,
+    },
+  });
+}
+
+export async function applyMaintenanceDerivativeRebuild(options: {
+  context: DatasetMaintenanceRemoteContext;
+  plan: JsonObject;
+}): Promise<JsonObject> {
+  return invokeMaintenanceRpc({
+    context: options.context,
+    rpc: 'cmd_dataset_derivative_rebuild_plan_guarded',
+    body: { p_plan: options.plan },
+  });
+}
+
+export async function readMaintenanceDerivativeRebuild(options: {
+  context: DatasetMaintenanceRemoteContext;
+  requestId: string;
+}): Promise<JsonObject> {
+  return invokeMaintenanceRpc({
+    context: options.context,
+    rpc: 'cmd_dataset_derivative_rebuild_read',
+    body: { p_request_id: options.requestId },
+  });
 }
 
 export async function applyMaintenanceAliasPlan(options: {

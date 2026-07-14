@@ -15,8 +15,8 @@ checkPaths:
   - src/lib/user-api-key.ts
   - src/lib/supabase-session.ts
   - src/lib/supabase-client.ts
-lastReviewedAt: 2026-07-13
-lastReviewedCommit: 4c79df4623e3cf296bc8d1baeea688d78351570a
+lastReviewedAt: 2026-07-14
+lastReviewedCommit: ce8c18f270725adad789ada8f4582ca0e97e4117
 related:
   - ../AGENTS.md
   - ../.docpact/config.yaml
@@ -38,6 +38,7 @@ related:
 - 2026-06-06 复核：release 0.0.13 的发布路径改为明确依赖 PR merge 后的 GitHub Actions / npm Trusted Publishing，不改变 CLI 用户 API key、session 或 `--target-user-id` 账号守卫语义；本地 npm 登录状态不是 CLI 运行时认证模型的一部分。
 - 2026-06-07 复核：release 0.0.14 只调整 location classification apply 的本地 JSON 写回语义，不改变 CLI 用户 API key、session 或 `--target-user-id` 账号守卫语义。
 - 2026-06-11 复核：release 0.0.15 只调整 dataset import-lca 包装层的 tidas-tools 进程参数与报告字段推导，不改变 CLI 用户 API key、session 或 `--target-user-id` 账号守卫语义。
+- 2026-07-14 复核：`dataset maintenance rebuild-derivatives` 复用既有用户 session 与 authenticated PostgREST RPC，不新增认证 env、alternate bearer、service-role、Edge/admin 或 raw queue 路径；本历史设计结论不变。
 
 ## 1. 已确认事实
 

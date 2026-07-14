@@ -22,8 +22,8 @@ checkPaths:
   - scripts/docpact
   - scripts/docpact-gate.sh
   - scripts/install-git-hooks.sh
-lastReviewedAt: 2026-07-13
-lastReviewedCommit: 0bb51e1fe17a5caf08d1fdc341f519a685e48fc6
+lastReviewedAt: 2026-07-14
+lastReviewedCommit: ce8c18f270725adad789ada8f4582ca0e97e4117
 related:
   - ../AGENTS.md
   - ../.docpact/config.yaml
@@ -34,6 +34,8 @@ related:
 # CLI Release Runbook
 
 This document is the operator runbook for each `@tiangong-lca/cli` release.
+
+Review note, 2026-07-14: Issue #165 adds the guarded `dataset maintenance rebuild-derivatives` command profile but does not change the release procedure. Its command, contract, remote-adapter, asynchronous verification, and no-fallback tests must pass the existing pre-push/docpact gate before a later version-bump PR; the feature PR itself must not publish locally or alter package version metadata.
 
 Use this document for:
 
