@@ -18,8 +18,8 @@ checkPaths:
   - src/**
   - scripts/**
   - .github/workflows/**
-lastReviewedAt: 2026-07-13
-lastReviewedCommit: 4c79df4623e3cf296bc8d1baeea688d78351570a
+lastReviewedAt: 2026-07-14
+lastReviewedCommit: ce8c18f270725adad789ada8f4582ca0e97e4117
 related:
   - AGENTS.md
   - .docpact/config.yaml
@@ -44,6 +44,8 @@ Review note, 2026-07-11: `dataset maintenance plan/apply/verify` is now an imple
 Review note, 2026-07-12: BAFU `merge-support-aliases` 已改为显式 `target_mode=owner_draft`。source/target FP/UG 与全部受改 flow/process 必须属于当前账号且保持 `state_code=0`；RPC 请求、数据库审计、replay proof、本地 approval/progress 和独立 readback 都绑定 `target_visibility=owner_draft`。公开发布不再是本操作的前置或副作用。
 
 Review note, 2026-07-13: maintenance account scan 已改为 exact-count 分页。`--page-size` 只是请求上限，服务端可返回更小页；CLI 根据实际返回行数推进 offset，核对每页 `Content-Range`、exact total 与严格 `id/version` 顺序，并在 artifact、approval 或 mutation 前要求完整性证明。该证明不是事务级/MVCC 同时点快照。
+
+Review note, 2026-07-14: `rebuild-derivatives` 扩展现有 maintenance command family，但不新增 env 或发布路径。V1 只允许一个 current-owner state-0 process 的 `rebuild_derivatives` action，components 固定为 `extracted_md` + `embedding_ft`；apply 只记录 guarded RPC 的 `accepted`/`queued`，verify 独立输出 `pending`/`passed`/`failed`。不允许 direct Edge、`admin embedding-run`、raw queue、SQL 或 REST mutation fallback。
 
 设计原则：
 
@@ -264,6 +266,7 @@ npm exec tiangong-lca -- dataset classification audit --type location --input ./
 npm exec tiangong-lca -- dataset curation-queue build --processes ./rows/processes.jsonl --flows ./rows/flows.jsonl --support ./rows/sources.jsonl --out-dir ./curation-queue --json
 npm exec tiangong-lca -- dataset references rewrite --input ./rows.jsonl --from flow:<old-id>@<old-version> --to flow:<new-id>@<new-version> --out-dir ./dataset-rewrite --json
 npm exec tiangong-lca -- dataset maintenance plan --scope ./maintenance-scope.json --operation repair-references --out-dir ./dataset-maintenance --json
+npm exec tiangong-lca -- dataset maintenance plan --scope ./derivative-rebuild-scope.json --operation rebuild-derivatives --out-dir ./derivative-rebuild --json
 npm exec tiangong-lca -- dataset maintenance apply --plan ./dataset-maintenance/maintenance-plan.json --commit --approve-plan <sha256> --confirm <current-account-email> --json
 npm exec tiangong-lca -- dataset maintenance verify --plan ./dataset-maintenance/maintenance-plan.json --out-dir ./dataset-maintenance/verify --json
 npm exec tiangong-lca -- lifecyclemodel auto-build --input ./examples/lifecyclemodel-auto-build.request.json --out-dir /abs/path/to/lifecyclemodel-run --json
@@ -297,13 +300,15 @@ npm exec tiangong-lca -- admin embedding-run --input ./jobs.json --dry-run
 
 ## process / review / publish / validation 边界
 
-`tiangong-lca dataset maintenance plan/apply/verify` 是错误导入后 row-level 修复的 CLI-owned 入口。`plan` 冻结当前用户 RLS 可见快照、保护行、引用影响、desired payload 和 canonical plan SHA-256；普通操作只允许精确 `id + version` 的当前账号 `state_code=0` draft 通过 `cmd_dataset_save_draft` / `cmd_dataset_delete` 执行。BAFU alias operation 还要求 scope/plan `target_mode=owner_draft`，冻结 source/target FP/UG、52 个 changed row、59 条 exchange、118 个 amount 字段和 309 条不变 exchange，再以 `target_visibility=owner_draft` 一次调用 `cmd_dataset_alias_plan_guarded`。所有路径都把 plan/action/mode correlation 写入数据库审计与本地 durable proof；`verify` 独立读回 payload、owner/state、保护行和引用闭包。Foundry/skills 只能编排这些命令，不得实现私有 SQL、service-role 或 raw REST mutation。
+`tiangong-lca dataset maintenance plan/apply/verify` 是错误导入后 row-level 修复和受保护衍生重建的 CLI-owned 入口。`plan` 冻结当前用户 RLS 可见快照、保护行、引用影响、desired payload 和 canonical plan SHA-256；普通操作只允许精确 `id + version` 的当前账号 `state_code=0` draft 通过 `cmd_dataset_save_draft` / `cmd_dataset_delete` 执行。BAFU alias operation 还要求 scope/plan `target_mode=owner_draft`，冻结 source/target FP/UG、52 个 changed row、59 条 exchange、118 个 amount 字段和 309 条不变 exchange，再以 `target_visibility=owner_draft` 一次调用 `cmd_dataset_alias_plan_guarded`。`rebuild-derivatives` 只允许一个 `table=processes`、`action=rebuild_derivatives`、`target_mode=owner_draft` 的当前账号 state-0 draft，components 必须恰好为 `extracted_md` 与 `embedding_ft`；plan 绑定 action-scoped DB snapshot，apply 只记录 guarded RPC 的 durable admission，verify 才判断终态。所有路径都把 plan/action/mode correlation 写入数据库审计与本地 durable proof。Foundry/skills 只能编排这些命令，不得实现私有 Edge/admin/queue/SQL/service-role/raw REST mutation fallback。
 
 maintenance 的 account-wide `plan`、apply preflight、`verify` 与 `clear-account` 共用 fail-closed exact-count paginator。它发送 `Prefer: count=exact`，把 `--page-size 1-5000` 当作 requested maximum；即使服务端把 5000 截成 1000，也按实际返回长度继续读取，而不是错误地跳到 offset 5000。每个表都必须证明 `Content-Range` total 恒定、range 与 body 一致、`id/version` 严格递增且无重复，汇总 proof 还必须覆盖全部预期表和 entity count。任何不完整或不一致的初始扫描都在生成快照/approval 或执行删除/更新前失败；新 plan、dry-run、approval 与 readback report 会保留相应 completeness proof。
 
 这里的“complete”只表示在该表过滤成员与排序键保持稳定的前提下，多次 HTTP 请求完成了分页遍历；不表示所有页来自同一个 PostgreSQL transaction/MVCC snapshot。同数量的一删一增仍可能绕过 total/order 检查，apply 仍要靠 plan hash、payload/timestamp lock 和 fresh drift preflight 阻断写入；执行 plan 或 clear-account 时应避免同账号并发维护。
 
 `apply` 是 commit-only：必须同时提供 `--commit`、精确 `--approve-plan <sha256>` 和 `--confirm <current-account-email>`。首写前会持久化 approval 并做全计划 drift preflight；alias 必须把 `time`、`length_time` 依次装入同一 `dataset-alias-plan.v1` 请求并只调用一次 whole-plan RPC。任一维失败都回滚 52 行的全部变更，丢失响应时也只能重放同一整计划，不能从第二维续跑。public/shared、foreign owner、mixed visibility、非 draft、不可见行和其他 support mutation 在该操作中一律保护或阻断。
+
+Derivative rebuild 的 apply 成功只表示 guarded RPC 已返回 `accepted`/`queued`，不能解释成 markdown/vector 已完成；相同 plan 重放必须恢复同一个 durable request，不能重复入队。`verify` 独立读取 request 与 action-scoped DB snapshot，只输出 `pending`、`passed`、`failed`；只有 `extracted_md`、`embedding_ft` 都已 current 且 primary process preconditions 不变才可 `passed`。
 
 `tiangong-lca process get` 现在是统一 CLI 持有的只读 process 详情命令，负责：
 

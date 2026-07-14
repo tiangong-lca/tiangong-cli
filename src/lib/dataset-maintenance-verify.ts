@@ -19,6 +19,15 @@ import {
   type DatasetMaintenanceRemoteRow,
   type JsonObject,
 } from './dataset-maintenance-contract.js';
+import {
+  derivativePlanAction,
+  derivativeStatusCategory,
+  parseDerivativeSnapshotResponse,
+  parseDerivativeStatusResponse,
+  parseDerivativeSubmitResponse,
+  type DatasetMaintenanceDerivativeStatusProof,
+  type DatasetMaintenanceDerivativeSubmitProof,
+} from './dataset-maintenance-derivatives.js';
 import { maintenanceProjectedReferenceFingerprint } from './dataset-maintenance-plan.js';
 import {
   isSnapshotCompletenessCompatible,
@@ -26,8 +35,10 @@ import {
 } from './dataset-maintenance-pagination.js';
 import {
   fetchMaintenanceAccountRows,
+  fetchMaintenanceDerivativeSnapshot,
   fetchMaintenanceExactRows,
   normalizeMaintenancePageSize,
+  readMaintenanceDerivativeRebuild,
   resolveMaintenanceRemoteContext,
 } from './dataset-maintenance-remote.js';
 
@@ -44,7 +55,7 @@ export type DatasetMaintenanceVerifyIssue = {
 export type DatasetMaintenanceVerifyReport = {
   schema_version: 1;
   generated_at_utc: string;
-  status: 'passed' | 'failed';
+  status: 'pending' | 'passed' | 'failed';
   task_id: string;
   operation: DatasetMaintenancePlan['operation'];
   operation_id: string;
@@ -62,13 +73,20 @@ export type DatasetMaintenanceVerifyReport = {
     atomic_batches?: number;
     atomic_batch_successes?: number;
     exchange_rewrite_logs?: number;
+    derivative_admissions?: number;
+    derivative_request_status?: string;
     dangling_deleted_target_references: number;
     issues: number;
   };
   action_checks: Array<{
     action_id: string;
-    status: 'passed' | 'failed';
-    observed: 'desired_payload' | 'absent' | 'mismatch';
+    status: 'pending' | 'passed' | 'failed';
+    observed:
+      | 'desired_payload'
+      | 'absent'
+      | 'mismatch'
+      | 'derivative_pending'
+      | 'derivative_current';
   }>;
   issues: DatasetMaintenanceVerifyIssue[];
   artifacts: {
@@ -79,7 +97,13 @@ export type DatasetMaintenanceVerifyReport = {
     alias_plan_progress?: string;
     alias_batch_progress?: string;
     alias_exchange_progress?: string;
+    derivative_submit_progress?: string;
     report: string;
+  };
+  derivative_status?: {
+    proof: DatasetMaintenanceDerivativeStatusProof;
+    raw_evidence: JsonObject;
+    note: string;
   };
 };
 
@@ -165,6 +189,368 @@ function deletedTargetReferences(options: {
   });
 }
 
+function derivativeSubmitIdentity(proof: DatasetMaintenanceDerivativeSubmitProof): string {
+  return sha256Json({
+    schema_version: proof.schema_version,
+    plan_sha256: proof.plan_sha256,
+    operation_id: proof.operation_id,
+    target_visibility: proof.target_visibility,
+    plan_request_sha256: proof.plan_request_sha256,
+    action_count: proof.action_count,
+    accepted_count: proof.accepted_count,
+    summary_audit_id: proof.summary_audit_id,
+    request_id: proof.request_id,
+    action_request_sha256: proof.action_request_sha256,
+    database_audit_id: proof.database_audit_id,
+  });
+}
+
+function readDerivativeSubmitProof(options: {
+  plan: DatasetMaintenancePlan;
+  progressPath: string;
+  problems: DatasetMaintenanceVerifyIssue[];
+}): { proof: DatasetMaintenanceDerivativeSubmitProof | null; admissions: number } {
+  const action = derivativePlanAction(options.plan);
+  const proofs: DatasetMaintenanceDerivativeSubmitProof[] = [];
+  for (const [index, value] of readJsonLinesIfPresent(options.progressPath).entries()) {
+    try {
+      if (
+        !isJsonObject(value) ||
+        value.schema_version !== 1 ||
+        value.plan_sha256 !== options.plan.plan_sha256 ||
+        value.operation_id !== options.plan.operation_id ||
+        value.action_id !== action.action_id ||
+        value.target_mode !== 'owner_draft' ||
+        !isJsonObject(value.actor) ||
+        value.actor.user_id !== options.plan.account.user_id ||
+        value.actor.email !== options.plan.account.email ||
+        typeof value.started_at_utc !== 'string' ||
+        typeof value.ended_at_utc !== 'string' ||
+        value.result !== 'accepted' ||
+        !isJsonObject(value.proof)
+      ) {
+        throw new Error('wrapper mismatch');
+      }
+      proofs.push(
+        parseDerivativeSubmitResponse(
+          {
+            ok: true,
+            command: 'cmd_dataset_derivative_rebuild_plan_guarded',
+            ...value.proof,
+          },
+          options.plan,
+        ),
+      );
+    } catch (error) {
+      options.problems.push({
+        code: 'DERIVATIVE_SUBMIT_PROGRESS_INVALID',
+        message: 'Derivative submit progress contains an invalid or foreign entry.',
+        details: { line: index + 1, error: String(error) },
+      });
+    }
+  }
+  if (proofs.length === 0) {
+    options.problems.push({
+      code: 'DERIVATIVE_ADMISSION_MISSING',
+      message: 'No valid guarded-RPC derivative admission proof exists.',
+    });
+    return { proof: null, admissions: 0 };
+  }
+  if (new Set(proofs.map(derivativeSubmitIdentity)).size !== 1) {
+    options.problems.push({
+      code: 'DERIVATIVE_ADMISSION_REPLAY_MISMATCH',
+      message: 'Derivative admission entries do not identify one durable request.',
+    });
+    return { proof: null, admissions: proofs.length };
+  }
+  return { proof: proofs.at(-1)!, admissions: proofs.length };
+}
+
+async function runDerivativeMaintenanceVerify(options: {
+  plan: DatasetMaintenancePlan;
+  planPath: string;
+  planDir: string;
+  reportPath: string;
+  approvalRecordPath: string;
+  commitReportPath: string;
+  progressPath: string;
+  context: Awaited<ReturnType<typeof resolveMaintenanceRemoteContext>>;
+  current: Awaited<ReturnType<typeof fetchMaintenanceAccountRows>>;
+  now?: Date;
+}): Promise<DatasetMaintenanceVerifyReport> {
+  const action = derivativePlanAction(options.plan);
+  const baseline = action.derivative_before!;
+  const problems: DatasetMaintenanceVerifyIssue[] = [];
+  const currentByKey = new Map(options.current.rows.map((row) => [maintenanceRowKey(row), row]));
+  let protectedPassed = 0;
+  for (const protectedRow of options.plan.protected_rows) {
+    const row = currentByKey.get(maintenanceRowKey(protectedRow));
+    if (row && snapshotRemoteRow(row).row_sha256 === protectedRow.row_sha256) {
+      protectedPassed += 1;
+    } else {
+      problems.push({
+        code: 'PROTECTED_ROW_CHANGED',
+        message: 'Protected primary row changed or disappeared after derivative admission.',
+        table: protectedRow.table,
+        id: protectedRow.id,
+        version: protectedRow.version,
+      });
+    }
+  }
+  const expectedKeys = new Set([
+    ...options.plan.protected_rows.map(maintenanceRowKey),
+    maintenanceRowKey(action),
+  ]);
+  for (const row of options.current.rows) {
+    if (!expectedKeys.has(maintenanceRowKey(row))) {
+      problems.push({
+        code: 'UNEXPECTED_ACCOUNT_ROW',
+        message: 'Unexpected current-account primary row exists after derivative admission.',
+        table: row.table,
+        id: row.id,
+        version: row.version,
+      });
+    }
+  }
+  const primaryRow = currentByKey.get(maintenanceRowKey(action));
+  if (!primaryRow || snapshotRemoteRow(primaryRow).row_sha256 !== action.before?.row_sha256) {
+    problems.push(
+      issue(
+        'DERIVATIVE_PRIMARY_ROW_DRIFT',
+        'The process primary row changed after derivative planning.',
+        action,
+      ),
+    );
+  }
+  const referenceSha256 = sha256Json(
+    maintenanceProjectedReferenceFingerprint(options.current.rows),
+  );
+  if (referenceSha256 !== options.plan.projected_reference_sha256) {
+    problems.push({
+      code: 'PROJECTED_REFERENCE_CLOSURE_MISMATCH',
+      message: 'Primary readback reference closure differs from the approved plan.',
+      details: { expected: options.plan.projected_reference_sha256, actual: referenceSha256 },
+    });
+  }
+
+  if (!existsSync(options.approvalRecordPath)) {
+    problems.push({ code: 'APPROVAL_RECORD_MISSING', message: 'approval-record.json is missing.' });
+  } else {
+    const approval = readJsonFile(options.approvalRecordPath, 'Maintenance approval record');
+    if (
+      !isJsonObject(approval) ||
+      approval.schema_version !== 1 ||
+      approval.plan_sha256 !== options.plan.plan_sha256 ||
+      approval.task_id !== options.plan.task_id ||
+      approval.operation !== 'rebuild-derivatives' ||
+      approval.operation_id !== options.plan.operation_id ||
+      approval.target_mode !== 'owner_draft' ||
+      !isJsonObject(approval.account) ||
+      approval.account.user_id !== options.plan.account.user_id ||
+      approval.account.email !== options.plan.account.email ||
+      approval.confirmed_email !== options.plan.account.email ||
+      !isJsonObject(approval.row_counts) ||
+      sha256Json(approval.row_counts) !== sha256Json(options.plan.summary) ||
+      !isSnapshotCompletenessCompatible(
+        approval.snapshot_completeness,
+        options.plan.snapshot_completeness,
+        MAINTENANCE_SCAN_TABLES,
+      )
+    ) {
+      problems.push({
+        code: 'APPROVAL_RECORD_INVALID',
+        message: 'approval-record.json does not match the immutable derivative plan and actor.',
+      });
+    }
+  }
+
+  const admission = readDerivativeSubmitProof({
+    plan: options.plan,
+    progressPath: options.progressPath,
+    problems,
+  });
+  if (!existsSync(options.commitReportPath)) {
+    problems.push({ code: 'COMMIT_REPORT_MISSING', message: 'commit-report.json is missing.' });
+  } else {
+    const commit = readJsonFile(options.commitReportPath, 'Maintenance commit report');
+    const commitProof =
+      isJsonObject(commit) && isJsonObject(commit.derivative_admission)
+        ? commit.derivative_admission
+        : null;
+    if (
+      !isJsonObject(commit) ||
+      commit.schema_version !== 1 ||
+      commit.status !== 'accepted' ||
+      commit.plan_sha256 !== options.plan.plan_sha256 ||
+      commit.operation !== 'rebuild-derivatives' ||
+      commit.operation_id !== options.plan.operation_id ||
+      !commitProof ||
+      commitProof.admission !== 'accepted' ||
+      !admission.proof ||
+      derivativeSubmitIdentity(commitProof as DatasetMaintenanceDerivativeSubmitProof) !==
+        derivativeSubmitIdentity(admission.proof)
+    ) {
+      problems.push({
+        code: 'COMMIT_REPORT_INCOMPLETE',
+        message: 'commit-report.json does not prove guarded derivative admission.',
+      });
+    }
+  }
+
+  let statusProof: DatasetMaintenanceDerivativeStatusProof | null = null;
+  let rawStatus: JsonObject | null = null;
+  let category: 'pending' | 'passed' | 'failed' = 'failed';
+  if (admission.proof) {
+    try {
+      rawStatus = await readMaintenanceDerivativeRebuild({
+        context: options.context,
+        requestId: admission.proof.request_id,
+      });
+      statusProof = parseDerivativeStatusResponse(rawStatus, options.plan, admission.proof);
+      category = derivativeStatusCategory(statusProof.status);
+    } catch (error) {
+      problems.push({
+        code: 'DERIVATIVE_STATUS_READ_FAILED',
+        message: 'Guarded derivative request status could not be validated.',
+        details: String(error),
+      });
+    }
+  }
+
+  let currentSnapshot = null;
+  try {
+    currentSnapshot = parseDerivativeSnapshotResponse(
+      await fetchMaintenanceDerivativeSnapshot({
+        context: options.context,
+        id: action.id,
+        version: action.version,
+      }),
+      { id: action.id, version: action.version, userId: action.expected_user_id },
+    );
+  } catch (error) {
+    problems.push(
+      issue(
+        'DERIVATIVE_SNAPSHOT_READ_FAILED',
+        'Fresh action-scoped derivative snapshot could not be validated.',
+        action,
+        String(error),
+      ),
+    );
+  }
+  if (
+    currentSnapshot &&
+    (currentSnapshot.modified_at !== baseline.modified_at ||
+      currentSnapshot.json_sha256 !== baseline.json_sha256 ||
+      currentSnapshot.json_ordered_sha256 !== baseline.json_ordered_sha256 ||
+      currentSnapshot.extracted_text_sha256 !== baseline.extracted_text_sha256)
+  ) {
+    problems.push(
+      issue(
+        'DERIVATIVE_PRIMARY_SNAPSHOT_DRIFT',
+        'Fresh derivative snapshot no longer matches frozen primary preconditions.',
+        action,
+      ),
+    );
+  }
+  if (statusProof && category === 'failed') {
+    problems.push(
+      issue(
+        'DERIVATIVE_REQUEST_FAILED',
+        'The durable derivative request reached a failed terminal state. This does not prove that its primary-write fence has been released; inspect raw_evidence.',
+        action,
+        { status: statusProof.status, error: statusProof.error },
+      ),
+    );
+  }
+  if (statusProof && category === 'passed') {
+    const currentEmbeddingAt = currentSnapshot?.embedding_ft_at
+      ? Date.parse(currentSnapshot.embedding_ft_at)
+      : Number.NaN;
+    const baselineEmbeddingAt = baseline.embedding_ft_at
+      ? Date.parse(baseline.embedding_ft_at)
+      : Number.NEGATIVE_INFINITY;
+    if (
+      !currentSnapshot ||
+      statusProof.completed_snapshot_sha256 !== currentSnapshot.snapshot_sha256 ||
+      !currentSnapshot.extracted_md_sha256 ||
+      !currentSnapshot.embedding_ft_sha256 ||
+      !Number.isFinite(currentEmbeddingAt) ||
+      currentEmbeddingAt <= baselineEmbeddingAt
+    ) {
+      problems.push(
+        issue(
+          'DERIVATIVE_COMPLETION_PROOF_MISMATCH',
+          'Completed status lacks matching current markdown/vector freshness proof.',
+          action,
+        ),
+      );
+    }
+  }
+
+  const finalStatus: DatasetMaintenanceVerifyReport['status'] = problems.length
+    ? 'failed'
+    : category;
+  const actionStatus = finalStatus;
+  const report: DatasetMaintenanceVerifyReport = {
+    schema_version: 1,
+    generated_at_utc: (options.now ?? new Date()).toISOString(),
+    status: finalStatus,
+    task_id: options.plan.task_id,
+    operation: options.plan.operation,
+    operation_id: options.plan.operation_id,
+    target_mode: options.plan.target_mode,
+    plan_sha256: options.plan.plan_sha256,
+    actor: {
+      user_id: options.context.account.user_id,
+      email: options.context.account.email,
+    },
+    snapshot_completeness: options.current.completeness,
+    summary: {
+      actions: 1,
+      action_checks_passed: actionStatus === 'passed' ? 1 : 0,
+      protected_rows: options.plan.protected_rows.length,
+      protected_checks_passed: protectedPassed,
+      progress_successes: 0,
+      derivative_admissions: admission.admissions,
+      derivative_request_status: statusProof?.status ?? 'unknown',
+      dangling_deleted_target_references: 0,
+      issues: problems.length,
+    },
+    action_checks: [
+      {
+        action_id: action.action_id,
+        status: actionStatus,
+        observed:
+          actionStatus === 'passed'
+            ? 'derivative_current'
+            : actionStatus === 'pending'
+              ? 'derivative_pending'
+              : 'mismatch',
+      },
+    ],
+    issues: problems,
+    artifacts: {
+      plan: options.planPath,
+      approval_record: options.approvalRecordPath,
+      apply_progress: options.progressPath,
+      derivative_submit_progress: options.progressPath,
+      commit_report: options.commitReportPath,
+      report: options.reportPath,
+    },
+    ...(statusProof && rawStatus
+      ? {
+          derivative_status: {
+            proof: statusProof,
+            raw_evidence: rawStatus,
+            note: 'raw_evidence preserves database fence and timeout state; failed does not imply the primary row is editable unless that evidence explicitly proves fence release.',
+          },
+        }
+      : {}),
+  };
+  writeJsonArtifact(options.reportPath, report);
+  return report;
+}
+
 export async function runDatasetMaintenanceVerify(
   options: RunDatasetMaintenanceVerifyOptions,
 ): Promise<DatasetMaintenanceVerifyReport> {
@@ -173,13 +559,18 @@ export async function runDatasetMaintenanceVerify(
   const outDir = path.resolve(options.outDir ?? path.join(planDir, 'verify'));
   const reportPath = path.join(outDir, 'readback-verify-report.json');
   const approvalRecordPath = path.join(planDir, 'approval-record.json');
-  const progressPath = path.join(planDir, 'apply-progress.jsonl');
+  const plan = parseMaintenancePlan(readJsonFile(planPath, 'Maintenance plan'));
+  const progressPath = path.join(
+    planDir,
+    plan.operation === 'rebuild-derivatives'
+      ? 'derivative-submit-progress.jsonl'
+      : 'apply-progress.jsonl',
+  );
   const commitReportPath = path.join(planDir, 'commit-report.json');
   const aliasPlanProgressPath = path.join(planDir, 'alias-plan-progress.jsonl');
   const aliasBatchProgressPath = path.join(planDir, 'alias-batch-progress.jsonl');
   const aliasExchangeProgressPath = path.join(planDir, 'alias-exchange-progress.jsonl');
   const pageSize = normalizeMaintenancePageSize(options.pageSize);
-  const plan = parseMaintenancePlan(readJsonFile(planPath, 'Maintenance plan'));
   const context = await resolveMaintenanceRemoteContext({
     env: options.env,
     fetchImpl: options.fetchImpl,
@@ -202,6 +593,20 @@ export async function runDatasetMaintenanceVerify(
     userId: plan.account.user_id,
     pageSize,
   });
+  if (plan.operation === 'rebuild-derivatives') {
+    return runDerivativeMaintenanceVerify({
+      plan,
+      planPath,
+      planDir,
+      reportPath,
+      approvalRecordPath,
+      commitReportPath,
+      progressPath,
+      context,
+      current,
+      now: options.now,
+    });
+  }
   const currentByKey = new Map(current.rows.map((row) => [maintenanceRowKey(row), row]));
   const actionChecks: DatasetMaintenanceVerifyReport['action_checks'] = [];
   for (const action of plan.actions) {
@@ -883,6 +1288,8 @@ export async function runDatasetMaintenanceVerify(
 
 export const __testInternals = {
   deletedTargetReferences,
+  derivativeSubmitIdentity,
   desiredPayload,
   issue,
+  readDerivativeSubmitProof,
 };

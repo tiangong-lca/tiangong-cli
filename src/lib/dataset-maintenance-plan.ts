@@ -29,6 +29,7 @@ import {
   type DatasetMaintenanceScopeAction,
   type JsonObject,
 } from './dataset-maintenance-contract.js';
+import { parseDerivativeSnapshotResponse } from './dataset-maintenance-derivatives.js';
 import {
   inspectMaintenanceSupportPayload,
   maintenancePayloadIdentity,
@@ -36,6 +37,7 @@ import {
 } from './dataset-maintenance-support-validation.js';
 import {
   fetchMaintenanceAccountRows,
+  fetchMaintenanceDerivativeSnapshot,
   fetchMaintenanceExactRows,
   normalizeMaintenancePageSize,
   resolveMaintenanceRemoteContext,
@@ -431,6 +433,32 @@ export async function runDatasetMaintenancePlan(
         );
       }
     }
+    let derivativeBefore: DatasetMaintenancePlanAction['derivative_before'];
+    if (action.action === 'rebuild_derivatives' && before && actionBlockers.length === 0) {
+      const rawSnapshot = await fetchMaintenanceDerivativeSnapshot({
+        context,
+        id: action.id,
+        version: action.version,
+      });
+      derivativeBefore = parseDerivativeSnapshotResponse(rawSnapshot, {
+        id: action.id,
+        version: action.version,
+        userId: action.expected_user_id,
+      });
+      if (derivativeBefore.modified_at !== before.modified_at) {
+        actionBlockers.push(
+          blocker(
+            action,
+            'DERIVATIVE_PRIMARY_SNAPSHOT_DRIFT',
+            'Derivative snapshot modified_at differs from the lean account snapshot.',
+            {
+              account_snapshot_modified_at: before.modified_at,
+              derivative_snapshot_modified_at: derivativeBefore.modified_at,
+            },
+          ),
+        );
+      }
+    }
     actionPlans.push({
       ...action,
       ordinal,
@@ -438,17 +466,23 @@ export async function runDatasetMaintenancePlan(
       before,
       desired_payload: desiredPayload,
       blockers: actionBlockers,
+      ...(derivativeBefore ? { derivative_before: derivativeBefore } : {}),
       rollback: {
         strategy:
           action.action === 'save_draft'
             ? 'save_before_snapshot'
             : action.action === 'delete'
               ? 'restore_deleted_before_snapshot'
-              : 'restore_atomic_alias_before_snapshot',
-        before_payload_sha256: before?.payload_sha256 ?? null,
-        before_payload: before?.json_ordered ?? null,
-        model_id: before?.model_id ?? null,
-        rule_verification: before?.rule_verification ?? null,
+              : action.action === 'update_json_ordered'
+                ? 'restore_atomic_alias_before_snapshot'
+                : 'none_derivative_only',
+        before_payload_sha256:
+          action.action === 'rebuild_derivatives' ? null : (before?.payload_sha256 ?? null),
+        before_payload:
+          action.action === 'rebuild_derivatives' ? null : (before?.json_ordered ?? null),
+        model_id: action.action === 'rebuild_derivatives' ? null : (before?.model_id ?? null),
+        rule_verification:
+          action.action === 'rebuild_derivatives' ? null : (before?.rule_verification ?? null),
       },
     });
   }
@@ -552,6 +586,8 @@ export async function runDatasetMaintenancePlan(
       delete: actionPlans.filter((action) => action.action === 'delete').length,
       update_json_ordered: actionPlans.filter((action) => action.action === 'update_json_ordered')
         .length,
+      rebuild_derivatives: actionPlans.filter((action) => action.action === 'rebuild_derivatives')
+        .length,
       atomic_batches: aliasBatches?.length ?? 0,
       scaled_exchanges: aliasBatches?.reduce((sum, batch) => sum + batch.summary.exchanges, 0) ?? 0,
       scaled_amount_fields:
@@ -572,6 +608,9 @@ export async function runDatasetMaintenancePlan(
       dry_run_report: 'dry-run-report.json',
       payload_dir: 'payloads',
       ...(aliasBatches ? { exchange_rewrite_plan: 'exchange-rewrite-plan.jsonl' } : {}),
+      ...(scope.operation === 'rebuild-derivatives'
+        ? { derivative_baseline: 'derivative-baseline.json' }
+        : {}),
     },
     actions: actionPlans,
     ...(aliasBatches ? { alias_batches: aliasBatches } : {}),
@@ -597,6 +636,12 @@ export async function runDatasetMaintenancePlan(
     rows: snapshotRows,
   });
   writeImmutableJsonLines(path.join(outDir, plan.artifacts.protected_rows), protectedRowList);
+  if (plan.artifacts.derivative_baseline) {
+    writeImmutableJson(
+      path.join(outDir, plan.artifacts.derivative_baseline),
+      plan.actions[0]!.derivative_before ?? null,
+    );
+  }
   if (plan.artifacts.exchange_rewrite_plan) {
     writeImmutableJsonLines(
       path.join(outDir, plan.artifacts.exchange_rewrite_plan),
@@ -640,6 +685,7 @@ export async function runDatasetMaintenancePlan(
       version: action.version,
       status: action.status,
       blockers: action.blockers,
+      ...(action.derivative_before ? { derivative_before: action.derivative_before } : {}),
     })),
     alias_batches: plan.alias_batches?.map((batch) => ({
       batch_id: batch.batch_id,

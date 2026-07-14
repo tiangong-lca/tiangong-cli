@@ -17,8 +17,8 @@ checkPaths:
   - package.json
   - src/**
   - test/**
-lastReviewedAt: 2026-07-13
-lastReviewedCommit: 4c79df4623e3cf296bc8d1baeea688d78351570a
+lastReviewedAt: 2026-07-14
+lastReviewedCommit: ce8c18f270725adad789ada8f4582ca0e97e4117
 related:
   - ../AGENTS.md
   - ../.docpact/config.yaml
@@ -48,6 +48,7 @@ related:
 - 2026-06-06 复核：release 0.0.13 发布路径澄清为 PR merge 到 upstream `main` 后由 GitHub Actions / npm Trusted Publishing 执行，不重新引入 Python、POSIX shell、MCP runtime 或本地发布脚本前提
 - 2026-06-07 复核：release 0.0.14 的 `dataset classification apply --type location` 修复仍在 TypeScript CLI-native 路径内完成，不重新引入 Python、POSIX shell、MCP runtime 或本地发布脚本前提
 - 2026-06-11 复核：release 0.0.15 的 `dataset import-lca convert` 适配仍通过 TypeScript CLI 包装 tidas-tools Python CLI 完成，不重新引入 Python、POSIX shell、MCP runtime 或本地发布脚本前提
+- 2026-07-14 复核：`dataset maintenance rebuild-derivatives` 继续作为 TypeScript / Node 原生命令通过既有用户 session 和受保护 RPC 执行，不新增 Python、POSIX shell、MCP runtime 或私有 skill runtime 前提
 
 这份文档记录的是：
 

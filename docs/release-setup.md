@@ -19,8 +19,8 @@ checkPaths:
   - scripts/docpact
   - scripts/docpact-gate.sh
   - scripts/install-git-hooks.sh
-lastReviewedAt: 2026-07-13
-lastReviewedCommit: 0bb51e1fe17a5caf08d1fdc341f519a685e48fc6
+lastReviewedAt: 2026-07-14
+lastReviewedCommit: ce8c18f270725adad789ada8f4582ca0e97e4117
 related:
   - ../AGENTS.md
   - ../.docpact/config.yaml
@@ -48,6 +48,8 @@ Current workflow files:
 - `.github/workflows/publish.yml`
 
 Review note, 2026-06-04: `dataset curation-queue next/verify` does not change release workflow files, token names, Trusted Publishing settings, or tag semantics.
+
+Review note, 2026-07-14: Issue #165's guarded derivative-rebuild command requires no new release secret, token, Trusted Publisher setting, workflow file, or tag rule. Database RPC deployment remains a cross-repo runtime prerequisite, not npm release setup.
 
 Review note, 2026-07-13: exact-count maintenance pagination requires no repository secret, Trusted Publisher, environment, workflow filename, or tag-semantics change.
 

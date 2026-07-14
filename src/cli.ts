@@ -749,8 +749,8 @@ function renderDatasetMaintenanceHelp(): string {
 Actions:
   clear-account Dry-run or delete current authenticated account-owned lifecyclemodels, processes, flows, sources, and contacts.
   plan    Build an immutable maintenance plan from a scope manifest, visible remote snapshot, dependency impact report, and intended operation.
-  apply   Execute an approved plan through current-user RLS and platform dataset command paths; never bypass RLS or delete rows outside the visible scope.
-  verify  Re-fetch affected rows and references, then prove that deleted, updated, skipped, protected, and redone rows match the plan.
+  apply   Execute or durably admit an approved plan through current-user RLS and platform dataset command paths; never bypass RLS.
+  verify  Re-fetch rows, references, or derivative request state and report passed, pending, or failed independently of apply.
 
 Safety:
   plan and verify are read-only.
@@ -769,6 +769,7 @@ Examples:
   tiangong-lca dataset maintenance clear-account --out-dir ./account-clear --json
   tiangong-lca dataset maintenance clear-account --commit --confirm user@example.com --out-dir ./account-clear
   tiangong-lca dataset maintenance plan --scope ./maintenance-scope.json --operation merge-support-aliases --out-dir ./dataset-maintenance
+  tiangong-lca dataset maintenance plan --scope ./derivative-rebuild-scope.json --operation rebuild-derivatives --out-dir ./derivative-rebuild
   tiangong-lca dataset maintenance apply --plan ./dataset-maintenance/maintenance-plan.json --commit --approve-plan <sha256> --confirm user@example.com
   tiangong-lca dataset maintenance verify --plan ./dataset-maintenance/maintenance-plan.json --out-dir ./dataset-maintenance/verify
 `.trim();
@@ -779,7 +780,7 @@ function renderDatasetMaintenancePlanHelp(): string {
   tiangong-lca dataset maintenance plan --scope <file> --operation <operation> --out-dir <dir> [options]
 
 Operations:
-  delete | retire | redo-import | repair-references | merge-support-aliases
+  delete | retire | redo-import | repair-references | merge-support-aliases | rebuild-derivatives
 
 Options:
   --scope <file>       Maintenance scope manifest
@@ -791,7 +792,8 @@ Options:
   -h, --help
 
 Outputs written under --out-dir include the immutable maintenance-plan.json, visible snapshot,
-protected-row ledger, reference-impact report, and dry-run report.
+protected-row ledger, reference-impact report, and dry-run report. rebuild-derivatives additionally
+freezes one action-scoped database snapshot without expanding the account scan with vector data.
 `.trim();
 }
 
@@ -802,6 +804,7 @@ function renderDatasetMaintenanceApplyHelp(): string {
 Behavior:
   Commit-only. The command rejects dry-run mode, a missing --commit flag, a plan hash mismatch,
   or a confirmation email that does not match the current authenticated account.
+  For rebuild-derivatives, success means guarded admission is queued; it never means derivatives completed.
 
 Options:
   --plan <file>          Immutable maintenance-plan.json
@@ -812,7 +815,7 @@ Options:
   --json                 Print compact JSON
   -h, --help
 
-Outputs include approval-record.json and commit-report.json alongside an append-only action ledger.
+Outputs include approval-record.json and commit-report.json alongside an append-only action or admission ledger.
 `.trim();
 }
 
@@ -828,7 +831,8 @@ Options:
   --json              Print compact JSON
   -h, --help
 
-Outputs include readback-verify-report.json with affected-row and reference checks.
+Outputs include readback-verify-report.json. rebuild-derivatives reports pending, passed, or failed;
+pending and failed both return a non-zero exit status.
 `.trim();
 }
 
@@ -3845,12 +3849,17 @@ function parseDatasetMaintenancePlanFlags(args: string[]): {
   const rawOperation = typeof values.operation === 'string' ? values.operation : null;
   if (
     rawOperation !== null &&
-    !['delete', 'retire', 'redo-import', 'repair-references', 'merge-support-aliases'].includes(
-      rawOperation,
-    )
+    ![
+      'delete',
+      'retire',
+      'redo-import',
+      'repair-references',
+      'merge-support-aliases',
+      'rebuild-derivatives',
+    ].includes(rawOperation)
   ) {
     throw new CliError(
-      "--operation must be 'delete', 'retire', 'redo-import', 'repair-references', or 'merge-support-aliases'.",
+      "--operation must be 'delete', 'retire', 'redo-import', 'repair-references', 'merge-support-aliases', or 'rebuild-derivatives'.",
       {
         code: 'DATASET_MAINTENANCE_OPERATION_INVALID',
         exitCode: 2,
@@ -7040,7 +7049,7 @@ export async function executeCli(argv: string[], deps: CliDeps): Promise<CliResu
           fetchImpl: deps.fetchImpl,
         });
         return {
-          exitCode: report.status === 'failed' ? 1 : 0,
+          exitCode: report.status === 'passed' ? 0 : 1,
           stdout: stringifyJson(report, datasetFlags.json),
           stderr: '',
         };

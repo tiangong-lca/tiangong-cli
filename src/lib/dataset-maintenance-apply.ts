@@ -24,12 +24,21 @@ import {
   type DatasetMaintenanceRemoteRow,
   type JsonObject,
 } from './dataset-maintenance-contract.js';
+import {
+  buildDerivativePlanRequest,
+  derivativePlanAction,
+  parseDerivativeSnapshotResponse,
+  parseDerivativeSubmitResponse,
+  type DatasetMaintenanceDerivativeSubmitProof,
+} from './dataset-maintenance-derivatives.js';
 import { maintenanceProjectedReferenceFingerprint } from './dataset-maintenance-plan.js';
 import { isSnapshotCompletenessCompatible } from './dataset-maintenance-pagination.js';
 import {
   applyMaintenanceAliasPlan,
+  applyMaintenanceDerivativeRebuild,
   deleteMaintenanceRow,
   fetchMaintenanceAccountRows,
+  fetchMaintenanceDerivativeSnapshot,
   fetchMaintenanceExactRows,
   resolveMaintenanceRemoteContext,
   saveDraftMaintenanceRow,
@@ -39,7 +48,7 @@ import {
 export type DatasetMaintenanceApplyReport = {
   schema_version: 1;
   generated_at_utc: string;
-  status: 'completed' | 'completed_with_failures';
+  status: 'completed' | 'completed_with_failures' | 'accepted';
   task_id: string;
   operation: DatasetMaintenancePlan['operation'];
   operation_id: string;
@@ -52,6 +61,7 @@ export type DatasetMaintenanceApplyReport = {
     failed: number;
     pending: number;
     resumed_successes: number;
+    accepted?: number;
   };
   actions: Array<{
     action_id: string;
@@ -59,7 +69,7 @@ export type DatasetMaintenanceApplyReport = {
     table: DatasetMaintenancePlanAction['table'];
     id: string;
     version: string;
-    status: 'success' | 'failed' | 'pending';
+    status: 'success' | 'failed' | 'pending' | 'accepted';
     error: string | null;
   }>;
   artifacts: {
@@ -70,6 +80,8 @@ export type DatasetMaintenanceApplyReport = {
     alias_plan_progress?: string;
     alias_batch_progress?: string;
     alias_exchange_progress?: string;
+    derivative_submit_progress?: string;
+    derivative_admission_attempt?: string;
   };
   database_audit: {
     rpc_transaction_log: 'public.command_audit_log';
@@ -83,6 +95,9 @@ export type DatasetMaintenanceApplyReport = {
     row_count: 52;
     exchange_count: 59;
     idempotent_replay: boolean;
+  };
+  derivative_admission?: DatasetMaintenanceDerivativeSubmitProof & {
+    admission: 'accepted';
   };
 };
 
@@ -101,6 +116,37 @@ type ProgressState = {
   entries: DatasetMaintenanceProgressEntry[];
   successes: Map<string, DatasetMaintenanceProgressEntry>;
   latestFailures: Map<string, DatasetMaintenanceProgressEntry>;
+};
+
+type DerivativeSubmitProgressEntry = {
+  schema_version: 1;
+  plan_sha256: string;
+  operation_id: string;
+  action_id: string;
+  target_mode: 'owner_draft';
+  actor: { user_id: string; email: string };
+  started_at_utc: string;
+  ended_at_utc: string;
+  result: 'accepted';
+  proof: DatasetMaintenanceDerivativeSubmitProof;
+};
+
+type DerivativeSubmitProgressState = {
+  entries: DerivativeSubmitProgressEntry[];
+  latest: DerivativeSubmitProgressEntry | null;
+};
+
+type DerivativeAdmissionAttempt = {
+  schema_version: 1;
+  plan_sha256: string;
+  operation_id: string;
+  action_id: string;
+  table: 'processes';
+  id: string;
+  version: string;
+  expected_snapshot_sha256: string;
+  actor: { user_id: string; email: string };
+  prepared_at_utc: string;
 };
 
 type AliasBatchProgressEntry = {
@@ -295,6 +341,113 @@ function parseProgress(plan: DatasetMaintenancePlan, progressPath: string): Prog
     }
   }
   return { entries, successes, latestFailures };
+}
+
+function derivativeProofIdentity(proof: DatasetMaintenanceDerivativeSubmitProof): string {
+  return sha256Json({
+    schema_version: proof.schema_version,
+    plan_sha256: proof.plan_sha256,
+    operation_id: proof.operation_id,
+    target_visibility: proof.target_visibility,
+    plan_request_sha256: proof.plan_request_sha256,
+    action_count: proof.action_count,
+    accepted_count: proof.accepted_count,
+    summary_audit_id: proof.summary_audit_id,
+    request_id: proof.request_id,
+    action_request_sha256: proof.action_request_sha256,
+    database_audit_id: proof.database_audit_id,
+  });
+}
+
+function parseDerivativeSubmitProgress(
+  plan: DatasetMaintenancePlan,
+  progressPath: string,
+): DerivativeSubmitProgressState {
+  const action = derivativePlanAction(plan);
+  const entries = readJsonLinesIfPresent(progressPath).map((value) => {
+    const rawProof = isJsonObject(value) && isJsonObject(value.proof) ? value.proof : null;
+    let proof: DatasetMaintenanceDerivativeSubmitProof;
+    try {
+      proof = parseDerivativeSubmitResponse(
+        rawProof
+          ? {
+              ok: true,
+              command: 'cmd_dataset_derivative_rebuild_plan_guarded',
+              ...rawProof,
+            }
+          : null,
+        plan,
+      );
+    } catch (error) {
+      throw new CliError('Derivative submit progress contains an invalid RPC proof.', {
+        code: 'DATASET_MAINTENANCE_DERIVATIVE_PROGRESS_INVALID',
+        exitCode: 1,
+        details: errorMessage(error),
+      });
+    }
+    if (
+      !isJsonObject(value) ||
+      value.schema_version !== 1 ||
+      value.plan_sha256 !== plan.plan_sha256 ||
+      value.operation_id !== plan.operation_id ||
+      value.action_id !== action.action_id ||
+      value.target_mode !== 'owner_draft' ||
+      !isJsonObject(value.actor) ||
+      value.actor.user_id !== plan.account.user_id ||
+      value.actor.email !== plan.account.email ||
+      typeof value.started_at_utc !== 'string' ||
+      typeof value.ended_at_utc !== 'string' ||
+      value.result !== 'accepted'
+    ) {
+      throw new CliError('Derivative submit progress contains an invalid or foreign entry.', {
+        code: 'DATASET_MAINTENANCE_DERIVATIVE_PROGRESS_INVALID',
+        exitCode: 1,
+        details: value,
+      });
+    }
+    return { ...value, proof } as DerivativeSubmitProgressEntry;
+  });
+  const identities = new Set(entries.map((entry) => derivativeProofIdentity(entry.proof)));
+  if (identities.size > 1) {
+    throw new CliError('Derivative submit replays do not identify one durable request.', {
+      code: 'DATASET_MAINTENANCE_DERIVATIVE_PROGRESS_INVALID',
+      exitCode: 1,
+    });
+  }
+  return { entries, latest: entries.at(-1) ?? null };
+}
+
+function validateDerivativeAdmissionAttempt(options: {
+  path: string;
+  plan: DatasetMaintenancePlan;
+  context: DatasetMaintenanceRemoteContext;
+}): DerivativeAdmissionAttempt | null {
+  if (!existsSync(options.path)) return null;
+  const value = readJsonFile(options.path, 'Derivative admission attempt');
+  const action = derivativePlanAction(options.plan);
+  if (
+    !isJsonObject(value) ||
+    value.schema_version !== 1 ||
+    value.plan_sha256 !== options.plan.plan_sha256 ||
+    value.operation_id !== options.plan.operation_id ||
+    value.action_id !== action.action_id ||
+    value.table !== 'processes' ||
+    value.id !== action.id ||
+    value.version !== action.version ||
+    value.expected_snapshot_sha256 !== action.derivative_before?.snapshot_sha256 ||
+    !isJsonObject(value.actor) ||
+    value.actor.user_id !== options.context.account.user_id ||
+    value.actor.email !== options.context.account.email ||
+    typeof value.prepared_at_utc !== 'string' ||
+    !Number.isFinite(Date.parse(value.prepared_at_utc))
+  ) {
+    throw new CliError('Derivative admission attempt is invalid or belongs to another plan.', {
+      code: 'DATASET_MAINTENANCE_DERIVATIVE_ATTEMPT_INVALID',
+      exitCode: 1,
+      details: value,
+    });
+  }
+  return value as DerivativeAdmissionAttempt;
 }
 
 function parseAliasBatchProgress(
@@ -1441,6 +1594,15 @@ async function executeAction(options: {
   planDir: string;
   context: DatasetMaintenanceRemoteContext;
 }): Promise<{ afterSha256: string | null; remoteResultSha256: string }> {
+  if (options.action.action === 'rebuild_derivatives') {
+    throw new CliError(
+      'Derivative rebuild actions may only execute through the guarded whole-plan RPC.',
+      {
+        code: 'DATASET_MAINTENANCE_DERIVATIVE_SEQUENTIAL_WRITE_FORBIDDEN',
+        exitCode: 1,
+      },
+    );
+  }
   if (!options.action.before) {
     throw new CliError(`Action lacks a before snapshot: ${options.action.action_id}`, {
       code: 'DATASET_MAINTENANCE_PLAN_INVALID',
@@ -1520,6 +1682,12 @@ async function executeAction(options: {
       exitCode: 1,
     });
   }
+  if (options.action.action !== 'delete') {
+    throw new CliError(`Unsupported maintenance action: ${options.action.action}`, {
+      code: 'DATASET_MAINTENANCE_ACTION_UNSUPPORTED',
+      exitCode: 2,
+    });
+  }
   const remoteResult = await deleteMaintenanceRow({
     context: options.context,
     table: options.action.table as DatasetMaintenanceMutableTable,
@@ -1540,6 +1708,72 @@ async function executeAction(options: {
     });
   }
   return { afterSha256: null, remoteResultSha256: sha256Json(remoteResult) };
+}
+
+async function executeDerivativeAdmission(options: {
+  plan: DatasetMaintenancePlan;
+  context: DatasetMaintenanceRemoteContext;
+  replayPossible: boolean;
+  attemptPath: string;
+  preparedAtUtc: string;
+}): Promise<DatasetMaintenanceDerivativeSubmitProof> {
+  const action = derivativePlanAction(options.plan);
+  const plannedSnapshot = action.derivative_before!;
+  const preflight = parseDerivativeSnapshotResponse(
+    await fetchMaintenanceDerivativeSnapshot({
+      context: options.context,
+      id: action.id,
+      version: action.version,
+    }),
+    { id: action.id, version: action.version, userId: action.expected_user_id },
+  );
+  if (
+    preflight.modified_at !== plannedSnapshot.modified_at ||
+    preflight.json_sha256 !== plannedSnapshot.json_sha256 ||
+    preflight.json_ordered_sha256 !== plannedSnapshot.json_ordered_sha256 ||
+    preflight.extracted_text_sha256 !== plannedSnapshot.extracted_text_sha256
+  ) {
+    throw new CliError('Derivative action primary preconditions drifted after planning.', {
+      code: 'DATASET_MAINTENANCE_DERIVATIVE_PRIMARY_DRIFT',
+      exitCode: 1,
+      details: {
+        expected_snapshot_sha256: plannedSnapshot.snapshot_sha256,
+        actual_snapshot_sha256: preflight.snapshot_sha256,
+      },
+    });
+  }
+  if (!options.replayPossible && preflight.snapshot_sha256 !== plannedSnapshot.snapshot_sha256) {
+    throw new CliError('Derivative action-scoped snapshot drifted before first admission.', {
+      code: 'DATASET_MAINTENANCE_DERIVATIVE_SNAPSHOT_DRIFT',
+      exitCode: 1,
+      details: {
+        expected: plannedSnapshot.snapshot_sha256,
+        actual: preflight.snapshot_sha256,
+      },
+    });
+  }
+  if (!options.replayPossible) {
+    writeImmutableJson(options.attemptPath, {
+      schema_version: 1,
+      plan_sha256: options.plan.plan_sha256,
+      operation_id: options.plan.operation_id,
+      action_id: action.action_id,
+      table: 'processes',
+      id: action.id,
+      version: action.version,
+      expected_snapshot_sha256: plannedSnapshot.snapshot_sha256,
+      actor: {
+        user_id: options.context.account.user_id,
+        email: options.context.account.email,
+      },
+      prepared_at_utc: options.preparedAtUtc,
+    } satisfies DerivativeAdmissionAttempt);
+  }
+  const result = await applyMaintenanceDerivativeRebuild({
+    context: options.context,
+    plan: buildDerivativePlanRequest(options.plan),
+  });
+  return parseDerivativeSubmitResponse(result, options.plan);
 }
 
 function nextAttemptPath(planDir: string): string {
@@ -1588,7 +1822,12 @@ export async function runDatasetMaintenanceApply(
     });
   }
 
-  const progressPath = path.join(planDir, 'apply-progress.jsonl');
+  const progressPath = path.join(
+    planDir,
+    plan.operation === 'rebuild-derivatives'
+      ? 'derivative-submit-progress.jsonl'
+      : 'apply-progress.jsonl',
+  );
   const aliasPlanProgressPath = path.join(planDir, 'alias-plan-progress.jsonl');
   const aliasBatchProgressPath = path.join(planDir, 'alias-batch-progress.jsonl');
   const aliasExchangeProgressPath = path.join(planDir, 'alias-exchange-progress.jsonl');
@@ -1617,7 +1856,14 @@ export async function runDatasetMaintenanceApply(
           exitCode: 2,
         });
       }
-      const progress = parseProgress(plan, progressPath);
+      const derivativeProgress: DerivativeSubmitProgressState =
+        plan.operation === 'rebuild-derivatives'
+          ? parseDerivativeSubmitProgress(plan, progressPath)
+          : { entries: [], latest: null };
+      const progress: ProgressState =
+        plan.operation === 'rebuild-derivatives'
+          ? { entries: [], successes: new Map(), latestFailures: new Map() }
+          : parseProgress(plan, progressPath);
       let resumedSuccesses = progress.successes.size;
       const aliasPlanProgress: AliasPlanProgressState =
         plan.operation === 'merge-support-aliases'
@@ -1643,8 +1889,9 @@ export async function runDatasetMaintenanceApply(
       }
 
       const approvalPath = path.join(planDir, 'approval-record.json');
+      const approvalAlreadyExisted = existsSync(approvalPath);
       validateApprovalRecord({ path: approvalPath, plan, context });
-      if (!existsSync(approvalPath)) {
+      if (!approvalAlreadyExisted) {
         writeImmutableJson(approvalPath, {
           schema_version: 1,
           approved_at_utc: clock(options),
@@ -1666,6 +1913,103 @@ export async function runDatasetMaintenanceApply(
               ? Boolean(plan.source_import_run_id || plan.source_lineage !== null)
               : null,
         });
+      }
+
+      if (plan.operation === 'rebuild-derivatives') {
+        const startedAt = clock(options);
+        const derivativeAttemptPath = path.join(planDir, 'derivative-admission-attempt.json');
+        const derivativeAttempt = validateDerivativeAdmissionAttempt({
+          path: derivativeAttemptPath,
+          plan,
+          context,
+        });
+        const proof = await executeDerivativeAdmission({
+          plan,
+          context,
+          replayPossible: derivativeAttempt !== null,
+          attemptPath: derivativeAttemptPath,
+          preparedAtUtc: startedAt,
+        });
+        if (
+          derivativeProgress.latest &&
+          derivativeProofIdentity(derivativeProgress.latest.proof) !==
+            derivativeProofIdentity(proof)
+        ) {
+          throw new CliError('Derivative guarded-RPC replay returned a different request proof.', {
+            code: 'DATASET_MAINTENANCE_DERIVATIVE_REPLAY_MISMATCH',
+            exitCode: 1,
+          });
+        }
+        const action = derivativePlanAction(plan);
+        const entry: DerivativeSubmitProgressEntry = {
+          schema_version: 1,
+          plan_sha256: plan.plan_sha256,
+          operation_id: plan.operation_id,
+          action_id: action.action_id,
+          target_mode: 'owner_draft',
+          actor: { user_id: context.account.user_id, email: context.account.email },
+          started_at_utc: startedAt,
+          ended_at_utc: clock(options),
+          result: 'accepted',
+          proof,
+        };
+        appendStableJsonLine(progressPath, entry);
+        const attemptPath = nextAttemptPath(planDir);
+        const report: DatasetMaintenanceApplyReport = {
+          schema_version: 1,
+          generated_at_utc: clock(options),
+          status: 'accepted',
+          task_id: plan.task_id,
+          operation: plan.operation,
+          operation_id: plan.operation_id,
+          target_mode: plan.target_mode,
+          plan_sha256: plan.plan_sha256,
+          actor: { user_id: context.account.user_id, email: context.account.email },
+          summary: {
+            actions: 1,
+            success: 0,
+            failed: 0,
+            pending: 1,
+            resumed_successes: 0,
+            accepted: 1,
+          },
+          actions: [
+            {
+              action_id: action.action_id,
+              action: action.action,
+              table: action.table,
+              id: action.id,
+              version: action.version,
+              status: 'accepted',
+              error: null,
+            },
+          ],
+          artifacts: {
+            approval_record: approvalPath,
+            apply_progress: progressPath,
+            derivative_submit_progress: progressPath,
+            derivative_admission_attempt: derivativeAttemptPath,
+            commit_report: path.join(planDir, 'commit-report.json'),
+            attempt_report: attemptPath,
+          },
+          database_audit: {
+            rpc_transaction_log: 'public.command_audit_log',
+            source: 'tiangong-lca dataset maintenance apply',
+            correlation_fields: [
+              'plan_sha256',
+              'operation_id',
+              'action_id',
+              'target_visibility',
+              'plan_request_sha256',
+              'action_request_sha256',
+              'request_id',
+            ],
+          },
+          derivative_admission: { ...proof, admission: 'accepted' },
+        };
+        writeImmutableJson(attemptPath, report);
+        writeJsonArtifact(report.artifacts.commit_report, report);
+        return report;
       }
 
       if (plan.operation === 'merge-support-aliases') {
@@ -1810,6 +2154,7 @@ export async function runDatasetMaintenanceApply(
         const rank = {
           save_draft: 0,
           update_json_ordered: 0,
+          rebuild_derivatives: 0,
           delete: 1,
         } as const;
         const actionOrder = rank[left.action] - rank[right.action];
@@ -1956,11 +2301,14 @@ export const __testInternals = {
   buildAliasPlanRequest,
   clock,
   errorMessage,
+  executeDerivativeAdmission,
   executeAliasPlan,
   executeAction,
   finalProjectedRows,
   loadDesiredPayload,
   nextAttemptPath,
+  parseDerivativeSubmitProgress,
+  validateDerivativeAdmissionAttempt,
   parseAliasBatchProgress,
   parseAliasPlanProgress,
   parseProgress,
