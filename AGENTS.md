@@ -33,7 +33,7 @@ checkPaths:
   - scripts/docpact-gate.sh
   - scripts/install-git-hooks.sh
 lastReviewedAt: 2026-07-15
-lastReviewedCommit: 81dcc80e7e2dd4e075446d820a0c836811d98567
+lastReviewedCommit: bd145f692b3fd11e398302dd6a1d2831e058883a
 related:
   - .docpact/config.yaml
   - docs/agents/repo-validation.md
@@ -66,6 +66,8 @@ Review note, 2026-07-13: maintenance account scans now require exact-count Postg
 Review note, 2026-07-14: `rebuild-derivatives` extends the maintenance contract with one narrowly scoped `rebuild_derivatives` action. V1 accepts exactly one current-owner `processes` draft in `target_mode=owner_draft`, with the exact component set `extracted_md` plus `embedding_ft`. Planning freezes an action-scoped database snapshot; apply may only obtain a durable `accepted`/`queued` result through the guarded RPC; independent verify owns the terminal `pending`/`passed`/`failed` result. This path never mutates primary process data and has no direct Edge, `admin embedding-run`, raw queue, SQL, or REST mutation fallback.
 
 Review note, 2026-07-15: `dataset maintenance run-protected` is the CLI-owned production-only path for one already sealed and exactly approved owner-draft alias execution. It completes full account and derivative-baseline checks before server preflight, binds three ordered live gates to a server window of at most 180 seconds, writes an immutable local marker before at most one admission POST, and permits only status/readback recovery afterward. Terminal success requires the database proof and independent RLS reads to agree on 52 rows, 59 exchanges, 55 audits, and exactly 23 flow plus 27 process derivative targets. It has no Dev replay, legacy alias RPC, automatic retry, publication, or state-code fallback.
+
+Review note, 2026-07-15: Issue #171 keeps protected preparation in the same CLI-owned maintenance boundary. `freeze-protected` may authenticate only to the explicitly confirmed production project and is limited to complete RLS reads plus the protected derivative snapshot RPC; `seal-protected-approval` is local-only and receives no environment, session, or network client. Only `run-protected` owns preflight/admission/execution. Foundry and skills remain thin published-CLI callers and must not duplicate database access, canonical hashing, or approval construction.
 
 ## Bootstrap Order
 

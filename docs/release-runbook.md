@@ -23,7 +23,7 @@ checkPaths:
   - scripts/docpact-gate.sh
   - scripts/install-git-hooks.sh
 lastReviewedAt: 2026-07-15
-lastReviewedCommit: 81dcc80e7e2dd4e075446d820a0c836811d98567
+lastReviewedCommit: bd145f692b3fd11e398302dd6a1d2831e058883a
 related:
   - ../AGENTS.md
   - ../.docpact/config.yaml
@@ -38,6 +38,8 @@ This document is the operator runbook for each `@tiangong-lca/cli` release.
 Review note, 2026-07-14: Issue #165 adds the guarded `dataset maintenance rebuild-derivatives` command profile but does not change the release procedure. Its command, contract, remote-adapter, asynchronous verification, and no-fallback tests must pass the existing pre-push/docpact gate before a later version-bump PR; the feature PR itself must not publish locally or alter package version metadata.
 
 Review note, 2026-07-15: Issue #168 adds the production-only protected alias runner without changing package-version, tag, Trusted Publishing, or workspace follow-up mechanics. The feature PR must pass docpact and the full pre-push gate without changing package metadata. A separate patch release may start only after database-engine#262 reaches production and its schema/function/ACL readback passes; the release is still a dedicated version-bump PR and never a local publish.
+
+Review note, 2026-07-15: Issue #171 adds production-read-only protected freeze generation and completely offline human-approval sealing without changing release mechanics. Its feature PR must keep package metadata at the current released version and pass focused contract/zero-write tests, exact 100% coverage, docpact, and the full pre-push gate. Only after that feature PR merges may a separate patch version-bump PR publish through the existing tag/Trusted Publishing workflows. A fresh production freeze is not permitted until the published package provenance/registry integrity is verified and the exact release commit is merged into root-workspace integration Issue #406.
 
 Use this document for:
 

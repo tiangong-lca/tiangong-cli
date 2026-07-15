@@ -1,25 +1,23 @@
-import {
-  appendFileSync,
-  chmodSync,
-  existsSync,
-  mkdirSync,
-  readFileSync,
-  writeFileSync,
-} from 'node:fs';
+import { appendFileSync, chmodSync, existsSync } from 'node:fs';
 import path from 'node:path';
+import { buildAliasPlanRequest } from './dataset-maintenance-alias-request.js';
 import {
-  buildAliasPlanRequest,
-  loadMaintenanceDesiredPayload,
-} from './dataset-maintenance-alias-request.js';
+  ensurePrivateArtifactDirectory,
+  readProtectedJsonArtifact,
+  writePrivateImmutableJson,
+} from './dataset-maintenance-protected-artifacts.js';
 import {
-  MAINTENANCE_SCAN_TABLES,
+  assertDerivativeBaselines as assertSharedDerivativeBaselines,
+  assertStrictBeforeState as assertSharedStrictBeforeState,
+  assertSupportSnapshots as assertSharedSupportSnapshots,
+  projectedRows as sharedProjectedRows,
+} from './dataset-maintenance-protected-before.js';
+import {
   isJsonObject,
-  maintenanceRowKey,
   parseMaintenancePlan,
   readJsonFile,
   sha256Json,
   sha256Text,
-  snapshotRemoteRow,
   stableJsonText,
   type DatasetMaintenancePlan,
   type DatasetMaintenanceRemoteRow,
@@ -34,7 +32,6 @@ import {
   buildProtectedPreflightRequest,
   parseProtectedAdmissionProof,
   parseProtectedApproval,
-  parseProtectedDerivativeSnapshot,
   parseProtectedFreeze,
   parseProtectedGateProof,
   parseProtectedPreflightProof,
@@ -49,17 +46,18 @@ import {
   type ProtectedReportStatus,
 } from './dataset-maintenance-protected-contract.js';
 import {
+  assertProtectedPreparationPlanSha256,
+  assertProtectedProductionProjectRef,
+} from './dataset-maintenance-protected-preparation.js';
+import {
   verifyProtectedExecution,
   type ProtectedVerificationResult,
 } from './dataset-maintenance-protected-verify.js';
 import { maintenanceProjectedReferenceFingerprint } from './dataset-maintenance-plan.js';
-import { isSnapshotCompletenessCompatible } from './dataset-maintenance-pagination.js';
 import {
   admitMaintenanceAliasExecution,
   captureMaintenanceAliasExecutionGate,
   fetchMaintenanceAccountRows,
-  fetchMaintenanceDerivativeSnapshot,
-  fetchMaintenanceExactRows,
   normalizeMaintenancePageSize,
   preflightMaintenanceAliasExecution,
   readMaintenanceAliasExecution,
@@ -177,38 +175,33 @@ function errorDetails(error: unknown): { name: string; message: string; code: st
 function readArtifact(options: { filePath: string; label: string }): {
   resolved: string;
   value: unknown;
+  text: string;
   file_sha256: string;
 } {
-  const resolved = path.resolve(options.filePath);
-  const text = readFileSync(resolved, 'utf8');
+  const artifact = readProtectedJsonArtifact(options);
   return {
-    resolved,
-    value: readJsonFile(resolved, options.label),
-    file_sha256: sha256Text(text),
+    resolved: artifact.resolved,
+    value: artifact.value,
+    text: artifact.text,
+    file_sha256: artifact.file_sha256,
   };
 }
 
-function ensurePrivateDirectory(directory: string): void {
-  mkdirSync(directory, { recursive: true, mode: 0o700 });
-  chmodSync(directory, 0o700);
+function assertCanonicalParsedArtifact(options: {
+  label: string;
+  text: string;
+  value: unknown;
+}): void {
+  if (options.text !== `${stableJsonText(options.value)}\n`) {
+    throw new CliError(`${options.label} must be canonical JSON with exactly one final newline.`, {
+      code: 'DATASET_MAINTENANCE_PROTECTED_ARTIFACT_NONCANONICAL',
+      exitCode: 2,
+    });
+  }
 }
 
-function writePrivateImmutableJson(filePath: string, value: unknown): string {
-  const resolved = path.resolve(filePath);
-  const text = `${stableJsonText(value)}\n`;
-  ensurePrivateDirectory(path.dirname(resolved));
-  if (existsSync(resolved)) {
-    if (readFileSync(resolved, 'utf8') !== text) {
-      throw new CliError(`Refusing to overwrite protected evidence: ${resolved}`, {
-        code: 'DATASET_MAINTENANCE_PROTECTED_ARTIFACT_IMMUTABLE',
-        exitCode: 1,
-      });
-    }
-    chmodSync(resolved, 0o600);
-    return resolved;
-  }
-  writeFileSync(resolved, text, { encoding: 'utf8', flag: 'wx', mode: 0o600 });
-  return resolved;
+function ensurePrivateDirectory(directory: string): void {
+  ensurePrivateArtifactDirectory(directory);
 }
 
 function appendPrivateJsonLine(filePath: string, value: unknown): string {
@@ -313,11 +306,24 @@ function prepareProtectedExecutionWithDependencies(
     label: 'Protected execution approval',
   });
   const plan = dependencies.parsePlan(planArtifact.value);
+  if (options.commit) {
+    assertProtectedPreparationPlanSha256(plan.plan_sha256, 'plan.plan_sha256');
+  }
   const planPath = planArtifact.resolved;
   const planDir = path.dirname(planPath);
   const aliasPlanRequest = dependencies.buildAliasPlan({ plan, planDir });
   const freeze = dependencies.parseFreeze(freezeArtifact.value);
   const approval = dependencies.parseApproval(approvalArtifact.value);
+  assertCanonicalParsedArtifact({
+    label: 'Protected execution freeze',
+    text: freezeArtifact.text,
+    value: freeze,
+  });
+  assertCanonicalParsedArtifact({
+    label: 'Protected execution approval',
+    text: approvalArtifact.text,
+    value: approval,
+  });
   dependencies.assertFreezeMatchesPlan({
     plan,
     planFileSha256: planArtifact.file_sha256,
@@ -339,6 +345,9 @@ function prepareProtectedExecutionWithDependencies(
     freezeFileSha256: freezeArtifact.file_sha256,
     approvalFileSha256: approvalArtifact.file_sha256,
   });
+  if (options.commit) {
+    assertProtectedProductionProjectRef(identity.project_ref);
+  }
   const outDir = path.resolve(options.outDir);
   const artifacts = {
     execution_seal: path.join(outDir, 'protected-execution-seal.json'),
@@ -418,19 +427,7 @@ function projectedRows(options: {
   planDir: string;
   currentRows: DatasetMaintenanceRemoteRow[];
 }): DatasetMaintenanceRemoteRow[] {
-  const projected = new Map(options.currentRows.map((row) => [maintenanceRowKey(row), { ...row }]));
-  for (const action of options.plan.actions) {
-    const row = projected.get(maintenanceRowKey(action));
-    if (row) {
-      projected.set(maintenanceRowKey(action), {
-        ...row,
-        json_ordered: loadMaintenanceDesiredPayload(options.planDir, action),
-      });
-    }
-  }
-  return [...projected.values()].sort((left, right) =>
-    maintenanceRowKey(left).localeCompare(maintenanceRowKey(right)),
-  );
+  return sharedProjectedRows(options);
 }
 
 function assertStrictBeforeState(options: {
@@ -438,162 +435,35 @@ function assertStrictBeforeState(options: {
   currentRows: DatasetMaintenanceRemoteRow[];
   completeness: unknown;
 }): void {
-  const { plan } = options.prepared;
-  if (
-    !plan.snapshot_completeness ||
-    !isSnapshotCompletenessCompatible(
-      options.completeness,
-      plan.snapshot_completeness,
-      MAINTENANCE_SCAN_TABLES,
-    )
-  ) {
-    throw new CliError('Production RLS census does not match the frozen complete snapshot.', {
-      code: 'DATASET_MAINTENANCE_PROTECTED_SNAPSHOT_INCOMPLETE',
-      exitCode: 1,
-    });
-  }
-  const snapshots = options.currentRows
-    .map(snapshotRemoteRow)
-    .sort((left, right) => maintenanceRowKey(left).localeCompare(maintenanceRowKey(right)));
-  if (sha256Json(snapshots) !== plan.visible_snapshot_sha256) {
-    throw new CliError('Production RLS visible snapshot drifted after the freeze.', {
-      code: 'DATASET_MAINTENANCE_PROTECTED_VISIBLE_SNAPSHOT_DRIFT',
-      exitCode: 1,
-    });
-  }
-  const expectedKeys = new Set([
-    ...plan.actions.map(maintenanceRowKey),
-    ...plan.protected_rows.map(maintenanceRowKey),
-  ]);
-  if (
-    expectedKeys.size !== options.currentRows.length ||
-    options.currentRows.some((row) => !expectedKeys.has(maintenanceRowKey(row)))
-  ) {
-    throw new CliError('Production owner account contains missing or unexpected rows.', {
-      code: 'DATASET_MAINTENANCE_PROTECTED_ACCOUNT_CENSUS_DRIFT',
-      exitCode: 1,
-    });
-  }
-  const current = new Map(options.currentRows.map((row) => [maintenanceRowKey(row), row]));
-  for (const row of plan.protected_rows) {
-    const observed = current.get(maintenanceRowKey(row));
-    if (!observed || snapshotRemoteRow(observed).row_sha256 !== row.row_sha256) {
-      throw new CliError(`Protected row drifted: ${row.id}`, {
-        code: 'DATASET_MAINTENANCE_PROTECTED_ROW_DRIFT',
-        exitCode: 1,
-        details: row,
-      });
-    }
-  }
-  for (const action of plan.actions) {
-    const observed = current.get(maintenanceRowKey(action));
-    if (
-      !action.before ||
-      !observed ||
-      observed.user_id !== action.expected_user_id ||
-      observed.state_code !== 0 ||
-      snapshotRemoteRow(observed).row_sha256 !== action.before.row_sha256
-    ) {
-      throw new CliError(
-        `Action row is no longer in the exact frozen before state: ${action.action_id}`,
-        {
-          code: 'DATASET_MAINTENANCE_PROTECTED_ACTION_DRIFT',
-          exitCode: 1,
-        },
-      );
-    }
-  }
-  const finalRows = projectedRows({
-    plan,
+  assertSharedStrictBeforeState({
+    plan: options.prepared.plan,
     planDir: options.prepared.planDir,
+    actorUserId: options.prepared.identity.actor.user_id,
     currentRows: options.currentRows,
+    completeness: options.completeness,
   });
-  if (
-    sha256Json(maintenanceProjectedReferenceFingerprint(finalRows)) !==
-    plan.projected_reference_sha256
-  ) {
-    throw new CliError('Projected reference closure drifted before protected execution.', {
-      code: 'DATASET_MAINTENANCE_PROTECTED_REFERENCE_DRIFT',
-      exitCode: 1,
-    });
-  }
 }
 
 async function assertSupportSnapshots(options: {
   prepared: PreparedProtectedExecution;
   context: DatasetMaintenanceRemoteContext;
 }): Promise<void> {
-  for (const batch of options.prepared.plan.alias_batches ?? []) {
-    for (const snapshot of [
-      batch.target_snapshots.unitgroup,
-      batch.target_snapshots.flowproperty,
-      batch.target_snapshots.source_unitgroup,
-    ]) {
-      if (!snapshot) {
-        throw new CliError(`Alias support snapshot is absent for ${batch.batch_id}.`, {
-          code: 'DATASET_MAINTENANCE_PROTECTED_SUPPORT_DRIFT',
-          exitCode: 1,
-        });
-      }
-      const exact = await fetchMaintenanceExactRows({
-        context: options.context,
-        table: snapshot.table,
-        id: snapshot.id,
-        version: snapshot.version,
-      });
-      const row = exact.rows.length === 1 ? exact.rows[0] : null;
-      if (
-        !row ||
-        row.user_id !== options.prepared.identity.actor.user_id ||
-        row.state_code !== 0 ||
-        snapshotRemoteRow(row).row_sha256 !== snapshot.row_sha256
-      ) {
-        throw new CliError(`Alias support row drifted for ${batch.batch_id}.`, {
-          code: 'DATASET_MAINTENANCE_PROTECTED_SUPPORT_DRIFT',
-          exitCode: 1,
-          details: { table: snapshot.table, id: snapshot.id, version: snapshot.version },
-        });
-      }
-    }
-  }
+  await assertSharedSupportSnapshots({
+    plan: options.prepared.plan,
+    actorUserId: options.prepared.identity.actor.user_id,
+    context: options.context,
+  });
 }
 
 async function assertDerivativeBaselines(options: {
   prepared: PreparedProtectedExecution;
   context: DatasetMaintenanceRemoteContext;
 }): Promise<void> {
-  const targets = options.prepared.identity.derivative_targets;
-  for (let offset = 0; offset < targets.length; offset += 5) {
-    const chunk = targets.slice(offset, offset + 5);
-    const snapshots = await Promise.all(
-      chunk.map(async (target) =>
-        parseProtectedDerivativeSnapshot(
-          await fetchMaintenanceDerivativeSnapshot({
-            context: options.context,
-            table: target.table,
-            id: target.id,
-            version: target.version,
-          }),
-          {
-            table: target.table,
-            id: target.id,
-            version: target.version,
-            userId: target.user_id,
-          },
-        ),
-      ),
-    );
-    for (const [index, snapshot] of snapshots.entries()) {
-      const target = chunk[index]!;
-      if (snapshot.snapshot_sha256 !== target.baseline_snapshot_sha256) {
-        throw new CliError('A protected derivative baseline drifted before preflight.', {
-          code: 'DATASET_MAINTENANCE_PROTECTED_DERIVATIVE_BASELINE_DRIFT',
-          exitCode: 1,
-          details: { table: target.table, id: target.id, version: target.version },
-        });
-      }
-    }
-  }
+  await assertSharedDerivativeBaselines({
+    actorUserId: options.prepared.identity.actor.user_id,
+    context: options.context,
+    derivativeTargets: options.prepared.identity.derivative_targets,
+  });
 }
 
 type ProtectedGateDependencies = {
@@ -1113,6 +983,7 @@ export async function runDatasetMaintenanceProtected(
 export const __testInternals = {
   allocateAttemptArtifacts,
   appendPrivateJsonLine,
+  assertCanonicalParsedArtifact,
   assertContextBindings,
   assertDerivativeBaselines,
   assertStrictBeforeState,

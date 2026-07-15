@@ -16,7 +16,7 @@ checkPaths:
   - src/lib/supabase-session.ts
   - src/lib/supabase-client.ts
 lastReviewedAt: 2026-07-15
-lastReviewedCommit: afd57879ede2e11403803d4e44c4c3c7b28daca3
+lastReviewedCommit: bd145f692b3fd11e398302dd6a1d2831e058883a
 related:
   - ../AGENTS.md
   - ../.docpact/config.yaml
@@ -40,6 +40,7 @@ related:
 - 2026-06-11 复核：release 0.0.15 只调整 dataset import-lca 包装层的 tidas-tools 进程参数与报告字段推导，不改变 CLI 用户 API key、session 或 `--target-user-id` 账号守卫语义。
 - 2026-07-14 复核：`dataset maintenance rebuild-derivatives` 复用既有用户 session 与 authenticated PostgREST RPC，不新增认证 env、alternate bearer、service-role、Edge/admin 或 raw queue 路径；本历史设计结论不变。
 - 2026-07-15 复核：`dataset maintenance run-protected` 继续复用同一用户 session、publishable key 与 authenticated PostgREST RPC。CLI 不持有 service-role；服务器调度的内部执行器不改变 CLI bearer/env contract。状态读取仍绑定 `auth.uid()`、actor 与 plan，独立表读回继续走用户 RLS；本历史设计结论不变。
+- 2026-07-15 复核：`dataset maintenance freeze-protected` 只复用现有用户 session，对显式确认的 production project 做 RLS 表读取与受保护 derivative snapshot RPC；不新增 service-role、alternate bearer、Edge/admin 或 Dev 回放链。`seal-protected-approval` 的 CLI dispatch 不传 env、session、HTTP 或 remote client，完全离线；本历史设计结论不变。
 
 ## 1. 已确认事实
 

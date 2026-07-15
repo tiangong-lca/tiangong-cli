@@ -17,7 +17,7 @@ checkPaths:
   - src/lib/tidas-sdk-package-validator.ts
   - test/**
 lastReviewedAt: 2026-07-15
-lastReviewedCommit: afd57879ede2e11403803d4e44c4c3c7b28daca3
+lastReviewedCommit: bd145f692b3fd11e398302dd6a1d2831e058883a
 related:
   - ../AGENTS.md
   - ../.docpact/config.yaml
@@ -46,6 +46,8 @@ related:
 当前状态：
 
 2026-07-15 复核：`dataset maintenance run-protected` 复用现有 `@supabase/supabase-js` 用户 session / authenticated RPC 与 direct TIDAS SDK 依赖模型，不新增依赖，也不改变 Issue #55 的历史结论；本文件继续保持历史 TODO 记录用途。
+
+2026-07-15 复核：`dataset maintenance freeze-protected` 复用现有 `@supabase/supabase-js` 用户 session / RLS read / authenticated snapshot RPC，`seal-protected-approval` 只使用 Node 原生文件与 crypto 能力；二者均不新增依赖，也不改变 Issue #55 的历史结论。
 
 2026-07-14 复核：`dataset maintenance rebuild-derivatives` 复用现有 `@supabase/supabase-js` 用户 session / RPC 适配层，不新增依赖，也不改变 TIDAS SDK direct dependency 结论；本文件保持历史 TODO 记录用途。
 

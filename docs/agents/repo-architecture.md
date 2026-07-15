@@ -27,7 +27,7 @@ checkPaths:
   - scripts/docpact-gate.sh
   - scripts/install-git-hooks.sh
 lastReviewedAt: 2026-07-15
-lastReviewedCommit: c48c1e0ec4daa078228105fa7da683d64def9013
+lastReviewedCommit: bd145f692b3fd11e398302dd6a1d2831e058883a
 related:
   - ../../AGENTS.md
   - ../../.docpact/config.yaml
@@ -59,6 +59,8 @@ Review note, 2026-07-13: account-wide maintenance reads now share one exact-coun
 Review note, 2026-07-14: `rebuild-derivatives` stays inside the native dataset-maintenance family as a derivative-only asynchronous profile. V1 freezes exactly one current-owner state-0 process action and its action-scoped database snapshot, admits work only through an owner-draft guarded RPC, and separates `accepted`/`queued` apply proof from terminal `pending`/`passed`/`failed` verification. No Edge/admin/raw queue/SQL/REST mutation fallback was added.
 
 Review note, 2026-07-15: `run-protected` remains in the native dataset-maintenance family and adds no second orchestration runtime. The command separates sealed request parsing, one-shot execution/recovery, and terminal independent verification into dedicated modules; it is production-only, admits at most once, and requires exact 23-flow + 27-process derivative closure without adding a Dev data replay or legacy-RPC fallback.
+
+Review note, 2026-07-15: Issue #171 adds two preparation commands without broadening the mutation surface. `freeze-protected` owns production-authenticated read-only census/support/derivative capture and canonical unapproved artifacts; `seal-protected-approval` owns byte-exact offline human-approval recording and receives no session, environment, or network client. Only the existing `run-protected` module owns preflight, admission, execution, or recovery. Foundry remains a thin published-CLI caller and must not duplicate canonical hashing or database access.
 
 ## Stable Path Map
 
@@ -151,7 +153,13 @@ Dataset-local governance now uses the same CLI-native command layer:
 - `src/lib/dataset-maintenance-pagination.ts`
 - `src/lib/dataset-maintenance-alias-rewrite.ts`
 - `src/lib/dataset-maintenance-alias-request.ts`
+- `src/lib/dataset-maintenance-protected-artifacts.ts`
+- `src/lib/dataset-maintenance-protected-before.ts`
 - `src/lib/dataset-maintenance-protected-contract.ts`
+- `src/lib/dataset-maintenance-protected-preparation.ts`
+- `src/lib/dataset-maintenance-protected-toolchain.ts`
+- `src/lib/dataset-maintenance-protected-freeze.ts`
+- `src/lib/dataset-maintenance-protected-seal.ts`
 - `src/lib/dataset-maintenance-protected-run.ts`
 - `src/lib/dataset-maintenance-protected-verify.ts`
 - `src/lib/dataset-maintenance-support-validation.ts`
@@ -166,8 +174,12 @@ The row-level maintenance family is deliberately split by responsibility:
 - `contract` owns the versioned scope, immutable plan, action, approval, and report shapes.
 - `pagination` owns fail-closed PostgREST exact-count traversal for maintenance account scans and clear-account readbacks. It treats page size as a requested maximum, advances by actual returned length, verifies exact totals/ranges plus strict `id`/`version` identities, and builds per-table and aggregate completeness proofs.
 - `remote` owns current-session authentication, current-user RLS reads, exact `id` + `version` row lookup, reference-impact reads, action-scoped derivative snapshots, platform `save_draft` / `delete` / guarded owner-draft RPC execution, and audit correlation. It exposes no direct alias-dimension, derivative worker, or raw queue fallback.
-- `alias-request` and `protected-contract` own canonical protected request/seal/approval/status parsing, exact count/hash bindings, server-window checks, and fail-closed response shapes.
-- `protected-run` owns the production-only full scan, server preflight, three ordered gate receipts, immutable attempt allocation, single admission transport, and status-only recovery state machine. It never retries admission or falls back to Dev or the legacy whole-plan alias RPC.
+- `alias-request` and `protected-contract` own canonical protected execution request/approval/status parsing, exact count/hash bindings, server-window checks, and fail-closed response shapes.
+- `protected-artifacts` owns raw-byte SHA-256 reads with fatal UTF-8 decoding, private immutable `0700` directories and `0600` files, and atomic whole-directory publication for completed freeze/seal evidence sets. `protected-before` owns the shared complete-account, support, projected-reference, and stable 23-flow + 27-process derivative validation used by both capture and execution, including census-to-derivative `modified_at` cross-binding.
+- `protected-preparation` owns the pure canonical freeze/request/approval builders, exact human approval text contract, stable target derivation, and explicit rejection of superseded historical Step-2 plan identities. `protected-toolchain` validates released database, published CLI, and merged root-workspace evidence against the running CLI version and explicitly confirmed production project.
+- `protected-freeze` owns production-authenticated read-only preparation. It performs no server preflight, gate, admission, execution, or mutation call and writes only an unapproved alias request, complete 50-row baseline, freeze, approval request text/JSON, and zero-write report.
+- `protected-seal` owns completely offline approval recording. It receives no environment or remote client, preserves the human-returned UTF-8 bytes exactly, verifies explicit freeze/request/text/account/timestamp bindings, and writes approval artifacts without submitting execution.
+- `protected-run` owns the production-only full scan, server preflight, three ordered gate receipts, immutable attempt allocation, single admission transport, and status-only recovery state machine. Commit mode shares the preparation denylist so superseded historical approvals cannot bypass a fresh freeze; it never retries admission or falls back to Dev or the legacy whole-plan alias RPC.
 - `protected-verify` owns the terminal server proof plus independent current-user RLS cross-read of primary rows, audits, and all 23 flow + 27 process derivative snapshots. Local artifacts or a server status alone cannot produce `passed`.
 - `alias-rewrite` owns the fixed two-dimension BAFU profile, reviewed target-reference derivation, closure counting, and arbitrary-precision decimal scaling. It never uses JavaScript binary floating point for exchange amounts.
 - `support-validation` validates frozen owner-draft FP/UG payload schemas plus embedded root UUID/version without importing publication behavior.

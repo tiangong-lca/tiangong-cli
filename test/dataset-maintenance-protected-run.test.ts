@@ -16,6 +16,7 @@ import {
   maintenanceRowKey,
   sha256Json,
   sha256Text,
+  stableJsonText,
   snapshotRemoteRow,
   type DatasetMaintenancePlan,
   type DatasetMaintenanceRemoteRow,
@@ -32,6 +33,7 @@ import {
   type ProtectedGateProof,
   type ProtectedPreflightProof,
 } from '../src/lib/dataset-maintenance-protected-contract.js';
+import { PROTECTED_PREPARATION_REJECTED_PLAN_SHA256 } from '../src/lib/dataset-maintenance-protected-preparation.js';
 import {
   __testInternals as runInternals,
   runDatasetMaintenanceProtected,
@@ -254,21 +256,25 @@ function preparedFixture(root: string, commit = false) {
   const command = commandFixture(root, commit);
   let approvedHash: string | undefined;
   const dependencies = {
-    readArtifact: ({ label }: { label: string }) => ({
-      resolved:
-        label === 'Maintenance plan'
-          ? command.planPath
-          : label === 'Protected execution freeze'
-            ? command.freezePath
-            : command.approvalPath,
-      value:
+    readArtifact: ({ label }: { label: string }) => {
+      const value =
         label === 'Maintenance plan'
           ? plan
           : label === 'Protected execution freeze'
             ? freeze
-            : approval,
-      file_sha256: HASH_A,
-    }),
+            : approval;
+      return {
+        resolved:
+          label === 'Maintenance plan'
+            ? command.planPath
+            : label === 'Protected execution freeze'
+              ? command.freezePath
+              : command.approvalPath,
+        value,
+        text: `${stableJsonText(value)}\n`,
+        file_sha256: HASH_A,
+      };
+    },
     parsePlan: () => plan,
     buildAliasPlan: () => ({ schema_version: 'dataset-alias-plan.v1' }),
     parseFreeze: () => freeze,
@@ -280,7 +286,16 @@ function preparedFixture(root: string, commit = false) {
     buildIdentity: () => identity,
   } as unknown as Parameters<typeof runInternals.prepareProtectedExecutionWithDependencies>[1];
   const prepared = runInternals.prepareProtectedExecutionWithDependencies(command, dependencies);
-  return { command, prepared, plan, rows, desired, identity, approvedHash: () => approvedHash };
+  return {
+    command,
+    prepared,
+    plan,
+    rows,
+    desired,
+    identity,
+    dependencies,
+    approvedHash: () => approvedHash,
+  };
 }
 
 function statusProof(
@@ -431,8 +446,25 @@ test('protected runner validates scalar options and keeps private evidence immut
     assert.deepEqual(runInternals.readArtifact({ filePath: source, label: 'source' }), {
       resolved: source,
       value: { ok: true },
+      text: '{"ok":true}\n',
       file_sha256: sha256Text('{"ok":true}\n'),
     });
+    assert.doesNotThrow(() =>
+      runInternals.assertCanonicalParsedArtifact({
+        label: 'canonical',
+        text: '{"ok":true}\n',
+        value: { ok: true },
+      }),
+    );
+    assert.throws(
+      () =>
+        runInternals.assertCanonicalParsedArtifact({
+          label: 'noncanonical',
+          text: '{ "ok": true }\n',
+          value: { ok: true },
+        }),
+      /canonical JSON/u,
+    );
   } finally {
     rmSync(root, { recursive: true, force: true });
   }
@@ -470,6 +502,54 @@ test('protected preparation is exact-mode and binds status-only to the frozen ap
     const commit = preparedFixture(path.join(root, 'commit'), true);
     assert.equal(commit.approvedHash(), HASH_A);
     assert.equal(commit.prepared.planPath, commit.command.planPath);
+    const canonicalRead = commit.dependencies.readArtifact;
+    assert.throws(
+      () =>
+        runInternals.prepareProtectedExecutionWithDependencies(commit.command, {
+          ...commit.dependencies,
+          readArtifact: (input) => {
+            const artifact = canonicalRead(input);
+            return input.label === 'Protected execution approval'
+              ? { ...artifact, text: `${artifact.text} ` }
+              : artifact;
+          },
+        }),
+      /canonical JSON/u,
+    );
+    assert.throws(
+      () =>
+        runInternals.prepareProtectedExecutionWithDependencies(commit.command, {
+          ...commit.dependencies,
+          buildIdentity: () => ({ ...commit.identity, project_ref: 'dev-ref' }),
+        }),
+      /production project/u,
+    );
+
+    const historical = preparedFixture(path.join(root, 'historical'));
+    historical.plan.plan_sha256 = PROTECTED_PREPARATION_REJECTED_PLAN_SHA256[0];
+    const historicalDependencies = {
+      readArtifact: ({ label }: { label: string }) => ({
+        resolved: historical.command.planPath,
+        value: label === 'Maintenance plan' ? historical.plan : {},
+        text: `${stableJsonText(label === 'Maintenance plan' ? historical.plan : {})}\n`,
+        file_sha256: HASH_A,
+      }),
+      parsePlan: () => historical.plan,
+    } as unknown as Parameters<typeof runInternals.prepareProtectedExecutionWithDependencies>[1];
+    assert.throws(
+      () =>
+        runInternals.prepareProtectedExecutionWithDependencies(
+          {
+            ...historical.command,
+            commit: true,
+            statusOnly: false,
+            approveExecution: HASH_A,
+            confirm: EMAIL,
+          },
+          historicalDependencies,
+        ),
+      /historical superseded plan/u,
+    );
   } finally {
     rmSync(root, { recursive: true, force: true });
   }
@@ -561,7 +641,7 @@ test('protected before-state and context checks fail closed on every drift class
           .map(snapshotRemoteRow)
           .sort((left, right) => maintenanceRowKey(left).localeCompare(maintenanceRowKey(right))),
       );
-    }, /exact frozen before state/u);
+    }, /missing or unexpected/u);
     check((copy) => {
       copy.plan.projected_reference_sha256 = HASH_D;
     }, /reference closure drifted/u);
@@ -622,35 +702,35 @@ test('support and derivative baseline preflight checks compare exact owner-draft
       context: contextFixture(),
     });
 
-    const derivativeSnapshot = {
-      ok: true,
-      command: 'cmd_dataset_derivative_rebuild_snapshot',
-      schema_version: 'dataset-derivative-snapshot.v1',
-      table: 'flows',
-      id: FLOW_ID,
+    fixture.identity.derivative_targets = Array.from({ length: 50 }, (_, index) => ({
+      table: index < 23 ? ('flows' as const) : ('processes' as const),
+      id: `00000000-0000-4000-8000-${String(index).padStart(12, '0')}`,
       version: VERSION,
       user_id: USER_ID,
-      state_code: 0,
-      modified_at: '2026-07-15T00:00:00.000Z',
-      json_sha256: HASH_A,
-      json_ordered_sha256: HASH_A,
-      extracted_text_sha256: HASH_B,
-      extracted_md_sha256: null,
-      embedding_ft_sha256: null,
-      embedding_ft_at: null,
-      snapshot_sha256: HASH_C,
-    };
-    fixture.identity.derivative_targets = [
-      {
-        table: 'flows',
-        id: FLOW_ID,
-        version: VERSION,
+      state_code: 0 as const,
+      baseline_snapshot_sha256: HASH_C,
+    }));
+    const derivativeContext = contextFixture(async (_input, init) => {
+      const request = JSON.parse(String(init?.body));
+      return jsonResponse({
+        ok: true,
+        command: 'cmd_dataset_derivative_rebuild_snapshot',
+        schema_version: 'dataset-derivative-snapshot.v1',
+        table: request.p_table,
+        id: request.p_id,
+        version: request.p_version,
         user_id: USER_ID,
         state_code: 0,
-        baseline_snapshot_sha256: HASH_C,
-      },
-    ];
-    const derivativeContext = contextFixture(async () => jsonResponse(derivativeSnapshot));
+        modified_at: '2026-07-15T00:00:00.000Z',
+        json_sha256: HASH_A,
+        json_ordered_sha256: HASH_A,
+        extracted_text_sha256: HASH_B,
+        extracted_md_sha256: null,
+        embedding_ft_sha256: null,
+        embedding_ft_at: null,
+        snapshot_sha256: HASH_C,
+      });
+    });
     await runInternals.assertDerivativeBaselines({
       prepared: fixture.prepared,
       context: derivativeContext,
