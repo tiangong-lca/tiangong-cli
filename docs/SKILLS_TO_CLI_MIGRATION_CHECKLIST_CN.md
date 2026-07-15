@@ -17,8 +17,8 @@ checkPaths:
   - package.json
   - src/**
   - test/**
-lastReviewedAt: 2026-07-14
-lastReviewedCommit: ce8c18f270725adad789ada8f4582ca0e97e4117
+lastReviewedAt: 2026-07-15
+lastReviewedCommit: afd57879ede2e11403803d4e44c4c3c7b28daca3
 related:
   - ../AGENTS.md
   - ../.docpact/config.yaml
@@ -49,6 +49,7 @@ related:
 - 2026-06-07 复核：release 0.0.14 的 `dataset classification apply --type location` 修复仍在 TypeScript CLI-native 路径内完成，不重新引入 Python、POSIX shell、MCP runtime 或本地发布脚本前提
 - 2026-06-11 复核：release 0.0.15 的 `dataset import-lca convert` 适配仍通过 TypeScript CLI 包装 tidas-tools Python CLI 完成，不重新引入 Python、POSIX shell、MCP runtime 或本地发布脚本前提
 - 2026-07-14 复核：`dataset maintenance rebuild-derivatives` 继续作为 TypeScript / Node 原生命令通过既有用户 session 和受保护 RPC 执行，不新增 Python、POSIX shell、MCP runtime 或私有 skill runtime 前提
+- 2026-07-15 复核：`dataset maintenance run-protected` 继续由 TypeScript / Node 原生 CLI 负责 sealed request、一次 admission、本地 immutable evidence 与只读恢复；不新增 Python、POSIX shell、MCP runtime、私有 skill runtime 或新 npm 依赖，skills 仍只能薄编排 CLI。
 
 这份文档记录的是：
 

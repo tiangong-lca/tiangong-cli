@@ -15,8 +15,8 @@ checkPaths:
   - src/lib/user-api-key.ts
   - src/lib/supabase-session.ts
   - src/lib/supabase-client.ts
-lastReviewedAt: 2026-07-14
-lastReviewedCommit: ce8c18f270725adad789ada8f4582ca0e97e4117
+lastReviewedAt: 2026-07-15
+lastReviewedCommit: afd57879ede2e11403803d4e44c4c3c7b28daca3
 related:
   - ../AGENTS.md
   - ../.docpact/config.yaml
@@ -39,6 +39,7 @@ related:
 - 2026-06-07 复核：release 0.0.14 只调整 location classification apply 的本地 JSON 写回语义，不改变 CLI 用户 API key、session 或 `--target-user-id` 账号守卫语义。
 - 2026-06-11 复核：release 0.0.15 只调整 dataset import-lca 包装层的 tidas-tools 进程参数与报告字段推导，不改变 CLI 用户 API key、session 或 `--target-user-id` 账号守卫语义。
 - 2026-07-14 复核：`dataset maintenance rebuild-derivatives` 复用既有用户 session 与 authenticated PostgREST RPC，不新增认证 env、alternate bearer、service-role、Edge/admin 或 raw queue 路径；本历史设计结论不变。
+- 2026-07-15 复核：`dataset maintenance run-protected` 继续复用同一用户 session、publishable key 与 authenticated PostgREST RPC。CLI 不持有 service-role；服务器调度的内部执行器不改变 CLI bearer/env contract。状态读取仍绑定 `auth.uid()`、actor 与 plan，独立表读回继续走用户 RLS；本历史设计结论不变。
 
 ## 1. 已确认事实
 
