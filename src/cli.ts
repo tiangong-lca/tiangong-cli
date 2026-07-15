@@ -281,6 +281,7 @@ import {
 } from './lib/dataset-maintenance-clear-account.js';
 import { runDatasetMaintenancePlan } from './lib/dataset-maintenance-plan.js';
 import { runDatasetMaintenanceApply } from './lib/dataset-maintenance-apply.js';
+import { runDatasetMaintenanceProtected } from './lib/dataset-maintenance-protected-run.js';
 import { runDatasetMaintenanceVerify } from './lib/dataset-maintenance-verify.js';
 import type { DatasetMaintenanceOperation } from './lib/dataset-maintenance-contract.js';
 import {
@@ -464,6 +465,7 @@ export type CliDeps = {
   ) => Promise<DatasetMaintenanceClearAccountReport>;
   runDatasetMaintenancePlanImpl?: typeof runDatasetMaintenancePlan;
   runDatasetMaintenanceApplyImpl?: typeof runDatasetMaintenanceApply;
+  runDatasetMaintenanceProtectedImpl?: typeof runDatasetMaintenanceProtected;
   runDatasetMaintenanceVerifyImpl?: typeof runDatasetMaintenanceVerify;
   runDatasetSourceUploadAttachmentsImpl?: (
     options: RunDatasetSourceUploadAttachmentsOptions,
@@ -554,6 +556,7 @@ Examples:
   tiangong-lca dataset references rewrite --input ./rows.jsonl --from flow:<old-id>@<old-version> --to flow:<new-id>@<new-version> --out-dir /abs/path/to/dataset-rewrite
   tiangong-lca dataset maintenance clear-account --out-dir /abs/path/to/account-clear --json
   tiangong-lca dataset maintenance plan --scope ./maintenance-scope.json --operation merge-support-aliases --out-dir /abs/path/to/dataset-maintenance
+  tiangong-lca dataset maintenance run-protected --plan ./maintenance-plan.json --freeze ./protected-execution-seal.json --approval ./protected-approval.json --out-dir /abs/path/to/protected-run --status-only
   tiangong-lca lifecyclemodel auto-build --input ./lifecyclemodel-auto-build.request.json --out-dir /abs/path/to/lifecyclemodel-run
   tiangong-lca lifecyclemodel validate-build --run-dir /abs/path/to/lifecyclemodel-run
   tiangong-lca lifecyclemodel publish-build --run-dir /abs/path/to/lifecyclemodel-run
@@ -712,6 +715,7 @@ Implemented Subcommands:
   maintenance clear-account Dry-run or clear current authenticated account-owned dataset rows through RLS
   maintenance plan    Build an immutable, RLS-visible row-level maintenance plan
   maintenance apply   Execute an explicitly approved maintenance plan through current-user RLS
+  maintenance run-protected Run or inspect one sealed, one-shot production maintenance execution
   maintenance verify  Read back affected rows and references against the immutable plan
 
 Examples:
@@ -739,22 +743,26 @@ Examples:
   tiangong-lca dataset references refresh-remote --input ./rows.jsonl --out ./rows.refreshed.jsonl --out-dir ./dataset-reference-refresh --help
   tiangong-lca dataset maintenance clear-account --out-dir ./account-clear --json --help
   tiangong-lca dataset maintenance plan --scope ./maintenance-scope.json --operation merge-support-aliases --out-dir ./dataset-maintenance --help
+  tiangong-lca dataset maintenance run-protected --help
 `.trim();
 }
 
 function renderDatasetMaintenanceHelp(): string {
   return `Usage:
-  tiangong-lca dataset maintenance <clear-account|plan|apply|verify> [options]
+  tiangong-lca dataset maintenance <clear-account|plan|apply|run-protected|verify> [options]
 
 Actions:
   clear-account Dry-run or delete current authenticated account-owned lifecyclemodels, processes, flows, sources, and contacts.
   plan    Build an immutable maintenance plan from a scope manifest, visible remote snapshot, dependency impact report, and intended operation.
-  apply   Execute or durably admit an approved plan through current-user RLS and platform dataset command paths; never bypass RLS.
+  apply   Execute or durably admit an ordinary approved plan through current-user RLS and platform dataset command paths.
+  run-protected Run or inspect one sealed production execution with one-shot admission and terminal derivative proof.
   verify  Re-fetch rows, references, or derivative request state and report passed, pending, or failed independently of apply.
 
 Safety:
   plan and verify are read-only.
   apply is commit-only and requires --commit, the exact plan SHA-256 via --approve-plan, and the current account email via --confirm.
+  A sealed production merge-support-aliases execution must use run-protected; apply is not its fallback.
+  run-protected is production-only: authenticated owner context plus server-side actor/user_id/state_code=0 and exact-plan closure fences protect writes; RLS remains a defense on public and independent-read surfaces. It never falls back to dev, a legacy alias RPC, or a second admission POST.
 
 Required Artifact Contract:
   - maintenance-plan.json
@@ -764,13 +772,15 @@ Required Artifact Contract:
   - dry-run-report.json
   - commit-report.json
   - readback-verify-report.json
+  run-protected uses a separate immutable protected-execution seal, submission marker, append-only status ledger, and terminal report.
 
 Examples:
   tiangong-lca dataset maintenance clear-account --out-dir ./account-clear --json
   tiangong-lca dataset maintenance clear-account --commit --confirm user@example.com --out-dir ./account-clear
-  tiangong-lca dataset maintenance plan --scope ./maintenance-scope.json --operation merge-support-aliases --out-dir ./dataset-maintenance
+  tiangong-lca dataset maintenance plan --scope ./maintenance-scope.json --operation repair-references --out-dir ./dataset-maintenance
   tiangong-lca dataset maintenance plan --scope ./derivative-rebuild-scope.json --operation rebuild-derivatives --out-dir ./derivative-rebuild
   tiangong-lca dataset maintenance apply --plan ./dataset-maintenance/maintenance-plan.json --commit --approve-plan <sha256> --confirm user@example.com
+  tiangong-lca dataset maintenance run-protected --plan ./maintenance-plan.json --freeze ./protected-execution-seal.json --approval ./protected-approval.json --out-dir ./protected-run --status-only
   tiangong-lca dataset maintenance verify --plan ./dataset-maintenance/maintenance-plan.json --out-dir ./dataset-maintenance/verify
 `.trim();
 }
@@ -805,6 +815,7 @@ Behavior:
   Commit-only. The command rejects dry-run mode, a missing --commit flag, a plan hash mismatch,
   or a confirmation email that does not match the current authenticated account.
   For rebuild-derivatives, success means guarded admission is queued; it never means derivatives completed.
+  Sealed production merge-support-aliases executions must use run-protected; this command is not a fallback.
 
 Options:
   --plan <file>          Immutable maintenance-plan.json
@@ -816,6 +827,46 @@ Options:
   -h, --help
 
 Outputs include approval-record.json and commit-report.json alongside an append-only action or admission ledger.
+`.trim();
+}
+
+function renderDatasetMaintenanceRunProtectedHelp(): string {
+  return `Usage:
+  tiangong-lca dataset maintenance run-protected --plan <file> --freeze <file> --approval <file> --out-dir <dir> --commit --approve-execution <sha256> --confirm <email> [options]
+  tiangong-lca dataset maintenance run-protected --plan <file> --freeze <file> --approval <file> --out-dir <dir> --status-only [options]
+
+Behavior:
+  Runs one sealed, server-dispatched production maintenance execution fenced to the authenticated actor's
+  exact owner-draft target set, or reads durable status through an auth.uid-, actor-, and plan-fenced RPC
+  without admitting work; only the independent table readback uses RLS.
+  Commit and status-only modes are mutually exclusive. The commit path validates the full private
+  before-state, accepts only server-derived gates within the 180-second preflight window, writes an immutable
+  local submission marker, and sends at most one admission POST. After a marker or ambiguous response,
+  use --status-only; the command never retries admission or falls back to dev or the legacy alias RPC.
+
+Required in both modes:
+  --plan <file>             Immutable maintenance-plan.json
+  --freeze <file>           Protected production execution seal/freeze artifact
+  --approval <file>         Exact human-approval binding artifact
+  --out-dir <dir>           Private protected-run artifact directory
+
+Commit-only guards:
+  --commit                  Submit the sealed execution exactly once
+  --approve-execution <sha256> Exact approved execution identity SHA-256
+  --confirm <email>         Current authenticated account email
+
+Recovery:
+  --status-only             Read/poll and independently verify the sealed request; never preflight or admit
+
+Options:
+  --wait-seconds <n>        Maximum terminal-status wait in seconds; 0 performs one status read
+  --poll-ms <n>             Positive polling interval in milliseconds; default 10000
+  --page-size <n>           Requested RLS readback page size, 1-5000
+  --timeout-ms <n>          Positive request timeout in milliseconds
+  --json                    Print compact JSON
+  -h, --help
+
+Only a terminal passed proof exits successfully. pending, failed, and indeterminate return non-zero.
 `.trim();
 }
 
@@ -3799,13 +3850,30 @@ function parseDatasetMaintenanceClearAccountFlags(args: string[]): {
 
 function parseDatasetMaintenancePositiveInteger(
   value: unknown,
-  flagName: '--page-size' | '--timeout-ms',
+  flagName: '--page-size' | '--poll-ms' | '--timeout-ms',
 ): number | undefined {
   if (typeof value !== 'string') {
     return undefined;
   }
   if (!/^\d+$/u.test(value.trim()) || Number.parseInt(value.trim(), 10) <= 0) {
     throw new CliError(`${flagName} must be a positive integer.`, {
+      code: 'DATASET_MAINTENANCE_INTEGER_INVALID',
+      exitCode: 2,
+      details: { flag: flagName, value },
+    });
+  }
+  return Number.parseInt(value.trim(), 10);
+}
+
+function parseDatasetMaintenanceNonNegativeInteger(
+  value: unknown,
+  flagName: '--wait-seconds',
+): number | undefined {
+  if (typeof value !== 'string') {
+    return undefined;
+  }
+  if (!/^\d+$/u.test(value.trim())) {
+    throw new CliError(`${flagName} must be a non-negative integer.`, {
       code: 'DATASET_MAINTENANCE_INTEGER_INVALID',
       exitCode: 2,
       details: { flag: flagName, value },
@@ -3922,6 +3990,74 @@ function parseDatasetMaintenanceApplyFlags(args: string[]): {
     confirm: typeof values.confirm === 'string' ? values.confirm : '',
     timeoutMs: parseDatasetMaintenancePositiveInteger(values['timeout-ms'], '--timeout-ms'),
     dryRun: Boolean(values['dry-run']),
+  };
+}
+
+function parseDatasetMaintenanceProtectedFlags(args: string[]): {
+  help: boolean;
+  json: boolean;
+  planPath: string;
+  freezePath: string;
+  approvalPath: string;
+  outDir: string;
+  commit: boolean;
+  statusOnly: boolean;
+  approveExecution: string | undefined;
+  confirm: string | undefined;
+  waitSeconds: number | undefined;
+  pollMs: number | undefined;
+  pageSize: number | undefined;
+  timeoutMs: number | undefined;
+} {
+  let values: ReturnType<typeof parseArgs>['values'];
+  try {
+    ({ values } = parseArgs({
+      args,
+      allowPositionals: false,
+      strict: true,
+      options: {
+        help: { type: 'boolean', short: 'h' },
+        json: { type: 'boolean' },
+        plan: { type: 'string' },
+        freeze: { type: 'string' },
+        approval: { type: 'string' },
+        'out-dir': { type: 'string' },
+        commit: { type: 'boolean' },
+        'status-only': { type: 'boolean' },
+        'approve-execution': { type: 'string' },
+        confirm: { type: 'string' },
+        'wait-seconds': { type: 'string' },
+        'poll-ms': { type: 'string' },
+        'page-size': { type: 'string' },
+        'timeout-ms': { type: 'string' },
+      },
+    }));
+  } catch (error) {
+    throw new CliError(String(error), {
+      code: 'INVALID_ARGS',
+      exitCode: 2,
+    });
+  }
+
+  return {
+    help: Boolean(values.help),
+    json: Boolean(values.json),
+    planPath: typeof values.plan === 'string' ? values.plan : '',
+    freezePath: typeof values.freeze === 'string' ? values.freeze : '',
+    approvalPath: typeof values.approval === 'string' ? values.approval : '',
+    outDir: typeof values['out-dir'] === 'string' ? values['out-dir'] : '',
+    commit: Boolean(values.commit),
+    statusOnly: Boolean(values['status-only']),
+    approveExecution:
+      typeof values['approve-execution'] === 'string' ? values['approve-execution'] : undefined,
+    confirm: typeof values.confirm === 'string' ? values.confirm : undefined,
+    waitSeconds: parseDatasetMaintenanceNonNegativeInteger(
+      values['wait-seconds'],
+      '--wait-seconds',
+    ),
+    pollMs: parseDatasetMaintenancePositiveInteger(values['poll-ms'], '--poll-ms'),
+    pageSize: parseDatasetMaintenancePositiveInteger(values['page-size'], '--page-size'),
+    timeoutMs: parseDatasetMaintenancePositiveInteger(values['timeout-ms'], '--timeout-ms'),
   };
 }
 
@@ -6258,6 +6394,8 @@ export async function executeCli(argv: string[], deps: CliDeps): Promise<CliResu
       deps.runDatasetMaintenancePlanImpl ?? runDatasetMaintenancePlan;
     const datasetMaintenanceApplyImpl =
       deps.runDatasetMaintenanceApplyImpl ?? runDatasetMaintenanceApply;
+    const datasetMaintenanceProtectedImpl =
+      deps.runDatasetMaintenanceProtectedImpl ?? runDatasetMaintenanceProtected;
     const datasetMaintenanceVerifyImpl =
       deps.runDatasetMaintenanceVerifyImpl ?? runDatasetMaintenanceVerify;
     const datasetSourceUploadAttachmentsImpl =
@@ -7025,6 +7163,95 @@ export async function executeCli(argv: string[], deps: CliDeps): Promise<CliResu
         };
       }
 
+      if (action === 'run-protected') {
+        const datasetFlags = parseDatasetMaintenanceProtectedFlags(commandArgs.slice(1));
+        if (datasetFlags.help) {
+          return {
+            exitCode: 0,
+            stdout: `${renderDatasetMaintenanceRunProtectedHelp()}\n`,
+            stderr: '',
+          };
+        }
+        if (!datasetFlags.planPath) {
+          throw new CliError('dataset maintenance run-protected requires --plan.', {
+            code: 'DATASET_MAINTENANCE_PROTECTED_PLAN_REQUIRED',
+            exitCode: 2,
+          });
+        }
+        if (!datasetFlags.freezePath) {
+          throw new CliError('dataset maintenance run-protected requires --freeze.', {
+            code: 'DATASET_MAINTENANCE_PROTECTED_FREEZE_REQUIRED',
+            exitCode: 2,
+          });
+        }
+        if (!datasetFlags.approvalPath) {
+          throw new CliError('dataset maintenance run-protected requires --approval.', {
+            code: 'DATASET_MAINTENANCE_PROTECTED_APPROVAL_FILE_REQUIRED',
+            exitCode: 2,
+          });
+        }
+        if (!datasetFlags.outDir) {
+          throw new CliError('dataset maintenance run-protected requires --out-dir.', {
+            code: 'DATASET_MAINTENANCE_PROTECTED_OUT_DIR_REQUIRED',
+            exitCode: 2,
+          });
+        }
+        if (datasetFlags.commit && datasetFlags.statusOnly) {
+          throw new CliError('Cannot pass both --commit and --status-only.', {
+            code: 'DATASET_MAINTENANCE_PROTECTED_MODE_CONFLICT',
+            exitCode: 2,
+          });
+        }
+        if (!datasetFlags.commit && !datasetFlags.statusOnly) {
+          throw new CliError(
+            'dataset maintenance run-protected requires either --commit or --status-only.',
+            {
+              code: 'DATASET_MAINTENANCE_PROTECTED_MODE_REQUIRED',
+              exitCode: 2,
+            },
+          );
+        }
+        if (datasetFlags.commit && !datasetFlags.approveExecution) {
+          throw new CliError(
+            'dataset maintenance run-protected requires --approve-execution <sha256> with --commit.',
+            {
+              code: 'DATASET_MAINTENANCE_PROTECTED_APPROVAL_REQUIRED',
+              exitCode: 2,
+            },
+          );
+        }
+        if (datasetFlags.commit && !datasetFlags.confirm) {
+          throw new CliError(
+            'dataset maintenance run-protected requires --confirm <email> with --commit.',
+            {
+              code: 'DATASET_MAINTENANCE_PROTECTED_CONFIRM_REQUIRED',
+              exitCode: 2,
+            },
+          );
+        }
+        const report = await datasetMaintenanceProtectedImpl({
+          planPath: datasetFlags.planPath,
+          freezePath: datasetFlags.freezePath,
+          approvalPath: datasetFlags.approvalPath,
+          outDir: datasetFlags.outDir,
+          commit: datasetFlags.commit,
+          statusOnly: datasetFlags.statusOnly,
+          approveExecution: datasetFlags.approveExecution,
+          confirm: datasetFlags.confirm,
+          waitSeconds: datasetFlags.waitSeconds,
+          pollMs: datasetFlags.pollMs,
+          pageSize: datasetFlags.pageSize,
+          timeoutMs: datasetFlags.timeoutMs,
+          env: deps.env,
+          fetchImpl: deps.fetchImpl,
+        });
+        return {
+          exitCode: report.status === 'passed' ? 0 : 1,
+          stdout: stringifyJson(report, datasetFlags.json),
+          stderr: '',
+        };
+      }
+
       if (action === 'verify') {
         const datasetFlags = parseDatasetMaintenanceVerifyFlags(commandArgs.slice(1));
         if (datasetFlags.help) {
@@ -7056,7 +7283,7 @@ export async function executeCli(argv: string[], deps: CliDeps): Promise<CliResu
       }
 
       throw new CliError(
-        "dataset maintenance action must be 'clear-account', 'plan', 'apply', or 'verify'.",
+        "dataset maintenance action must be 'clear-account', 'plan', 'apply', 'run-protected', or 'verify'.",
         {
           code: 'DATASET_MAINTENANCE_ACTION_INVALID',
           exitCode: 2,

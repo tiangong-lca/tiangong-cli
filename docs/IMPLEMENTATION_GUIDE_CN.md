@@ -16,8 +16,8 @@ checkPaths:
   - README.md
   - src/**
   - test/**
-lastReviewedAt: 2026-07-14
-lastReviewedCommit: ce8c18f270725adad789ada8f4582ca0e97e4117
+lastReviewedAt: 2026-07-15
+lastReviewedCommit: ca0cdd7549cad9003d08fb338223ba74682955ae
 related:
   - ../AGENTS.md
   - ../.docpact/config.yaml
@@ -33,6 +33,8 @@ Review note, 2026-07-12: `dataset maintenance plan/apply/verify` 已把 BAFU `ti
 Review note, 2026-07-13: maintenance account scan 已统一为 fail-closed exact-count paginator。requested page size 可以大于 PostgREST 实际 cap，offset 以实际返回行数推进；只有 `Content-Range` exact total、range/body、严格排序、行身份和全表汇总全部证明完整后，plan/approval/readback artifact 或 mutation 才能继续。该多请求证明不等于事务级/MVCC 同时点快照。
 
 Review note, 2026-07-14: `rebuild-derivatives` 已进入 maintenance v1 固定契约。它只接受一个 current-owner、`state_code=0`、`table=processes`、`action=rebuild_derivatives`、`target_mode=owner_draft` 的 exact row，components 必须恰好为 `extracted_md` 与 `embedding_ft`。plan 冻结 action-scoped DB snapshot；apply 只通过 guarded RPC 获得 durable `accepted`/`queued`，不宣称重建完成；verify 独立输出 `pending`/`passed`/`failed`。本路径不写 primary process，也不允许 Edge/admin/raw queue/SQL/REST mutation fallback。
+
+Review note, 2026-07-15: `dataset maintenance run-protected` 为 seal 绑定且已经人工批准的 private alias 计划增加 production-only 的一次性执行与恢复契约。受保护写入由服务器调度，并以认证 owner 及精确 actor/user_id/state_code=0、plan/closure 栅栏限制范围；RLS 继续保护公开入口与独立读回。它在 preflight 前完成完整扫描，随后使用服务器给出的三项 gate 期望摘要与最长 180 秒 token 捕获 live receipt，写入 immutable attempt marker 后最多发送一次 admission POST；marker 或不明确 admission 响应之后只能 `--status-only`。终态必须精确证明 52 行、59 exchanges、55 audits 与 50 个 derivative targets（23 flows + 27 processes），且不回退 dev、旧 alias RPC、发布或 state-code 修改。
 
 ## 1. 目标
 
@@ -155,7 +157,7 @@ tiangong-lca
 | `tiangong-lca dataset import-lca convert` | 外部 LCA 包转换入口；调用 `tidas-tools import_lca` 生成 TIDAS/ILCD/conversion report；tidas-tools >= 0.0.28 默认产出每个 process 的依赖子目录（可用 `--no-process-bundles` 关闭、`--process-bundles-dir` 自定义目录），便于后续 entity-level curation |
 | `tiangong-lca dataset references rewrite` | 本地 process / lifecyclemodel rows 的 flow reference rewrite、patch evidence 输出，并可选走 state-aware save-draft commit |
 | `tiangong-lca dataset maintenance clear-account` | 已实现的当前账号 draft 清理入口；先生成当前用户 RLS 可见 snapshot，默认 dry-run，只有显式 `--commit --confirm <当前账号邮箱>` 才按 `lifecyclemodels -> processes -> flows -> sources -> contacts` 顺序执行。普通 dataset rows 通过 `app_dataset_delete` / `cmd_dataset_delete` 删除，读回验证剩余行数；`unitgroups` / `flowproperties` 默认保护不删 |
-| `tiangong-lca dataset maintenance plan/apply/verify` | 已实现的 current-user RLS row-level 维护入口。普通 V1 维护冻结 exact draft rows 并通过平台 `save_draft` / `delete`；`merge-support-aliases` 只在 `target_mode=owner_draft` 下执行固定 BAFU time/length-time 两批私有引用与 exchange amount 重写；`rebuild-derivatives` 只允许一个 owner-draft process 的 `extracted_md` + `embedding_ft` 衍生重建。所有路径共享不可变 plan、显式审批、durable proof 与独立 readback；本操作不发布 FP/UG |
+| `tiangong-lca dataset maintenance plan/apply/run-protected/verify` | 已实现的 row-level 维护入口。普通 V1 维护通过当前账号 RLS 冻结 exact draft rows 并走平台 `save_draft` / `delete`；seal 绑定的 production `merge-support-aliases` 必须由服务器调度的 `run-protected` 以唯一 durable attempt/admission identity 执行和恢复，并以 actor/user_id/state_code=0 与精确 plan/closure 栅栏保护写入，RLS 用于公开入口和独立读回；`rebuild-derivatives` V1 仍只允许一个 owner-draft process。所有路径共享不可变 plan、显式审批、durable proof 与独立 readback，且不发布 FP/UG |
 | `tiangong-lca lifecyclemodel auto-build` | 本地 lifecyclemodel local-run intake、graph 推断、reference process 选择、`json_ordered` artifact 输出 |
 | `tiangong-lca lifecyclemodel validate-build` | 本地 lifecyclemodel build run 校验重跑、per-model 校验报告与 aggregate report 输出 |
 | `tiangong-lca lifecyclemodel publish-build` | 本地 lifecyclemodel publish handoff、publish bundle/request/intent 产出、validation 摘要复用 |
@@ -241,8 +243,8 @@ tiangong-lca
 - 已实现的 `dataset curation-queue build/next/verify` 把 Foundry external dataset import 的 support / flow / process rows 收口成 entity-level queue artifact contract：`build` 生成 `curation-queue-manifest.json`、`curation-queue-tasks.jsonl`、`curation-queue-locks.json`、`curation-queue-blockers.jsonl`，以及每个 entity 的 `input.jsonl`、`closure.json`、`entity-run-plan.json`；`next` 读取 task checkpoint 并返回下一条 runnable entity task；`verify` 确认目标 scope 的 checkpoint 完成且没有 build blocker。CLI 只负责稳定状态机、依赖闭包、锁和 blocker；AI authoring 仍必须通过 skill/Codex 输出 structured patch 或 build plan，并在 deterministic apply、schema/QA、prewrite verify、readback 后才允许进入远端写入。
 - 已实现的 `dataset references rewrite` 把 process / lifecyclemodel rows 中的 flow reference rewrite 收口到一个 deterministic 本地入口，默认只写 patch artifacts，只有显式 `--commit` 时才调用 state-aware save-draft 写入路径
 - 已实现的 `dataset maintenance clear-account` 只覆盖当前认证账号的 draft 清空场景：CLI 必须先以 exact-count 分页证明五个可删除表的 RLS 可见快照完整，才写出 `rls-visible-snapshot.json` / `dry-run-report.json`；commit 时要求 `--confirm` 匹配当前账号邮箱，并逐行调用平台 `app_dataset_delete`。除逐表检查外，结束时必须重新扫描全部五表，只有完整 aggregate proof 且 `row_count=0` 才报告成功；若终检失败而之前已有删除，仍写出 `completed_with_failures` 审计报告。初始扫描不完整时不生成快照/approval，且零删除。该命令不绕过 RLS，不直接 REST DELETE，不删除默认保护的 `unitgroups` / `flowproperties`。
-- 已实现的 `dataset maintenance plan/apply/verify` 是错误导入清理、redo 与受保护衍生重建的 row-level 归属面。`plan` 先证明当前用户 account scan 完整，再固化 scope manifest、RLS 可见快照、completeness proof、引用影响、保护行、不可变 plan 和 dry-run；`rebuild-derivatives` 还从数据库获取仅覆盖目标 action 的 primary/derivative snapshot 并绑定进 plan。`apply` 只接受 plan SHA-256 与当前账号邮箱都匹配的显式 commit，在 approval 或 mutation 前完成新的 exact-count scan 与全计划 drift preflight，再走对应官方平台路径；衍生重建只记录 guarded RPC 的 `accepted`/`queued`，不把入队当成完成。`verify` 以新的完整 account readback 或 action-scoped DB readback 独立检查结果，不依赖 apply 的内存或报告结论。Foundry 只保存 task ledger、调用命令和报告，不实现删除或衍生重建逻辑。
-- `merge-support-aliases` 不是通用 alias 合并器：当前只接受 BAFU `time` 与 `length_time` 两个 batch。计划必须精确覆盖 25 + 27 行和 20 + 39 条 exchange，并保留受影响 process 中的 309 条其他 exchange；apply 将两个 batch 按固定顺序装入一个 `dataset-alias-plan.v1` 请求，只调用一次 `cmd_dataset_alias_plan_guarded`，不会降级成逐 dimension 或逐行 `save_draft`。
+- 已实现的 `dataset maintenance plan/apply/run-protected/verify` 是错误导入清理、redo 与受保护衍生重建的 row-level 归属面。`plan` 先证明当前用户 account scan 完整，再固化 scope manifest、RLS 可见快照、completeness proof、引用影响、保护行、不可变 plan 和 dry-run。普通 `apply` 只接受 plan SHA-256 与当前账号邮箱都匹配的显式 commit；seal 绑定的 production alias 计划必须走 `run-protected`，其 `--status-only` 恢复不做 preflight 或 admission。`verify` 以新的完整 account readback 或 action-scoped DB readback 独立检查结果，不依赖 apply 的内存或报告结论。Foundry 只保存 task ledger、调用命令和报告，不实现删除或衍生重建逻辑。
+- `merge-support-aliases` 不是通用 alias 合并器：当前只接受 BAFU `time` 与 `length_time` 两个 batch。计划必须精确覆盖 25 + 27 行和 20 + 39 条 exchange，并保留受影响 process 中的 309 条其他 exchange。原 V1 adapter 只保留冻结请求/artifact 兼容契约，不能作为 seal 绑定 production 执行的 fallback；受保护路径绝不降级为旧 `cmd_dataset_alias_plan_guarded`、逐 dimension 或逐行 `save_draft`。
 - 已实现的 `lifecyclemodel auto-build` 走本地只读、artifact-first 路径，输入固定为 local run manifest，不依赖 Python、MCP、KB、LLM 或远端 CRUD
 - `lifecyclemodel auto-build` 当前负责 graph 推断、reference process 选择、`@multiplicationFactor` 计算与 `json_ordered` lifecyclemodel 产物输出，并保留 `run-plan.json`、`resolved-manifest.json`、`selection/selection-brief.md`、`discovery/reference-model-summary.json`、`connections.json`、`process-catalog.json` 等 CLI 契约
 - `lifecyclemodel auto-build` 当前明确不负责 reference-model discovery、任何远端 lifecyclemodel 写入，也不会自动串接 validate-build / publish-build
@@ -277,7 +279,7 @@ tiangong-lca
 - 现有命令族里已经没有残留的 Python / shell validation fallback；其余 review / build / publish CLI 面已经进入可执行状态，未迁移子命令只剩 `auth` / `job` 这类 placeholder surface
 - 这样做的目的不是“假装已完成”，而是先固定命令树，再逐个把 workflow 迁入 TypeScript CLI
 
-### 2.1.1 `dataset maintenance plan/apply/verify` v1 契约
+### 2.1.1 `dataset maintenance plan/apply/run-protected/verify` v1 契约
 
 公开命令面固定为：
 
@@ -298,6 +300,32 @@ tiangong-lca dataset maintenance apply \
   [--timeout-ms <n>] \
   [--json]
 
+tiangong-lca dataset maintenance run-protected \
+  --plan ./protected-step2/maintenance-plan.json \
+  --freeze ./protected-step2/protected-execution-seal.json \
+  --approval ./protected-step2/protected-approval.json \
+  --out-dir ./protected-step2/run \
+  --commit \
+  --approve-execution <approved-execution-sha256> \
+  --confirm <current-account-email> \
+  [--wait-seconds <n>] \
+  [--poll-ms <n>] \
+  [--page-size <n>] \
+  [--timeout-ms <n>] \
+  [--json]
+
+tiangong-lca dataset maintenance run-protected \
+  --plan ./protected-step2/maintenance-plan.json \
+  --freeze ./protected-step2/protected-execution-seal.json \
+  --approval ./protected-step2/protected-approval.json \
+  --out-dir ./protected-step2/run \
+  --status-only \
+  [--wait-seconds <n>] \
+  [--poll-ms <n>] \
+  [--page-size <n>] \
+  [--timeout-ms <n>] \
+  [--json]
+
 tiangong-lca dataset maintenance verify \
   --plan ./dataset-maintenance/maintenance-plan.json \
   [--out-dir ./dataset-maintenance/verify] \
@@ -308,7 +336,7 @@ tiangong-lca dataset maintenance verify \
 
 Scope 与保护规则：
 
-- 远端读取和写入都使用当前认证用户 session 与数据库 RLS，不接受 target user 覆盖。
+- 普通维护的远端读写使用当前认证用户 session 与数据库 RLS，不接受 target user 覆盖；`run-protected` 的写入由服务器调度，但必须同时匹配认证 actor、精确 user_id/state_code=0、冻结目标集与 plan/closure 栅栏，公开入口和独立读回继续受 RLS 保护。
 - 每条 scope row 必须给出表、exact `id`、exact `version`、expected owner、expected `state_code=0` 与 operator-authored intended action/reason；`--operation` 只接受 `delete`、`retire`、`redo-import`、`repair-references`、`merge-support-aliases`、`rebuild-derivatives`，且不允许只按 broad `state_code=0` 或其他宽过滤器清理。
 - `contacts`、`sources`、`flows`、`processes` 的普通维护只允许 `save_draft` 与 `delete`；`merge-support-aliases` 只允许固定 BAFU closure 内的 `flowproperties`、`flows`、`processes` 执行 `update_json_ordered`。
 - `merge-support-aliases` 与 `rebuild-derivatives` scope 必须显式给出 `target_mode: "owner_draft"`，其他 operation 禁止携带该字段。计划、审批、本地 proof 与 RPC request 都保留该 mode；数据库只接受匹配的 owner-draft visibility。
@@ -345,11 +373,15 @@ Account scan 与分页证明：
 1. 重新认证当前用户并校验账号邮箱。
 2. 先完成新的 exact-count account scan，再对整份计划重新抓取 exact rows 与引用；分页不完整或任何 drift 都在 approval 与首写前阻断。
 3. 在首写前持久化 `approval-record.json`。
-4. 普通 action 按 `save_draft`、`delete` 的固定顺序执行；alias operation 则按 `time`、`length_time` 组装两个嵌套 batch，再一次调用带 `target_visibility=owner_draft` 的 `cmd_dataset_alias_plan_guarded`，绝不逐 dimension 或逐行执行；derivative rebuild 只把冻结的单 action 计划提交给 authenticated guarded RPC，并只把 durable `accepted`/`queued` 作为 apply 成功。所有远端动作都通过平台 dataset command path，而不是 raw REST mutation。
+4. 普通 action 按 `save_draft`、`delete` 的固定顺序执行；derivative rebuild V1 只把冻结的单 action 计划提交给 authenticated guarded RPC，并只把 durable `accepted`/`queued` 作为 apply 成功。seal 绑定的 production alias operation 不进入 generic apply，而由 `run-protected` 执行。所有远端动作都通过平台 dataset command path，而不是 raw REST mutation。
 5. 为每条尝试的 action 向 `apply-progress.jsonl` 追加 durable log，并在平台命令的 `p_audit` 中带入 plan/action correlation id。每行至少记录 `plan_sha256`、`operation_id`、`action_id`、table/id/version、actor、started/finished、`before_sha256`、`after_sha256`、result/error 与 rollback。
 6. 任一 action 失败即停止后续动作并写出 `commit-report.json`；已成功 action 保留在日志中，重跑时据此识别已完成状态，避免盲目重复写入。
 
 Alias plan RPC 在同一事务中锁定 target/source support 与全部 action rows，逐行比较 authenticated actor、expected owner/state 0、`modified_at`、payload，并再次计算 submitted flow/process closure；少一条或多一条 source-flow / exchange 引用都阻断。两个 dimension 中任一失败都会回滚另一个。成功与 replay 结果必须回显 plan identity、`target_visibility=owner_draft`、plan request SHA-256、plan summary audit id，以及两个 batch 的 request hash、summary audit id 和每行 audit id。数据库将 bigint audit id 显式转换为 text，CLI 只接受正整数字符串，避免 JavaScript number 精度损失。CLI 将 52 条 `apply-progress.jsonl`、59 条 `alias-exchange-progress.jsonl`、2 条 `alias-batch-progress.jsonl` 全部绑定到 `alias-plan-progress.jsonl` 的 plan proof。若事务已经提交但响应或本地派生日志丢失，只允许提交同一整计划请求进行 audit-proven replay，并逐项比对既有 plan/batch audit id 与 after hash。
+
+上述 alias plan RPC/replay 描述属于原 V1 artifact 兼容契约，不再是 seal 绑定 production 执行的授权路径。`run-protected` 的执行顺序固定为：校验 plan/freeze/approval 与 production project；在 preflight 前完成完整 current-user RLS before-state、support 与 50-target baseline 校验；只调用一次 server preflight，接受服务器派生的三项 gate 期望摘要和最长 180 秒 token；捕获并核对 live gate receipt；以私有 immutable 文件写入 submission marker；立即发送最多一次 admission POST；服务器以认证 actor、精确 user_id/state_code=0、冻结目标集与 plan/closure 栅栏约束写入；之后状态读取只调用带 `auth.uid`、actor 与 plan 栅栏的受保护 RPC，独立表级读回才使用 RLS。`--status-only` 永远不调用 preflight/admit。marker 已存在、admission timeout、响应丢失或服务器记录不明确时，结果为 `indeterminate` 或后续只读状态，绝不再次 admission；状态读取异常仅在配置等待窗口内按默认 10 秒间隔重试，不会触发 admission 重试。
+
+`run-protected` 只有在数据库终态与独立 RLS readback 同时证明 approved identity、唯一 attempt/dispatch、52 row + 2 batch + 1 plan 的 55 条 audit closure、59 条 exchange closure、精确 23 flows + 27 processes derivative targets，以及 markdown/embedding 因果与 live hash 一致时才输出 `passed`。任一 target 未完成但 proof 结构有效为 `pending`；明确 stale/failure/mismatch 为 `failed`；传输、schema/status 或 marker/server 记录不明确为 `indeterminate`。四态中只有 `passed` 返回 0。
 
 Derivative rebuild guarded RPC 必须在 admission 时重新校验 authenticated actor、owner-draft state、exact identity 与 plan-bound action snapshot，并返回 durable request/proof。相同计划重放必须复用原 request，不得生成第二个任务。`accepted`/`queued` 只表示重建请求已受理，不能写成 `completed`；CLI 没有 direct Edge、`admin embedding-run`、raw queue、SQL、service-role 或 raw REST mutation 降级路径。
 
