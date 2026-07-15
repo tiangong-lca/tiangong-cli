@@ -56,6 +56,7 @@ import {
   __testInternals as verifyInternals,
   runDatasetMaintenanceVerify,
 } from '../src/lib/dataset-maintenance-verify.js';
+import { CliError } from '../src/lib/errors.js';
 import type { FetchLike, ResponseLike } from '../src/lib/http.js';
 import {
   buildSupabaseTestEnv,
@@ -994,6 +995,98 @@ async function prepareAliasScenario(
     now,
   });
   return { remote, plan, outDir, context };
+}
+
+async function executeLegacyAliasFixtureForVerification(
+  scenario: Awaited<ReturnType<typeof prepareAliasScenario>>,
+): Promise<void> {
+  const progressPath = path.join(scenario.outDir, 'apply-progress.jsonl');
+  const planProgressPath = path.join(scenario.outDir, 'alias-plan-progress.jsonl');
+  const batchProgressPath = path.join(scenario.outDir, 'alias-batch-progress.jsonl');
+  const exchangeProgressPath = path.join(scenario.outDir, 'alias-exchange-progress.jsonl');
+  const progress = applyInternals.parseProgress(scenario.plan, progressPath);
+  const planProgress = applyInternals.parseAliasPlanProgress(scenario.plan, planProgressPath);
+  const batchProgress = applyInternals.parseAliasBatchProgress(scenario.plan, batchProgressPath);
+  const execution = await applyInternals.executeAliasPlan({
+    plan: scenario.plan,
+    planDir: scenario.outDir,
+    context: scenario.context,
+  });
+  const timestamp = '2026-07-11T09:30:00.000Z';
+  for (const batch of scenario.plan.alias_batches!) {
+    applyInternals.appendAliasSuccessLogs({
+      plan: scenario.plan,
+      batch,
+      execution,
+      progress,
+      progressPath,
+      exchangeProgressPath,
+      context: scenario.context,
+      startedAt: timestamp,
+      endedAt: timestamp,
+    });
+  }
+  applyInternals.appendAliasProofProgress({
+    plan: scenario.plan,
+    execution,
+    planProgress,
+    batchProgress,
+    planProgressPath,
+    batchProgressPath,
+    context: scenario.context,
+    startedAt: timestamp,
+    endedAt: timestamp,
+  });
+}
+
+function writeLegacyAliasCommitReport(
+  scenario: Awaited<ReturnType<typeof prepareAliasScenario>>,
+): void {
+  const planProgressPath = path.join(scenario.outDir, 'alias-plan-progress.jsonl');
+  const batchProgressPath = path.join(scenario.outDir, 'alias-batch-progress.jsonl');
+  const exchangeProgressPath = path.join(scenario.outDir, 'alias-exchange-progress.jsonl');
+  const planProof = readJsonLinesIfPresent(planProgressPath)[0] as JsonObject;
+  writeFileSync(
+    path.join(scenario.outDir, 'commit-report.json'),
+    JSON.stringify({
+      schema_version: 1,
+      plan_sha256: scenario.plan.plan_sha256,
+      task_id: scenario.plan.task_id,
+      operation: scenario.plan.operation,
+      operation_id: scenario.plan.operation_id,
+      target_mode: scenario.plan.target_mode,
+      status: 'completed',
+      actor: scenario.plan.account,
+      summary: {
+        actions: scenario.plan.actions.length,
+        success: scenario.plan.actions.length,
+        failed: 0,
+        pending: 0,
+      },
+      actions: scenario.plan.actions.map((action) => ({
+        action_id: action.action_id,
+        action: action.action,
+        table: action.table,
+        id: action.id,
+        version: action.version,
+        status: 'success',
+        error: null,
+      })),
+      alias_plan_proof: {
+        plan_request_sha256: planProof.plan_request_sha256,
+        summary_audit_id: planProof.summary_audit_id,
+        batch_count: 2,
+        row_count: 52,
+        exchange_count: 59,
+        idempotent_replay: false,
+      },
+      artifacts: {
+        alias_plan_progress: planProgressPath,
+        alias_batch_progress: batchProgressPath,
+        alias_exchange_progress: exchangeProgressPath,
+      },
+    }),
+  );
 }
 
 function buildScopeFiles(options: {
@@ -2036,105 +2129,22 @@ test('atomic FP alias plan changes 52 rows through one guarded RPC, logs 59 exch
       fixture.selected_exchange_count,
     );
 
-    const applied = await runDatasetMaintenanceApply({
-      planPath: path.join(outDir, 'maintenance-plan.json'),
-      commit: true,
-      approvePlan: plan.plan_sha256,
-      confirm: remote.email,
-      env: remote.env,
-      fetchImpl: remote.fetch,
-      now,
-    });
-    assert.equal(applied.status, 'completed');
-    assert.equal(applied.summary.success, 52);
-    assert.deepEqual(remote.rpcOrder, ['cmd_dataset_alias_plan_guarded']);
-    assert.equal(
-      remote.rpcOrder.some((rpc) => ['cmd_dataset_save_draft', 'cmd_dataset_delete'].includes(rpc)),
-      false,
+    const remoteCallsBeforeApply = remote.rpcOrder.length;
+    await assert.rejects(
+      () =>
+        runDatasetMaintenanceApply({
+          planPath: path.join(outDir, 'maintenance-plan.json'),
+          commit: true,
+          approvePlan: plan.plan_sha256,
+          confirm: remote.email,
+          env: remote.env,
+          fetchImpl: remote.fetch,
+          now,
+        }),
+      (error: unknown) =>
+        error instanceof CliError && error.code === 'DATASET_MAINTENANCE_PROTECTED_RUN_REQUIRED',
     );
-    assert.deepEqual(
-      remote.rpcBodies.map((body) => {
-        const aliasPlan = body.p_plan as JsonObject;
-        assertExactAliasPlanRequestContract(aliasPlan);
-        return {
-          schema_version: aliasPlan.schema_version,
-          target_visibility: aliasPlan.target_visibility,
-          dimensions: (aliasPlan.batches as JsonObject[]).map((batch) => batch.dimension),
-          action_counts: (aliasPlan.batches as JsonObject[]).map(
-            (batch) => (batch.actions as unknown[]).length,
-          ),
-        };
-      }),
-      [
-        {
-          schema_version: 'dataset-alias-plan.v1',
-          target_visibility: 'owner_draft',
-          dimensions: ['time', 'length_time'],
-          action_counts: [25, 27],
-        },
-      ],
-    );
-    const rowProgress = readJsonLinesIfPresent(
-      path.join(outDir, 'apply-progress.jsonl'),
-    ) as JsonObject[];
-    assert.equal(rowProgress.length, 52);
-    assert.equal(
-      rowProgress.every(
-        (entry) =>
-          entry.target_mode === 'owner_draft' &&
-          typeof entry.plan_request_sha256 === 'string' &&
-          entry.plan_summary_audit_id === '9900' &&
-          isJsonObject(entry.audit_context) &&
-          entry.audit_context.target_mode === 'owner_draft',
-      ),
-      true,
-    );
-    assert.equal(
-      readJsonLinesIfPresent(path.join(outDir, 'alias-exchange-progress.jsonl')).length,
-      59,
-    );
-    assert.equal(readJsonLinesIfPresent(path.join(outDir, 'alias-batch-progress.jsonl')).length, 2);
-    const planProgress = readJsonLinesIfPresent(
-      path.join(outDir, 'alias-plan-progress.jsonl'),
-    ) as JsonObject[];
-    assert.equal(planProgress.length, 1);
-    assert.equal(planProgress[0]?.summary_audit_id, '9900');
-    assert.deepEqual(
-      (planProgress[0]?.batches as JsonObject[]).map((entry) => entry.dimension),
-      ['time', 'length_time'],
-    );
-    assert.equal(
-      (readJsonFile(path.join(outDir, 'approval-record.json'), 'approval') as JsonObject)
-        .target_mode,
-      'owner_draft',
-    );
-
-    const verified = await runDatasetMaintenanceVerify({
-      planPath: path.join(outDir, 'maintenance-plan.json'),
-      outDir: path.join(outDir, 'verify'),
-      env: remote.env,
-      fetchImpl: remote.fetch,
-      now,
-    });
-    assert.equal(verified.status, 'passed');
-    assert.equal(verified.target_mode, 'owner_draft');
-    assert.equal(verified.summary.atomic_batch_successes, 2);
-    assert.equal(verified.summary.atomic_plan_proofs, 1);
-    assert.equal(verified.summary.exchange_rewrite_logs, 59);
-
-    const rpcCount = remote.rpcOrder.length;
-    const resumed = await runDatasetMaintenanceApply({
-      planPath: path.join(outDir, 'maintenance-plan.json'),
-      commit: true,
-      approvePlan: plan.plan_sha256,
-      confirm: remote.email,
-      env: remote.env,
-      fetchImpl: remote.fetch,
-      now,
-    });
-    assert.equal(resumed.status, 'completed');
-    assert.equal(resumed.summary.resumed_successes, 52);
-    assert.equal(remote.rpcOrder.length, rpcCount);
+    assert.equal(remote.rpcOrder.length, remoteCallsBeforeApply);
   } finally {
     rmSync(root, { recursive: true, force: true });
   }
@@ -2163,65 +2173,21 @@ test('atomic alias apply retries the whole exact plan after a committed response
         processes: { safeParse: () => ({ success: true as const }) },
       },
     });
-    remote.failAliasResponseAfterCommitOnce = true;
-    const uncertain = await runDatasetMaintenanceApply({
-      planPath: path.join(outDir, 'maintenance-plan.json'),
-      commit: true,
-      approvePlan: plan.plan_sha256,
-      confirm: remote.email,
-      env: remote.env,
-      fetchImpl: remote.fetch,
-      now,
-    });
-    assert.equal(uncertain.status, 'completed_with_failures');
-    assert.equal(uncertain.summary.failed, 52);
-    assert.equal(uncertain.summary.pending, 0);
-    assert.equal(readJsonLinesIfPresent(path.join(outDir, 'apply-progress.jsonl')).length, 0);
-    assert.equal(readJsonLinesIfPresent(path.join(outDir, 'alias-batch-progress.jsonl')).length, 0);
-
-    const recovered = await runDatasetMaintenanceApply({
-      planPath: path.join(outDir, 'maintenance-plan.json'),
-      commit: true,
-      approvePlan: plan.plan_sha256,
-      confirm: remote.email,
-      env: remote.env,
-      fetchImpl: remote.fetch,
-      now,
-    });
-    assert.equal(recovered.status, 'completed');
-    assert.deepEqual(remote.rpcOrder, [
-      'cmd_dataset_alias_plan_guarded',
-      'cmd_dataset_alias_plan_guarded',
-    ]);
-    const batchProgress = readJsonLinesIfPresent(
-      path.join(outDir, 'alias-batch-progress.jsonl'),
-    ) as Array<Record<string, unknown>>;
-    assert.deepEqual(
-      batchProgress.map((entry) => entry.result),
-      ['success', 'success'],
+    const remoteCallsBeforeApply = remote.rpcOrder.length;
+    await assert.rejects(
+      () =>
+        runDatasetMaintenanceApply({
+          planPath: path.join(outDir, 'maintenance-plan.json'),
+          commit: true,
+          approvePlan: plan.plan_sha256,
+          confirm: remote.email,
+          env: remote.env,
+          fetchImpl: remote.fetch,
+          now,
+        }),
+      /run-protected/u,
     );
-    assert.equal(batchProgress[0]?.idempotent_replay, true);
-    assert.equal(batchProgress[1]?.idempotent_replay, true);
-    const planProgress = readJsonLinesIfPresent(
-      path.join(outDir, 'alias-plan-progress.jsonl'),
-    ) as Array<Record<string, unknown>>;
-    assert.deepEqual(
-      planProgress.map((entry) => entry.result),
-      ['failed', 'success'],
-    );
-    assert.equal(planProgress[1]?.idempotent_replay, true);
-    assert.equal(
-      readJsonLinesIfPresent(path.join(outDir, 'alias-exchange-progress.jsonl')).length,
-      59,
-    );
-    const verifiedReplay = await runDatasetMaintenanceVerify({
-      planPath: path.join(outDir, 'maintenance-plan.json'),
-      outDir: path.join(outDir, 'verify-replay'),
-      env: remote.env,
-      fetchImpl: remote.fetch,
-      now,
-    });
-    assert.equal(verifiedReplay.status, 'passed');
+    assert.equal(remote.rpcOrder.length, remoteCallsBeforeApply);
   } finally {
     rmSync(root, { recursive: true, force: true });
   }
@@ -2232,58 +2198,22 @@ test('second-dimension rejection rolls back the first dimension and exposes no 2
   try {
     const scenario = await prepareAliasScenario(root, 'rollback');
     const beforeSha256 = sha256Json(aliasRemoteRows(scenario.remote));
-    scenario.remote.failAliasSecondDimensionOnce = true;
-    const failed = await runDatasetMaintenanceApply({
-      planPath: path.join(scenario.outDir, 'maintenance-plan.json'),
-      commit: true,
-      approvePlan: scenario.plan.plan_sha256,
-      confirm: scenario.remote.email,
-      env: scenario.remote.env,
-      fetchImpl: scenario.remote.fetch,
-      now: new Date('2026-07-11T08:00:00.000Z'),
-    });
-    assert.equal(failed.status, 'completed_with_failures');
-    assert.equal(failed.summary.success, 0);
-    assert.equal(failed.summary.failed, 52);
-    assert.equal(failed.summary.pending, 0);
+    const remoteCallsBeforeApply = scenario.remote.rpcOrder.length;
+    await assert.rejects(
+      () =>
+        runDatasetMaintenanceApply({
+          planPath: path.join(scenario.outDir, 'maintenance-plan.json'),
+          commit: true,
+          approvePlan: scenario.plan.plan_sha256,
+          confirm: scenario.remote.email,
+          env: scenario.remote.env,
+          fetchImpl: scenario.remote.fetch,
+          now: new Date('2026-07-11T08:00:00.000Z'),
+        }),
+      /run-protected/u,
+    );
     assert.equal(sha256Json(aliasRemoteRows(scenario.remote)), beforeSha256);
-    assert.deepEqual(scenario.remote.rpcOrder, ['cmd_dataset_alias_plan_guarded']);
-    assert.equal(
-      readJsonLinesIfPresent(path.join(scenario.outDir, 'apply-progress.jsonl')).length,
-      0,
-    );
-    assert.equal(
-      readJsonLinesIfPresent(path.join(scenario.outDir, 'alias-batch-progress.jsonl')).length,
-      0,
-    );
-    assert.equal(
-      readJsonLinesIfPresent(path.join(scenario.outDir, 'alias-exchange-progress.jsonl')).length,
-      0,
-    );
-    const planProgress = readJsonLinesIfPresent(
-      path.join(scenario.outDir, 'alias-plan-progress.jsonl'),
-    ) as JsonObject[];
-    assert.deepEqual(
-      planProgress.map((entry) => entry.result),
-      ['failed'],
-    );
-    assert.equal(planProgress[0]?.plan_request_sha256, null);
-
-    const recovered = await runDatasetMaintenanceApply({
-      planPath: path.join(scenario.outDir, 'maintenance-plan.json'),
-      commit: true,
-      approvePlan: scenario.plan.plan_sha256,
-      confirm: scenario.remote.email,
-      env: scenario.remote.env,
-      fetchImpl: scenario.remote.fetch,
-      now: new Date('2026-07-11T08:01:00.000Z'),
-    });
-    assert.equal(recovered.status, 'completed');
-    assert.equal(recovered.summary.success, 52);
-    assert.deepEqual(scenario.remote.rpcOrder, [
-      'cmd_dataset_alias_plan_guarded',
-      'cmd_dataset_alias_plan_guarded',
-    ]);
+    assert.equal(scenario.remote.rpcOrder.length, remoteCallsBeforeApply);
   } finally {
     rmSync(root, { recursive: true, force: true });
   }
@@ -2574,6 +2504,57 @@ test('alias plan contracts reject stale locks, malformed proofs, and legacy summ
       /duplicate success proof/u,
     );
 
+    const validFailedPlanProgress = {
+      ...validPlanProgress,
+      plan_request_sha256: null,
+      idempotent_replay: null,
+      summary_audit_id: null,
+      batches: [],
+      result: 'failed',
+      error: 'expected failed attempt',
+    };
+    writeFileSync(invalidPlanProgressPath, `${JSON.stringify(validFailedPlanProgress)}\n`);
+    const parsedFailure = applyInternals.parseAliasPlanProgress(
+      scenario.plan,
+      invalidPlanProgressPath,
+    );
+    assert.equal(parsedFailure.latestFailure?.error, 'expected failed attempt');
+
+    const beforeRows = aliasRemoteRows(scenario.remote);
+    assert.doesNotThrow(() =>
+      applyInternals.assertApplyPreconditions({
+        plan: scenario.plan,
+        planDir: scenario.outDir,
+        currentRows: beforeRows,
+        progress: applyInternals.parseProgress(
+          scenario.plan,
+          path.join(root, 'happy-no-progress.jsonl'),
+        ),
+        aliasPlanProgress: applyInternals.parseAliasPlanProgress(
+          scenario.plan,
+          path.join(root, 'happy-no-plan-progress.jsonl'),
+        ),
+      }),
+    );
+    writeFileSync(invalidPlanProgressPath, `${JSON.stringify(validPlanProgress)}\n`);
+    assert.throws(
+      () =>
+        applyInternals.assertApplyPreconditions({
+          plan: scenario.plan,
+          planDir: scenario.outDir,
+          currentRows: beforeRows,
+          progress: applyInternals.parseProgress(
+            scenario.plan,
+            path.join(root, 'success-no-row-progress.jsonl'),
+          ),
+          aliasPlanProgress: applyInternals.parseAliasPlanProgress(
+            scenario.plan,
+            invalidPlanProgressPath,
+          ),
+        }),
+      /split across dimension states/u,
+    );
+
     const mixedRows = aliasRemoteRows(scenario.remote);
     const first = scenario.plan.actions[0]!;
     const mixed = mixedRows.find(
@@ -2736,17 +2717,10 @@ test('alias plan contracts reject stale locks, malformed proofs, and legacy summ
 
 test('alias apply rejects invalid RPC/readback proofs and repairs only exact durable logs', async () => {
   const root = mkdtempSync(path.join(os.tmpdir(), 'tg-maintenance-alias-defensive-'));
-  const now = new Date('2026-07-11T09:00:00.000Z');
-  const apply = async (scenario: Awaited<ReturnType<typeof prepareAliasScenario>>) =>
-    runDatasetMaintenanceApply({
-      planPath: path.join(scenario.outDir, 'maintenance-plan.json'),
-      commit: true,
-      approvePlan: scenario.plan.plan_sha256,
-      confirm: scenario.remote.email,
-      env: scenario.remote.env,
-      fetchImpl: scenario.remote.fetch,
-      now,
-    });
+  const apply = async (scenario: Awaited<ReturnType<typeof prepareAliasScenario>>) => {
+    await executeLegacyAliasFixtureForVerification(scenario);
+    return { status: 'completed' as const };
+  };
   try {
     const invalidProof = await prepareAliasScenario(root, 'invalid-proof');
     invalidProof.remote.invalidAliasProof = true;
@@ -2776,30 +2750,6 @@ test('alias apply rejects invalid RPC/readback proofs and repairs only exact dur
 
     const partial = await prepareAliasScenario(root, 'partial-log');
     assert.equal((await apply(partial)).status, 'completed');
-    const partialBatchProgress = applyInternals.parseAliasBatchProgress(
-      partial.plan,
-      path.join(partial.outDir, 'alias-batch-progress.jsonl'),
-    );
-    const partialPlanProgress = applyInternals.parseAliasPlanProgress(
-      partial.plan,
-      path.join(partial.outDir, 'alias-plan-progress.jsonl'),
-    );
-    const incompleteRowProgress = applyInternals.parseProgress(
-      partial.plan,
-      path.join(partial.outDir, 'apply-progress.jsonl'),
-    );
-    incompleteRowProgress.successes.delete(partial.plan.alias_batches![0]!.action_ids[0]!);
-    assert.equal(
-      applyInternals.aliasBatchDerivedLogsComplete({
-        plan: partial.plan,
-        batch: partial.plan.alias_batches![0]!,
-        planSuccess: partialPlanProgress.success!,
-        batchSuccess: partialBatchProgress.successes.get('time')!,
-        progress: incompleteRowProgress,
-        exchangeProgressPath: path.join(partial.outDir, 'alias-exchange-progress.jsonl'),
-      }),
-      false,
-    );
     const partialExchangePath = path.join(partial.outDir, 'alias-exchange-progress.jsonl');
     const partialExchangeEntries = readJsonLinesIfPresent(partialExchangePath);
     writeFileSync(
@@ -2838,10 +2788,8 @@ test('alias apply rejects invalid RPC/readback proofs and repairs only exact dur
         .map((entry) => JSON.stringify(entry))
         .join('\n')}\n`,
     );
-    const rejectedRowProof = await apply(rowMismatch);
-    assert.equal(rejectedRowProof.status, 'completed_with_failures');
-    assert.match(
-      rejectedRowProof.actions.find((entry) => entry.status === 'failed')?.error ?? '',
+    await assert.rejects(
+      () => apply(rowMismatch),
       /row progress does not match replay audit proof/u,
     );
 
@@ -2856,10 +2804,8 @@ test('alias apply rejects invalid RPC/readback proofs and repairs only exact dur
         .map((entry) => JSON.stringify(entry))
         .join('\n')}\n{"batch_id":"time"}\n`,
     );
-    const rejectedExchangeProof = await apply(invalidExchange);
-    assert.equal(rejectedExchangeProof.status, 'completed_with_failures');
-    assert.match(
-      rejectedExchangeProof.actions.find((entry) => entry.status === 'failed')?.error ?? '',
+    await assert.rejects(
+      () => apply(invalidExchange),
       /exchange progress contains an invalid or foreign entry/u,
     );
 
@@ -2872,10 +2818,8 @@ test('alias apply rejects invalid RPC/readback proofs and repairs only exact dur
       auditMismatchPath,
       `${auditMismatchEntries.map((entry) => JSON.stringify(entry)).join('\n')}\n`,
     );
-    const rejectedAuditMismatch = await apply(auditMismatch);
-    assert.equal(rejectedAuditMismatch.status, 'completed_with_failures');
-    assert.match(
-      rejectedAuditMismatch.actions.find((entry) => entry.status === 'failed')?.error ?? '',
+    await assert.rejects(
+      () => apply(auditMismatch),
       /exchange progress contains an invalid or foreign entry/u,
     );
 
@@ -2888,10 +2832,8 @@ test('alias apply rejects invalid RPC/readback proofs and repairs only exact dur
       batchProofPath,
       `${batchProofEntries.map((entry) => JSON.stringify(entry)).join('\n')}\n`,
     );
-    const rejectedBatchProof = await apply(batchProofMismatch);
-    assert.equal(rejectedBatchProof.status, 'completed_with_failures');
-    assert.match(
-      rejectedBatchProof.actions.find((entry) => entry.status === 'failed')?.error ?? '',
+    await assert.rejects(
+      () => apply(batchProofMismatch),
       /batch proof does not match whole-plan replay/u,
     );
 
@@ -2904,10 +2846,8 @@ test('alias apply rejects invalid RPC/readback proofs and repairs only exact dur
       planProofPath,
       `${planProofEntries.map((entry) => JSON.stringify(entry)).join('\n')}\n`,
     );
-    const rejectedPlanProof = await apply(planProofMismatch);
-    assert.equal(rejectedPlanProof.status, 'completed_with_failures');
-    assert.match(
-      rejectedPlanProof.actions.find((entry) => entry.status === 'failed')?.error ?? '',
+    await assert.rejects(
+      () => apply(planProofMismatch),
       /plan proof does not match whole-plan replay/u,
     );
   } finally {
@@ -2920,16 +2860,8 @@ test('alias verification reports support drift, failed batches, duplicate proofs
   try {
     const scenario = await prepareAliasScenario(root, 'verify');
     const now = new Date('2026-07-11T09:30:00.000Z');
-    const applyReport = await runDatasetMaintenanceApply({
-      planPath: path.join(scenario.outDir, 'maintenance-plan.json'),
-      commit: true,
-      approvePlan: scenario.plan.plan_sha256,
-      confirm: scenario.remote.email,
-      env: scenario.remote.env,
-      fetchImpl: scenario.remote.fetch,
-      now,
-    });
-    assert.equal(applyReport.status, 'completed');
+    await executeLegacyAliasFixtureForVerification(scenario);
+    writeLegacyAliasCommitReport(scenario);
     const target = scenario.plan.alias_batches![0]!.target_snapshots.flowproperty!;
     const targetRow = scenario.remote.rows
       .get(target.table)!
@@ -2986,6 +2918,27 @@ test('alias verification reports support drift, failed batches, duplicate proofs
       invalidPlanProof.issues.map((entry) => entry.code).join(','),
       /ALIAS_PLAN_SUCCESS_LOG_MISSING/u,
     );
+    const failedPlanEntry = {
+      ...planEntries[0]!,
+      plan_request_sha256: null,
+      idempotent_replay: null,
+      summary_audit_id: null,
+      batches: [],
+      result: 'failed',
+      error: 'expected failed plan proof',
+    };
+    writeFileSync(planProgressPath, `${JSON.stringify(failedPlanEntry)}\n`);
+    const failedPlanProof = await runDatasetMaintenanceVerify({
+      planPath: path.join(scenario.outDir, 'maintenance-plan.json'),
+      outDir: path.join(root, 'failed-plan-proof'),
+      env: scenario.remote.env,
+      fetchImpl: scenario.remote.fetch,
+      now,
+    });
+    assert.match(
+      failedPlanProof.issues.map((entry) => entry.code).join(','),
+      /ALIAS_PLAN_SUCCESS_LOG_MISSING/u,
+    );
     writeFileSync(planProgressPath, `${JSON.stringify(planEntries[0])}\n`);
 
     const batchProgressPath = path.join(scenario.outDir, 'alias-batch-progress.jsonl');
@@ -3018,20 +2971,8 @@ test('alias verification reports support drift, failed batches, duplicate proofs
     assert.match(codes, /ALIAS_EXCHANGE_SUCCESS_LOG_MISSING/u);
 
     const auditMismatch = await prepareAliasScenario(root, 'verify-audit-mismatch');
-    assert.equal(
-      (
-        await runDatasetMaintenanceApply({
-          planPath: path.join(auditMismatch.outDir, 'maintenance-plan.json'),
-          commit: true,
-          approvePlan: auditMismatch.plan.plan_sha256,
-          confirm: auditMismatch.remote.email,
-          env: auditMismatch.remote.env,
-          fetchImpl: auditMismatch.remote.fetch,
-          now,
-        })
-      ).status,
-      'completed',
-    );
+    await executeLegacyAliasFixtureForVerification(auditMismatch);
+    writeLegacyAliasCommitReport(auditMismatch);
     const mismatchPath = path.join(auditMismatch.outDir, 'alias-exchange-progress.jsonl');
     const mismatchEntries = readJsonLinesIfPresent(mismatchPath) as JsonObject[];
     mismatchEntries[0]!.database_audit_id = '999999';
@@ -3447,6 +3388,7 @@ test('account maintenance snapshot follows a 1000-row server cap for a requested
   const snapshot = await fetchMaintenanceAccountRows({
     context: {
       rest_base_url: 'https://example.test/rest/v1',
+      project_ref: 'example',
       publishable_key: 'publishable',
       access_token: 'access',
       account: { user_id: 'user-1', email: 'user@example.com', session_source: 'credentials' },

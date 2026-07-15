@@ -22,8 +22,8 @@ checkPaths:
   - scripts/docpact
   - scripts/docpact-gate.sh
   - scripts/install-git-hooks.sh
-lastReviewedAt: 2026-07-14
-lastReviewedCommit: 95734b0f224e06a8d674f6e602e00ac4da8e8059
+lastReviewedAt: 2026-07-15
+lastReviewedCommit: afd57879ede2e11403803d4e44c4c3c7b28daca3
 related:
   - ../AGENTS.md
   - ../.docpact/config.yaml
@@ -36,6 +36,8 @@ related:
 This document is the operator runbook for each `@tiangong-lca/cli` release.
 
 Review note, 2026-07-14: Issue #165 adds the guarded `dataset maintenance rebuild-derivatives` command profile but does not change the release procedure. Its command, contract, remote-adapter, asynchronous verification, and no-fallback tests must pass the existing pre-push/docpact gate before a later version-bump PR; the feature PR itself must not publish locally or alter package version metadata.
+
+Review note, 2026-07-15: Issue #168 adds the production-only protected alias runner without changing package-version, tag, Trusted Publishing, or workspace follow-up mechanics. The feature PR must pass docpact and the full pre-push gate without changing package metadata. A separate patch release may start only after database-engine#262 reaches production and its schema/function/ACL readback passes; the release is still a dedicated version-bump PR and never a local publish.
 
 Use this document for:
 

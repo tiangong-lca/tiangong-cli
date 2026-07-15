@@ -17,8 +17,8 @@ checkPaths:
   - bin/**
   - src/cli.ts
   - src/main.ts
-lastReviewedAt: 2026-07-14
-lastReviewedCommit: ce8c18f270725adad789ada8f4582ca0e97e4117
+lastReviewedAt: 2026-07-15
+lastReviewedCommit: ca0cdd7549cad9003d08fb338223ba74682955ae
 ---
 
 # TianGong LCA CLI
@@ -30,6 +30,8 @@ Review note, 2026-07-12: `dataset maintenance plan/apply/verify` provides curren
 Review note, 2026-07-13: maintenance scans now prove exact-count pagination even when PostgREST returns fewer rows than the requested `--page-size`. An incomplete or inconsistent scan fails before artifacts, approval, or mutation; under stable filtered membership/order the proof represents a complete ordered multi-request traversal, not one transaction-level/MVCC snapshot.
 
 Review note, 2026-07-14: maintenance now includes the protected derivative-only `rebuild-derivatives` operation. V1 plans exactly one current-owner state-0 process with `action=rebuild_derivatives`, `target_mode=owner_draft`, and components `extracted_md` plus `embedding_ft`. Apply only proves guarded-RPC admission (`accepted`/`queued`); independent verify reports `pending`, `passed`, or `failed`.
+
+Review note, 2026-07-15: `dataset maintenance run-protected` adds a production-only path for one sealed private alias execution and its exact 50-target derivative closure. The protected executor is server-dispatched and fenced by the authenticated owner plus exact actor/user_id/state_code=0 and plan-closure checks; RLS remains a defense on public and independent-read surfaces. It performs one server preflight, writes an immutable local attempt marker before one admission POST, and requires status-only recovery after any marker or ambiguous response. It has no dev, legacy-alias, publication, or state-code fallback.
 
 ## Run
 
@@ -283,6 +285,7 @@ tiangong-lca dataset maintenance plan --scope ./maintenance-scope.json --operati
 tiangong-lca dataset maintenance plan --scope ./derivative-rebuild-scope.json --operation rebuild-derivatives --out-dir /abs/path/to/derivative-rebuild --json
 tiangong-lca dataset maintenance apply --plan /abs/path/to/dataset-maintenance/maintenance-plan.json --commit --approve-plan <sha256> --confirm <current-account-email> --timeout-ms 10000 --json
 tiangong-lca dataset maintenance verify --plan /abs/path/to/dataset-maintenance/maintenance-plan.json --out-dir /abs/path/to/dataset-maintenance/verify --page-size 1000 --timeout-ms 10000 --json
+tiangong-lca dataset maintenance run-protected --plan /abs/path/to/maintenance-plan.json --freeze /abs/path/to/protected-execution-seal.json --approval /abs/path/to/protected-approval.json --out-dir /abs/path/to/protected-run --status-only --json
 tiangong-lca lifecyclemodel auto-build --input ./examples/lifecyclemodel-auto-build.request.json --out-dir /abs/path/to/lifecyclemodel-run --json
 tiangong-lca lifecyclemodel validate-build --run-dir /abs/path/to/lifecyclemodel-run --json
 tiangong-lca lifecyclemodel publish-build --run-dir /abs/path/to/lifecyclemodel-run --json
@@ -327,12 +330,12 @@ For `dataset references rewrite`, `--commit` executes the state-aware save-draft
 
 ## Dataset Maintenance
 
-`dataset maintenance plan/apply/verify` is the row-level cleanup surface for bad imports, the fixed BAFU private alias rewrite, and one protected derivative-only process rebuild. It runs as the currently authenticated user and relies on RLS for visibility and ownership enforcement.
+`dataset maintenance plan/apply/run-protected/verify` is the row-level cleanup surface for bad imports, the fixed BAFU private alias rewrite, and protected derivative rebuilds. Ordinary planning, apply, and independent verification use the authenticated account and RLS. The protected executor is server-dispatched and additionally enforces the sealed actor, user_id, state_code=0, exact target set, and closure hashes on every write.
 
 ```bash
 tiangong-lca dataset maintenance plan \
   --scope ./maintenance-scope.json \
-  --operation merge-support-aliases \
+  --operation repair-references \
   --out-dir ./dataset-maintenance \
   --page-size 1000 \
   --timeout-ms 10000 \
@@ -352,7 +355,36 @@ tiangong-lca dataset maintenance verify \
   --page-size 1000 \
   --timeout-ms 10000 \
   --json
+
+tiangong-lca dataset maintenance run-protected \
+  --plan ./protected-step2/maintenance-plan.json \
+  --freeze ./protected-step2/protected-execution-seal.json \
+  --approval ./protected-step2/protected-approval.json \
+  --out-dir ./protected-step2/run \
+  --commit \
+  --approve-execution <approved-execution-sha256> \
+  --confirm <current-account-email> \
+  --wait-seconds 60 \
+  --poll-ms 10000 \
+  --page-size 1000 \
+  --timeout-ms 10000 \
+  --json
+
+tiangong-lca dataset maintenance run-protected \
+  --plan ./protected-step2/maintenance-plan.json \
+  --freeze ./protected-step2/protected-execution-seal.json \
+  --approval ./protected-step2/protected-approval.json \
+  --out-dir ./protected-step2/run \
+  --status-only \
+  --wait-seconds 60 \
+  --json
 ```
+
+`run-protected` is a separate one-shot path for an already reviewed and sealed production execution; it does not replace ordinary planning. Both modes require the exact plan, freeze/seal, approval artifact, and private output directory. Commit mode additionally requires `--commit`, the exact approved execution identity through `--approve-execution`, and the authenticated account email through `--confirm`. `--status-only` is mutually exclusive with `--commit` and performs no preflight or admission.
+
+Before requesting preflight, the command validates the sealed production project, full current-user RLS before-state, support closure, and exact derivative baseline. The server then returns the three expected gate digests and a token valid for at most 180 seconds; the CLI captures and compares the live gate receipts before admission. The server-dispatched write remains fenced to the authenticated actor's exact `user_id`, `state_code=0` rows and sealed plan/closure; independent readback still uses RLS. The CLI writes an immutable local submission marker and sends at most one admission POST. A marker, admission timeout, connection loss, or ambiguous admission response permanently switches that local run to status-only recovery; status-read failures may be polled only within the configured wait window and never cause a second admission or fallback to dev or the legacy whole-plan RPC. The default status polling interval is 10 seconds.
+
+Success requires the terminal database proof and independent RLS readback to agree on the approved execution, exact row/exchange/audit closure, and exactly 50 derivative targets split into 23 flows and 27 processes. `pending`, `failed`, and `indeterminate` all return a non-zero exit status. The protected operation keeps all affected rows private to their owner, changes no `state_code`, and does not publish data.
 
 For the derivative-only profile, use the same three commands with `--operation rebuild-derivatives`. Its scope must contain exactly one `processes` action with `action: "rebuild_derivatives"`, `target_mode: "owner_draft"`, expected current owner, expected `state_code: 0`, and the exact component set `extracted_md` plus `embedding_ft`.
 
@@ -373,7 +405,7 @@ The scope is intentionally narrow:
 
 `plan` accepts the account scan only after its exact-count proof is complete, then writes the frozen `maintenance-scope.json`, `rls-visible-snapshot.json`, `protected-rows.jsonl`, `reference-impact-report.json`, `maintenance-plan.json`, and `dry-run-report.json`. The snapshot, dry-run report, and newly generated plan carry the aggregate completeness proof, so it is bound into the plan SHA-256. Alias plans additionally write `exchange-rewrite-plan.jsonl`, freeze current-owner state-0 target FP, target UG, and source UG snapshots for each batch, derive schema-valid desired payloads with matching embedded UUID/version, and include the exact closure, `modified_at`, hashes, conversion evidence, and postconditions in the approved plan. A derivative rebuild plan additionally obtains a database-produced snapshot for only the exact target action and binds its primary and derivative preconditions into the plan; large markdown/vector fields are not added to the account-wide scan. The plan SHA-256 is the approval identity; do not edit or recompute the plan after review.
 
-`apply` is write-disabled unless all three commit guards are present: `--commit`, `--approve-plan <sha256>`, and `--confirm <current-account-email>`. Before approval is persisted or any write runs, it requires a fresh complete exact-count account scan and re-checks the whole plan for drift; the current completeness proof is recorded in `approval-record.json`. Ordinary draft updates/deletes use their platform paths. The ordered `time` plus `length_time` alias request is sent once to `cmd_dataset_alias_plan_guarded` with `target_visibility=owner_draft`; the CLI has neither a per-dimension fallback nor a 52-write sequential fallback. The RPC locks and validates the complete 52-row/59-exchange closure before both dimensions commit, so a second-dimension failure rolls back the first. It checks actor ownership, state 0, exact payload/timestamp locks and embedded UUID/version, rejects missing or phantom flow/exchange references, and returns one plan summary audit id plus both batch and per-row audit proofs. The CLI writes `alias-plan-progress.jsonl` together with plan-bound per-batch, per-row, and per-exchange ledgers. A lost response or incomplete derived ledger is repaired only by replaying the same whole plan and matching every returned plan and batch proof.
+`apply` is write-disabled unless all three commit guards are present: `--commit`, `--approve-plan <sha256>`, and `--confirm <current-account-email>`. Before approval is persisted or any write runs, it requires a fresh complete exact-count account scan and re-checks the whole plan for drift; the current completeness proof is recorded in `approval-record.json`. Ordinary draft updates/deletes use their platform paths. The original V1 alias adapter retains its frozen request and artifact contract for compatibility, but it is not an authorized execution or recovery fallback for a sealed production `merge-support-aliases` plan. That plan must use `run-protected`, whose database contract replaces replay with one durable attempt/admission identity.
 
 For `rebuild-derivatives`, apply submits the frozen single-action plan only to the authenticated guarded RPC. The database admission envelope must report `queued`; the CLI records that durable admission as an `accepted` action with queued proof. It does not mean markdown or embedding generation has completed. Replay must return the same durable request/proof rather than enqueueing a second rebuild. There is no fallback to a direct Edge call, `admin embedding-run`, a raw queue, SQL, service-role credentials, or raw REST mutation.
 

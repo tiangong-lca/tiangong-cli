@@ -4,8 +4,9 @@ layout: repo
 # Review note, 2026-07-12: owner-draft BAFU `merge-support-aliases` now sends both frozen dimensions through one whole-plan RPC; it remains inside the existing dataset-maintenance command/runtime domain, and wildcard routing already covers its request/proof adapter, alias-rewrite, tests, and governed command/validation docs, so no ownership or route changes are required.
 # Review note, 2026-07-13: exact-count maintenance pagination remains inside the existing dataset-maintenance command/runtime domain. Wildcard routing already covers its shared paginator, account scans, tests, and governed command/validation docs, so no ownership or route changes are required.
 # Review note, 2026-07-14: derivative rebuild remains inside the existing dataset-maintenance command/runtime and remote-adapter domains. Existing `src/lib/dataset-*.ts`, `src/cli.ts`, and `test/**` wildcards already cover its guarded-RPC adapter, action-scoped snapshot, terminal verification, and proof tests; no ownership or route changes are required.
-lastReviewedAt: '2026-07-14'
-lastReviewedCommit: '95734b0f224e06a8d674f6e602e00ac4da8e8059'
+# Review note, 2026-07-15: the production-only protected owner-draft runner remains inside the existing dataset-maintenance command/runtime and remote-adapter domains. Existing `src/lib/dataset-*.ts`, `src/cli.ts`, and `test/**` wildcards cover its sealed request contract, one-shot admission, immutable local evidence, status-only recovery, and 23-flow + 27-process terminal proof; no ownership, routing, dependency, or release-rule change is required.
+lastReviewedAt: '2026-07-15'
+lastReviewedCommit: 'afd57879ede2e11403803d4e44c4c3c7b28daca3'
 
 catalog:
   repos:

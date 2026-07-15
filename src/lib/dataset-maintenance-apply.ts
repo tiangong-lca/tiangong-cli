@@ -5,6 +5,12 @@ import { CliError } from './errors.js';
 import type { FetchLike } from './http.js';
 import { withStateFileLock } from './state-lock.js';
 import {
+  buildAliasBatchRequest,
+  buildAliasPlanRequest,
+  loadMaintenanceDesiredPayload,
+  orderedAliasBatches,
+} from './dataset-maintenance-alias-request.js';
+import {
   MAINTENANCE_SCAN_TABLES,
   appendStableJsonLine,
   isJsonObject,
@@ -12,7 +18,6 @@ import {
   parseMaintenancePlan,
   readJsonFile,
   readJsonLinesIfPresent,
-  resolveMaintenancePlanArtifactPath,
   sha256Json,
   snapshotRemoteRow,
   writeImmutableJson,
@@ -249,25 +254,7 @@ function errorMessage(error: unknown): string {
 }
 
 function loadDesiredPayload(planDir: string, action: DatasetMaintenancePlanAction): JsonObject {
-  if (!action.desired_payload) {
-    throw new CliError(`save_draft action lacks desired payload: ${action.action_id}`, {
-      code: 'DATASET_MAINTENANCE_PLAN_INVALID',
-      exitCode: 2,
-    });
-  }
-  const payloadPath = resolveMaintenancePlanArtifactPath(
-    planDir,
-    action.desired_payload.path,
-    'Maintenance desired payload path',
-  );
-  const payload = readJsonFile(payloadPath, 'Maintenance desired payload');
-  if (!isJsonObject(payload) || sha256Json(payload) !== action.desired_payload.sha256) {
-    throw new CliError(`Desired payload hash mismatch for action ${action.action_id}.`, {
-      code: 'DATASET_MAINTENANCE_DESIRED_PAYLOAD_HASH_MISMATCH',
-      exitCode: 1,
-    });
-  }
-  return payload;
+  return loadMaintenanceDesiredPayload(planDir, action);
 }
 
 function parseProgress(plan: DatasetMaintenancePlan, progressPath: string): ProgressState {
@@ -840,99 +827,6 @@ async function assertAliasSupportSnapshots(options: {
   }
 }
 
-function buildAliasBatchRequest(options: {
-  plan: DatasetMaintenancePlan;
-  batch: DatasetMaintenanceAliasBatchPlan;
-  planDir: string;
-}): JsonObject {
-  if (options.plan.target_mode !== 'owner_draft') {
-    throw new CliError('Alias batch request requires target_mode=owner_draft.', {
-      code: 'DATASET_MAINTENANCE_TARGET_MODE_INVALID',
-      exitCode: 2,
-    });
-  }
-  const targetSnapshot = (
-    snapshot: NonNullable<DatasetMaintenanceAliasBatchPlan['target_snapshots']['unitgroup']>,
-  ): JsonObject => {
-    return {
-      id: snapshot.id,
-      version: snapshot.version,
-      expected_modified_at: snapshot.modified_at!,
-      expected_json_ordered: snapshot.json_ordered!,
-    };
-  };
-  const actions = options.batch.action_ids.map((actionId) => {
-    const action = options.plan.actions.find((entry) => entry.action_id === actionId)!;
-    return {
-      action_id: action.action_id,
-      action: 'update_json_ordered',
-      table: action.table,
-      id: action.id,
-      version: action.version,
-      expected_state_code: 0,
-      expected_modified_at: action.before!.modified_at!,
-      expected_json_ordered: action.before!.json_ordered!,
-      desired_json_ordered: loadDesiredPayload(options.planDir, action),
-      mutation: action.alias_mutation!,
-    };
-  });
-  return {
-    schema_version: 'dataset-alias-batch.v1',
-    target_visibility: 'owner_draft',
-    plan_sha256: options.plan.plan_sha256,
-    operation_id: options.plan.operation_id,
-    batch_id: options.batch.batch_id,
-    dimension: options.batch.dimension,
-    factor: options.batch.factor,
-    target: {
-      flowproperty: targetSnapshot(options.batch.target_snapshots.flowproperty!),
-      unitgroup: targetSnapshot(options.batch.target_snapshots.unitgroup!),
-      source_unitgroup: targetSnapshot(options.batch.target_snapshots.source_unitgroup!),
-    },
-    actions,
-  };
-}
-
-function orderedAliasBatches(plan: DatasetMaintenancePlan): DatasetMaintenanceAliasBatchPlan[] {
-  const time = plan.alias_batches!.find((batch) => batch.dimension === 'time');
-  const lengthTime = plan.alias_batches!.find((batch) => batch.dimension === 'length_time');
-  return [time, lengthTime].filter(
-    (batch): batch is DatasetMaintenanceAliasBatchPlan => batch !== undefined,
-  );
-}
-
-function buildAliasPlanRequest(options: {
-  plan: DatasetMaintenancePlan;
-  planDir: string;
-}): JsonObject {
-  if (options.plan.target_mode !== 'owner_draft') {
-    throw new CliError('Alias plan request requires target_mode=owner_draft.', {
-      code: 'DATASET_MAINTENANCE_TARGET_MODE_INVALID',
-      exitCode: 2,
-    });
-  }
-  const batches = orderedAliasBatches(options.plan);
-  if (
-    batches.length !== 2 ||
-    batches[0]?.dimension !== 'time' ||
-    batches[1]?.dimension !== 'length_time'
-  ) {
-    throw new CliError('Alias plan request requires time followed by length_time exactly once.', {
-      code: 'DATASET_MAINTENANCE_ALIAS_PLAN_INVALID',
-      exitCode: 2,
-    });
-  }
-  return {
-    schema_version: 'dataset-alias-plan.v1',
-    plan_sha256: options.plan.plan_sha256,
-    operation_id: options.plan.operation_id,
-    target_visibility: 'owner_draft',
-    batches: batches.map((batch) =>
-      buildAliasBatchRequest({ plan: options.plan, batch, planDir: options.planDir }),
-    ),
-  };
-}
-
 function validateAliasRpcResult(
   value: JsonObject,
   batch: DatasetMaintenanceAliasBatchPlan,
@@ -1129,136 +1023,6 @@ function aliasExchangeProgressKey(value: {
   data_set_internal_id: string;
 }): string {
   return `${value.batch_id}\u0000${value.action_id}\u0000${value.exchange_index}\u0000${value.data_set_internal_id}`;
-}
-
-function aliasBatchDerivedLogsComplete(options: {
-  plan: DatasetMaintenancePlan;
-  batch: DatasetMaintenanceAliasBatchPlan;
-  planSuccess: AliasPlanProgressEntry;
-  batchSuccess: AliasBatchProgressEntry;
-  progress: ProgressState;
-  exchangeProgressPath: string;
-}): boolean {
-  const planBatchProof = options.planSuccess.batches.find(
-    (proof) => proof.batch_id === options.batch.batch_id,
-  );
-  if (
-    !planBatchProof ||
-    planBatchProof.dimension !== options.batch.dimension ||
-    planBatchProof.batch_request_sha256 !== options.batchSuccess.batch_request_sha256 ||
-    planBatchProof.summary_audit_id !== options.batchSuccess.summary_audit_id ||
-    options.batchSuccess.plan_request_sha256 !== options.planSuccess.plan_request_sha256 ||
-    options.batchSuccess.plan_summary_audit_id !== options.planSuccess.summary_audit_id ||
-    !options.batch.action_ids.every(
-      (actionId) =>
-        options.progress.successes.get(actionId)?.batch_request_sha256 ===
-          options.batchSuccess.batch_request_sha256 &&
-        options.progress.successes.get(actionId)?.summary_audit_id ===
-          options.batchSuccess.summary_audit_id &&
-        options.progress.successes.get(actionId)?.plan_request_sha256 ===
-          options.planSuccess.plan_request_sha256 &&
-        options.progress.successes.get(actionId)?.plan_summary_audit_id ===
-          options.planSuccess.summary_audit_id,
-    )
-  ) {
-    return false;
-  }
-  const expected = new Map(
-    options.batch.exchange_rewrites.map((rewrite) => [
-      aliasExchangeProgressKey({ batch_id: options.batch.batch_id, ...rewrite }),
-      rewrite,
-    ]),
-  );
-  const exchangeKeys = new Set<string>();
-  for (const value of readJsonLinesIfPresent(options.exchangeProgressPath)) {
-    if (!isJsonObject(value) || value.batch_id !== options.batch.batch_id) continue;
-    const key =
-      typeof value.action_id === 'string' &&
-      typeof value.exchange_index === 'number' &&
-      typeof value.data_set_internal_id === 'string'
-        ? aliasExchangeProgressKey({
-            batch_id: options.batch.batch_id,
-            action_id: value.action_id,
-            exchange_index: value.exchange_index,
-            data_set_internal_id: value.data_set_internal_id,
-          })
-        : '';
-    const rewrite = expected.get(key);
-    const rowProof = rewrite ? options.progress.successes.get(rewrite.action_id) : null;
-    if (
-      !rewrite ||
-      !rowProof ||
-      value.schema_version !== 1 ||
-      value.plan_sha256 !== options.plan.plan_sha256 ||
-      value.operation_id !== options.plan.operation_id ||
-      value.target_mode !== 'owner_draft' ||
-      value.batch_request_sha256 !== options.batchSuccess.batch_request_sha256 ||
-      value.batch_request_sha256 !== rowProof.batch_request_sha256 ||
-      value.summary_audit_id !== options.batchSuccess.summary_audit_id ||
-      value.summary_audit_id !== rowProof.summary_audit_id ||
-      value.plan_request_sha256 !== options.planSuccess.plan_request_sha256 ||
-      value.plan_request_sha256 !== rowProof.plan_request_sha256 ||
-      value.plan_summary_audit_id !== options.planSuccess.summary_audit_id ||
-      value.plan_summary_audit_id !== rowProof.plan_summary_audit_id ||
-      value.factor !== options.batch.factor ||
-      value.result !== 'success' ||
-      !isJsonObject(value.actor) ||
-      value.actor.user_id !== options.plan.account.user_id ||
-      value.actor.email !== options.plan.account.email ||
-      typeof value.logged_at_utc !== 'string' ||
-      typeof value.database_audit_id !== 'string' ||
-      !POSITIVE_INTEGER_TEXT.test(value.database_audit_id) ||
-      value.database_audit_id !== rowProof.database_audit_id ||
-      typeof value.summary_audit_id !== 'string' ||
-      !POSITIVE_INTEGER_TEXT.test(value.summary_audit_id) ||
-      sha256Json({
-        action_id: value.action_id,
-        process_id: value.process_id,
-        process_version: value.process_version,
-        exchange_index: value.exchange_index,
-        data_set_internal_id: value.data_set_internal_id,
-        flow_id: value.flow_id,
-        flow_version: value.flow_version,
-        direction: value.direction,
-        before_exchange_sha256: value.before_exchange_sha256,
-        before_mean_amount: value.before_mean_amount,
-        before_resulting_amount: value.before_resulting_amount,
-        after_mean_amount: value.after_mean_amount,
-        after_resulting_amount: value.after_resulting_amount,
-        after_exchange_sha256: value.after_exchange_sha256,
-      }) !== sha256Json(rewrite) ||
-      exchangeKeys.has(key)
-    ) {
-      return false;
-    }
-    exchangeKeys.add(key);
-  }
-  return options.batch.exchange_rewrites.every((rewrite) =>
-    exchangeKeys.has(aliasExchangeProgressKey({ batch_id: options.batch.batch_id, ...rewrite })),
-  );
-}
-
-function aliasPlanDerivedLogsComplete(options: {
-  plan: DatasetMaintenancePlan;
-  planSuccess: AliasPlanProgressEntry;
-  batchProgress: AliasBatchProgressState;
-  progress: ProgressState;
-  exchangeProgressPath: string;
-}): boolean {
-  return orderedAliasBatches(options.plan).every((batch) => {
-    const batchSuccess = options.batchProgress.successes.get(batch.batch_id);
-    return Boolean(
-      batchSuccess &&
-      aliasBatchDerivedLogsComplete({
-        plan: options.plan,
-        batch,
-        planSuccess: options.planSuccess,
-        batchSuccess,
-        progress: options.progress,
-        exchangeProgressPath: options.exchangeProgressPath,
-      }),
-    );
-  });
 }
 
 function appendAliasSuccessLogs(options: {
@@ -1553,41 +1317,6 @@ function appendAliasProofProgress(options: {
   return entry;
 }
 
-function appendAliasPlanFailure(options: {
-  plan: DatasetMaintenancePlan;
-  planProgress: AliasPlanProgressState;
-  progressPath: string;
-  context: DatasetMaintenanceRemoteContext;
-  startedAt: string;
-  endedAt: string;
-  error: unknown;
-}): AliasPlanProgressEntry {
-  const entry: AliasPlanProgressEntry = {
-    schema_version: 1,
-    plan_sha256: options.plan.plan_sha256,
-    operation_id: options.plan.operation_id,
-    target_mode: 'owner_draft',
-    actor: { user_id: options.context.account.user_id, email: options.context.account.email },
-    started_at_utc: options.startedAt,
-    ended_at_utc: options.endedAt,
-    plan_request_sha256: null,
-    idempotent_replay: null,
-    batch_count: 2,
-    row_count: 52,
-    exchange_count: 59,
-    summary_audit_id: null,
-    batches: [],
-    result: 'failed',
-    error: errorMessage(options.error),
-  };
-  appendStableJsonLine(options.progressPath, entry);
-  options.planProgress.entries.push(entry);
-  if (!options.planProgress.success) {
-    options.planProgress.latestFailure = entry;
-  }
-  return entry;
-}
-
 async function executeAction(options: {
   action: DatasetMaintenancePlanAction;
   plan: DatasetMaintenancePlan;
@@ -1811,6 +1540,15 @@ export async function runDatasetMaintenanceApply(
       details: plan.blockers,
     });
   }
+  if (plan.operation === 'merge-support-aliases') {
+    throw new CliError(
+      'merge-support-aliases is sealed for dataset maintenance run-protected and cannot use ordinary apply.',
+      {
+        code: 'DATASET_MAINTENANCE_PROTECTED_RUN_REQUIRED',
+        exitCode: 1,
+      },
+    );
+  }
   if (
     plan.operation === 'redo-import' &&
     !plan.source_import_run_id &&
@@ -1828,9 +1566,6 @@ export async function runDatasetMaintenanceApply(
       ? 'derivative-submit-progress.jsonl'
       : 'apply-progress.jsonl',
   );
-  const aliasPlanProgressPath = path.join(planDir, 'alias-plan-progress.jsonl');
-  const aliasBatchProgressPath = path.join(planDir, 'alias-batch-progress.jsonl');
-  const aliasExchangeProgressPath = path.join(planDir, 'alias-exchange-progress.jsonl');
   return withStateFileLock(
     progressPath,
     { reason: `dataset_maintenance_apply_${plan.operation_id}` },
@@ -1864,15 +1599,7 @@ export async function runDatasetMaintenanceApply(
         plan.operation === 'rebuild-derivatives'
           ? { entries: [], successes: new Map(), latestFailures: new Map() }
           : parseProgress(plan, progressPath);
-      let resumedSuccesses = progress.successes.size;
-      const aliasPlanProgress: AliasPlanProgressState =
-        plan.operation === 'merge-support-aliases'
-          ? parseAliasPlanProgress(plan, aliasPlanProgressPath)
-          : { entries: [], success: null, latestFailure: null };
-      const aliasBatchProgress: AliasBatchProgressState =
-        plan.operation === 'merge-support-aliases'
-          ? parseAliasBatchProgress(plan, aliasBatchProgressPath)
-          : { entries: [], successes: new Map() };
+      const resumedSuccesses = progress.successes.size;
       const current = await fetchMaintenanceAccountRows({
         context,
         userId: plan.account.user_id,
@@ -1882,11 +1609,8 @@ export async function runDatasetMaintenanceApply(
         planDir,
         currentRows: current.rows,
         progress,
-        aliasPlanProgress,
+        aliasPlanProgress: { entries: [], success: null, latestFailure: null },
       });
-      if (plan.operation === 'merge-support-aliases') {
-        await assertAliasSupportSnapshots({ plan, context });
-      }
 
       const approvalPath = path.join(planDir, 'approval-record.json');
       const approvalAlreadyExisted = existsSync(approvalPath);
@@ -2006,144 +1730,6 @@ export async function runDatasetMaintenanceApply(
             ],
           },
           derivative_admission: { ...proof, admission: 'accepted' },
-        };
-        writeImmutableJson(attemptPath, report);
-        writeJsonArtifact(report.artifacts.commit_report, report);
-        return report;
-      }
-
-      if (plan.operation === 'merge-support-aliases') {
-        const alreadyComplete = Boolean(
-          aliasPlanProgress.success &&
-          aliasPlanDerivedLogsComplete({
-            plan,
-            planSuccess: aliasPlanProgress.success,
-            batchProgress: aliasBatchProgress,
-            progress,
-            exchangeProgressPath: aliasExchangeProgressPath,
-          }),
-        );
-        resumedSuccesses = alreadyComplete ? plan.actions.length : 0;
-        let planSuccess = alreadyComplete ? aliasPlanProgress.success : null;
-        let planFailure: AliasPlanProgressEntry | null = null;
-        if (!alreadyComplete) {
-          const startedAt = clock(options);
-          try {
-            const execution = await executeAliasPlan({ plan, planDir, context });
-            const endedAt = clock(options);
-            for (const batch of orderedAliasBatches(plan)) {
-              appendAliasSuccessLogs({
-                plan,
-                batch,
-                execution,
-                progress,
-                progressPath,
-                exchangeProgressPath: aliasExchangeProgressPath,
-                context,
-                startedAt,
-                endedAt,
-              });
-            }
-            planSuccess = appendAliasProofProgress({
-              plan,
-              execution,
-              planProgress: aliasPlanProgress,
-              batchProgress: aliasBatchProgress,
-              planProgressPath: aliasPlanProgressPath,
-              batchProgressPath: aliasBatchProgressPath,
-              context,
-              startedAt,
-              endedAt,
-            });
-          } catch (error) {
-            planFailure = appendAliasPlanFailure({
-              plan,
-              planProgress: aliasPlanProgress,
-              progressPath: aliasPlanProgressPath,
-              context,
-              startedAt,
-              endedAt: clock(options),
-              error,
-            });
-          }
-        }
-        const fullyProven = Boolean(
-          planSuccess &&
-          aliasPlanDerivedLogsComplete({
-            plan,
-            planSuccess,
-            batchProgress: aliasBatchProgress,
-            progress,
-            exchangeProgressPath: aliasExchangeProgressPath,
-          }),
-        );
-        const failureError = planFailure?.error ?? 'Whole-plan proof is incomplete.';
-        const actions = plan.actions.map((action) => {
-          return {
-            action_id: action.action_id,
-            action: action.action,
-            table: action.table,
-            id: action.id,
-            version: action.version,
-            status: fullyProven ? ('success' as const) : ('failed' as const),
-            error: fullyProven ? null : failureError,
-          };
-        });
-        const successCount = fullyProven ? actions.length : 0;
-        const failureCount = fullyProven ? 0 : actions.length;
-        const attemptPath = nextAttemptPath(planDir);
-        const report: DatasetMaintenanceApplyReport = {
-          schema_version: 1,
-          generated_at_utc: clock(options),
-          status: successCount === actions.length ? 'completed' : 'completed_with_failures',
-          task_id: plan.task_id,
-          operation: plan.operation,
-          operation_id: plan.operation_id,
-          target_mode: plan.target_mode,
-          plan_sha256: plan.plan_sha256,
-          actor: { user_id: context.account.user_id, email: context.account.email },
-          summary: {
-            actions: actions.length,
-            success: successCount,
-            failed: failureCount,
-            pending: actions.length - successCount - failureCount,
-            resumed_successes: resumedSuccesses,
-          },
-          actions,
-          artifacts: {
-            approval_record: approvalPath,
-            apply_progress: progressPath,
-            commit_report: path.join(planDir, 'commit-report.json'),
-            attempt_report: attemptPath,
-            alias_plan_progress: aliasPlanProgressPath,
-            alias_batch_progress: aliasBatchProgressPath,
-            alias_exchange_progress: aliasExchangeProgressPath,
-          },
-          database_audit: {
-            rpc_transaction_log: 'public.command_audit_log',
-            source: 'tiangong-lca dataset maintenance apply',
-            correlation_fields: [
-              'plan_sha256',
-              'operation_id',
-              'target_visibility',
-              'plan_request_sha256',
-              'batch_id',
-              'action_id',
-              'batch_request_sha256',
-            ],
-          },
-          ...(fullyProven && planSuccess
-            ? {
-                alias_plan_proof: {
-                  plan_request_sha256: planSuccess.plan_request_sha256!,
-                  summary_audit_id: planSuccess.summary_audit_id!,
-                  batch_count: 2 as const,
-                  row_count: 52 as const,
-                  exchange_count: 59 as const,
-                  idempotent_replay: planSuccess.idempotent_replay!,
-                },
-              }
-            : {}),
         };
         writeImmutableJson(attemptPath, report);
         writeJsonArtifact(report.artifacts.commit_report, report);
@@ -2291,10 +1877,9 @@ export async function runDatasetMaintenanceApply(
 }
 
 export const __testInternals = {
-  aliasBatchDerivedLogsComplete,
-  aliasPlanDerivedLogsComplete,
   aliasExchangeProgressKey,
   appendAliasSuccessLogs,
+  appendAliasProofProgress,
   assertApplyPreconditions,
   assertAliasSupportSnapshots,
   buildAliasBatchRequest,

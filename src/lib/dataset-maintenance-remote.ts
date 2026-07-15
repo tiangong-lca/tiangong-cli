@@ -24,6 +24,7 @@ const DEFAULT_PAGE_SIZE = 1_000;
 const DEFAULT_TIMEOUT_MS = 10_000;
 
 export type DatasetMaintenanceRemoteContext = {
+  project_ref: string;
   rest_base_url: string;
   publishable_key: string;
   access_token: string;
@@ -34,6 +35,15 @@ export type DatasetMaintenanceRemoteContext = {
   };
   fetch_impl: FetchLike;
   timeout_ms: number;
+};
+
+export type DatasetMaintenanceDerivativeRemoteRow = {
+  table: 'flows' | 'processes';
+  id: string;
+  version: string;
+  user_id: string;
+  state_code: number;
+  raw: JsonObject;
 };
 
 function trimToken(value: unknown): string | null {
@@ -199,6 +209,10 @@ export async function resolveMaintenanceRemoteContext(options: {
     now: options.now,
   });
   const projectBaseUrl = deriveSupabaseProjectBaseUrl(runtime.apiBaseUrl);
+  const projectHost = new URL(projectBaseUrl).hostname;
+  const projectRef = projectHost.endsWith('.supabase.co')
+    ? projectHost.slice(0, -'.supabase.co'.length)
+    : projectHost;
   const partialContext = {
     publishable_key: runtime.publishableKey,
     access_token: session.accessToken,
@@ -221,6 +235,7 @@ export async function resolveMaintenanceRemoteContext(options: {
     });
   }
   return {
+    project_ref: projectRef,
     rest_base_url: `${projectBaseUrl}/rest/v1`,
     publishable_key: runtime.publishableKey,
     access_token: session.accessToken,
@@ -325,14 +340,22 @@ async function invokeMaintenanceRpc(options: {
     | 'cmd_dataset_save_draft'
     | 'cmd_dataset_delete'
     | 'cmd_dataset_alias_plan_guarded'
+    | 'cmd_dataset_alias_execution_preflight_guarded'
+    | 'cmd_dataset_alias_execution_gate_guarded'
+    | 'cmd_dataset_alias_execution_admit_guarded'
+    | 'cmd_dataset_alias_execution_read'
     | 'cmd_dataset_derivative_rebuild_snapshot'
     | 'cmd_dataset_derivative_rebuild_plan_guarded'
     | 'cmd_dataset_derivative_rebuild_read';
   body: JsonObject;
+  minimumTimeoutMs?: number;
 }): Promise<JsonObject> {
   const url = `${options.context.rest_base_url}/rpc/${options.rpc}`;
   const body = await fetchJson({
-    context: options.context,
+    context: {
+      ...options.context,
+      timeout_ms: Math.max(options.context.timeout_ms, options.minimumTimeoutMs ?? 0),
+    },
     url,
     init: {
       method: 'POST',
@@ -351,8 +374,141 @@ async function invokeMaintenanceRpc(options: {
   return body;
 }
 
+export async function preflightMaintenanceAliasExecution(options: {
+  context: DatasetMaintenanceRemoteContext;
+  request: JsonObject;
+}): Promise<JsonObject> {
+  return invokeMaintenanceRpc({
+    context: options.context,
+    rpc: 'cmd_dataset_alias_execution_preflight_guarded',
+    body: { p_request: options.request },
+    minimumTimeoutMs: 90_000,
+  });
+}
+
+export async function admitMaintenanceAliasExecution(options: {
+  context: DatasetMaintenanceRemoteContext;
+  request: JsonObject;
+}): Promise<JsonObject> {
+  return invokeMaintenanceRpc({
+    context: options.context,
+    rpc: 'cmd_dataset_alias_execution_admit_guarded',
+    body: { p_request: options.request },
+    minimumTimeoutMs: 90_000,
+  });
+}
+
+export async function captureMaintenanceAliasExecutionGate(options: {
+  context: DatasetMaintenanceRemoteContext;
+  requestId: string;
+  preflightToken: string;
+  gateName: 'primary_support_plan' | 'execution_unused' | 'derivative_quiescence';
+}): Promise<JsonObject> {
+  return invokeMaintenanceRpc({
+    context: options.context,
+    rpc: 'cmd_dataset_alias_execution_gate_guarded',
+    body: {
+      p_request_id: options.requestId,
+      p_preflight_token: options.preflightToken,
+      p_gate_name: options.gateName,
+    },
+    minimumTimeoutMs: 90_000,
+  });
+}
+
+export async function readMaintenanceAliasExecution(options: {
+  context: DatasetMaintenanceRemoteContext;
+  requestId: string;
+}): Promise<JsonObject> {
+  return invokeMaintenanceRpc({
+    context: options.context,
+    rpc: 'cmd_dataset_alias_execution_read',
+    body: { p_request_id: options.requestId },
+    minimumTimeoutMs: 90_000,
+  });
+}
+
+function derivativeSelectForTable(table: 'flows' | 'processes'): string {
+  void table;
+  return 'id,version,user_id,state_code,modified_at,json,json_ordered,extracted_text,extracted_md,embedding_ft,embedding_ft_at';
+}
+
+export async function fetchMaintenanceDerivativeTargetRows(options: {
+  context: DatasetMaintenanceRemoteContext;
+  targets: Array<{ table: 'flows' | 'processes'; id: string; version: string }>;
+  concurrency?: number;
+}): Promise<{ rows: DatasetMaintenanceDerivativeRemoteRow[]; source_urls: string[] }> {
+  const concurrency = options.concurrency ?? 5;
+  if (!Number.isInteger(concurrency) || concurrency < 1 || concurrency > 10) {
+    throw new CliError('Derivative target read concurrency must be an integer between 1 and 10.', {
+      code: 'DATASET_MAINTENANCE_DERIVATIVE_READ_CONCURRENCY_INVALID',
+      exitCode: 2,
+    });
+  }
+  if (options.targets.length > 50) {
+    throw new CliError('Protected derivative target read is bounded to 50 rows.', {
+      code: 'DATASET_MAINTENANCE_DERIVATIVE_TARGET_COUNT_INVALID',
+      exitCode: 2,
+    });
+  }
+  const rows: DatasetMaintenanceDerivativeRemoteRow[] = [];
+  const sourceUrls: string[] = [];
+  for (let offset = 0; offset < options.targets.length; offset += concurrency) {
+    const chunk = options.targets.slice(offset, offset + concurrency);
+    const results = await Promise.all(
+      chunk.map(async (target) => {
+        const url = new URL(`${options.context.rest_base_url}/${target.table}`);
+        url.searchParams.set('select', derivativeSelectForTable(target.table));
+        url.searchParams.set('id', `eq.${target.id}`);
+        url.searchParams.set('version', `eq.${target.version}`);
+        url.searchParams.set('limit', '2');
+        const sourceUrl = url.toString();
+        const body = await fetchJson({
+          context: options.context,
+          url: sourceUrl,
+          label: `${target.table} protected derivative lookup`,
+        });
+        if (!Array.isArray(body) || body.length !== 1 || !isJsonObject(body[0])) {
+          throw new CliError('Protected derivative target was missing, duplicated, or malformed.', {
+            code: 'DATASET_MAINTENANCE_DERIVATIVE_TARGET_READ_INVALID',
+            exitCode: 1,
+            details: target,
+          });
+        }
+        const row = body[0];
+        const id = trimToken(row.id);
+        const version = trimToken(row.version);
+        const userId = trimToken(row.user_id);
+        const stateCode = normalizeStateCode(row.state_code);
+        if (id !== target.id || version !== target.version || !userId || stateCode === null) {
+          throw new CliError('Protected derivative target identity was malformed.', {
+            code: 'DATASET_MAINTENANCE_DERIVATIVE_TARGET_READ_INVALID',
+            exitCode: 1,
+            details: target,
+          });
+        }
+        return {
+          row: {
+            table: target.table,
+            id,
+            version,
+            user_id: userId,
+            state_code: stateCode,
+            raw: row,
+          } satisfies DatasetMaintenanceDerivativeRemoteRow,
+          sourceUrl,
+        };
+      }),
+    );
+    rows.push(...results.map((result) => result.row));
+    sourceUrls.push(...results.map((result) => result.sourceUrl));
+  }
+  return { rows, source_urls: sourceUrls };
+}
+
 export async function fetchMaintenanceDerivativeSnapshot(options: {
   context: DatasetMaintenanceRemoteContext;
+  table?: 'flows' | 'processes';
   id: string;
   version: string;
 }): Promise<JsonObject> {
@@ -360,7 +516,7 @@ export async function fetchMaintenanceDerivativeSnapshot(options: {
     context: options.context,
     rpc: 'cmd_dataset_derivative_rebuild_snapshot',
     body: {
-      p_table: 'processes',
+      p_table: options.table ?? 'processes',
       p_id: options.id,
       p_version: options.version,
     },

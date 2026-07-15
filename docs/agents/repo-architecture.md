@@ -26,8 +26,8 @@ checkPaths:
   - scripts/docpact
   - scripts/docpact-gate.sh
   - scripts/install-git-hooks.sh
-lastReviewedAt: 2026-07-14
-lastReviewedCommit: 95734b0f224e06a8d674f6e602e00ac4da8e8059
+lastReviewedAt: 2026-07-15
+lastReviewedCommit: afd57879ede2e11403803d4e44c4c3c7b28daca3
 related:
   - ../../AGENTS.md
   - ../../.docpact/config.yaml
@@ -57,6 +57,8 @@ Review note, 2026-07-12: `merge-support-aliases` is one fixed BAFU owner-draft t
 Review note, 2026-07-13: account-wide maintenance reads now share one exact-count paginator. Requested page size is not treated as the server's effective page size; actual returned lengths advance offsets, exact `Content-Range` totals and strict row identities prove pagination completeness under stable filtered membership/order, and incomplete scans fail before artifacts or writes. The aggregate proof describes a multi-request traversal, not transaction-level/MVCC snapshot isolation.
 
 Review note, 2026-07-14: `rebuild-derivatives` stays inside the native dataset-maintenance family as a derivative-only asynchronous profile. V1 freezes exactly one current-owner state-0 process action and its action-scoped database snapshot, admits work only through an owner-draft guarded RPC, and separates `accepted`/`queued` apply proof from terminal `pending`/`passed`/`failed` verification. No Edge/admin/raw queue/SQL/REST mutation fallback was added.
+
+Review note, 2026-07-15: `run-protected` remains in the native dataset-maintenance family and adds no second orchestration runtime. The command separates sealed request parsing, one-shot execution/recovery, and terminal independent verification into dedicated modules; it is production-only, admits at most once, and requires exact 23-flow + 27-process derivative closure without adding a Dev data replay or legacy-RPC fallback.
 
 ## Stable Path Map
 
@@ -148,6 +150,10 @@ Dataset-local governance now uses the same CLI-native command layer:
 - `src/lib/dataset-maintenance-{contract,remote,plan,apply,verify}.ts`
 - `src/lib/dataset-maintenance-pagination.ts`
 - `src/lib/dataset-maintenance-alias-rewrite.ts`
+- `src/lib/dataset-maintenance-alias-request.ts`
+- `src/lib/dataset-maintenance-protected-contract.ts`
+- `src/lib/dataset-maintenance-protected-run.ts`
+- `src/lib/dataset-maintenance-protected-verify.ts`
 - `src/lib/dataset-maintenance-support-validation.ts`
 - `src/lib/dataset-local.ts`
 - `src/lib/lifecyclemodel-save-draft-run.ts`
@@ -160,6 +166,9 @@ The row-level maintenance family is deliberately split by responsibility:
 - `contract` owns the versioned scope, immutable plan, action, approval, and report shapes.
 - `pagination` owns fail-closed PostgREST exact-count traversal for maintenance account scans and clear-account readbacks. It treats page size as a requested maximum, advances by actual returned length, verifies exact totals/ranges plus strict `id`/`version` identities, and builds per-table and aggregate completeness proofs.
 - `remote` owns current-session authentication, current-user RLS reads, exact `id` + `version` row lookup, reference-impact reads, action-scoped derivative snapshots, platform `save_draft` / `delete` / guarded owner-draft RPC execution, and audit correlation. It exposes no direct alias-dimension, derivative worker, or raw queue fallback.
+- `alias-request` and `protected-contract` own canonical protected request/seal/approval/status parsing, exact count/hash bindings, server-window checks, and fail-closed response shapes.
+- `protected-run` owns the production-only full scan, server preflight, three ordered gate receipts, immutable attempt allocation, single admission transport, and status-only recovery state machine. It never retries admission or falls back to Dev or the legacy whole-plan alias RPC.
+- `protected-verify` owns the terminal server proof plus independent current-user RLS cross-read of primary rows, audits, and all 23 flow + 27 process derivative snapshots. Local artifacts or a server status alone cannot produce `passed`.
 - `alias-rewrite` owns the fixed two-dimension BAFU profile, reviewed target-reference derivation, closure counting, and arbitrary-precision decimal scaling. It never uses JavaScript binary floating point for exchange amounts.
 - `support-validation` validates frozen owner-draft FP/UG payload schemas plus embedded root UUID/version without importing publication behavior.
 - `plan` requires a complete exact-count account scan before writing `maintenance-scope.json`, `rls-visible-snapshot.json`, `protected-rows.jsonl`, `reference-impact-report.json`, `maintenance-plan.json`, and `dry-run-report.json`; newly generated plans bind the aggregate completeness proof into the plan hash. Alias plans additionally freeze `exchange-rewrite-plan.jsonl`, three support snapshots per batch, per-process exchange locators/hashes, desired payloads, and exact postconditions. Derivative rebuild plans additionally bind a database-produced snapshot for only the one target action; markdown/vector fields do not expand the account-wide scan.

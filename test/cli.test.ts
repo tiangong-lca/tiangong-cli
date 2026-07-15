@@ -826,6 +826,185 @@ test('executeCli dispatches dataset maintenance plan, apply, and verify', async 
   assert.equal(pendingVerify.exitCode, 1);
 });
 
+test('executeCli dispatches protected maintenance without a retry or dev fallback', async () => {
+  const deps = makeDeps();
+  const help = await executeCli(['dataset', 'maintenance', 'run-protected', '--help'], deps);
+  assert.equal(help.exitCode, 0);
+  assert.match(help.stdout, /at most one admission POST/u);
+  assert.match(help.stdout, /never retries admission or falls back to dev/u);
+
+  let observed: unknown = null;
+  const result = await executeCli(
+    [
+      'dataset',
+      'maintenance',
+      'run-protected',
+      '--plan',
+      './maintenance-plan.json',
+      '--freeze',
+      './freeze.json',
+      '--approval',
+      './approval.json',
+      '--out-dir',
+      './protected-run',
+      '--status-only',
+      '--wait-seconds',
+      '30',
+      '--poll-ms',
+      '500',
+      '--page-size',
+      '250',
+      '--timeout-ms',
+      '12000',
+      '--json',
+    ],
+    {
+      ...deps,
+      runDatasetMaintenanceProtectedImpl: async (options) => {
+        observed = options;
+        return { status: 'passed', marker: 'protected' } as never;
+      },
+    },
+  );
+  assert.equal(result.exitCode, 0);
+  assert.deepEqual(JSON.parse(result.stdout), { status: 'passed', marker: 'protected' });
+  assert.deepEqual(observed, {
+    planPath: './maintenance-plan.json',
+    freezePath: './freeze.json',
+    approvalPath: './approval.json',
+    outDir: './protected-run',
+    commit: false,
+    statusOnly: true,
+    approveExecution: undefined,
+    confirm: undefined,
+    waitSeconds: 30,
+    pollMs: 500,
+    pageSize: 250,
+    timeoutMs: 12000,
+    env: deps.env,
+    fetchImpl: deps.fetchImpl,
+  });
+
+  for (const status of ['pending', 'failed', 'indeterminate'] as const) {
+    const nonTerminal = await executeCli(
+      [
+        'dataset',
+        'maintenance',
+        'run-protected',
+        '--plan',
+        'plan.json',
+        '--freeze',
+        'freeze.json',
+        '--approval',
+        'approval.json',
+        '--out-dir',
+        'protected-run',
+        '--status-only',
+      ],
+      {
+        ...deps,
+        runDatasetMaintenanceProtectedImpl: async () => ({ status }) as never,
+      },
+    );
+    assert.equal(nonTerminal.exitCode, 1, status);
+  }
+
+  const conflict = await executeCli(
+    [
+      'dataset',
+      'maintenance',
+      'run-protected',
+      '--plan',
+      'plan.json',
+      '--freeze',
+      'freeze.json',
+      '--approval',
+      'approval.json',
+      '--out-dir',
+      'protected-run',
+      '--commit',
+      '--status-only',
+    ],
+    deps,
+  );
+  assert.equal(conflict.exitCode, 2);
+
+  const requiredCases = [
+    [],
+    ['--plan', 'plan.json'],
+    ['--plan', 'plan.json', '--freeze', 'freeze.json'],
+    ['--plan', 'plan.json', '--freeze', 'freeze.json', '--approval', 'approval.json'],
+    [
+      '--plan',
+      'plan.json',
+      '--freeze',
+      'freeze.json',
+      '--approval',
+      'approval.json',
+      '--out-dir',
+      'protected-run',
+    ],
+  ];
+  for (const args of requiredCases) {
+    const missing = await executeCli(['dataset', 'maintenance', 'run-protected', ...args], deps);
+    assert.equal(missing.exitCode, 2, args.join(' '));
+  }
+
+  const commitBase = [
+    'dataset',
+    'maintenance',
+    'run-protected',
+    '--plan',
+    'plan.json',
+    '--freeze',
+    'freeze.json',
+    '--approval',
+    'approval.json',
+    '--out-dir',
+    'protected-run',
+    '--commit',
+  ];
+  assert.equal((await executeCli(commitBase, deps)).exitCode, 2);
+  assert.equal(
+    (await executeCli([...commitBase, '--approve-execution', 'a'.repeat(64)], deps)).exitCode,
+    2,
+  );
+  const committed = await executeCli(
+    [...commitBase, '--approve-execution', 'a'.repeat(64), '--confirm', 'bafudata@126.com'],
+    {
+      ...deps,
+      runDatasetMaintenanceProtectedImpl: async () => ({ status: 'passed' }) as never,
+    },
+  );
+  assert.equal(committed.exitCode, 0);
+
+  for (const args of [
+    ['--unknown'],
+    ['--wait-seconds', '-1'],
+    ['--wait-seconds', 'not-a-number'],
+  ]) {
+    const invalid = await executeCli(
+      [
+        'dataset',
+        'maintenance',
+        'run-protected',
+        '--plan',
+        'plan.json',
+        '--freeze',
+        'freeze.json',
+        '--approval',
+        'approval.json',
+        '--out-dir',
+        'protected-run',
+        '--status-only',
+        ...args,
+      ],
+      deps,
+    );
+    assert.equal(invalid.exitCode, 2, args.join(' '));
+  }
+});
+
 test('executeCli dispatches dataset and lifecyclemodel friction-fix commands', async () => {
   const datasetValidate = await executeCli(
     [
