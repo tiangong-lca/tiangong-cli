@@ -18,7 +18,7 @@ checkPaths:
   - src/cli.ts
   - src/main.ts
 lastReviewedAt: 2026-07-15
-lastReviewedCommit: ca0cdd7549cad9003d08fb338223ba74682955ae
+lastReviewedCommit: bd145f692b3fd11e398302dd6a1d2831e058883a
 ---
 
 # TianGong LCA CLI
@@ -32,6 +32,8 @@ Review note, 2026-07-13: maintenance scans now prove exact-count pagination even
 Review note, 2026-07-14: maintenance now includes the protected derivative-only `rebuild-derivatives` operation. V1 plans exactly one current-owner state-0 process with `action=rebuild_derivatives`, `target_mode=owner_draft`, and components `extracted_md` plus `embedding_ft`. Apply only proves guarded-RPC admission (`accepted`/`queued`); independent verify reports `pending`, `passed`, or `failed`.
 
 Review note, 2026-07-15: `dataset maintenance run-protected` adds a production-only path for one sealed private alias execution and its exact 50-target derivative closure. The protected executor is server-dispatched and fenced by the authenticated owner plus exact actor/user_id/state_code=0 and plan-closure checks; RLS remains a defense on public and independent-read surfaces. It performs one server preflight, writes an immutable local attempt marker before one admission POST, and requires status-only recovery after any marker or ambiguous response. It has no dev, legacy-alias, publication, or state-code fallback.
+
+Review note, 2026-07-15: `dataset maintenance freeze-protected` and `seal-protected-approval` close the preparation gap without adding a second execution path. Freeze preparation authenticates directly to the explicitly confirmed production project, performs only complete account/support reads plus the 50 derivative snapshot RPCs, and writes an unapproved canonical request. Approval sealing is entirely local and requires the exact human-returned UTF-8 bytes plus explicit freeze/request/text hashes and account confirmation. Only the later `run-protected` command can preflight or admit work.
 
 ## Run
 
@@ -285,7 +287,7 @@ tiangong-lca dataset maintenance plan --scope ./maintenance-scope.json --operati
 tiangong-lca dataset maintenance plan --scope ./derivative-rebuild-scope.json --operation rebuild-derivatives --out-dir /abs/path/to/derivative-rebuild --json
 tiangong-lca dataset maintenance apply --plan /abs/path/to/dataset-maintenance/maintenance-plan.json --commit --approve-plan <sha256> --confirm <current-account-email> --timeout-ms 10000 --json
 tiangong-lca dataset maintenance verify --plan /abs/path/to/dataset-maintenance/maintenance-plan.json --out-dir /abs/path/to/dataset-maintenance/verify --page-size 1000 --timeout-ms 10000 --json
-tiangong-lca dataset maintenance run-protected --plan /abs/path/to/maintenance-plan.json --freeze /abs/path/to/protected-execution-seal.json --approval /abs/path/to/protected-approval.json --out-dir /abs/path/to/protected-run --status-only --json
+tiangong-lca dataset maintenance run-protected --plan /abs/path/to/maintenance-plan.json --freeze /abs/path/to/protected-execution-freeze.json --approval /abs/path/to/protected-approval.json --out-dir /abs/path/to/protected-run --status-only --json
 tiangong-lca lifecyclemodel auto-build --input ./examples/lifecyclemodel-auto-build.request.json --out-dir /abs/path/to/lifecyclemodel-run --json
 tiangong-lca lifecyclemodel validate-build --run-dir /abs/path/to/lifecyclemodel-run --json
 tiangong-lca lifecyclemodel publish-build --run-dir /abs/path/to/lifecyclemodel-run --json
@@ -330,7 +332,7 @@ For `dataset references rewrite`, `--commit` executes the state-aware save-draft
 
 ## Dataset Maintenance
 
-`dataset maintenance plan/apply/run-protected/verify` is the row-level cleanup surface for bad imports, the fixed BAFU private alias rewrite, and protected derivative rebuilds. Ordinary planning, apply, and independent verification use the authenticated account and RLS. The protected executor is server-dispatched and additionally enforces the sealed actor, user_id, state_code=0, exact target set, and closure hashes on every write.
+`dataset maintenance plan/apply/freeze-protected/seal-protected-approval/run-protected/verify` is the row-level cleanup surface for bad imports, the fixed BAFU private alias rewrite, and protected derivative rebuilds. Ordinary planning, apply, and independent verification use the authenticated account and RLS. Protected freeze preparation reads the live production owner-draft scope directly with no Dev data replay, while approval sealing is offline. The protected executor is server-dispatched and additionally enforces the sealed actor, user_id, state_code=0, exact target set, and closure hashes on every write.
 
 ```bash
 tiangong-lca dataset maintenance plan \
@@ -356,10 +358,33 @@ tiangong-lca dataset maintenance verify \
   --timeout-ms 10000 \
   --json
 
+tiangong-lca dataset maintenance freeze-protected \
+  --plan ./protected-step2/maintenance-plan.json \
+  --toolchain-evidence ./protected-step2/toolchain-evidence.json \
+  --expected-project-ref <production-project-ref> \
+  --confirm <current-account-email> \
+  --out-dir ./protected-step2/freeze \
+  --page-size 1000 \
+  --timeout-ms 10000 \
+  --json
+
+# After a human returns protected-approval-request.txt byte-for-byte as human-approval.txt:
+tiangong-lca dataset maintenance seal-protected-approval \
+  --freeze ./protected-step2/freeze/protected-execution-freeze.json \
+  --approval-request ./protected-step2/freeze/protected-approval-request.json \
+  --human-approval ./protected-step2/human-approval.txt \
+  --approve-freeze-file <freeze-file-sha256> \
+  --approve-request <approval-request-sha256> \
+  --approve-text <approval-text-sha256> \
+  --confirm <current-account-email> \
+  --approved-at <approved-at-utc-from-request> \
+  --out-dir ./protected-step2/approval \
+  --json
+
 tiangong-lca dataset maintenance run-protected \
   --plan ./protected-step2/maintenance-plan.json \
-  --freeze ./protected-step2/protected-execution-seal.json \
-  --approval ./protected-step2/protected-approval.json \
+  --freeze ./protected-step2/freeze/protected-execution-freeze.json \
+  --approval ./protected-step2/approval/protected-approval.json \
   --out-dir ./protected-step2/run \
   --commit \
   --approve-execution <approved-execution-sha256> \
@@ -372,15 +397,19 @@ tiangong-lca dataset maintenance run-protected \
 
 tiangong-lca dataset maintenance run-protected \
   --plan ./protected-step2/maintenance-plan.json \
-  --freeze ./protected-step2/protected-execution-seal.json \
-  --approval ./protected-step2/protected-approval.json \
+  --freeze ./protected-step2/freeze/protected-execution-freeze.json \
+  --approval ./protected-step2/approval/protected-approval.json \
   --out-dir ./protected-step2/run \
   --status-only \
   --wait-seconds 60 \
   --json
 ```
 
-`run-protected` is a separate one-shot path for an already reviewed and sealed production execution; it does not replace ordinary planning. Both modes require the exact plan, freeze/seal, approval artifact, and private output directory. Commit mode additionally requires `--commit`, the exact approved execution identity through `--approve-execution`, and the authenticated account email through `--confirm`. `--status-only` is mutually exclusive with `--commit` and performs no preflight or admission.
+`run-protected` is a separate one-shot path for an already reviewed and sealed production execution; it does not replace ordinary planning. Both modes require the exact plan, freeze artifact, approval artifact, and private output directory. Commit mode additionally requires `--commit`, the exact approved execution identity through `--approve-execution`, and the authenticated account email through `--confirm`. `--status-only` is mutually exclusive with `--commit` and performs no preflight or admission.
+
+`freeze-protected` is the only supported generator for this fixed protected profile. Its toolchain evidence must be canonical JSON with schema `dataset-alias-protected-toolchain-evidence.v1`, production project ref, released-and-read-back database commit/evidence, the currently running published CLI version/commit/evidence, and the merged root-workspace integration commit/Issue. The fixed BAFU profile also has a compiled production project allowlist; the CLI rejects a Dev or arbitrary project even if the operator supplies matching flag/evidence values. The command verifies the exact 52 actions, two batches, six support snapshots, projected reference closure, and stable 23-flow + 27-process derivative snapshots; every derivative snapshot must have the same primary-row `modified_at` as the immediately preceding complete account census. It writes the entire private immutable alias-request, full baseline, freeze, unapproved request JSON/TXT, and final report into a sibling staging directory and atomically exposes the new output directory only after every file succeeds; preflight, gate, admission, mutation, and approval-artifact counts are all zero.
+
+`seal-protected-approval` receives no environment or HTTP client. The freeze command puts one canonical approval-authority `approved_at_utc` into the request JSON, request hash, and human-visible approval text before review; seal requires `--approved-at` to equal that already approved value. The same text therefore cannot be resealed with another timestamp to mint a second database admission identity. The seal report records its actual generation time separately from this pre-authorized identity timestamp. Both commands hash raw file bytes, reject invalid UTF-8, publish their completed output directories atomically, and reject non-canonical freeze/request files, any changed whitespace or final newline, mismatched explicit hash/account/time bindings, and all three superseded historical Step-2 plan identities. Commit-mode `run-protected` rejects the same historical identities, so an old freeze/approval cannot bypass the fresh preparation chain; status-only remains read-only and available for recovery. Seal writes the canonical approval plus a local report, but does not submit execution. Human approval, sealing, and later execution remain separate events.
 
 Before requesting preflight, the command validates the sealed production project, full current-user RLS before-state, support closure, and exact derivative baseline. The server then returns the three expected gate digests and a token valid for at most 180 seconds; the CLI captures and compares the live gate receipts before admission. The server-dispatched write remains fenced to the authenticated actor's exact `user_id`, `state_code=0` rows and sealed plan/closure; independent readback still uses RLS. The CLI writes an immutable local submission marker and sends at most one admission POST. A marker, admission timeout, connection loss, or ambiguous admission response permanently switches that local run to status-only recovery; status-read failures may be polled only within the configured wait window and never cause a second admission or fallback to dev or the legacy whole-plan RPC. The default status polling interval is 10 seconds.
 

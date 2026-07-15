@@ -1005,6 +1005,205 @@ test('executeCli dispatches protected maintenance without a retry or dev fallbac
   }
 });
 
+test('executeCli separates production read-only freeze from offline approval sealing', async () => {
+  const deps = makeDeps();
+  const freezeHelp = await executeCli(
+    ['dataset', 'maintenance', 'freeze-protected', '--help'],
+    deps,
+  );
+  assert.equal(freezeHelp.exitCode, 0);
+  assert.match(freezeHelp.stdout, /only authenticated table reads/u);
+  assert.match(freezeHelp.stdout, /never emits an approval artifact/u);
+
+  const sealHelp = await executeCli(
+    ['dataset', 'maintenance', 'seal-protected-approval', '--help'],
+    deps,
+  );
+  assert.equal(sealHelp.exitCode, 0);
+  assert.match(sealHelp.stdout, /byte-for-byte without trimming/u);
+  assert.match(sealHelp.stdout, /zero authentication, network/u);
+
+  let observedFreeze: unknown = null;
+  const freeze = await executeCli(
+    [
+      'dataset',
+      'maintenance',
+      'freeze-protected',
+      '--plan',
+      './maintenance-plan.json',
+      '--toolchain-evidence',
+      './toolchain.json',
+      '--expected-project-ref',
+      'production-ref',
+      '--confirm',
+      'bafudata@126.com',
+      '--out-dir',
+      './protected-freeze',
+      '--page-size',
+      '250',
+      '--timeout-ms',
+      '12000',
+      '--json',
+    ],
+    {
+      ...deps,
+      freezeDatasetMaintenanceProtectedImpl: async (options) => {
+        observedFreeze = options;
+        return { status: 'ready_for_human_approval', marker: 'freeze' } as never;
+      },
+    },
+  );
+  assert.equal(freeze.exitCode, 0);
+  assert.deepEqual(JSON.parse(freeze.stdout), {
+    status: 'ready_for_human_approval',
+    marker: 'freeze',
+  });
+  assert.deepEqual(observedFreeze, {
+    planPath: './maintenance-plan.json',
+    toolchainEvidencePath: './toolchain.json',
+    outDir: './protected-freeze',
+    expectedProjectRef: 'production-ref',
+    confirm: 'bafudata@126.com',
+    cliVersion: '0.0.25',
+    pageSize: 250,
+    timeoutMs: 12000,
+    env: deps.env,
+    fetchImpl: deps.fetchImpl,
+  });
+
+  const freezeRequiredCases = [
+    [],
+    ['--plan', 'plan.json'],
+    ['--plan', 'plan.json', '--toolchain-evidence', 'toolchain.json'],
+    [
+      '--plan',
+      'plan.json',
+      '--toolchain-evidence',
+      'toolchain.json',
+      '--expected-project-ref',
+      'production-ref',
+    ],
+    [
+      '--plan',
+      'plan.json',
+      '--toolchain-evidence',
+      'toolchain.json',
+      '--expected-project-ref',
+      'production-ref',
+      '--confirm',
+      'bafudata@126.com',
+    ],
+  ];
+  for (const args of freezeRequiredCases) {
+    const result = await executeCli(['dataset', 'maintenance', 'freeze-protected', ...args], deps);
+    assert.equal(result.exitCode, 2, args.join(' '));
+  }
+  for (const args of [['--unknown'], ['--page-size', '0']]) {
+    const result = await executeCli(
+      [
+        'dataset',
+        'maintenance',
+        'freeze-protected',
+        '--plan',
+        'plan.json',
+        '--toolchain-evidence',
+        'toolchain.json',
+        '--expected-project-ref',
+        'production-ref',
+        '--confirm',
+        'bafudata@126.com',
+        '--out-dir',
+        'out',
+        ...args,
+      ],
+      deps,
+    );
+    assert.equal(result.exitCode, 2, args.join(' '));
+  }
+
+  const hash = 'a'.repeat(64);
+  let observedSeal: unknown = null;
+  const seal = await executeCli(
+    [
+      'dataset',
+      'maintenance',
+      'seal-protected-approval',
+      '--freeze',
+      './freeze.json',
+      '--approval-request',
+      './request.json',
+      '--human-approval',
+      './human.txt',
+      '--approve-freeze-file',
+      hash,
+      '--approve-request',
+      hash,
+      '--approve-text',
+      hash,
+      '--confirm',
+      'bafudata@126.com',
+      '--approved-at',
+      '2026-07-15T12:00:00.000Z',
+      '--out-dir',
+      './approval',
+      '--json',
+    ],
+    {
+      ...deps,
+      sealDatasetMaintenanceProtectedApprovalImpl: async (options) => {
+        observedSeal = options;
+        return { status: 'sealed', marker: 'seal' } as never;
+      },
+    },
+  );
+  assert.equal(seal.exitCode, 0);
+  assert.deepEqual(JSON.parse(seal.stdout), { status: 'sealed', marker: 'seal' });
+  assert.deepEqual(observedSeal, {
+    freezePath: './freeze.json',
+    approvalRequestPath: './request.json',
+    humanApprovalPath: './human.txt',
+    outDir: './approval',
+    approveFreezeFile: hash,
+    approveRequest: hash,
+    approveText: hash,
+    confirm: 'bafudata@126.com',
+    approvedAtUtc: '2026-07-15T12:00:00.000Z',
+  });
+
+  const sealFlags = [
+    '--freeze',
+    'freeze.json',
+    '--approval-request',
+    'request.json',
+    '--human-approval',
+    'human.txt',
+    '--approve-freeze-file',
+    hash,
+    '--approve-request',
+    hash,
+    '--approve-text',
+    hash,
+    '--confirm',
+    'bafudata@126.com',
+    '--approved-at',
+    '2026-07-15T12:00:00.000Z',
+    '--out-dir',
+    'approval',
+  ];
+  for (let end = 0; end < sealFlags.length; end += 2) {
+    const result = await executeCli(
+      ['dataset', 'maintenance', 'seal-protected-approval', ...sealFlags.slice(0, end)],
+      deps,
+    );
+    assert.equal(result.exitCode, 2, String(end));
+  }
+  const invalidSeal = await executeCli(
+    ['dataset', 'maintenance', 'seal-protected-approval', ...sealFlags, '--unknown'],
+    deps,
+  );
+  assert.equal(invalidSeal.exitCode, 2);
+});
+
 test('executeCli dispatches dataset and lifecyclemodel friction-fix commands', async () => {
   const datasetValidate = await executeCli(
     [

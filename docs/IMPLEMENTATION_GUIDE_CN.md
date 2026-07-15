@@ -17,7 +17,7 @@ checkPaths:
   - src/**
   - test/**
 lastReviewedAt: 2026-07-15
-lastReviewedCommit: ca0cdd7549cad9003d08fb338223ba74682955ae
+lastReviewedCommit: bd145f692b3fd11e398302dd6a1d2831e058883a
 related:
   - ../AGENTS.md
   - ../.docpact/config.yaml
@@ -35,6 +35,8 @@ Review note, 2026-07-13: maintenance account scan 已统一为 fail-closed exact
 Review note, 2026-07-14: `rebuild-derivatives` 已进入 maintenance v1 固定契约。它只接受一个 current-owner、`state_code=0`、`table=processes`、`action=rebuild_derivatives`、`target_mode=owner_draft` 的 exact row，components 必须恰好为 `extracted_md` 与 `embedding_ft`。plan 冻结 action-scoped DB snapshot；apply 只通过 guarded RPC 获得 durable `accepted`/`queued`，不宣称重建完成；verify 独立输出 `pending`/`passed`/`failed`。本路径不写 primary process，也不允许 Edge/admin/raw queue/SQL/REST mutation fallback。
 
 Review note, 2026-07-15: `dataset maintenance run-protected` 为 seal 绑定且已经人工批准的 private alias 计划增加 production-only 的一次性执行与恢复契约。受保护写入由服务器调度，并以认证 owner 及精确 actor/user_id/state_code=0、plan/closure 栅栏限制范围；RLS 继续保护公开入口与独立读回。它在 preflight 前完成完整扫描，随后使用服务器给出的三项 gate 期望摘要与最长 180 秒 token 捕获 live receipt，写入 immutable attempt marker 后最多发送一次 admission POST；marker 或不明确 admission 响应之后只能 `--status-only`。终态必须精确证明 52 行、59 exchanges、55 audits 与 50 个 derivative targets（23 flows + 27 processes），且不回退 dev、旧 alias RPC、发布或 state-code 修改。
+
+Review note, 2026-07-15: `dataset maintenance freeze-protected` 与 `seal-protected-approval` 把生产只读冻结和人工批准记录拆成两个不可混淆的命令。前者只对显式确认的 production project 做完整 owner-draft census/support/projected-reference 与 23+27 derivative snapshot 读取，输出未批准请求，绝不 preflight/gate/admit/mutate；后者不接收 env 或 HTTP client，只按原始 UTF-8 字节核对人类返回文本及 freeze/request/text/account/timestamp 后生成 approval。真正执行仍只属于后续 `run-protected`。
 
 ## 1. 目标
 
@@ -101,6 +103,9 @@ tiangong-lca
     references rewrite
     maintenance plan
     maintenance apply
+    maintenance freeze-protected
+    maintenance seal-protected-approval
+    maintenance run-protected
     maintenance verify
   lifecyclemodel
     auto-build
@@ -157,7 +162,7 @@ tiangong-lca
 | `tiangong-lca dataset import-lca convert` | 外部 LCA 包转换入口；调用 `tidas-tools import_lca` 生成 TIDAS/ILCD/conversion report；tidas-tools >= 0.0.28 默认产出每个 process 的依赖子目录（可用 `--no-process-bundles` 关闭、`--process-bundles-dir` 自定义目录），便于后续 entity-level curation |
 | `tiangong-lca dataset references rewrite` | 本地 process / lifecyclemodel rows 的 flow reference rewrite、patch evidence 输出，并可选走 state-aware save-draft commit |
 | `tiangong-lca dataset maintenance clear-account` | 已实现的当前账号 draft 清理入口；先生成当前用户 RLS 可见 snapshot，默认 dry-run，只有显式 `--commit --confirm <当前账号邮箱>` 才按 `lifecyclemodels -> processes -> flows -> sources -> contacts` 顺序执行。普通 dataset rows 通过 `app_dataset_delete` / `cmd_dataset_delete` 删除，读回验证剩余行数；`unitgroups` / `flowproperties` 默认保护不删 |
-| `tiangong-lca dataset maintenance plan/apply/run-protected/verify` | 已实现的 row-level 维护入口。普通 V1 维护通过当前账号 RLS 冻结 exact draft rows 并走平台 `save_draft` / `delete`；seal 绑定的 production `merge-support-aliases` 必须由服务器调度的 `run-protected` 以唯一 durable attempt/admission identity 执行和恢复，并以 actor/user_id/state_code=0 与精确 plan/closure 栅栏保护写入，RLS 用于公开入口和独立读回；`rebuild-derivatives` V1 仍只允许一个 owner-draft process。所有路径共享不可变 plan、显式审批、durable proof 与独立 readback，且不发布 FP/UG |
+| `tiangong-lca dataset maintenance plan/apply/freeze-protected/seal-protected-approval/run-protected/verify` | 已实现的 row-level 维护入口。普通 V1 维护通过当前账号 RLS 冻结 exact draft rows 并走平台 `save_draft` / `delete`；固定 BAFU protected profile 先由 `freeze-protected` 直接读取 production owner-draft 状态并生成未批准请求，再由完全离线的 `seal-protected-approval` 记录人类逐字节批准，最后只能由服务器调度的 `run-protected` 以唯一 durable attempt/admission identity 执行和恢复。写入以 actor/user_id/state_code=0 与精确 plan/closure 栅栏保护，RLS 用于公开入口和独立读回；`rebuild-derivatives` V1 仍只允许一个 owner-draft process。所有路径共享不可变 plan、显式审批、durable proof 与独立 readback，且不发布 FP/UG |
 | `tiangong-lca lifecyclemodel auto-build` | 本地 lifecyclemodel local-run intake、graph 推断、reference process 选择、`json_ordered` artifact 输出 |
 | `tiangong-lca lifecyclemodel validate-build` | 本地 lifecyclemodel build run 校验重跑、per-model 校验报告与 aggregate report 输出 |
 | `tiangong-lca lifecyclemodel publish-build` | 本地 lifecyclemodel publish handoff、publish bundle/request/intent 产出、validation 摘要复用 |
@@ -223,6 +228,9 @@ tiangong-lca
 - `tiangong-lca dataset references rewrite` 已可执行
 - `tiangong-lca dataset maintenance plan` 已可执行
 - `tiangong-lca dataset maintenance apply` 已可执行
+- `tiangong-lca dataset maintenance freeze-protected` 已可执行（production 只读）
+- `tiangong-lca dataset maintenance seal-protected-approval` 已可执行（完全离线）
+- `tiangong-lca dataset maintenance run-protected` 已可执行
 - `tiangong-lca dataset maintenance verify` 已可执行
 
 注意：
@@ -243,7 +251,7 @@ tiangong-lca
 - 已实现的 `dataset curation-queue build/next/verify` 把 Foundry external dataset import 的 support / flow / process rows 收口成 entity-level queue artifact contract：`build` 生成 `curation-queue-manifest.json`、`curation-queue-tasks.jsonl`、`curation-queue-locks.json`、`curation-queue-blockers.jsonl`，以及每个 entity 的 `input.jsonl`、`closure.json`、`entity-run-plan.json`；`next` 读取 task checkpoint 并返回下一条 runnable entity task；`verify` 确认目标 scope 的 checkpoint 完成且没有 build blocker。CLI 只负责稳定状态机、依赖闭包、锁和 blocker；AI authoring 仍必须通过 skill/Codex 输出 structured patch 或 build plan，并在 deterministic apply、schema/QA、prewrite verify、readback 后才允许进入远端写入。
 - 已实现的 `dataset references rewrite` 把 process / lifecyclemodel rows 中的 flow reference rewrite 收口到一个 deterministic 本地入口，默认只写 patch artifacts，只有显式 `--commit` 时才调用 state-aware save-draft 写入路径
 - 已实现的 `dataset maintenance clear-account` 只覆盖当前认证账号的 draft 清空场景：CLI 必须先以 exact-count 分页证明五个可删除表的 RLS 可见快照完整，才写出 `rls-visible-snapshot.json` / `dry-run-report.json`；commit 时要求 `--confirm` 匹配当前账号邮箱，并逐行调用平台 `app_dataset_delete`。除逐表检查外，结束时必须重新扫描全部五表，只有完整 aggregate proof 且 `row_count=0` 才报告成功；若终检失败而之前已有删除，仍写出 `completed_with_failures` 审计报告。初始扫描不完整时不生成快照/approval，且零删除。该命令不绕过 RLS，不直接 REST DELETE，不删除默认保护的 `unitgroups` / `flowproperties`。
-- 已实现的 `dataset maintenance plan/apply/run-protected/verify` 是错误导入清理、redo 与受保护衍生重建的 row-level 归属面。`plan` 先证明当前用户 account scan 完整，再固化 scope manifest、RLS 可见快照、completeness proof、引用影响、保护行、不可变 plan 和 dry-run。普通 `apply` 只接受 plan SHA-256 与当前账号邮箱都匹配的显式 commit；seal 绑定的 production alias 计划必须走 `run-protected`，其 `--status-only` 恢复不做 preflight 或 admission。`verify` 以新的完整 account readback 或 action-scoped DB readback 独立检查结果，不依赖 apply 的内存或报告结论。Foundry 只保存 task ledger、调用命令和报告，不实现删除或衍生重建逻辑。
+- 已实现的 `dataset maintenance plan/apply/freeze-protected/seal-protected-approval/run-protected/verify` 是错误导入清理、redo 与受保护衍生重建的 row-level 归属面。`plan` 先证明当前用户 account scan 完整，再固化 scope manifest、RLS 可见快照、completeness proof、引用影响、保护行、不可变 plan 和 dry-run。普通 `apply` 只接受 plan SHA-256 与当前账号邮箱都匹配的显式 commit；固定 production alias profile 必须依次经过 production 只读 `freeze-protected`、人类逐字批准、完全离线 `seal-protected-approval`，然后才可进入 `run-protected`，其 `--status-only` 恢复不做 preflight 或 admission。`verify` 以新的完整 account readback 或 action-scoped DB readback 独立检查结果，不依赖 apply 的内存或报告结论。Foundry 只调用已发布 CLI、保存 task ledger/报告/产物，不读取数据库 env、直调 RPC 或重算 canonical hash。
 - `merge-support-aliases` 不是通用 alias 合并器：当前只接受 BAFU `time` 与 `length_time` 两个 batch。计划必须精确覆盖 25 + 27 行和 20 + 39 条 exchange，并保留受影响 process 中的 309 条其他 exchange。原 V1 adapter 只保留冻结请求/artifact 兼容契约，不能作为 seal 绑定 production 执行的 fallback；受保护路径绝不降级为旧 `cmd_dataset_alias_plan_guarded`、逐 dimension 或逐行 `save_draft`。
 - 已实现的 `lifecyclemodel auto-build` 走本地只读、artifact-first 路径，输入固定为 local run manifest，不依赖 Python、MCP、KB、LLM 或远端 CRUD
 - `lifecyclemodel auto-build` 当前负责 graph 推断、reference process 选择、`@multiplicationFactor` 计算与 `json_ordered` lifecyclemodel 产物输出，并保留 `run-plan.json`、`resolved-manifest.json`、`selection/selection-brief.md`、`discovery/reference-model-summary.json`、`connections.json`、`process-catalog.json` 等 CLI 契约
@@ -279,7 +287,7 @@ tiangong-lca
 - 现有命令族里已经没有残留的 Python / shell validation fallback；其余 review / build / publish CLI 面已经进入可执行状态，未迁移子命令只剩 `auth` / `job` 这类 placeholder surface
 - 这样做的目的不是“假装已完成”，而是先固定命令树，再逐个把 workflow 迁入 TypeScript CLI
 
-### 2.1.1 `dataset maintenance plan/apply/run-protected/verify` v1 契约
+### 2.1.1 `dataset maintenance plan/apply/freeze-protected/seal-protected-approval/run-protected/verify` v1 契约
 
 公开命令面固定为：
 
@@ -300,10 +308,32 @@ tiangong-lca dataset maintenance apply \
   [--timeout-ms <n>] \
   [--json]
 
+tiangong-lca dataset maintenance freeze-protected \
+  --plan ./protected-step2/maintenance-plan.json \
+  --toolchain-evidence ./protected-step2/toolchain-evidence.json \
+  --expected-project-ref <production-project-ref> \
+  --confirm <current-account-email> \
+  --out-dir ./protected-step2/freeze \
+  [--page-size <n>] \
+  [--timeout-ms <n>] \
+  [--json]
+
+tiangong-lca dataset maintenance seal-protected-approval \
+  --freeze ./protected-step2/freeze/protected-execution-freeze.json \
+  --approval-request ./protected-step2/freeze/protected-approval-request.json \
+  --human-approval ./protected-step2/human-approval.txt \
+  --approve-freeze-file <freeze-file-sha256> \
+  --approve-request <approval-request-sha256> \
+  --approve-text <approval-text-sha256> \
+  --confirm <current-account-email> \
+  --approved-at <approved-at-utc-from-request> \
+  --out-dir ./protected-step2/approval \
+  [--json]
+
 tiangong-lca dataset maintenance run-protected \
   --plan ./protected-step2/maintenance-plan.json \
-  --freeze ./protected-step2/protected-execution-seal.json \
-  --approval ./protected-step2/protected-approval.json \
+  --freeze ./protected-step2/freeze/protected-execution-freeze.json \
+  --approval ./protected-step2/approval/protected-approval.json \
   --out-dir ./protected-step2/run \
   --commit \
   --approve-execution <approved-execution-sha256> \
@@ -316,8 +346,8 @@ tiangong-lca dataset maintenance run-protected \
 
 tiangong-lca dataset maintenance run-protected \
   --plan ./protected-step2/maintenance-plan.json \
-  --freeze ./protected-step2/protected-execution-seal.json \
-  --approval ./protected-step2/protected-approval.json \
+  --freeze ./protected-step2/freeze/protected-execution-freeze.json \
+  --approval ./protected-step2/approval/protected-approval.json \
   --out-dir ./protected-step2/run \
   --status-only \
   [--wait-seconds <n>] \
@@ -336,7 +366,8 @@ tiangong-lca dataset maintenance verify \
 
 Scope 与保护规则：
 
-- 普通维护的远端读写使用当前认证用户 session 与数据库 RLS，不接受 target user 覆盖；`run-protected` 的写入由服务器调度，但必须同时匹配认证 actor、精确 user_id/state_code=0、冻结目标集与 plan/closure 栅栏，公开入口和独立读回继续受 RLS 保护。
+- 普通维护的远端读写使用当前认证用户 session 与数据库 RLS，不接受 target user 覆盖；固定 BAFU profile 除显式确认 production project ref、toolchain evidence 与账号邮箱外，还在 CLI 内置 production project allowlist，Dev 或任意其他 project 即使三者自洽也不能 freeze 或 commit；远端准备只允许表级读和 `cmd_dataset_derivative_rebuild_snapshot`，不经过 Dev 数据回放；`seal-protected-approval` 完全离线；三个已废弃的历史 Step-2 plan identity 在 freeze、seal 与 commit-mode `run-protected` 三处都被拒绝，旧 approval 不能绕过新冻结/新审批；`run-protected` 的写入由服务器调度，但必须同时匹配认证 actor、精确 user_id/state_code=0、冻结目标集与 plan/closure 栅栏，公开入口和独立读回继续受 RLS 保护。
+- freeze 在请求人工 review 前先把唯一 canonical approval-authority `approved_at_utc` 写入 request JSON、request hash 与人类可见文本；seal 的 `--approved-at` 必须等于这个已被逐字批准的值，不能在批准后另换时间生成第二个 identity。seal report 另用 `generated_at_utc` 记录真实封存时间，不把 authority timestamp 冒充为 seal 时刻。artifact SHA 按原始文件字节计算，非法 UTF-8 直接拒绝；因此空格、末尾换行、编码字节或时间变化都不能绕过 `(actor, approval_identity)` 的 one-shot 唯一性。
 - 每条 scope row 必须给出表、exact `id`、exact `version`、expected owner、expected `state_code=0` 与 operator-authored intended action/reason；`--operation` 只接受 `delete`、`retire`、`redo-import`、`repair-references`、`merge-support-aliases`、`rebuild-derivatives`，且不允许只按 broad `state_code=0` 或其他宽过滤器清理。
 - `contacts`、`sources`、`flows`、`processes` 的普通维护只允许 `save_draft` 与 `delete`；`merge-support-aliases` 只允许固定 BAFU closure 内的 `flowproperties`、`flows`、`processes` 执行 `update_json_ordered`。
 - `merge-support-aliases` 与 `rebuild-derivatives` scope 必须显式给出 `target_mode: "owner_draft"`，其他 operation 禁止携带该字段。计划、审批、本地 proof 与 RPC request 都保留该 mode；数据库只接受匹配的 owner-draft visibility。

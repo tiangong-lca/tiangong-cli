@@ -20,7 +20,7 @@ checkPaths:
   - scripts/docpact-gate.sh
   - scripts/install-git-hooks.sh
 lastReviewedAt: 2026-07-15
-lastReviewedCommit: 81dcc80e7e2dd4e075446d820a0c836811d98567
+lastReviewedCommit: bd145f692b3fd11e398302dd6a1d2831e058883a
 related:
   - ../AGENTS.md
   - ../.docpact/config.yaml
@@ -52,6 +52,8 @@ Review note, 2026-06-04: `dataset curation-queue next/verify` does not change re
 Review note, 2026-07-14: Issue #165's guarded derivative-rebuild command requires no new release secret, token, Trusted Publisher setting, workflow file, or tag rule. Database RPC deployment remains a cross-repo runtime prerequisite, not npm release setup.
 
 Review note, 2026-07-15: Issue #168's protected owner-draft runner requires no new npm secret, GitHub environment, Trusted Publisher setting, workflow filename, or tag rule. The released database-engine#262 production contract is a runtime prerequisite for the later CLI patch release, not a change to release setup.
+
+Review note, 2026-07-15: Issue #171's protected freeze/seal commands require no new npm secret, GitHub environment, Trusted Publisher setting, workflow filename, tag rule, database service-role credential, or alternate CLI authentication variable. Freeze reuses the existing user-session contract; seal receives no authentication or network input. The feature still follows a normal feature PR, separate version-bump PR, automated tag, and npm Trusted Publishing path.
 
 Review note, 2026-07-13: exact-count maintenance pagination requires no repository secret, Trusted Publisher, environment, workflow filename, or tag-semantics change.
 

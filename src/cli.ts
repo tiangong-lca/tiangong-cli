@@ -281,7 +281,9 @@ import {
 } from './lib/dataset-maintenance-clear-account.js';
 import { runDatasetMaintenancePlan } from './lib/dataset-maintenance-plan.js';
 import { runDatasetMaintenanceApply } from './lib/dataset-maintenance-apply.js';
+import { freezeDatasetMaintenanceProtected } from './lib/dataset-maintenance-protected-freeze.js';
 import { runDatasetMaintenanceProtected } from './lib/dataset-maintenance-protected-run.js';
+import { sealDatasetMaintenanceProtectedApproval } from './lib/dataset-maintenance-protected-seal.js';
 import { runDatasetMaintenanceVerify } from './lib/dataset-maintenance-verify.js';
 import type { DatasetMaintenanceOperation } from './lib/dataset-maintenance-contract.js';
 import {
@@ -465,7 +467,9 @@ export type CliDeps = {
   ) => Promise<DatasetMaintenanceClearAccountReport>;
   runDatasetMaintenancePlanImpl?: typeof runDatasetMaintenancePlan;
   runDatasetMaintenanceApplyImpl?: typeof runDatasetMaintenanceApply;
+  freezeDatasetMaintenanceProtectedImpl?: typeof freezeDatasetMaintenanceProtected;
   runDatasetMaintenanceProtectedImpl?: typeof runDatasetMaintenanceProtected;
+  sealDatasetMaintenanceProtectedApprovalImpl?: typeof sealDatasetMaintenanceProtectedApproval;
   runDatasetMaintenanceVerifyImpl?: typeof runDatasetMaintenanceVerify;
   runDatasetSourceUploadAttachmentsImpl?: (
     options: RunDatasetSourceUploadAttachmentsOptions,
@@ -556,6 +560,7 @@ Examples:
   tiangong-lca dataset references rewrite --input ./rows.jsonl --from flow:<old-id>@<old-version> --to flow:<new-id>@<new-version> --out-dir /abs/path/to/dataset-rewrite
   tiangong-lca dataset maintenance clear-account --out-dir /abs/path/to/account-clear --json
   tiangong-lca dataset maintenance plan --scope ./maintenance-scope.json --operation merge-support-aliases --out-dir /abs/path/to/dataset-maintenance
+  tiangong-lca dataset maintenance freeze-protected --plan ./maintenance-plan.json --toolchain-evidence ./toolchain.json --expected-project-ref <production-ref> --confirm bafudata@126.com --out-dir /abs/path/to/protected-freeze
   tiangong-lca dataset maintenance run-protected --plan ./maintenance-plan.json --freeze ./protected-execution-seal.json --approval ./protected-approval.json --out-dir /abs/path/to/protected-run --status-only
   tiangong-lca lifecyclemodel auto-build --input ./lifecyclemodel-auto-build.request.json --out-dir /abs/path/to/lifecyclemodel-run
   tiangong-lca lifecyclemodel validate-build --run-dir /abs/path/to/lifecyclemodel-run
@@ -715,6 +720,8 @@ Implemented Subcommands:
   maintenance clear-account Dry-run or clear current authenticated account-owned dataset rows through RLS
   maintenance plan    Build an immutable, RLS-visible row-level maintenance plan
   maintenance apply   Execute an explicitly approved maintenance plan through current-user RLS
+  maintenance freeze-protected Read and freeze one exact production owner-draft plan without admitting or mutating it
+  maintenance seal-protected-approval Record byte-exact human approval entirely offline
   maintenance run-protected Run or inspect one sealed, one-shot production maintenance execution
   maintenance verify  Read back affected rows and references against the immutable plan
 
@@ -743,25 +750,31 @@ Examples:
   tiangong-lca dataset references refresh-remote --input ./rows.jsonl --out ./rows.refreshed.jsonl --out-dir ./dataset-reference-refresh --help
   tiangong-lca dataset maintenance clear-account --out-dir ./account-clear --json --help
   tiangong-lca dataset maintenance plan --scope ./maintenance-scope.json --operation merge-support-aliases --out-dir ./dataset-maintenance --help
+  tiangong-lca dataset maintenance freeze-protected --help
+  tiangong-lca dataset maintenance seal-protected-approval --help
   tiangong-lca dataset maintenance run-protected --help
 `.trim();
 }
 
 function renderDatasetMaintenanceHelp(): string {
   return `Usage:
-  tiangong-lca dataset maintenance <clear-account|plan|apply|run-protected|verify> [options]
+  tiangong-lca dataset maintenance <clear-account|plan|apply|freeze-protected|seal-protected-approval|run-protected|verify> [options]
 
 Actions:
   clear-account Dry-run or delete current authenticated account-owned lifecyclemodels, processes, flows, sources, and contacts.
   plan    Build an immutable maintenance plan from a scope manifest, visible remote snapshot, dependency impact report, and intended operation.
   apply   Execute or durably admit an ordinary approved plan through current-user RLS and platform dataset command paths.
+  freeze-protected Re-read the exact production owner-draft census/support/50 derivatives and generate an unapproved freeze request.
+  seal-protected-approval Record a byte-exact human response into an approval artifact with no authentication or network access.
   run-protected Run or inspect one sealed production execution with one-shot admission and terminal derivative proof.
   verify  Re-fetch rows, references, or derivative request state and report passed, pending, or failed independently of apply.
 
 Safety:
-  plan and verify are read-only.
+  plan, verify, and freeze-protected are read-only; seal-protected-approval is local-only.
   apply is commit-only and requires --commit, the exact plan SHA-256 via --approve-plan, and the current account email via --confirm.
   A sealed production merge-support-aliases execution must use run-protected; apply is not its fallback.
+  freeze-protected is production-only and never calls preflight, gate, admission, execution, or mutation RPCs.
+  seal-protected-approval only records the exact human-approved bytes; it never authenticates, connects, or submits execution.
   run-protected is production-only: authenticated owner context plus server-side actor/user_id/state_code=0 and exact-plan closure fences protect writes; RLS remains a defense on public and independent-read surfaces. It never falls back to dev, a legacy alias RPC, or a second admission POST.
 
 Required Artifact Contract:
@@ -780,6 +793,8 @@ Examples:
   tiangong-lca dataset maintenance plan --scope ./maintenance-scope.json --operation repair-references --out-dir ./dataset-maintenance
   tiangong-lca dataset maintenance plan --scope ./derivative-rebuild-scope.json --operation rebuild-derivatives --out-dir ./derivative-rebuild
   tiangong-lca dataset maintenance apply --plan ./dataset-maintenance/maintenance-plan.json --commit --approve-plan <sha256> --confirm user@example.com
+  tiangong-lca dataset maintenance freeze-protected --plan ./maintenance-plan.json --toolchain-evidence ./toolchain.json --expected-project-ref <production-ref> --confirm bafudata@126.com --out-dir ./protected-freeze
+  tiangong-lca dataset maintenance seal-protected-approval --freeze ./protected-freeze/protected-execution-freeze.json --approval-request ./protected-freeze/protected-approval-request.json --human-approval ./human-approval.txt --approve-freeze-file <sha256> --approve-request <sha256> --approve-text <sha256> --confirm bafudata@126.com --approved-at <iso> --out-dir ./protected-approval
   tiangong-lca dataset maintenance run-protected --plan ./maintenance-plan.json --freeze ./protected-execution-seal.json --approval ./protected-approval.json --out-dir ./protected-run --status-only
   tiangong-lca dataset maintenance verify --plan ./dataset-maintenance/maintenance-plan.json --out-dir ./dataset-maintenance/verify
 `.trim();
@@ -827,6 +842,65 @@ Options:
   -h, --help
 
 Outputs include approval-record.json and commit-report.json alongside an append-only action or admission ledger.
+`.trim();
+}
+
+function renderDatasetMaintenanceFreezeProtectedHelp(): string {
+  return `Usage:
+  tiangong-lca dataset maintenance freeze-protected --plan <file> --toolchain-evidence <file> --expected-project-ref <ref> --confirm <email> --out-dir <dir> [options]
+
+Behavior:
+  Authenticates directly to the explicitly confirmed production project and re-reads the complete
+  owner-draft account census, six support snapshots, projected reference closure, and the stable
+  23-flow + 27-process derivative snapshot set. It writes a canonical protected freeze and an
+  unapproved byte-exact human approval request. It never emits an approval artifact.
+
+Required:
+  --plan <file>                 Ready owner-draft merge-support-aliases maintenance plan
+  --toolchain-evidence <file>   Canonical released DB/CLI/root-integration evidence
+  --expected-project-ref <ref>  Explicit production Supabase project ref
+  --confirm <email>             Exact authenticated owner email
+  --out-dir <dir>               New private immutable artifact directory
+
+Options:
+  --page-size <n>               Complete account scan page size, 1-5000
+  --timeout-ms <n>              Positive authentication/read timeout in milliseconds
+  --json                        Print compact JSON
+  -h, --help
+
+Remote safety:
+  This command uses only authenticated table reads and cmd_dataset_derivative_rebuild_snapshot.
+  Preflight, gate, admission, execution, save-draft, delete, state change, and all mutation calls are zero.
+`.trim();
+}
+
+function renderDatasetMaintenanceSealProtectedApprovalHelp(): string {
+  return `Usage:
+  tiangong-lca dataset maintenance seal-protected-approval --freeze <file> --approval-request <file> --human-approval <file> --approve-freeze-file <sha256> --approve-request <sha256> --approve-text <sha256> --confirm <email> --approved-at <iso> --out-dir <dir> [options]
+
+Behavior:
+  Records a human-provided approval text only when every UTF-8 byte, freeze-file hash, request hash,
+  text hash, account, and canonical timestamp matches the unapproved request. It writes the approval
+  artifact needed by a later, separate run-protected command; it does not submit that execution.
+
+Required:
+  --freeze <file>               Canonical protected freeze generated by freeze-protected
+  --approval-request <file>     Canonical unapproved approval request JSON
+  --human-approval <file>       Human-returned text, read byte-for-byte without trimming
+  --approve-freeze-file <sha256> Explicit SHA-256 of the exact freeze file bytes
+  --approve-request <sha256>    Explicit request identity SHA-256
+  --approve-text <sha256>       Explicit byte-exact approval text SHA-256
+  --confirm <email>             Exact frozen account email
+  --approved-at <iso>           Exact approval-authority timestamp already embedded in the request
+  --out-dir <dir>               New private immutable artifact directory
+
+Options:
+  --json                        Print compact JSON
+  -h, --help
+
+Offline safety:
+  This command receives no environment or HTTP client and performs zero authentication, network,
+  database, preflight, gate, admission, execution, or mutation calls.
 `.trim();
 }
 
@@ -3993,6 +4067,112 @@ function parseDatasetMaintenanceApplyFlags(args: string[]): {
   };
 }
 
+function parseDatasetMaintenanceFreezeProtectedFlags(args: string[]): {
+  help: boolean;
+  json: boolean;
+  planPath: string;
+  toolchainEvidencePath: string;
+  outDir: string;
+  expectedProjectRef: string;
+  confirm: string;
+  pageSize: number | undefined;
+  timeoutMs: number | undefined;
+} {
+  let values: ReturnType<typeof parseArgs>['values'];
+  try {
+    ({ values } = parseArgs({
+      args,
+      allowPositionals: false,
+      strict: true,
+      options: {
+        help: { type: 'boolean', short: 'h' },
+        json: { type: 'boolean' },
+        plan: { type: 'string' },
+        'toolchain-evidence': { type: 'string' },
+        'out-dir': { type: 'string' },
+        'expected-project-ref': { type: 'string' },
+        confirm: { type: 'string' },
+        'page-size': { type: 'string' },
+        'timeout-ms': { type: 'string' },
+      },
+    }));
+  } catch (error) {
+    throw new CliError(String(error), {
+      code: 'INVALID_ARGS',
+      exitCode: 2,
+    });
+  }
+  return {
+    help: Boolean(values.help),
+    json: Boolean(values.json),
+    planPath: typeof values.plan === 'string' ? values.plan : '',
+    toolchainEvidencePath:
+      typeof values['toolchain-evidence'] === 'string' ? values['toolchain-evidence'] : '',
+    outDir: typeof values['out-dir'] === 'string' ? values['out-dir'] : '',
+    expectedProjectRef:
+      typeof values['expected-project-ref'] === 'string' ? values['expected-project-ref'] : '',
+    confirm: typeof values.confirm === 'string' ? values.confirm : '',
+    pageSize: parseDatasetMaintenancePositiveInteger(values['page-size'], '--page-size'),
+    timeoutMs: parseDatasetMaintenancePositiveInteger(values['timeout-ms'], '--timeout-ms'),
+  };
+}
+
+function parseDatasetMaintenanceSealProtectedApprovalFlags(args: string[]): {
+  help: boolean;
+  json: boolean;
+  freezePath: string;
+  approvalRequestPath: string;
+  humanApprovalPath: string;
+  outDir: string;
+  approveFreezeFile: string;
+  approveRequest: string;
+  approveText: string;
+  confirm: string;
+  approvedAtUtc: string;
+} {
+  let values: ReturnType<typeof parseArgs>['values'];
+  try {
+    ({ values } = parseArgs({
+      args,
+      allowPositionals: false,
+      strict: true,
+      options: {
+        help: { type: 'boolean', short: 'h' },
+        json: { type: 'boolean' },
+        freeze: { type: 'string' },
+        'approval-request': { type: 'string' },
+        'human-approval': { type: 'string' },
+        'out-dir': { type: 'string' },
+        'approve-freeze-file': { type: 'string' },
+        'approve-request': { type: 'string' },
+        'approve-text': { type: 'string' },
+        confirm: { type: 'string' },
+        'approved-at': { type: 'string' },
+      },
+    }));
+  } catch (error) {
+    throw new CliError(String(error), {
+      code: 'INVALID_ARGS',
+      exitCode: 2,
+    });
+  }
+  return {
+    help: Boolean(values.help),
+    json: Boolean(values.json),
+    freezePath: typeof values.freeze === 'string' ? values.freeze : '',
+    approvalRequestPath:
+      typeof values['approval-request'] === 'string' ? values['approval-request'] : '',
+    humanApprovalPath: typeof values['human-approval'] === 'string' ? values['human-approval'] : '',
+    outDir: typeof values['out-dir'] === 'string' ? values['out-dir'] : '',
+    approveFreezeFile:
+      typeof values['approve-freeze-file'] === 'string' ? values['approve-freeze-file'] : '',
+    approveRequest: typeof values['approve-request'] === 'string' ? values['approve-request'] : '',
+    approveText: typeof values['approve-text'] === 'string' ? values['approve-text'] : '',
+    confirm: typeof values.confirm === 'string' ? values.confirm : '',
+    approvedAtUtc: typeof values['approved-at'] === 'string' ? values['approved-at'] : '',
+  };
+}
+
 function parseDatasetMaintenanceProtectedFlags(args: string[]): {
   help: boolean;
   json: boolean;
@@ -6394,8 +6574,12 @@ export async function executeCli(argv: string[], deps: CliDeps): Promise<CliResu
       deps.runDatasetMaintenancePlanImpl ?? runDatasetMaintenancePlan;
     const datasetMaintenanceApplyImpl =
       deps.runDatasetMaintenanceApplyImpl ?? runDatasetMaintenanceApply;
+    const datasetMaintenanceProtectedFreezeImpl =
+      deps.freezeDatasetMaintenanceProtectedImpl ?? freezeDatasetMaintenanceProtected;
     const datasetMaintenanceProtectedImpl =
       deps.runDatasetMaintenanceProtectedImpl ?? runDatasetMaintenanceProtected;
+    const datasetMaintenanceProtectedApprovalSealImpl =
+      deps.sealDatasetMaintenanceProtectedApprovalImpl ?? sealDatasetMaintenanceProtectedApproval;
     const datasetMaintenanceVerifyImpl =
       deps.runDatasetMaintenanceVerifyImpl ?? runDatasetMaintenanceVerify;
     const datasetSourceUploadAttachmentsImpl =
@@ -7163,6 +7347,171 @@ export async function executeCli(argv: string[], deps: CliDeps): Promise<CliResu
         };
       }
 
+      if (action === 'freeze-protected') {
+        const datasetFlags = parseDatasetMaintenanceFreezeProtectedFlags(commandArgs.slice(1));
+        if (datasetFlags.help) {
+          return {
+            exitCode: 0,
+            stdout: `${renderDatasetMaintenanceFreezeProtectedHelp()}\n`,
+            stderr: '',
+          };
+        }
+        if (!datasetFlags.planPath) {
+          throw new CliError('dataset maintenance freeze-protected requires --plan.', {
+            code: 'DATASET_MAINTENANCE_PROTECTED_PLAN_REQUIRED',
+            exitCode: 2,
+          });
+        }
+        if (!datasetFlags.toolchainEvidencePath) {
+          throw new CliError(
+            'dataset maintenance freeze-protected requires --toolchain-evidence.',
+            {
+              code: 'DATASET_MAINTENANCE_PROTECTED_TOOLCHAIN_REQUIRED',
+              exitCode: 2,
+            },
+          );
+        }
+        if (!datasetFlags.expectedProjectRef) {
+          throw new CliError(
+            'dataset maintenance freeze-protected requires --expected-project-ref.',
+            {
+              code: 'DATASET_MAINTENANCE_PROTECTED_PROJECT_REF_REQUIRED',
+              exitCode: 2,
+            },
+          );
+        }
+        if (!datasetFlags.confirm) {
+          throw new CliError('dataset maintenance freeze-protected requires --confirm.', {
+            code: 'DATASET_MAINTENANCE_PROTECTED_CONFIRM_REQUIRED',
+            exitCode: 2,
+          });
+        }
+        if (!datasetFlags.outDir) {
+          throw new CliError('dataset maintenance freeze-protected requires --out-dir.', {
+            code: 'DATASET_MAINTENANCE_PROTECTED_OUT_DIR_REQUIRED',
+            exitCode: 2,
+          });
+        }
+        const report = await datasetMaintenanceProtectedFreezeImpl({
+          planPath: datasetFlags.planPath,
+          toolchainEvidencePath: datasetFlags.toolchainEvidencePath,
+          outDir: datasetFlags.outDir,
+          expectedProjectRef: datasetFlags.expectedProjectRef,
+          confirm: datasetFlags.confirm,
+          cliVersion: loadCliPackageVersion(import.meta.url),
+          pageSize: datasetFlags.pageSize,
+          timeoutMs: datasetFlags.timeoutMs,
+          env: deps.env,
+          fetchImpl: deps.fetchImpl,
+        });
+        return {
+          exitCode: 0,
+          stdout: stringifyJson(report, datasetFlags.json),
+          stderr: '',
+        };
+      }
+
+      if (action === 'seal-protected-approval') {
+        const datasetFlags = parseDatasetMaintenanceSealProtectedApprovalFlags(
+          commandArgs.slice(1),
+        );
+        if (datasetFlags.help) {
+          return {
+            exitCode: 0,
+            stdout: `${renderDatasetMaintenanceSealProtectedApprovalHelp()}\n`,
+            stderr: '',
+          };
+        }
+        if (!datasetFlags.freezePath) {
+          throw new CliError('dataset maintenance seal-protected-approval requires --freeze.', {
+            code: 'DATASET_MAINTENANCE_PROTECTED_FREEZE_REQUIRED',
+            exitCode: 2,
+          });
+        }
+        if (!datasetFlags.approvalRequestPath) {
+          throw new CliError(
+            'dataset maintenance seal-protected-approval requires --approval-request.',
+            {
+              code: 'DATASET_MAINTENANCE_PROTECTED_APPROVAL_REQUEST_REQUIRED',
+              exitCode: 2,
+            },
+          );
+        }
+        if (!datasetFlags.humanApprovalPath) {
+          throw new CliError(
+            'dataset maintenance seal-protected-approval requires --human-approval.',
+            {
+              code: 'DATASET_MAINTENANCE_PROTECTED_HUMAN_APPROVAL_REQUIRED',
+              exitCode: 2,
+            },
+          );
+        }
+        if (!datasetFlags.approveFreezeFile) {
+          throw new CliError(
+            'dataset maintenance seal-protected-approval requires --approve-freeze-file.',
+            {
+              code: 'DATASET_MAINTENANCE_PROTECTED_FREEZE_CONFIRMATION_REQUIRED',
+              exitCode: 2,
+            },
+          );
+        }
+        if (!datasetFlags.approveRequest) {
+          throw new CliError(
+            'dataset maintenance seal-protected-approval requires --approve-request.',
+            {
+              code: 'DATASET_MAINTENANCE_PROTECTED_REQUEST_CONFIRMATION_REQUIRED',
+              exitCode: 2,
+            },
+          );
+        }
+        if (!datasetFlags.approveText) {
+          throw new CliError(
+            'dataset maintenance seal-protected-approval requires --approve-text.',
+            {
+              code: 'DATASET_MAINTENANCE_PROTECTED_TEXT_CONFIRMATION_REQUIRED',
+              exitCode: 2,
+            },
+          );
+        }
+        if (!datasetFlags.confirm) {
+          throw new CliError('dataset maintenance seal-protected-approval requires --confirm.', {
+            code: 'DATASET_MAINTENANCE_PROTECTED_CONFIRM_REQUIRED',
+            exitCode: 2,
+          });
+        }
+        if (!datasetFlags.approvedAtUtc) {
+          throw new CliError(
+            'dataset maintenance seal-protected-approval requires --approved-at.',
+            {
+              code: 'DATASET_MAINTENANCE_PROTECTED_APPROVED_AT_REQUIRED',
+              exitCode: 2,
+            },
+          );
+        }
+        if (!datasetFlags.outDir) {
+          throw new CliError('dataset maintenance seal-protected-approval requires --out-dir.', {
+            code: 'DATASET_MAINTENANCE_PROTECTED_OUT_DIR_REQUIRED',
+            exitCode: 2,
+          });
+        }
+        const report = await datasetMaintenanceProtectedApprovalSealImpl({
+          freezePath: datasetFlags.freezePath,
+          approvalRequestPath: datasetFlags.approvalRequestPath,
+          humanApprovalPath: datasetFlags.humanApprovalPath,
+          outDir: datasetFlags.outDir,
+          approveFreezeFile: datasetFlags.approveFreezeFile,
+          approveRequest: datasetFlags.approveRequest,
+          approveText: datasetFlags.approveText,
+          confirm: datasetFlags.confirm,
+          approvedAtUtc: datasetFlags.approvedAtUtc,
+        });
+        return {
+          exitCode: 0,
+          stdout: stringifyJson(report, datasetFlags.json),
+          stderr: '',
+        };
+      }
+
       if (action === 'run-protected') {
         const datasetFlags = parseDatasetMaintenanceProtectedFlags(commandArgs.slice(1));
         if (datasetFlags.help) {
@@ -7283,7 +7632,7 @@ export async function executeCli(argv: string[], deps: CliDeps): Promise<CliResu
       }
 
       throw new CliError(
-        "dataset maintenance action must be 'clear-account', 'plan', 'apply', 'run-protected', or 'verify'.",
+        "dataset maintenance action must be 'clear-account', 'plan', 'apply', 'freeze-protected', 'seal-protected-approval', 'run-protected', or 'verify'.",
         {
           code: 'DATASET_MAINTENANCE_ACTION_INVALID',
           exitCode: 2,
