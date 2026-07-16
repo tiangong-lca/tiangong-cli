@@ -47,6 +47,22 @@ export type ProtectedLiveDerivativeReadback = {
   embedding_ft_at: string;
 };
 
+type ProtectedPrimaryActionEvidence = {
+  action_id: string;
+  table: 'flowproperties' | 'flows' | 'processes';
+  id: string;
+  version: string;
+  row_found: true;
+  owner_matches: true;
+  state_code_matches: true;
+  json_matches: true;
+  json_ordered_matches: true;
+  desired_json_ordered_sha256: string;
+  live_json_sha256: string;
+  live_json_ordered_sha256: string;
+  valid: true;
+};
+
 export type ProtectedVerificationResult = {
   status: ProtectedReportStatus;
   issues: ProtectedVerificationIssue[];
@@ -68,6 +84,79 @@ function issue(code: string, message: string, details?: unknown): ProtectedVerif
 
 function requiredString(value: unknown): string | null {
   return typeof value === 'string' && value.trim() ? value : null;
+}
+
+function parsePrimaryActionEvidence(value: unknown): ProtectedPrimaryActionEvidence | null {
+  if (!isJsonObject(value)) return null;
+  const actionId = requiredString(value.action_id);
+  const id = requiredString(value.id);
+  const version = requiredString(value.version);
+  const desiredJsonOrderedSha256 = requiredString(value.desired_json_ordered_sha256);
+  const liveJsonSha256 = requiredString(value.live_json_sha256);
+  const liveJsonOrderedSha256 = requiredString(value.live_json_ordered_sha256);
+  if (
+    !actionId ||
+    (value.table !== 'flowproperties' && value.table !== 'flows' && value.table !== 'processes') ||
+    !id ||
+    !version ||
+    value.row_found !== true ||
+    value.owner_matches !== true ||
+    value.state_code_matches !== true ||
+    value.json_matches !== true ||
+    value.json_ordered_matches !== true ||
+    !desiredJsonOrderedSha256 ||
+    !SHA256.test(desiredJsonOrderedSha256) ||
+    !liveJsonSha256 ||
+    !SHA256.test(liveJsonSha256) ||
+    !liveJsonOrderedSha256 ||
+    !SHA256.test(liveJsonOrderedSha256) ||
+    value.valid !== true
+  ) {
+    return null;
+  }
+  return {
+    action_id: actionId,
+    table: value.table,
+    id,
+    version,
+    row_found: true,
+    owner_matches: true,
+    state_code_matches: true,
+    json_matches: true,
+    json_ordered_matches: true,
+    desired_json_ordered_sha256: desiredJsonOrderedSha256,
+    live_json_sha256: liveJsonSha256,
+    live_json_ordered_sha256: liveJsonOrderedSha256,
+    valid: true,
+  };
+}
+
+function indexPrimaryActionEvidence(options: {
+  closure: unknown;
+  plan: DatasetMaintenancePlan;
+}): Map<string, ProtectedPrimaryActionEvidence> | null {
+  if (!isJsonObject(options.closure) || !Array.isArray(options.closure.action_evidence)) {
+    return null;
+  }
+  if (options.closure.action_evidence.length !== options.plan.actions.length) return null;
+  const byKey = new Map<string, ProtectedPrimaryActionEvidence>();
+  const actionIds = new Set<string>();
+  for (const raw of options.closure.action_evidence) {
+    const evidence = parsePrimaryActionEvidence(raw);
+    if (!evidence) return null;
+    const key = maintenanceRowKey(evidence);
+    if (byKey.has(key) || actionIds.has(evidence.action_id)) return null;
+    byKey.set(key, evidence);
+    actionIds.add(evidence.action_id);
+  }
+  if (
+    options.plan.actions.some(
+      (action) => byKey.get(maintenanceRowKey(action))?.action_id !== action.action_id,
+    )
+  ) {
+    return null;
+  }
+  return byKey;
 }
 
 export function inspectProtectedLiveDerivative(
@@ -439,6 +528,7 @@ function matchLiveTargets(options: {
   proofs: ProtectedTerminalTargetProof[];
   live: ProtectedLiveDerivativeReadback[];
   snapshots: ProtectedDerivativeSnapshot[];
+  primaryClosure: unknown;
   plan: DatasetMaintenancePlan;
   identity: ProtectedExecutionIdentity;
 }): ProtectedVerificationIssue[] {
@@ -450,6 +540,10 @@ function matchLiveTargets(options: {
   const actions = new Map(
     options.plan.actions.map((action) => [maintenanceRowKey(action), action]),
   );
+  const primaryEvidence = indexPrimaryActionEvidence({
+    closure: options.primaryClosure,
+    plan: options.plan,
+  });
   const issues: ProtectedVerificationIssue[] = [];
   const expectedKeys = new Set(options.identity.derivative_targets.map(terminalTargetKey));
   const liveKeys = options.live.map(terminalTargetKey);
@@ -474,17 +568,21 @@ function matchLiveTargets(options: {
     const proof = proofs.get(key);
     const snapshot = snapshots.get(key);
     const action = actions.get(key);
+    const evidence = primaryEvidence?.get(key);
     if (
       !row ||
       !proof ||
       !snapshot ||
       !action?.desired_payload ||
+      !evidence ||
       row.user_id !== options.identity.actor.user_id ||
       row.state_code !== 0 ||
       snapshot.user_id !== options.identity.actor.user_id ||
       snapshot.state_code !== 0 ||
       row.json_ordered_sha256 !== action.desired_payload.sha256 ||
-      snapshot.json_ordered_sha256 !== row.json_ordered_sha256 ||
+      evidence.live_json_sha256 !== evidence.desired_json_ordered_sha256 ||
+      evidence.live_json_ordered_sha256 !== evidence.desired_json_ordered_sha256 ||
+      snapshot.json_ordered_sha256 !== evidence.desired_json_ordered_sha256 ||
       snapshot.snapshot_sha256 !== proof.completed_snapshot_sha256 ||
       !snapshot.extracted_md_sha256 ||
       !snapshot.embedding_ft_sha256 ||
@@ -657,6 +755,7 @@ async function verifyProtectedExecutionWithDependencies(
         proofs: terminalProofs,
         live: validLive,
         snapshots,
+        primaryClosure: options.proof.primary_readback?.closure,
         plan: options.plan,
         identity: options.identity,
       }),

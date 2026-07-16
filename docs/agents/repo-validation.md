@@ -28,7 +28,7 @@ checkPaths:
   - scripts/docpact-gate.sh
   - scripts/install-git-hooks.sh
 lastReviewedAt: 2026-07-16
-lastReviewedCommit: 7c9a252226fb411d3ffba2f2e4f37b91b9658be8
+lastReviewedCommit: e8a458c63a4c59d7ea1fcf4618cd5034ead6e836
 related:
   - ../../AGENTS.md
   - ../../.docpact/config.yaml
@@ -87,6 +87,8 @@ Review note, 2026-07-15: Issue #171 preparation proof additionally requires a st
 Review note, 2026-07-16: Issue #175 proof requires a fixed five-second allowance only when server `completed_at` is slightly ahead of the client clock. Tests must accept the exact tolerance boundary, reject one millisecond beyond it, retain strict stale/reversed/over-180-second rejection, expose only token-free timing diagnostics, and prove parse failure still occurs before gate capture, submission-marker creation, or admission. Server-side expiry and one-shot enforcement are unchanged.
 
 Review note, 2026-07-16: Issue #177 keeps the validation contract unchanged while making existing tests portable across the four-platform quality matrix. Tests use native path helpers and deterministic spawn doubles; POSIX permission-bit checks remain required on non-Windows platforms, while byte preservation, immutability, hashing, and overwrite rejection remain required everywhere.
+
+Review note, 2026-07-16: Issue #182 adds a production-shaped protected-verifier regression in which the CLI canonical payload hash deliberately differs from the PostgreSQL `jsonb::text` hash. Passing proof must bind RLS live row to the approved plan in the CLI domain, exact unique valid primary `action_evidence` to the fresh snapshot in the database domain, and snapshot SHA to terminal completion. Missing, duplicate, foreign, wrong-action, false owner/state/JSON flags, malformed or unequal hashes, and snapshot/terminal drift must all remain fail-closed. Exact `src/**/*.ts` coverage remains 100%.
 
 Review note, 2026-07-16: Issue #178 keeps the validation contract unchanged for the dedicated 0.0.27 release. In addition to the existing exact-coverage and pre-push gates, release proof requires an unpublished-version check, tag-name check, dry-run package inspection, a fresh four-platform matrix, and Docpact with no diagnostics before merge.
 

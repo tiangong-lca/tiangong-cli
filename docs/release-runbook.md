@@ -23,7 +23,7 @@ checkPaths:
   - scripts/docpact-gate.sh
   - scripts/install-git-hooks.sh
 lastReviewedAt: 2026-07-16
-lastReviewedCommit: 7c9a252226fb411d3ffba2f2e4f37b91b9658be8
+lastReviewedCommit: e8a458c63a4c59d7ea1fcf4618cd5034ead6e836
 related:
   - ../AGENTS.md
   - ../.docpact/config.yaml
@@ -46,6 +46,8 @@ Review note, 2026-07-16: Issue #175 fixes bounded client clock-skew validation w
 Review note, 2026-07-16: Issue #177 changes only cross-platform tests needed to make the existing four-platform quality matrix authoritative. It does not alter package metadata, tag creation, Trusted Publishing, release eligibility, protected-execution behavior, or the requirement for a separate 0.0.27 release PR after all matrix jobs pass.
 
 Review note, 2026-07-16: Issue #178 is that separate 0.0.27 release PR. It must prove the version is unpublished, retain exact coverage and all four platform results, and use the existing merge-triggered tag plus tag-triggered Trusted Publishing workflows. Local publish or manual tag creation remains forbidden; npm provenance and `gitHead` must match the immutable release merge commit before workspace integration starts.
+
+Review note, 2026-07-16: Issue #182 fixes the protected terminal verifier without changing package metadata or release mechanics. Its feature PR must pass the production-shaped cross-hash-domain regression, exact coverage, docpact, and the full pre-push gate. Only after it merges may a separate patch version-bump PR use the existing tag and Trusted Publishing workflows; npm provenance and exact root-workspace integration must be verified before the existing protected request receives one status-only readback.
 
 Use this document for:
 

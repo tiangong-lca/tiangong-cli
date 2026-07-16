@@ -17,7 +17,7 @@ checkPaths:
   - src/**
   - test/**
 lastReviewedAt: 2026-07-16
-lastReviewedCommit: c44415cacc78fea6ac63dfe256d748cb6ab95782
+lastReviewedCommit: e8a458c63a4c59d7ea1fcf4618cd5034ead6e836
 related:
   - ../AGENTS.md
   - ../.docpact/config.yaml
@@ -39,6 +39,8 @@ Review note, 2026-07-15: `dataset maintenance run-protected` 为 seal 绑定且�
 Review note, 2026-07-15: `dataset maintenance freeze-protected` 与 `seal-protected-approval` 把生产只读冻结和人工批准记录拆成两个不可混淆的命令。前者只对显式确认的 production project 做完整 owner-draft census/support/projected-reference 与 23+27 derivative snapshot 读取，输出未批准请求，绝不 preflight/gate/admit/mutate；后者不接收 env 或 HTTP client，只按原始 UTF-8 字节核对人类返回文本及 freeze/request/text/account/timestamp 后生成 approval。真正执行仍只属于后续 `run-protected`。
 
 Review note, 2026-07-16: `run-protected` 的 preflight proof 客户端时间校验允许服务端 `completed_at` 最多领先本机 5 秒，仅用于吸收正常时钟偏差。过期、时间倒序、超过 180 秒、foreign 或 malformed proof 仍在 gate/marker/admission 前阻断；数据库继续用 server clock 强制 token 到期与一次性消费。错误只输出 `completed_at`、`expires_at`、观察时间和差值等无 token 诊断，不持久化或暴露 preflight token。
+
+Review note, 2026-07-16: Issue #182 修正 protected 终态验证中的 JSON hash 域混用。独立 RLS row 继续用 CLI canonical hash 对齐 approved plan；已经过 closure SHA 校验的 primary `action_evidence` 用 PostgreSQL `jsonb::text` hash 对齐 fresh derivative snapshot；snapshot SHA 再对齐 terminal completed proof。不同序列化域不直接比较，证据缺失、重复、身份/owner/state/JSON 标志错误或任一同域 hash 漂移仍 fail-closed；数据库/RPC 与一次性 admission 契约不变。
 
 ## 1. 目标
 
@@ -414,7 +416,7 @@ Alias plan RPC 在同一事务中锁定 target/source support 与全部 action r
 
 上述 alias plan RPC/replay 描述属于原 V1 artifact 兼容契约，不再是 seal 绑定 production 执行的授权路径。`run-protected` 的执行顺序固定为：校验 plan/freeze/approval 与 production project；在 preflight 前完成完整 current-user RLS before-state、support 与 50-target baseline 校验；只调用一次 server preflight，接受服务器派生的三项 gate 期望摘要和最长 180 秒 token；捕获并核对 live gate receipt；以私有 immutable 文件写入 submission marker；立即发送最多一次 admission POST；服务器以认证 actor、精确 user_id/state_code=0、冻结目标集与 plan/closure 栅栏约束写入；之后状态读取只调用带 `auth.uid`、actor 与 plan 栅栏的受保护 RPC，独立表级读回才使用 RLS。`--status-only` 永远不调用 preflight/admit。marker 已存在、admission timeout、响应丢失或服务器记录不明确时，结果为 `indeterminate` 或后续只读状态，绝不再次 admission；状态读取异常仅在配置等待窗口内按默认 10 秒间隔重试，不会触发 admission 重试。
 
-`run-protected` 只有在数据库终态与独立 RLS readback 同时证明 approved identity、唯一 attempt/dispatch、52 row + 2 batch + 1 plan 的 55 条 audit closure、59 条 exchange closure、精确 23 flows + 27 processes derivative targets，以及 markdown/embedding 因果与 live hash 一致时才输出 `passed`。任一 target 未完成但 proof 结构有效为 `pending`；明确 stale/failure/mismatch 为 `failed`；传输、schema/status 或 marker/server 记录不明确为 `indeterminate`。四态中只有 `passed` 返回 0。
+`run-protected` 只有在数据库终态与独立 RLS readback 同时证明 approved identity、唯一 attempt/dispatch、52 row + 2 batch + 1 plan 的 55 条 audit closure、59 条 exchange closure、精确 23 flows + 27 processes derivative targets，以及 markdown/embedding 因果与同域 hash 证据链一致时才输出 `passed`。其中 RLS live row 的 CLI canonical hash 必须等于 approved payload，primary closure 中 exact/unique/valid action evidence 的 PostgreSQL-domain desired/live hashes 必须彼此相等并等于 fresh snapshot 的 `json_ordered` hash，fresh snapshot SHA 必须等于 terminal completed snapshot proof；CLI 与 PostgreSQL 两种序列化 hash 不直接相等比较。任一 target 未完成但 proof 结构有效为 `pending`；明确 stale/failure/mismatch 为 `failed`；传输、schema/status 或 marker/server 记录不明确为 `indeterminate`。四态中只有 `passed` 返回 0。
 
 Derivative rebuild guarded RPC 必须在 admission 时重新校验 authenticated actor、owner-draft state、exact identity 与 plan-bound action snapshot，并返回 durable request/proof。相同计划重放必须复用原 request，不得生成第二个任务。`accepted`/`queued` 只表示重建请求已受理，不能写成 `completed`；CLI 没有 direct Edge、`admin embedding-run`、raw queue、SQL、service-role 或 raw REST mutation 降级路径。
 
