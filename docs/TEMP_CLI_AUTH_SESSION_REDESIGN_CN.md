@@ -16,7 +16,7 @@ checkPaths:
   - src/lib/supabase-session.ts
   - src/lib/supabase-client.ts
 lastReviewedAt: 2026-07-17
-lastReviewedCommit: 1aa9b58f7a62f50d2cb680f372452fe829686d75
+lastReviewedCommit: 0929ea214ffc8b1672a6e745671d036007abff13
 related:
   - ../AGENTS.md
   - ../.docpact/config.yaml

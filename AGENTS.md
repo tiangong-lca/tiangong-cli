@@ -83,6 +83,8 @@ Review note, 2026-07-16: Issue #182 corrects only the terminal protected verifie
 
 Review note, 2026-07-16: Issue #184 is the dedicated 0.0.28 version-bump release for merged verifier fix #182. It adds no command, runtime, dependency, approval, database, or alternate publication path; automated tag creation, Trusted Publishing, provenance verification, and exact released-commit workspace integration remain mandatory before production status-only verification.
 
+Review note, 2026-07-16: Issue #186 adds the CLI-owned `release` transport for LCI/LCIA data releases. The standalone release control plane remains the workflow owner, Edge/Database remain the authorization and state-machine owners, and this repo owns file-first command parsing, user-session exchange, exact four-ZIP upload verification, stable reports, and hash-verified downloads. The CLI never receives a service-role key; private and mutating operations depend on a server-verified `data_product_manager` account.
+
 ## Bootstrap Order
 
 Load docs in this order:
@@ -102,6 +104,7 @@ Preferred docpact commands:
 - `scripts/docpact route --root . --intent command-surface`
 - `scripts/docpact route --root . --intent remote-session`
 - `scripts/docpact route --root . --intent workflow-commands`
+- `scripts/docpact route --root . --intent lca-data-release`
 - `scripts/docpact route --root . --intent validation-release`
 - `scripts/docpact route --root . --intent repo-docs`
 
