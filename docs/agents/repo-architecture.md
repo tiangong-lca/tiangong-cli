@@ -26,7 +26,7 @@ checkPaths:
   - scripts/docpact
   - scripts/docpact-gate.sh
   - scripts/install-git-hooks.sh
-lastReviewedAt: 2026-07-16
+lastReviewedAt: 2026-07-17
 lastReviewedCommit: 497ac46bba02297b46cee255429371bf20074487
 related:
   - ../../AGENTS.md
@@ -63,6 +63,8 @@ Review note, 2026-07-15: `run-protected` remains in the native dataset-maintenan
 Review note, 2026-07-15: Issue #171 adds two preparation commands without broadening the mutation surface. `freeze-protected` owns production-authenticated read-only census/support/derivative capture and canonical unapproved artifacts; `seal-protected-approval` owns byte-exact offline human-approval recording and receives no session, environment, or network client. Only the existing `run-protected` module owns preflight, admission, execution, or recovery. Foundry remains a thin published-CLI caller and must not duplicate canonical hashing or database access.
 
 Review note, 2026-07-16: Issue #157 keeps Step 3 in a dedicated native TypeScript workflow: `dataset-maintenance-flow-identity-{capture,contract,plan,execution-contract,freeze,seal,run,verify}.ts`. It does not reuse generic apply or the Step 2 runner. Capture scans the full owner-draft process table once but persists only the reviewed reference closure, then submits one thin semantic request for an immutable database receipt. The database receipt/ledger, not a later client payload or client-side derivative baseline, owns each exact rewrite. Guarded process calls contain only ordinal, scope proof, process-intent proof, and request hash. Durable database scope state is the resume authority and execution concurrency is one. After primary completion the runner polls scope read-only until a derivative decision: pending/failed/compensation returns without finalize; exact causal/current readiness permits at most one finalize POST in that invocation; an ambiguous process/finalize response or readiness race never triggers an automatic retry. Independent verification re-scans the complete owner-draft process table and exact stable rows before declaring terminal success.
+
+Review note, 2026-07-17: Issue #157 COMMON hardening stays in the existing capture/contract/remote/run/verify modules. Capture binds two separate passed Issue #29 derivative readbacks, and the remote adapter preserves HTTP-success `ok:false` envelopes as deterministic domain rejections. The write path now carries a database-minted one-wrapper permit that rotates after every successful process/finalize write and never enters durable artifacts; the database is the cross-machine authority, while a fixed create-only local approval claim is defense in depth. Losing the permit or initial preflight response requires a fresh exact recovery approval; an exact read-only lookup can recover only the same actor-owned immutable scope. Remaining gates are merge, Preview validation, and coordinated DB/CLI release.
 
 Review note, 2026-07-16: Issue #175 remains inside `protected-contract` parsing and tests. The client accepts at most five seconds of server-ahead skew for `completed_at`, but does not extend token expiry or the 180-second duration; the database still owns authoritative server-clock gate/admission expiry and one-shot uniqueness. No new runtime, adapter, dependency, artifact family, or database behavior is introduced.
 

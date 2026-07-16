@@ -388,11 +388,19 @@ export function verifyFlowIdentityReadback(input: ReadbackInput): FlowIdentityVe
     input.processScanComplete &&
     terminalProof &&
     issues.length === 0;
+  const hardReadbackMismatch = issues.some(
+    (issue) => issue.code !== 'FLOW_IDENTITY_TERMINAL_PROOF_NOT_CURRENT',
+  );
+  const reportStatus: FlowIdentityVerificationReport['status'] = passed
+    ? 'passed'
+    : input.status.status === 'derivatives_pending' && !hardReadbackMismatch
+      ? 'pending'
+      : 'failed';
   const terminalSha = input.status.terminal_proof_sha256;
   return {
     schema_version: 'dataset-flow-identity-verification-report.v1',
     generated_at_utc: new Date().toISOString(),
-    status: passed ? 'passed' : input.status.status === 'failed' ? 'failed' : 'pending',
+    status: reportStatus,
     plan_sha256: input.plan.plan_sha256,
     operation_id: input.plan.operation_id,
     scope_id: input.status.scope_id,

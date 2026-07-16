@@ -16,7 +16,7 @@ checkPaths:
   - README.md
   - src/**
   - test/**
-lastReviewedAt: 2026-07-16
+lastReviewedAt: 2026-07-17
 lastReviewedCommit: e8a458c63a4c59d7ea1fcf4618cd5034ead6e836
 related:
   - ../AGENTS.md
@@ -41,6 +41,10 @@ Review note, 2026-07-15: `dataset maintenance freeze-protected` 与 `seal-protec
 Review note, 2026-07-16: `run-protected` 的 preflight proof 客户端时间校验允许服务端 `completed_at` 最多领先本机 5 秒，仅用于吸收正常时钟偏差。过期、时间倒序、超过 180 秒、foreign 或 malformed proof 仍在 gate/marker/admission 前阻断；数据库继续用 server clock 强制 token 到期与一次性消费。错误只输出 `completed_at`、`expires_at`、观察时间和差值等无 token 诊断，不持久化或暴露 preflight token。
 
 Review note, 2026-07-16: `dataset maintenance flow-identity capture|plan|freeze|seal-approval|run|verify` 是 BAFU Step 3 的独立原生 CLI 工作流，不复用 Step 2 runner 或 generic apply。capture 对 owner-draft process 做一次完整 census，但只持久化 reviewed reference closure，并仅发送一次 semantic attestation POST；不在客户端抓取 derivative baseline。plan 只接受 post-Step2/post-#29 的 305-source v3 review、精简 capture 与不可变 DB receipt。run 的 process 请求只含 ordinal/scope proof/process-intent proof/request hash，具体 rewrite 与 derivative baseline 由 DB receipt/ledger 持有；并发固定为 1。primary batch 后先只读等待 derivative causal/current closure：pending、failed 或 compensation 状态都不发送 finalize，只有 ready 才在本 invocation 最多发送一次 finalize；歧义或 readiness race 不自动重放 process/finalize。verify 独立证明 source/public/support 不变、目标 process 精确、approved-source residue 为 0、protected closure 不变且 derivative causal terminal。derivative failed/stale 必须停机，任何补偿都要另建 derivative-only plan、重新 freeze 并取得新的精确批准。
+
+Review note, 2026-07-17: Step 3 COMMON 契约进一步 fail-closed。`dataset-flow-identity-prerequisites.v2` 必须分别携带 Step 2、Issue #29 target 1、Issue #29 target 2 的 `status=passed`、readback SHA-256 与完成时间；两个 #29 derivative target 不能合并成一个证明。authenticated RPC 的 HTTP 请求成功但 JSON body 为 `ok:false`、且含合法 `code`/`status` 时，是确定性 domain rejection，不是 transport ambiguity：capture/preflight/process/finalize 都写不可变 rejection 证据且不自动重投。process rejection 后只执行一次 fresh `readScope` 并校验已完成 request；读失败为 `indeterminate`，已有 primary write 时只能做 fresh status read 与 operator-approved scope recovery，不能重新 capture，零完成也必须 operator review。独立 verify 仅在数据库状态恰为 `derivatives_pending` 且没有其他硬性 readback mismatch 时报告 `pending`，其余未通过结果为 `failed`。
+
+finalize request 绑定 fresh whole-scope proof，attempt/domain-rejection/proof/transport-error 文件都以 restricted request SHA-256 固定寻址。数据库现在为唯一 live wrapper 签发 permit，并在每次成功 process/finalize 后轮换；CLI 只在内存持有 permit，proof/artifact 不落 bearer。create-only 本地 approval claim 仅作纵深防御。permit 或 preflight 响应丢失后，必须重新冻结并取得精确 recovery approval，并可通过 exact read-only lookup 找回同一 actor-owned scope。尚余 merge、Preview 验证和 DB/CLI 协同发布门禁。
 
 Review note, 2026-07-16: Issue #182 修正 protected 终态验证中的 JSON hash 域混用。独立 RLS row 继续用 CLI canonical hash 对齐 approved plan；已经过 closure SHA 校验的 primary `action_evidence` 用 PostgreSQL `jsonb::text` hash 对齐 fresh derivative snapshot；snapshot SHA 再对齐 terminal completed proof。不同序列化域不直接比较，证据缺失、重复、身份/owner/state/JSON 标志错误或任一同域 hash 漂移仍 fail-closed；数据库/RPC 与一次性 admission 契约不变。
 

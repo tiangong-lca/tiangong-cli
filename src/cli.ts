@@ -289,6 +289,10 @@ import { runFlowIdentityPlanFromFiles } from './lib/dataset-maintenance-flow-ide
 import { captureFlowIdentity } from './lib/dataset-maintenance-flow-identity-capture.js';
 import { freezeFlowIdentity } from './lib/dataset-maintenance-flow-identity-freeze.js';
 import { sealFlowIdentityApproval } from './lib/dataset-maintenance-flow-identity-seal.js';
+import {
+  freezeFlowIdentityRecovery,
+  sealFlowIdentityRecoveryApproval,
+} from './lib/dataset-maintenance-flow-identity-recovery.js';
 import { runFlowIdentity } from './lib/dataset-maintenance-flow-identity-run.js';
 import { verifyFlowIdentity } from './lib/dataset-maintenance-flow-identity-verify.js';
 import type { DatasetMaintenanceOperation } from './lib/dataset-maintenance-contract.js';
@@ -481,6 +485,8 @@ export type CliDeps = {
   captureFlowIdentityImpl?: typeof captureFlowIdentity;
   freezeFlowIdentityImpl?: typeof freezeFlowIdentity;
   sealFlowIdentityApprovalImpl?: typeof sealFlowIdentityApproval;
+  freezeFlowIdentityRecoveryImpl?: typeof freezeFlowIdentityRecovery;
+  sealFlowIdentityRecoveryApprovalImpl?: typeof sealFlowIdentityRecoveryApproval;
   runFlowIdentityImpl?: typeof runFlowIdentity;
   verifyFlowIdentityImpl?: typeof verifyFlowIdentity;
   runDatasetSourceUploadAttachmentsImpl?: (
@@ -819,7 +825,7 @@ Examples:
 
 function renderDatasetMaintenanceFlowIdentityHelp(): string {
   return `Usage:
-  tiangong-lca dataset maintenance flow-identity <capture|plan|freeze|seal-approval|run|verify> [options]
+  tiangong-lca dataset maintenance flow-identity <capture|plan|freeze|seal-approval|run|freeze-recovery|seal-recovery-approval|run-recovery|verify> [options]
 
 Actions:
   capture       Authenticated production census and one database attestation; performs zero scope/preflight/rewrite/finalize calls.
@@ -827,6 +833,9 @@ Actions:
   freeze        Offline-bind one production plan/toolchain/receipt and generate this execution's byte-exact approval request.
   seal-approval Offline-record byte-exact human approval; performs zero authentication, network, or database calls.
   run           Create/read one guarded scope, serially submit only its durable next ordinal, then wait read-only for derivative readiness before at most one finalize POST. Ambiguous responses are never retried in the same invocation.
+  freeze-recovery Authenticated read-only scope snapshot that freezes a new exact continuation approval after the prior in-memory permit was lost.
+  seal-recovery-approval Offline-record byte-exact human approval for only that frozen durable-scope baseline.
+  run-recovery  Consume that recovery approval once, obtain a fresh memory-only rotating permit, and continue the same durable scope.
   verify        Independently re-read the terminal scope, all 305 source rows, public/support rows, exact affected processes, and the complete owner-draft process reference closure.
 
 Plan:
@@ -849,6 +858,22 @@ Seal approval:
 Run:
   --plan <file> --freeze <file> --approval <file> --out-dir <dir>
   (--commit --approve-execution <sha256> --confirm <email> | --status-only)
+  [--wait-seconds <n>] [--poll-ms <n>] [--timeout-ms <n>]
+
+Freeze recovery:
+  --plan <file> --freeze <original-file> --approval <original-file> --run-dir <prior-run-dir>
+  --toolchain-evidence <file> --approved-at <iso> --recovery-reason <reason>
+  --expected-project-ref <ref> --confirm <email> --out-dir <dir> [--timeout-ms <n>]
+
+Seal recovery approval:
+  --recovery-freeze <file> --approval-request <file> --human-approval <file>
+  --approve-freeze-file <sha256> --approve-request <sha256> --approve-text <sha256>
+  --confirm <email> --approved-at <iso> --out-dir <dir>
+
+Run recovery:
+  --plan <file> --freeze <original-file> --approval <original-file> --run-dir <prior-run-dir>
+  --recovery-freeze <file> --recovery-approval <file> --out-dir <dir>
+  --commit --approve-execution <recovery-identity-sha256> --confirm <email>
   [--wait-seconds <n>] [--poll-ms <n>] [--timeout-ms <n>]
 
 Verify:
@@ -4330,6 +4355,9 @@ function parseDatasetMaintenanceFlowIdentityFlags(args: string[]) {
         'approval-request': { type: 'string' },
         'human-approval': { type: 'string' },
         approval: { type: 'string' },
+        'recovery-freeze': { type: 'string' },
+        'recovery-approval': { type: 'string' },
+        'recovery-reason': { type: 'string' },
         'approve-freeze-file': { type: 'string' },
         'approve-request': { type: 'string' },
         'approve-text': { type: 'string' },
@@ -4371,6 +4399,9 @@ function parseDatasetMaintenanceFlowIdentityFlags(args: string[]) {
     approvalRequestPath: string('approval-request'),
     humanApprovalPath: string('human-approval'),
     approvalPath: string('approval'),
+    recoveryFreezePath: string('recovery-freeze'),
+    recoveryApprovalPath: string('recovery-approval'),
+    recoveryReason: string('recovery-reason'),
     approveFreezeFile: string('approve-freeze-file'),
     approveRequest: string('approve-request'),
     approveText: string('approve-text'),
@@ -6742,6 +6773,10 @@ export async function executeCli(argv: string[], deps: CliDeps): Promise<CliResu
     const flowIdentityFreezeImpl = deps.freezeFlowIdentityImpl ?? freezeFlowIdentity;
     const flowIdentityApprovalSealImpl =
       deps.sealFlowIdentityApprovalImpl ?? sealFlowIdentityApproval;
+    const flowIdentityRecoveryFreezeImpl =
+      deps.freezeFlowIdentityRecoveryImpl ?? freezeFlowIdentityRecovery;
+    const flowIdentityRecoveryApprovalSealImpl =
+      deps.sealFlowIdentityRecoveryApprovalImpl ?? sealFlowIdentityRecoveryApproval;
     const flowIdentityRunImpl = deps.runFlowIdentityImpl ?? runFlowIdentity;
     const flowIdentityVerifyImpl = deps.verifyFlowIdentityImpl ?? verifyFlowIdentity;
     const datasetSourceUploadAttachmentsImpl =
@@ -7468,6 +7503,96 @@ export async function executeCli(argv: string[], deps: CliDeps): Promise<CliResu
           });
           return { exitCode: 0, stdout: stringifyJson(report, datasetFlags.json), stderr: '' };
         }
+        if (flowAction === 'freeze-recovery') {
+          const recoveryReason = required(datasetFlags.recoveryReason, '--recovery-reason');
+          if (
+            ![
+              'wrapper_exited_without_permit',
+              'process_response_ambiguous',
+              'process_domain_rejected',
+              'finalize_response_ambiguous',
+              'derivatives_became_ready_after_wrapper_exit',
+            ].includes(recoveryReason)
+          ) {
+            throw new CliError('flow-identity recovery reason is not allowed.', {
+              code: 'DATASET_FLOW_IDENTITY_RECOVERY_REASON_INVALID',
+              exitCode: 2,
+            });
+          }
+          const report = await flowIdentityRecoveryFreezeImpl({
+            planPath: required(datasetFlags.planPath, '--plan'),
+            freezePath: required(datasetFlags.freezePath, '--freeze'),
+            approvalPath: required(datasetFlags.approvalPath, '--approval'),
+            runDir: required(datasetFlags.runDir, '--run-dir'),
+            toolchainEvidencePath: required(
+              datasetFlags.toolchainEvidencePath,
+              '--toolchain-evidence',
+            ),
+            expectedProjectRef: required(datasetFlags.expectedProjectRef, '--expected-project-ref'),
+            confirm: required(datasetFlags.confirm, '--confirm'),
+            approvedAtUtc: required(datasetFlags.approvedAtUtc, '--approved-at'),
+            recoveryReason: recoveryReason as
+              | 'wrapper_exited_without_permit'
+              | 'process_response_ambiguous'
+              | 'process_domain_rejected'
+              | 'finalize_response_ambiguous'
+              | 'derivatives_became_ready_after_wrapper_exit',
+            cliVersion: loadCliPackageVersion(import.meta.url),
+            outDir: required(datasetFlags.outDir, '--out-dir'),
+            timeoutMs: datasetFlags.timeoutMs,
+            env: deps.env,
+            fetchImpl: deps.fetchImpl,
+          });
+          return { exitCode: 0, stdout: stringifyJson(report, datasetFlags.json), stderr: '' };
+        }
+        if (flowAction === 'seal-recovery-approval') {
+          const report = flowIdentityRecoveryApprovalSealImpl({
+            recoveryFreezePath: required(datasetFlags.recoveryFreezePath, '--recovery-freeze'),
+            approvalRequestPath: required(datasetFlags.approvalRequestPath, '--approval-request'),
+            humanApprovalPath: required(datasetFlags.humanApprovalPath, '--human-approval'),
+            approveFreezeFile: required(datasetFlags.approveFreezeFile, '--approve-freeze-file'),
+            approveRequest: required(datasetFlags.approveRequest, '--approve-request'),
+            approveText: required(datasetFlags.approveText, '--approve-text'),
+            confirm: required(datasetFlags.confirm, '--confirm'),
+            approvedAtUtc: required(datasetFlags.approvedAtUtc, '--approved-at'),
+            outDir: required(datasetFlags.outDir, '--out-dir'),
+          });
+          return { exitCode: 0, stdout: stringifyJson(report, datasetFlags.json), stderr: '' };
+        }
+        if (flowAction === 'run-recovery') {
+          if (!datasetFlags.commit || datasetFlags.statusOnly) {
+            throw new CliError('flow-identity run-recovery requires --commit only.', {
+              code: 'DATASET_FLOW_IDENTITY_RECOVERY_RUN_MODE_INVALID',
+              exitCode: 2,
+            });
+          }
+          const report = await flowIdentityRunImpl({
+            planPath: required(datasetFlags.planPath, '--plan'),
+            freezePath: required(datasetFlags.freezePath, '--freeze'),
+            approvalPath: required(datasetFlags.approvalPath, '--approval'),
+            recoveryRunDir: required(datasetFlags.runDir, '--run-dir'),
+            recoveryFreezePath: required(datasetFlags.recoveryFreezePath, '--recovery-freeze'),
+            recoveryApprovalPath: required(
+              datasetFlags.recoveryApprovalPath,
+              '--recovery-approval',
+            ),
+            outDir: required(datasetFlags.outDir, '--out-dir'),
+            commit: true,
+            statusOnly: false,
+            approveExecution: required(datasetFlags.approveExecution, '--approve-execution'),
+            confirm: required(datasetFlags.confirm, '--confirm'),
+            waitSeconds: datasetFlags.waitSeconds,
+            pollMs: datasetFlags.pollMs,
+            timeoutMs: datasetFlags.timeoutMs,
+            env: deps.env,
+            fetchImpl: deps.fetchImpl,
+          });
+          return {
+            exitCode: report.status === 'passed' ? 0 : 1,
+            stdout: stringifyJson(report, datasetFlags.json),
+            stderr: '',
+          };
+        }
         if (flowAction === 'run') {
           if (datasetFlags.commit === datasetFlags.statusOnly) {
             throw new CliError(
@@ -7519,7 +7644,7 @@ export async function executeCli(argv: string[], deps: CliDeps): Promise<CliResu
           };
         }
         throw new CliError(
-          "dataset maintenance flow-identity action must be 'capture', 'plan', 'freeze', 'seal-approval', 'run', or 'verify'.",
+          "dataset maintenance flow-identity action must be 'capture', 'plan', 'freeze', 'seal-approval', 'run', 'freeze-recovery', 'seal-recovery-approval', 'run-recovery', or 'verify'.",
           { code: 'DATASET_FLOW_IDENTITY_ACTION_INVALID', exitCode: 2 },
         );
       }

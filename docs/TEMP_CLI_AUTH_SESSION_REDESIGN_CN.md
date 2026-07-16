@@ -15,7 +15,7 @@ checkPaths:
   - src/lib/user-api-key.ts
   - src/lib/supabase-session.ts
   - src/lib/supabase-client.ts
-lastReviewedAt: 2026-07-16
+lastReviewedAt: 2026-07-17
 lastReviewedCommit: 1aa9b58f7a62f50d2cb680f372452fe829686d75
 related:
   - ../AGENTS.md
@@ -44,6 +44,7 @@ related:
 - 2026-07-16 复核：Issue #175 只调整已认证 preflight proof 的本地时间边界判断，不改变用户 API key、publishable key、session cache、bearer、RLS、RPC 或 service-role 边界；本历史设计结论不变。
 - 2026-07-16 复核：Issue #182 只调整同一已认证状态响应、RLS readback 与 snapshot proof 的本地 hash 域桥接，不改变用户 API key、publishable key、session cache、bearer、RLS、RPC 或 service-role 边界；本历史设计结论不变。
 - 2026-07-16 复核：Issue #157 的 flow-identity capture/run/verify 继续使用现有用户 API key 到 authenticated session、publishable key、RLS 表读取与受保护 RPC；freeze/seal 的离线边界不引入 service-role、alternate bearer 或新认证 env，本历史设计结论不变。
+- 2026-07-17 复核：Issue #157 COMMON 将已认证 RPC 的 HTTP-success `ok:false` 明确为数据库 domain rejection，并实现绑定现有 authenticated actor 的数据库 one-wrapper rotating permit、独立 fresh recovery approval 和 exact read-only scope lookup；create-only 本地 claim 只是纵深防御，不是 bearer 或新认证路径。access token、publishable key、session cache、RLS 与 service-role 边界不变；尚余 merge、Preview 与 DB/CLI 发布门禁。
 
 ## 1. 已确认事实
 

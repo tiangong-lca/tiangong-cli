@@ -1,5 +1,5 @@
 import assert from 'node:assert/strict';
-import { mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
+import { existsSync, mkdtempSync, readFileSync, rmSync, symlinkSync, writeFileSync } from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import test from 'node:test';
@@ -56,6 +56,13 @@ import {
 import type { DatasetMaintenanceRemoteContext } from '../src/lib/dataset-maintenance-remote.js';
 import type { FlowPayloadValidationResult } from '../src/lib/flow-payload-validation.js';
 import type { FetchLike } from '../src/lib/http.js';
+import { claimFlowIdentityApproval } from '../src/lib/dataset-maintenance-flow-identity-approval-claim.js';
+import {
+  computeFlowIdentityRecoveryApprovalIdentitySha256,
+  computeFlowIdentityRecoveryFreezeSha256,
+  type FlowIdentityRecoveryApproval,
+  type FlowIdentityRecoveryFreeze,
+} from '../src/lib/dataset-maintenance-flow-identity-recovery.js';
 import type { ProcessPayloadValidationResult } from '../src/lib/process-payload-validation.js';
 import {
   buildSupabaseTestEnv,
@@ -64,6 +71,7 @@ import {
 } from './helpers/supabase-auth.js';
 
 const ACTOR = '11111111-1111-4111-8111-111111111111';
+const WRAPPER_INVOCATION_ID = '77777777-7777-4777-8777-777777777777';
 const PUBLIC_OWNER = '22222222-2222-4222-8222-222222222222';
 const VERSION = '01.00.000';
 const PUBLIC_VERSION = '03.00.004';
@@ -72,6 +80,7 @@ const FP_VERSION = '03.00.003';
 const UG_ID = '44444444-4444-4444-8444-444444444444';
 const UG_VERSION = '03.00.003';
 const PROCESS_ID = '55555555-5555-4555-8555-555555555555';
+const PROCESS_ID_2 = '56565656-5656-4565-8565-565656565656';
 const TARGET_ID = '66666666-6666-4666-8666-666666666666';
 const MODIFIED = '2026-07-16T04:00:00+00:00';
 const SCOPE_ID = '88888888-8888-4888-8888-888888888888';
@@ -182,12 +191,12 @@ function exchange(index: number, flowReference: FlowIdentityReference, amount: s
   };
 }
 
-function processPayload(): JsonObject {
+function processPayload(processId = PROCESS_ID): JsonObject {
   const mapped = reference(sourceId(0), VERSION, 'source-0') as JsonObject;
   mapped['common:subReference'] = 'must-survive-five-field-patch';
   return {
     processDataSet: {
-      processInformation: { dataSetInformation: { 'common:UUID': PROCESS_ID } },
+      processInformation: { dataSetInformation: { 'common:UUID': processId } },
       exchanges: {
         exchange: [
           exchange(0, mapped as FlowIdentityReference, '1.250'),
@@ -323,17 +332,22 @@ function bindCaptureReceiptSemantics(
   return capture;
 }
 
-function liveCapture(review: FlowIdentityReviewLedger): FlowIdentityLiveCapture {
-  const processRow = snapshot({
-    table: 'processes',
-    id: PROCESS_ID,
-    version: VERSION,
-    userId: ACTOR,
-    stateCode: 0,
-    payload: processPayload(),
-    modelId: '77777777-7777-4777-8777-777777777777',
-    ruleVerification: false,
-  });
+function liveCapture(
+  review: FlowIdentityReviewLedger,
+  processIds: string[] = [PROCESS_ID],
+): FlowIdentityLiveCapture {
+  const processRows = processIds.map((processId) =>
+    snapshot({
+      table: 'processes',
+      id: processId,
+      version: VERSION,
+      userId: ACTOR,
+      stateCode: 0,
+      payload: processPayload(processId),
+      modelId: '77777777-7777-4777-8777-777777777777',
+      ruleVerification: false,
+    }),
+  );
   const capture: FlowIdentityLiveCapture = {
     schema_version: 'dataset-flow-identity-live-capture.v2',
     captured_at_utc: '2026-07-16T04:10:00.000Z',
@@ -343,8 +357,10 @@ function liveCapture(review: FlowIdentityReviewLedger): FlowIdentityLiveCapture 
     prerequisites: {
       step2_readback_sha256: HASH('step2-readback'),
       step2_completed_at_utc: '2026-07-16T02:00:00.000Z',
-      issue29_readback_sha256: HASH('issue29-readback'),
-      issue29_completed_at_utc: '2026-07-16T04:00:00.000Z',
+      issue29_target1_readback_sha256: HASH('issue29-target1-readback'),
+      issue29_target1_completed_at_utc: '2026-07-16T03:00:00.000Z',
+      issue29_target2_readback_sha256: HASH('issue29-target2-readback'),
+      issue29_target2_completed_at_utc: '2026-07-16T04:00:00.000Z',
     },
     sdk: { package: '@tiangong-lca/tidas-sdk', version: '0.1.45' },
     artifact_evidence: {
@@ -357,16 +373,16 @@ function liveCapture(review: FlowIdentityReviewLedger): FlowIdentityLiveCapture 
       source_count: 305,
       target_count: 1,
       support_count: 2,
-      owner_draft_process_count: 1,
+      owner_draft_process_count: processRows.length,
       owner_draft_process_scan: {
         status: 'complete',
         complete: true,
         strategy: 'postgrest_exact_count',
         requested_page_size: 1000,
-        effective_page_size: 1,
+        effective_page_size: processRows.length,
         pages_fetched: 1,
-        rows_fetched: 1,
-        exact_total: 1,
+        rows_fetched: processRows.length,
+        exact_total: processRows.length,
         termination_reason: 'content_range_total_reached',
         content_range_verified: true,
         ordering_verified: true,
@@ -413,7 +429,7 @@ function liveCapture(review: FlowIdentityReviewLedger): FlowIdentityLiveCapture 
         payload: unitGroupPayload(),
       }),
     ],
-    process_rows: [processRow],
+    process_rows: processRows,
     capture_request: {} as never,
     attestation: {
       ok: true,
@@ -440,8 +456,8 @@ function liveCapture(review: FlowIdentityReviewLedger): FlowIdentityLiveCapture 
       target_count: 1,
       support_count: 2,
       mapping_count: 1,
-      process_count: 1,
-      rewrite_count: 1,
+      process_count: processRows.length,
+      rewrite_count: processRows.length,
       capture_request_sha256: '',
       replay: false,
     },
@@ -450,9 +466,9 @@ function liveCapture(review: FlowIdentityReviewLedger): FlowIdentityLiveCapture 
   return bindCaptureReceiptSemantics(capture, review);
 }
 
-function executionScenario() {
+function executionScenario(processIds: string[] = [PROCESS_ID]) {
   const review = reviewLedger();
-  const capture = liveCapture(review);
+  const capture = liveCapture(review, processIds);
   const validation = { validateFlow: flowLegacyWarning, validateProcess: processPass };
   const bundle = buildFlowIdentityPlan({
     policy: policy(review.review_evidence_sha256),
@@ -506,8 +522,8 @@ function executionScenario() {
   return { ...bundle, capture, freeze, approval };
 }
 
-function materializeExecutionScenario(root: string) {
-  const input = executionScenario();
+function materializeExecutionScenario(root: string, processIds?: string[]) {
+  const input = executionScenario(processIds);
   const planPath = path.join(root, input.plan.artifacts.plan);
   const freezePath = path.join(root, 'flow-identity-freeze.json');
   const approvalPath = path.join(root, 'flow-identity-approval.json');
@@ -560,53 +576,95 @@ function scopePreflightRaw(input: Scenario): JsonObject {
   };
 }
 
+function executionPermit(generation: number): JsonObject {
+  return {
+    schema_version: 'dataset-flow-identity-execution-permit.v1',
+    invocation_id: WRAPPER_INVOCATION_ID,
+    generation,
+    token: HASH(`permit-${generation}`),
+  };
+}
+
+function scopePreflightEnvelope(input: Scenario): JsonObject {
+  return { ...scopePreflightRaw(input), execution_permit: executionPermit(0) };
+}
+
+function scopeLookupRaw(input: Scenario): JsonObject {
+  const preflight = scopePreflightRaw(input);
+  return {
+    ok: true,
+    command: 'cmd_dataset_flow_identity_scope_lookup',
+    schema_version: 'dataset-flow-identity-scope-lookup-result.v1',
+    read_only: true,
+    scope_id: preflight.scope_id,
+    receipt_id: preflight.receipt_id,
+    receipt_proof_sha256: preflight.receipt_proof_sha256,
+    mapping_guard_set_sha256: preflight.mapping_guard_set_sha256,
+    process_intent_set_sha256: preflight.process_intent_set_sha256,
+    operation_id: preflight.operation_id,
+    plan_sha256: preflight.plan_sha256,
+    scope_proof_sha256: preflight.scope_proof_sha256,
+    status: 'completed',
+    process_count: preflight.process_count,
+    mapping_count: preflight.mapping_count,
+    support_snapshot_count: preflight.support_snapshot_count,
+    source_universe_count: 305,
+    rewrite_count: preflight.rewrite_count,
+    next_ordinal: input.plan.processes.length + 1,
+    audit_id: 'scope-audit-1',
+    whole_scope_proof_sha256: HASH('whole-scope-terminal'),
+    execution_permit: null,
+  };
+}
+
 function scopeStatusRaw(options: {
   input: Scenario;
   phase: 'pending' | 'primary' | 'completed';
   processRequestSha256?: string;
+  completedProcessCount?: number;
 }): JsonObject {
-  const process = options.input.plan.processes[0]!;
-  const completed = options.phase !== 'pending';
+  const completedProcessCount =
+    options.completedProcessCount ??
+    (options.phase === 'pending' ? 0 : options.input.plan.processes.length);
+  const allCompleted = completedProcessCount === options.input.plan.processes.length;
   const terminal = options.phase === 'completed';
-  const derivativeTarget = completed
-    ? {
-        ordinal: 1,
-        id: process.id,
-        version: process.version,
-        original_batch_id: DERIVATIVE_BATCH_ID,
-        effective_reference_id: DERIVATIVE_REQUEST_ID,
-        effective_reference_kind: 'protected_batch',
-        status: terminal ? 'completed' : 'pending',
-        request_status: terminal ? 'completed' : 'embedding_pending',
-        phase: terminal ? 'completed' : 'embedding_queued',
-        lineage_ok: true,
-        proposals_committed: terminal,
-        terminal_audit_present: terminal,
-        residue: {
-          http_requests: 0,
-          embedding_jobs: 0,
-          pending_jobs: terminal ? 0 : 1,
-          failure_rows: 0,
-          other_active_fences: 0,
-        },
-        current_snapshot_sha256: HASH(
-          terminal ? 'terminal-derivative-snapshot' : 'pending-derivative-snapshot',
-        ),
-        current_json_ordered_sha256: process.desired_payload_sha256,
-        causal_terminal_proof: terminal,
-      }
-    : null;
+  const derivativeTargets = options.input.plan.processes
+    .slice(0, completedProcessCount)
+    .map((process, index) => ({
+      ordinal: index + 1,
+      id: process.id,
+      version: process.version,
+      original_batch_id: DERIVATIVE_BATCH_ID,
+      effective_reference_id: DERIVATIVE_REQUEST_ID,
+      effective_reference_kind: 'protected_batch',
+      status: terminal ? 'completed' : 'pending',
+      request_status: terminal ? 'completed' : 'embedding_pending',
+      phase: terminal ? 'completed' : 'embedding_queued',
+      lineage_ok: true,
+      proposals_committed: terminal,
+      terminal_audit_present: terminal,
+      residue: {
+        http_requests: 0,
+        embedding_jobs: 0,
+        pending_jobs: terminal ? 0 : 1,
+        failure_rows: 0,
+        other_active_fences: 0,
+      },
+      current_snapshot_sha256: HASH(`${terminal ? 'terminal' : 'pending'}-${index}`),
+      current_json_ordered_sha256: process.desired_payload_sha256,
+      causal_terminal_proof: terminal,
+    }));
   const derivativeSetProof = {
-    ok: completed,
+    ok: completedProcessCount > 0,
     schema_version: 'dataset-flow-identity-derivative-set-proof.v1',
     scope_id: SCOPE_ID,
-    status: terminal ? 'completed' : completed ? 'pending' : 'failed',
-    target_count: completed ? 1 : 0,
-    completed_count: terminal ? 1 : 0,
-    pending_count: completed && !terminal ? 1 : 0,
+    status: terminal ? 'completed' : completedProcessCount > 0 ? 'pending' : 'failed',
+    target_count: completedProcessCount,
+    completed_count: terminal ? completedProcessCount : 0,
+    pending_count: terminal ? 0 : completedProcessCount,
     failed_count: 0,
     causal_terminal_proof: terminal,
-    targets: derivativeTarget ? [derivativeTarget] : [],
+    targets: derivativeTargets,
     compensation_targets: [],
     proof_sha256: HASH(terminal ? 'terminal-derivative-set' : 'nonterminal-derivative-set'),
   };
@@ -644,19 +702,27 @@ function scopeStatusRaw(options: {
     operation_id: options.input.plan.operation_id,
     plan_sha256: options.input.plan.plan_sha256,
     scope_proof_sha256: HASH('scope-proof'),
-    status: terminal ? 'completed' : completed ? 'derivatives_pending' : 'sealed',
-    process_count: 1,
-    completed_process_count: completed ? 1 : 0,
-    pending_process_count: completed ? 0 : 1,
+    status: terminal
+      ? 'completed'
+      : allCompleted
+        ? 'derivatives_pending'
+        : completedProcessCount > 0
+          ? 'running'
+          : 'sealed',
+    process_count: options.input.plan.processes.length,
+    completed_process_count: completedProcessCount,
+    pending_process_count: options.input.plan.processes.length - completedProcessCount,
     failed_process_count: 0,
-    next_ordinal: completed ? 2 : 1,
-    rewrite_count: 1,
-    completed_rewrite_count: completed ? 1 : 0,
-    primary_complete: completed,
+    next_ordinal: Math.min(completedProcessCount + 1, options.input.plan.processes.length + 1),
+    rewrite_count: options.input.plan.summary.rewrites,
+    completed_rewrite_count: options.input.plan.processes
+      .slice(0, completedProcessCount)
+      .reduce((sum, process) => sum + process.rewrite_count, 0),
+    primary_complete: allCompleted,
     primary_current: true,
     live_guard_current: true,
     derivatives_current: terminal,
-    derivative_pending_count: completed && !terminal ? 1 : 0,
+    derivative_pending_count: terminal ? 0 : completedProcessCount,
     derivative_failed_count: 0,
     derivative_set_proof: derivativeSetProof,
     derivative_proof_set_sha256: derivativeSetProof.proof_sha256,
@@ -669,20 +735,30 @@ function scopeStatusRaw(options: {
     protected_closure_proof: { ok: true },
     terminal_proof_sha256: terminal ? HASH('terminal-proof') : null,
     completed_at: terminal ? '2026-07-16T05:00:00.000Z' : null,
-    cancellable: !completed,
-    strict_continuation_required: false,
-    processes: [
-      {
-        ordinal: 1,
+    cancellable: completedProcessCount === 0,
+    strict_continuation_required: completedProcessCount > 0 && !allCompleted,
+    processes: options.input.plan.processes.map((process, index) => {
+      const completed = index < completedProcessCount;
+      const intentProof = index === 0 ? PROCESS_INTENT_PROOF : HASH(`process-intent-${index + 1}`);
+      const requestSha256 =
+        index === 0 && options.processRequestSha256
+          ? options.processRequestSha256
+          : buildFlowIdentityProcessRequest({
+              scopeProofSha256: HASH('scope-proof'),
+              ordinal: index + 1,
+              processIntentProofSha256: intentProof,
+            }).process_request_sha256;
+      return {
+        ordinal: index + 1,
         id: process.id,
         version: process.version,
         status: completed ? 'completed' : 'pending',
-        process_request_sha256: completed ? options.processRequestSha256 : null,
-        process_intent_proof_sha256: PROCESS_INTENT_PROOF,
+        process_request_sha256: completed ? requestSha256 : null,
+        process_intent_proof_sha256: intentProof,
         desired_payload_sha256: process.desired_payload_sha256,
         desired_exchange_set_sha256: process.desired_exchange_set_sha256,
         rewrite_count: 1,
-        audit_id: completed ? 'audit-1' : null,
+        audit_id: completed ? `audit-${index + 1}` : null,
         before_payload_sha256: process.before_payload_sha256,
         before_exchange_set_sha256: process.before_exchange_set_sha256,
         after_payload_sha256: completed ? process.desired_payload_sha256 : null,
@@ -693,8 +769,8 @@ function scopeStatusRaw(options: {
         causal_terminal_proof: false,
         completed_at: completed ? '2026-07-16T04:50:00.000Z' : null,
         last_error: null,
-      },
-    ],
+      };
+    }),
   };
 }
 
@@ -882,6 +958,8 @@ function processProofRaw(input: Scenario, request: JsonObject): JsonObject {
     receipt_proof_sha256: input.plan.receipt_proof_sha256,
     mapping_guard_set_sha256: input.plan.mapping_guard_set_sha256,
     process_intent_set_sha256: input.plan.process_intent_set_sha256,
+    invocation_id: WRAPPER_INVOCATION_ID,
+    permit_generation_before: 0,
     ordinal: 1,
     process_id: process.id,
     process_version: process.version,
@@ -952,6 +1030,8 @@ function finalizeRaw(
     receipt_proof_sha256: input.plan.receipt_proof_sha256,
     mapping_guard_set_sha256: input.plan.mapping_guard_set_sha256,
     process_intent_set_sha256: input.plan.process_intent_set_sha256,
+    invocation_id: WRAPPER_INVOCATION_ID,
+    permit_generation_before: 0,
     operation_id: input.plan.operation_id,
     plan_sha256: input.plan.plan_sha256,
     scope_proof_sha256: HASH('scope-proof'),
@@ -1049,6 +1129,198 @@ function commandFor(input: ReturnType<typeof materializeExecutionScenario>, name
       throw new Error('unused');
     }) as FetchLike,
   };
+}
+
+function materializeRecoveryScenario(options: {
+  root: string;
+  baseline: (input: ReturnType<typeof materializeExecutionScenario>) => JsonObject;
+  proofKind?: 'preflight' | 'lookup';
+}) {
+  const input = materializeExecutionScenario(path.join(options.root, 'input'));
+  const identity = buildFlowIdentityExecutionIdentity({
+    plan: input.plan,
+    freeze: input.freeze,
+    approval: input.approval,
+  });
+  const scope = options.proofKind === 'lookup' ? scopeLookupRaw(input) : scopePreflightRaw(input);
+  const baselineRaw = options.baseline(input);
+  const baseline = parseFlowIdentityScopeStatus(
+    baselineRaw,
+    input.plan,
+    String(scope.scope_id),
+    String(scope.scope_proof_sha256),
+  );
+  const remainingProcessPosts = input.plan.processes.length - baseline.completed_process_count;
+  const recoveryFreeze: FlowIdentityRecoveryFreeze = {
+    schema_version: 'dataset-flow-identity-recovery-freeze.v1',
+    generated_at_utc: '2026-07-16T05:10:00.000Z',
+    environment: 'production',
+    project_ref: input.plan.project_ref,
+    actor: input.plan.account,
+    target_visibility: 'owner_draft',
+    user_state_claim: 'authenticated_actor_state_100_plus_own_state_0',
+    scope_id: String(scope.scope_id),
+    scope_proof_sha256: String(scope.scope_proof_sha256),
+    operation_id: input.plan.operation_id,
+    plan_sha256: input.plan.plan_sha256,
+    original_freeze_sha256: input.freeze.freeze_sha256,
+    original_execution_request_id: identity.request_id,
+    original_execution_identity_sha256: identity.identity_sha256,
+    original_execution_approval_request_sha256: input.approval.execution_approval_request_sha256,
+    original_execution_approval_text_sha256: input.approval.execution_approval_text_sha256,
+    original_execution_approval_identity_sha256: input.approval.execution_approval_identity_sha256,
+    recovery_reason:
+      remainingProcessPosts === 0
+        ? 'derivatives_became_ready_after_wrapper_exit'
+        : 'wrapper_exited_without_permit',
+    recovery_mode: remainingProcessPosts === 0 ? 'finalize_only' : 'resume_and_finalize',
+    baseline: {
+      status: baseline.status,
+      completed_process_count: baseline.completed_process_count,
+      next_ordinal: baseline.next_ordinal,
+      primary_complete: baseline.primary_complete,
+      primary_current: baseline.primary_current,
+      live_guard_current: baseline.live_guard_current,
+      protected_closure_current: baseline.protected_closure_current,
+      derivatives_current: baseline.derivatives_current,
+      whole_scope_proof_sha256: baseline.whole_scope_proof_sha256,
+    },
+    toolchain_evidence_sha256: HASH('recovery-toolchain'),
+    approval_reusable: false,
+    maximum_wrapper_invocations: 1,
+    maximum_cli_apply_spawns: 1,
+    maximum_process_posts: remainingProcessPosts,
+    maximum_finalize_posts: 1,
+    automatic_retry: false,
+    recovery_freeze_sha256: '',
+  };
+  recoveryFreeze.recovery_freeze_sha256 = computeFlowIdentityRecoveryFreezeSha256(recoveryFreeze);
+  const recoveryApproval: FlowIdentityRecoveryApproval = {
+    schema_version: 'dataset-flow-identity-recovery-approval.v1',
+    approved_at_utc: '2026-07-16T05:20:00.000Z',
+    actor: input.plan.account,
+    plan_sha256: input.plan.plan_sha256,
+    scope_id: recoveryFreeze.scope_id,
+    scope_proof_sha256: recoveryFreeze.scope_proof_sha256,
+    recovery_freeze_sha256: recoveryFreeze.recovery_freeze_sha256,
+    toolchain_evidence_sha256: recoveryFreeze.toolchain_evidence_sha256,
+    recovery_approval_request_sha256: HASH('recovery-approval-request'),
+    recovery_approval_text_sha256: HASH('recovery-approval-text'),
+    recovery_approval_identity_sha256: '',
+  };
+  recoveryApproval.recovery_approval_identity_sha256 =
+    computeFlowIdentityRecoveryApprovalIdentitySha256(recoveryApproval);
+  const recoveryRunDir = path.join(options.root, 'recovery-input');
+  writePrivateImmutableJson(
+    path.join(
+      recoveryRunDir,
+      options.proofKind === 'lookup' ? 'scope-lookup-proof.json' : 'scope-preflight-proof.json',
+    ),
+    scope,
+  );
+  const recoveryFreezePath = path.join(options.root, 'recovery-freeze.json');
+  const recoveryApprovalPath = path.join(options.root, 'recovery-approval.json');
+  writePrivateImmutableJson(recoveryFreezePath, recoveryFreeze);
+  writePrivateImmutableJson(recoveryApprovalPath, recoveryApproval);
+  const command = {
+    ...commandFor(input, 'run'),
+    recoveryFreezePath,
+    recoveryApprovalPath,
+    recoveryRunDir,
+    approveExecution: recoveryApproval.recovery_approval_identity_sha256,
+  };
+  return {
+    input,
+    identity,
+    scope,
+    baselineRaw,
+    recoveryFreeze,
+    recoveryApproval,
+    command,
+  };
+}
+
+function recoveryEnvelope(
+  scenario: ReturnType<typeof materializeRecoveryScenario>,
+  request: JsonObject,
+): JsonObject {
+  return {
+    ok: true,
+    command: 'cmd_dataset_flow_identity_scope_recover_guarded',
+    schema_version: 'dataset-flow-identity-scope-recovery-result.v1',
+    scope_id: scenario.recoveryFreeze.scope_id,
+    scope_proof_sha256: scenario.recoveryFreeze.scope_proof_sha256,
+    status: scenario.recoveryFreeze.baseline.status,
+    completed_process_count: scenario.recoveryFreeze.baseline.completed_process_count,
+    next_ordinal: scenario.recoveryFreeze.baseline.next_ordinal,
+    whole_scope_proof_sha256: scenario.recoveryFreeze.baseline.whole_scope_proof_sha256,
+    recovery_wire_request_sha256: flowIdentityRestrictedSha256(request),
+    recovery_approval_identity_sha256: scenario.recoveryApproval.recovery_approval_identity_sha256,
+    invocation_id: WRAPPER_INVOCATION_ID,
+    audit_id: 'recovery-audit-1',
+    replay: false,
+    execution_permit: executionPermit(0),
+  };
+}
+
+function recoveryDependencies(
+  scenario: ReturnType<typeof materializeRecoveryScenario>,
+  overrides: Record<string, unknown> = {},
+) {
+  return {
+    resolveContext: async ({ fetchImpl }: { fetchImpl: FetchLike }) =>
+      contextFor(scenario.input, fetchImpl),
+    preflight: async () => {
+      throw new Error('recovery must not invoke initial preflight');
+    },
+    lookup: async () => {
+      throw new Error('recovery must not invoke scope lookup');
+    },
+    recover: async ({ request }: { request: JsonObject }) => recoveryEnvelope(scenario, request),
+    rewrite: async () => {
+      throw new Error('rewrite must remain unreachable');
+    },
+    read: async () => scenario.baselineRaw,
+    finalize: async () => {
+      throw new Error('finalize must remain unreachable');
+    },
+    sleep: async () => undefined,
+    now: () => new Date('2026-07-16T05:30:00.000Z'),
+    ...overrides,
+  } as never;
+}
+
+function writeFinalizeAttempt(outDir: string, request: JsonObject): string {
+  const requestSha256 = flowIdentityRestrictedSha256(request);
+  writePrivateImmutableJson(path.join(outDir, `finalize-attempt-${requestSha256}.json`), {
+    schema_version: 'dataset-flow-identity-finalize-attempt.v3',
+    generated_at_utc: '2026-07-16T05:25:00.000Z',
+    scope_id: SCOPE_ID,
+    request_sha256: requestSha256,
+    request,
+    max_posts: 1,
+    automatic_retry: false,
+  });
+  return requestSha256;
+}
+
+function writeFinalizeRejection(outDir: string, requestSha256: string, message?: string): void {
+  writePrivateImmutableJson(path.join(outDir, `finalize-domain-rejection-${requestSha256}.json`), {
+    schema_version: 'dataset-flow-identity-finalize-domain-rejection.v1',
+    status: 'rejected',
+    scope_id: SCOPE_ID,
+    request_sha256: requestSha256,
+    automatic_retry: false,
+    approval_reusable: false,
+    recovery: 'operator_review_required',
+    response: {
+      ok: false,
+      command: 'cmd_dataset_flow_identity_scope_finalize_guarded',
+      code: 'FLOW_IDENTITY_FINALIZE_SCOPE_BUSY',
+      status: 409,
+      ...(message === undefined ? {} : { message }),
+    },
+  });
 }
 
 test('execution proof parsers cover the remaining fail-closed v2 boundaries', () => {
@@ -1319,7 +1591,7 @@ test('runner wait helper applies its zero-second default', async () => {
       initial,
       dependencies: {
         resolveContext: async () => context,
-        preflight: async () => scopePreflightRaw(input),
+        preflight: async () => scopePreflightEnvelope(input),
         rewrite: async () => ({}),
         read: async () => scopeStatusRaw({ input, phase: 'pending' }),
         finalize: async () => ({}),
@@ -1385,7 +1657,7 @@ test('runner covers initial, status-only, and post-wait guarded decisions withou
       try {
         const result = await runInternals.executeRun(command, {
           resolveContext: async ({ fetchImpl }) => contextFor(input, fetchImpl),
-          preflight: async () => scopePreflightRaw(input),
+          preflight: async () => scopePreflightEnvelope(input),
           rewrite: async () => {
             throw new Error('rewrite must remain unreachable');
           },
@@ -1539,6 +1811,443 @@ test('runner covers initial, status-only, and post-wait guarded decisions withou
   }
 });
 
+test('consumed claim recovers a lost preflight response through one read-only lookup', async () => {
+  const root = mkdtempSync(path.join(os.tmpdir(), 'tg-flow-identity-lost-preflight-'));
+  try {
+    const input = materializeExecutionScenario(path.join(root, 'input'));
+    const canonicalOutDir = path.join(root, 'canonical-run');
+    writePrivateImmutableJson(path.join(canonicalOutDir, 'claim-anchor.json'), { ok: true });
+    const stateHome = path.join(root, 'state');
+    const env = { XDG_STATE_HOME: stateHome };
+    const identity = buildFlowIdentityExecutionIdentity({
+      plan: input.plan,
+      freeze: input.freeze,
+      approval: input.approval,
+    });
+    claimFlowIdentityApproval({
+      env,
+      claim: {
+        schema_version: 'dataset-flow-identity-local-approval-claim.v1',
+        claimed_at_utc: '2026-07-16T05:00:00.000Z',
+        approval_kind: 'initial',
+        approval_identity_sha256: input.approval.execution_approval_identity_sha256,
+        execution_identity_sha256: identity.identity_sha256,
+        request_id: identity.request_id,
+        environment: 'production',
+        project_ref: input.plan.project_ref,
+        actor_user_id: input.plan.account.user_id,
+        actor_email: input.plan.account.email,
+        target_visibility: 'owner_draft',
+        user_state_claim: 'authenticated_actor_state_100_plus_own_state_0',
+        plan_sha256: input.plan.plan_sha256,
+        freeze_sha256: input.freeze.freeze_sha256,
+        canonical_out_dir: canonicalOutDir,
+        maximum_cli_apply_spawns: 1,
+        approval_reusable: false,
+      },
+    });
+    const command = commandFor(input, 'caller-run');
+    command.commit = false;
+    command.statusOnly = true;
+    command.env = env;
+    let lookupCalls = 0;
+    let readCalls = 0;
+    let writeCalls = 0;
+    const result = await runInternals.executeRun(command, {
+      resolveContext: async ({ fetchImpl }) => contextFor(input, fetchImpl),
+      preflight: async () => {
+        writeCalls += 1;
+        throw new Error('guarded preflight must not be replayed');
+      },
+      lookup: async () => {
+        lookupCalls += 1;
+        return scopeLookupRaw(input);
+      },
+      rewrite: async () => {
+        writeCalls += 1;
+        throw new Error('rewrite must remain unreachable');
+      },
+      read: async () => {
+        readCalls += 1;
+        return scopeStatusRaw({
+          input,
+          phase: 'completed',
+          processRequestSha256: String(processRequest(input).process_request_sha256),
+        });
+      },
+      finalize: async () => {
+        writeCalls += 1;
+        throw new Error('finalize must remain unreachable');
+      },
+      sleep: async () => undefined,
+      now: () => new Date('2026-07-16T05:00:00.000Z'),
+    });
+    assert.equal(result.status, 'passed');
+    assert.equal(lookupCalls, 1);
+    assert.equal(readCalls, 1);
+    assert.equal(writeCalls, 0);
+    assert.equal(existsSync(path.join(canonicalOutDir, 'scope-lookup-proof.json')), true);
+    assert.equal(existsSync(path.join(command.outDir, 'scope-lookup-proof.json')), false);
+  } finally {
+    rmSync(root, { recursive: true, force: true });
+  }
+});
+
+test('runner preserves determinate preflight and process domain rejections without approval reuse', async () => {
+  const root = mkdtempSync(path.join(os.tmpdir(), 'tg-flow-identity-domain-rejection-'));
+  try {
+    const preflightInput = materializeExecutionScenario(path.join(root, 'preflight'));
+    const preflightCommand = commandFor(preflightInput, 'run');
+    let preflightCalls = 0;
+    const preflightDependencies = {
+      resolveContext: async ({ fetchImpl }: { fetchImpl: FetchLike }) =>
+        contextFor(preflightInput, fetchImpl),
+      preflight: async () => {
+        preflightCalls += 1;
+        return {
+          ok: false,
+          command: 'cmd_dataset_flow_identity_scope_preflight_guarded',
+          code: 'FLOW_IDENTITY_PREFLIGHT_LOCK_BUSY',
+          status: 409,
+          message: 'Preflight lock is busy',
+        };
+      },
+      rewrite: async () => {
+        throw new Error('rewrite must remain unreachable');
+      },
+      read: async () => {
+        throw new Error('read must remain unreachable');
+      },
+      finalize: async () => {
+        throw new Error('finalize must remain unreachable');
+      },
+      sleep: async () => undefined,
+      now: () => new Date('2026-07-16T05:00:00.000Z'),
+    };
+    const firstPreflight = await runInternals.executeRun(preflightCommand, preflightDependencies);
+    const secondPreflight = await runInternals.executeRun(preflightCommand, preflightDependencies);
+    assert.equal(firstPreflight.status, 'blocked');
+    assert.equal(secondPreflight.status, 'blocked');
+    assert.equal(firstPreflight.issues[0]?.code, 'FLOW_IDENTITY_PREFLIGHT_LOCK_BUSY');
+    assert.equal(secondPreflight.issues[0]?.code, 'FLOW_IDENTITY_PREFLIGHT_LOCK_BUSY');
+    assert.equal(preflightCalls, 1);
+    assert.equal(
+      existsSync(path.join(preflightCommand.outDir, 'scope-preflight-domain-rejection.json')),
+      true,
+    );
+
+    const processInput = materializeExecutionScenario(path.join(root, 'process'));
+    const processCommand = commandFor(processInput, 'run');
+    let processPreflightCalls = 0;
+    let rewriteCalls = 0;
+    const processDependencies = {
+      resolveContext: async ({ fetchImpl }: { fetchImpl: FetchLike }) =>
+        contextFor(processInput, fetchImpl),
+      preflight: async () => {
+        processPreflightCalls += 1;
+        return scopePreflightEnvelope(processInput);
+      },
+      rewrite: async () => {
+        rewriteCalls += 1;
+        return {
+          ok: false,
+          command: 'cmd_dataset_flow_identity_process_rewrite_guarded',
+          code: 'FLOW_IDENTITY_PROCESS_SCOPE_BUSY',
+          status: 409,
+          message: 'Process scope is busy',
+        };
+      },
+      read: async () => scopeStatusRaw({ input: processInput, phase: 'pending' }),
+      finalize: async () => {
+        throw new Error('finalize must remain unreachable');
+      },
+      sleep: async () => undefined,
+      now: () => new Date('2026-07-16T05:00:00.000Z'),
+    };
+    const firstProcess = await runInternals.executeRun(processCommand, processDependencies);
+    const secondProcess = await runInternals.executeRun(processCommand, processDependencies);
+    assert.equal(firstProcess.status, 'blocked');
+    assert.equal(secondProcess.status, 'blocked');
+    assert.equal(firstProcess.issues[0]?.code, 'FLOW_IDENTITY_PROCESS_SCOPE_BUSY');
+    assert.equal(
+      secondProcess.issues[0]?.code,
+      'DATASET_FLOW_IDENTITY_FRESH_RECOVERY_APPROVAL_REQUIRED',
+    );
+    assert.equal(processPreflightCalls, 1);
+    assert.equal(rewriteCalls, 1);
+    assert.equal(
+      existsSync(path.join(processCommand.outDir, 'process-domain-rejection-000001.json')),
+      true,
+    );
+    assert.equal(
+      (
+        JSON.parse(
+          readFileSync(
+            path.join(processCommand.outDir, 'process-domain-rejection-000001.json'),
+            'utf8',
+          ),
+        ) as JsonObject
+      ).recovery,
+      'operator_review_required',
+    );
+
+    const partialInput = materializeExecutionScenario(path.join(root, 'partial'), [
+      PROCESS_ID,
+      PROCESS_ID_2,
+    ]);
+    const partialCommand = commandFor(partialInput, 'run');
+    let partialReads = 0;
+    let partialRewrites = 0;
+    const partialStatus = () =>
+      scopeStatusRaw({
+        input: partialInput,
+        phase: 'pending',
+        completedProcessCount: 1,
+      });
+    const partialDependencies = {
+      resolveContext: async ({ fetchImpl }: { fetchImpl: FetchLike }) =>
+        contextFor(partialInput, fetchImpl),
+      preflight: async () => scopePreflightEnvelope(partialInput),
+      rewrite: async () => {
+        partialRewrites += 1;
+        return {
+          ok: false,
+          command: 'cmd_dataset_flow_identity_process_rewrite_guarded',
+          code: 'FLOW_IDENTITY_PROCESS_SCOPE_BUSY',
+          status: 409,
+          message: 'Process scope is busy',
+        };
+      },
+      read: async () => {
+        partialReads += 1;
+        return partialStatus();
+      },
+      finalize: async () => {
+        throw new Error('finalize must remain unreachable');
+      },
+      sleep: async () => undefined,
+      now: () => new Date('2026-07-16T05:00:00.000Z'),
+    };
+    const firstPartial = await runInternals.executeRun(partialCommand, partialDependencies);
+    const secondPartial = await runInternals.executeRun(partialCommand, partialDependencies);
+    assert.equal(firstPartial.status, 'blocked');
+    assert.equal(secondPartial.status, 'blocked');
+    assert.equal(firstPartial.completed_process_count, 1);
+    assert.equal(firstPartial.next_ordinal, 2);
+    assert.equal(partialRewrites, 1);
+    assert.equal(partialReads, 3);
+    assert.equal(
+      firstPartial.issues.some(
+        (issue) =>
+          issue.code ===
+          'DATASET_FLOW_IDENTITY_PARTIAL_EXECUTION_REQUIRES_STATUS_READ_AND_OPERATOR_APPROVED_SCOPE_RECOVERY',
+      ),
+      true,
+    );
+    const recoveryArtifact = JSON.parse(
+      readFileSync(
+        path.join(partialCommand.outDir, 'process-domain-rejection-recovery-000002.000001.json'),
+        'utf8',
+      ),
+    ) as JsonObject;
+    assert.equal(
+      recoveryArtifact.recovery,
+      'partial_execution_requires_status_read_and_operator_approved_scope_recovery',
+    );
+
+    const readFailureInput = materializeExecutionScenario(path.join(root, 'read-failure'));
+    const readFailureCommand = commandFor(readFailureInput, 'run');
+    let readFailureReads = 0;
+    const readFailure = await runInternals.executeRun(readFailureCommand, {
+      resolveContext: async ({ fetchImpl }) => contextFor(readFailureInput, fetchImpl),
+      preflight: async () => scopePreflightEnvelope(readFailureInput),
+      rewrite: async () => ({
+        ok: false,
+        command: 'cmd_dataset_flow_identity_process_rewrite_guarded',
+        code: 'FLOW_IDENTITY_PROCESS_SCOPE_BUSY',
+        status: 409,
+      }),
+      read: async () => {
+        readFailureReads += 1;
+        if (readFailureReads > 1) throw new Error('bounded status read failed');
+        return scopeStatusRaw({ input: readFailureInput, phase: 'pending' });
+      },
+      finalize: async () => {
+        throw new Error('finalize must remain unreachable');
+      },
+      sleep: async () => undefined,
+      now: () => new Date('2026-07-16T05:00:00.000Z'),
+    });
+    assert.equal(readFailure.status, 'indeterminate');
+    assert.equal(readFailureReads, 2);
+    assert.equal(
+      readFailure.issues.some(
+        (issue) =>
+          issue.code === 'DATASET_FLOW_IDENTITY_PROCESS_DOMAIN_REJECTION_STATUS_READ_FAILED',
+      ),
+      true,
+    );
+  } finally {
+    rmSync(root, { recursive: true, force: true });
+  }
+});
+
+test('runner fails closed on stored rejection tamper and recovery admission ambiguity', async () => {
+  const root = mkdtempSync(path.join(os.tmpdir(), 'tg-flow-identity-recovery-ledger-'));
+  try {
+    const tamperedInput = materializeExecutionScenario(path.join(root, 'tampered-scope'));
+    const tamperedCommand = commandFor(tamperedInput, 'run');
+    const preflightRequestSha256 = HASH('tampered-preflight-request');
+    writePrivateImmutableJson(
+      path.join(tamperedCommand.outDir, 'scope-preflight-domain-rejection.json'),
+      {
+        status: 'rejected',
+        request_sha256: preflightRequestSha256,
+        automatic_retry: false,
+        approval_reusable: false,
+        response: { ok: true },
+      },
+    );
+    await assert.rejects(
+      runInternals.executeRun(tamperedCommand, {
+        resolveContext: async ({ fetchImpl }) => contextFor(tamperedInput, fetchImpl),
+        preflight: async () => {
+          throw new Error('tampered artifact must block preflight');
+        },
+        rewrite: async () => {
+          throw new Error('rewrite must remain unreachable');
+        },
+        read: async () => {
+          throw new Error('read must remain unreachable');
+        },
+        finalize: async () => {
+          throw new Error('finalize must remain unreachable');
+        },
+        sleep: async () => undefined,
+        now: () => new Date('2026-07-16T05:30:00.000Z'),
+      }),
+      /does not contain an exact database domain rejection/u,
+    );
+
+    const statusOnly = materializeRecoveryScenario({
+      root: path.join(root, 'status-only'),
+      baseline: (input) => scopeStatusRaw({ input, phase: 'pending' }),
+    });
+    statusOnly.command.commit = false;
+    statusOnly.command.statusOnly = true;
+    await assert.rejects(
+      runInternals.executeRun(statusOnly.command, recoveryDependencies(statusOnly)),
+      /Recovery admission is write-capable/u,
+    );
+
+    const ambiguous = materializeRecoveryScenario({
+      root: path.join(root, 'ambiguous'),
+      baseline: (input) => scopeStatusRaw({ input, phase: 'pending' }),
+    });
+    let ambiguityReads = 0;
+    let recoveryCalls = 0;
+    const ambiguousResult = await runInternals.executeRun(
+      ambiguous.command,
+      recoveryDependencies(ambiguous, {
+        recover: async () => {
+          recoveryCalls += 1;
+          throw new Error('recovery response lost');
+        },
+        read: async () => {
+          ambiguityReads += 1;
+          if (ambiguityReads === 1) return ambiguous.baselineRaw;
+          throw new Error('single ambiguity status read failed');
+        },
+      }),
+    );
+    assert.equal(ambiguousResult.status, 'indeterminate');
+    assert.equal(ambiguousResult.database_status, null);
+    assert.equal(recoveryCalls, 1);
+    assert.equal(ambiguityReads, 2);
+
+    const storedProcess = materializeRecoveryScenario({
+      root: path.join(root, 'stored-process-rejection'),
+      baseline: (input) => scopeStatusRaw({ input, phase: 'pending' }),
+      proofKind: 'preflight',
+    });
+    const processRequestSha256 = String(processRequest(storedProcess.input).process_request_sha256);
+    writePrivateImmutableJson(
+      path.join(storedProcess.command.outDir, 'process-attempt-000001.json'),
+      {
+        schema_version: 'dataset-flow-identity-process-attempt.v2',
+        process_request_sha256: processRequestSha256,
+      },
+    );
+    writePrivateImmutableJson(
+      path.join(storedProcess.command.outDir, 'process-domain-rejection-000001.json'),
+      {
+        schema_version: 'dataset-flow-identity-process-domain-rejection.v2',
+        status: 'rejected',
+        ordinal: 1,
+        process_request_sha256: processRequestSha256,
+        automatic_retry: false,
+        approval_reusable: false,
+        recovery: 'operator_review_required',
+        response: {
+          ok: false,
+          command: 'cmd_dataset_flow_identity_process_rewrite_guarded',
+          code: 'FLOW_IDENTITY_PROCESS_SCOPE_BUSY',
+          status: 409,
+        },
+      },
+    );
+    let rewriteCalls = 0;
+    const storedProcessResult = await runInternals.executeRun(
+      storedProcess.command,
+      recoveryDependencies(storedProcess, {
+        rewrite: async () => {
+          rewriteCalls += 1;
+          throw new Error('stored rejection must suppress process replay');
+        },
+      }),
+    );
+    assert.equal(storedProcessResult.status, 'blocked');
+    assert.equal(storedProcessResult.issues[0]?.code, 'FLOW_IDENTITY_PROCESS_SCOPE_BUSY');
+    assert.equal(rewriteCalls, 0);
+    assert.equal(
+      existsSync(path.join(storedProcess.command.outDir, 'scope-preflight-proof.json')),
+      true,
+    );
+
+    const storedAmbiguous = materializeRecoveryScenario({
+      root: path.join(root, 'stored-process-ambiguous'),
+      baseline: (input) => scopeStatusRaw({ input, phase: 'pending' }),
+    });
+    writePrivateImmutableJson(
+      path.join(storedAmbiguous.command.outDir, 'process-attempt-000001.json'),
+      {
+        schema_version: 'dataset-flow-identity-process-attempt.v2',
+        process_request_sha256: String(
+          processRequest(storedAmbiguous.input).process_request_sha256,
+        ),
+      },
+    );
+    let ambiguousRewriteCalls = 0;
+    const storedAmbiguousResult = await runInternals.executeRun(
+      storedAmbiguous.command,
+      recoveryDependencies(storedAmbiguous, {
+        rewrite: async () => {
+          ambiguousRewriteCalls += 1;
+          throw new Error('ambiguous marker must suppress process replay');
+        },
+      }),
+    );
+    assert.equal(storedAmbiguousResult.status, 'blocked');
+    assert.equal(
+      storedAmbiguousResult.issues[0]?.code,
+      'DATASET_FLOW_IDENTITY_PROCESS_ATTEMPT_AMBIGUOUS',
+    );
+    assert.equal(ambiguousRewriteCalls, 0);
+  } finally {
+    rmSync(root, { recursive: true, force: true });
+  }
+});
+
 test('runner classifies finalize variants and performs one read-only recovery after transport loss', async () => {
   const root = mkdtempSync(path.join(os.tmpdir(), 'tg-flow-identity-finalize-coverage-'));
   try {
@@ -1553,7 +2262,7 @@ test('runner classifies finalize variants and performs one read-only recovery af
       let reads = 0;
       const result = await runInternals.executeRun(command, {
         resolveContext: async ({ fetchImpl }) => contextFor(input, fetchImpl),
-        preflight: async () => scopePreflightRaw(input),
+        preflight: async () => scopePreflightEnvelope(input),
         rewrite: async () => {
           throw new Error('rewrite must remain unreachable');
         },
@@ -1572,12 +2281,178 @@ test('runner classifies finalize variants and performs one read-only recovery af
       }
     }
 
+    const domainInput = materializeExecutionScenario(path.join(root, 'domain'));
+    const domainCommand = commandFor(domainInput, 'run');
+    const domainRequestSha256 = flowIdentityRestrictedSha256(finalizeRequest(domainInput));
+    let domainFinalizeCalls = 0;
+    const domainDependencies = {
+      resolveContext: async ({ fetchImpl }: { fetchImpl: FetchLike }) =>
+        contextFor(domainInput, fetchImpl),
+      preflight: async () => scopePreflightEnvelope(domainInput),
+      rewrite: async () => {
+        throw new Error('rewrite must remain unreachable');
+      },
+      read: async () => readyStatusRaw(domainInput),
+      finalize: async () => {
+        domainFinalizeCalls += 1;
+        return {
+          ok: false,
+          command: 'cmd_dataset_flow_identity_scope_finalize_guarded',
+          code: 'FLOW_IDENTITY_FINALIZE_SCOPE_BUSY',
+          status: 409,
+          message: 'Finalize scope is busy',
+        };
+      },
+      sleep: async () => undefined,
+      now: () => new Date('2026-07-16T05:00:00.000Z'),
+    };
+    const firstDomain = await runInternals.executeRun(domainCommand, domainDependencies);
+    const secondDomain = await runInternals.executeRun(domainCommand, domainDependencies);
+    assert.equal(firstDomain.status, 'blocked');
+    assert.equal(secondDomain.status, 'blocked');
+    assert.equal(domainFinalizeCalls, 1);
+    assert.equal(
+      existsSync(path.join(domainCommand.outDir, `finalize-attempt-${domainRequestSha256}.json`)),
+      true,
+    );
+    assert.equal(
+      existsSync(
+        path.join(domainCommand.outDir, `finalize-domain-rejection-${domainRequestSha256}.json`),
+      ),
+      true,
+    );
+    assert.equal(
+      existsSync(
+        path.join(domainCommand.outDir, `finalize-transport-error-${domainRequestSha256}.json`),
+      ),
+      false,
+    );
+
+    for (const variant of [
+      'completed-with-permit',
+      'pending-without-permit',
+      'rejected-with-permit',
+      'invalid-response',
+    ] as const) {
+      const input = materializeExecutionScenario(path.join(root, variant));
+      const command = commandFor(input, 'run');
+      const request = finalizeRequest(input);
+      let finalizeCalls = 0;
+      const result = await runInternals.executeRun(command, {
+        resolveContext: async ({ fetchImpl }) => contextFor(input, fetchImpl),
+        preflight: async () => scopePreflightEnvelope(input),
+        rewrite: async () => {
+          throw new Error('rewrite must remain unreachable');
+        },
+        read: async () => readyStatusRaw(input),
+        finalize: async () => {
+          finalizeCalls += 1;
+          if (variant === 'completed-with-permit') {
+            return {
+              ...finalizeRaw(input, request, 'completed'),
+              execution_permit: executionPermit(1),
+            };
+          }
+          if (variant === 'pending-without-permit') {
+            return {
+              ...finalizeRaw(input, request, 'pending'),
+              execution_permit: null,
+            };
+          }
+          return variant === 'rejected-with-permit'
+            ? {
+                ...finalizeRaw(input, request, 'failed'),
+                execution_permit: executionPermit(1),
+              }
+            : { ok: true };
+        },
+        sleep: async () => undefined,
+        now: () => new Date('2026-07-16T05:00:00.000Z'),
+      });
+      assert.equal(result.status, 'indeterminate');
+      assert.equal(finalizeCalls, 1);
+      assert.equal(result.issues[0]?.code, 'DATASET_FLOW_IDENTITY_FINALIZE_RESPONSE_AMBIGUOUS');
+    }
+
+    const invalidStoredInput = materializeExecutionScenario(
+      path.join(root, 'invalid-stored-finalize'),
+    );
+    const invalidStoredCommand = commandFor(invalidStoredInput, 'run');
+    const invalidStoredRequest = finalizeRequest(invalidStoredInput);
+    const invalidStoredRequestSha256 = flowIdentityRestrictedSha256(invalidStoredRequest);
+    writePrivateImmutableJson(
+      path.join(invalidStoredCommand.outDir, `finalize-attempt-${invalidStoredRequestSha256}.json`),
+      {
+        schema_version: 'dataset-flow-identity-finalize-attempt.v3',
+        generated_at_utc: '2026-07-16T05:00:00.000Z',
+        scope_id: SCOPE_ID,
+        request_sha256: invalidStoredRequestSha256,
+        request: invalidStoredRequest,
+        max_posts: 2,
+        automatic_retry: false,
+      },
+    );
+    await assert.rejects(
+      runInternals.executeRun(invalidStoredCommand, {
+        resolveContext: async ({ fetchImpl }) => contextFor(invalidStoredInput, fetchImpl),
+        preflight: async () => scopePreflightEnvelope(invalidStoredInput),
+        rewrite: async () => {
+          throw new Error('rewrite must remain unreachable');
+        },
+        read: async () => readyStatusRaw(invalidStoredInput),
+        finalize: async () => {
+          throw new Error('invalid stored attempt must block finalize');
+        },
+        sleep: async () => undefined,
+        now: () => new Date('2026-07-16T05:00:00.000Z'),
+      }),
+      /does not bind the exact request/u,
+    );
+
+    const ambiguousInput = materializeExecutionScenario(path.join(root, 'ambiguous'));
+    const ambiguousCommand = commandFor(ambiguousInput, 'run');
+    const ambiguousRequestSha256 = flowIdentityRestrictedSha256(finalizeRequest(ambiguousInput));
+    let ambiguousFinalizeCalls = 0;
+    const ambiguousDependencies = {
+      resolveContext: async ({ fetchImpl }: { fetchImpl: FetchLike }) =>
+        contextFor(ambiguousInput, fetchImpl),
+      preflight: async () => scopePreflightEnvelope(ambiguousInput),
+      rewrite: async () => {
+        throw new Error('rewrite must remain unreachable');
+      },
+      read: async () => readyStatusRaw(ambiguousInput),
+      finalize: async () => {
+        ambiguousFinalizeCalls += 1;
+        throw new Error('finalize response lost');
+      },
+      sleep: async () => undefined,
+      now: () => new Date('2026-07-16T05:00:00.000Z'),
+    };
+    const firstAmbiguous = await runInternals.executeRun(ambiguousCommand, ambiguousDependencies);
+    const secondAmbiguous = await runInternals.executeRun(ambiguousCommand, ambiguousDependencies);
+    assert.equal(firstAmbiguous.status, 'indeterminate');
+    assert.equal(secondAmbiguous.status, 'blocked');
+    assert.equal(
+      secondAmbiguous.issues[0]?.code,
+      'DATASET_FLOW_IDENTITY_FRESH_RECOVERY_APPROVAL_REQUIRED',
+    );
+    assert.equal(ambiguousFinalizeCalls, 1);
+    assert.equal(
+      existsSync(
+        path.join(
+          ambiguousCommand.outDir,
+          `finalize-transport-error-${ambiguousRequestSha256}.json`,
+        ),
+      ),
+      true,
+    );
+
     const recoveryInput = materializeExecutionScenario(path.join(root, 'recovery'));
     const recoveryCommand = commandFor(recoveryInput, 'run');
     let recoveryReads = 0;
     const recovered = await runInternals.executeRun(recoveryCommand, {
       resolveContext: async ({ fetchImpl }) => contextFor(recoveryInput, fetchImpl),
-      preflight: async () => scopePreflightRaw(recoveryInput),
+      preflight: async () => scopePreflightEnvelope(recoveryInput),
       rewrite: async () => {
         throw new Error('rewrite must remain unreachable');
       },
@@ -1610,6 +2485,225 @@ test('runner classifies finalize variants and performs one read-only recovery af
       }),
       /exactly one/u,
     );
+  } finally {
+    rmSync(root, { recursive: true, force: true });
+  }
+});
+
+test('recovery runner enforces the exact finalize attempt, rejection, and proof ledger', async () => {
+  const root = mkdtempSync(path.join(os.tmpdir(), 'tg-flow-identity-finalize-ledger-'));
+  try {
+    const scenario = (name: string) =>
+      materializeRecoveryScenario({
+        root: path.join(root, name),
+        baseline: (input) => readyStatusRaw(input),
+      });
+    const execute = async (
+      input: ReturnType<typeof materializeRecoveryScenario>,
+      overrides: Record<string, unknown> = {},
+    ) => runInternals.executeRun(input.command, recoveryDependencies(input, overrides));
+    const writeProof = (
+      input: ReturnType<typeof materializeRecoveryScenario>,
+      request: JsonObject,
+      requestSha256: string,
+      variant: 'completed' | 'pending' | 'live_drift' | 'failed',
+    ) => {
+      writePrivateImmutableJson(
+        path.join(input.command.outDir, `finalize-proof-${requestSha256}.json`),
+        finalizeRaw(input.input, request, variant),
+      );
+    };
+
+    const invalid = scenario('invalid-late-attempt');
+    const invalidRequest = finalizeRequest(invalid.input);
+    const invalidRequestSha256 = flowIdentityRestrictedSha256(invalidRequest);
+    writePrivateImmutableJson(
+      path.join(invalid.command.outDir, `finalize-attempt-${invalidRequestSha256}.json`),
+      {
+        schema_version: 'dataset-flow-identity-finalize-attempt.v3',
+        generated_at_utc: '2026-07-16T05:25:00.000Z',
+        scope_id: SCOPE_ID,
+        request_sha256: invalidRequestSha256,
+        request: { malformed: true },
+        max_posts: 1,
+        automatic_retry: false,
+      },
+    );
+    await assert.rejects(execute(invalid), /does not bind the exact request/u);
+
+    const conflict = scenario('exact-conflict');
+    const conflictRequest = finalizeRequest(conflict.input);
+    const conflictHash = writeFinalizeAttempt(conflict.command.outDir, conflictRequest);
+    writeFinalizeRejection(conflict.command.outDir, conflictHash, 'stored rejection');
+    writeProof(conflict, conflictRequest, conflictHash, 'pending');
+    await assert.rejects(execute(conflict), /contradictory rejection and proof artifacts/u);
+
+    const rejection = scenario('exact-rejection');
+    const rejectionRequest = finalizeRequest(rejection.input);
+    const rejectionHash = writeFinalizeAttempt(rejection.command.outDir, rejectionRequest);
+    writeFinalizeRejection(rejection.command.outDir, rejectionHash);
+    let exactRejectionFinalizeCalls = 0;
+    const rejectionResult = await execute(rejection, {
+      finalize: async () => {
+        exactRejectionFinalizeCalls += 1;
+        throw new Error('stored rejection must suppress finalize replay');
+      },
+    });
+    assert.equal(rejectionResult.status, 'blocked');
+    assert.equal(
+      rejectionResult.issues[0]?.message,
+      'The database deterministically rejected finalize.',
+    );
+    assert.equal(exactRejectionFinalizeCalls, 0);
+
+    const rejectionWithMessage = scenario('exact-rejection-message');
+    const rejectionWithMessageRequest = finalizeRequest(rejectionWithMessage.input);
+    const rejectionWithMessageHash = writeFinalizeAttempt(
+      rejectionWithMessage.command.outDir,
+      rejectionWithMessageRequest,
+    );
+    writeFinalizeRejection(
+      rejectionWithMessage.command.outDir,
+      rejectionWithMessageHash,
+      'Stored finalize rejection',
+    );
+    const rejectionWithMessageResult = await execute(rejectionWithMessage);
+    assert.equal(rejectionWithMessageResult.issues[0]?.message, 'Stored finalize rejection');
+
+    for (const [variant, expected] of [
+      ['failed', 'failed'],
+      ['live_drift', 'blocked'],
+      ['pending', 'pending'],
+    ] as const) {
+      const stored = scenario(`exact-proof-${variant}`);
+      const request = finalizeRequest(stored.input);
+      const requestSha256 = writeFinalizeAttempt(stored.command.outDir, request);
+      writeProof(stored, request, requestSha256, variant);
+      let finalizeCalls = 0;
+      const result = await execute(stored, {
+        finalize: async () => {
+          finalizeCalls += 1;
+          throw new Error('stored proof must suppress finalize replay');
+        },
+      });
+      assert.equal(result.status, expected);
+      assert.equal(result.issues[0]?.code, 'DATASET_FLOW_IDENTITY_FINALIZE_REQUEST_ALREADY_PROVEN');
+      assert.equal(finalizeCalls, 0);
+    }
+
+    const exactAmbiguous = scenario('exact-attempt-ambiguous');
+    const exactAmbiguousRequest = finalizeRequest(exactAmbiguous.input);
+    writeFinalizeAttempt(exactAmbiguous.command.outDir, exactAmbiguousRequest);
+    const exactAmbiguousResult = await execute(exactAmbiguous);
+    assert.equal(exactAmbiguousResult.status, 'indeterminate');
+    assert.equal(
+      exactAmbiguousResult.issues[0]?.code,
+      'DATASET_FLOW_IDENTITY_FINALIZE_ATTEMPT_AMBIGUOUS',
+    );
+
+    for (const orphanKind of ['rejection', 'proof'] as const) {
+      const orphan = scenario(`orphan-${orphanKind}`);
+      const request = finalizeRequest(orphan.input);
+      const requestSha256 = flowIdentityRestrictedSha256(request);
+      if (orphanKind === 'rejection') {
+        writeFinalizeRejection(orphan.command.outDir, requestSha256);
+      } else {
+        writeProof(orphan, request, requestSha256, 'pending');
+      }
+      await assert.rejects(execute(orphan), /terminal artifact exists without its exact attempt/u);
+    }
+
+    const priorRequestFor = (input: ReturnType<typeof materializeRecoveryScenario>) => ({
+      ...finalizeRequest(input.input),
+      request_id: 'bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb',
+    });
+
+    const priorAmbiguous = scenario('prior-ambiguous');
+    writeFinalizeAttempt(priorAmbiguous.command.outDir, priorRequestFor(priorAmbiguous));
+    const priorAmbiguousResult = await execute(priorAmbiguous);
+    assert.equal(priorAmbiguousResult.status, 'indeterminate');
+    assert.equal(
+      priorAmbiguousResult.issues[0]?.code,
+      'DATASET_FLOW_IDENTITY_FINALIZE_ATTEMPT_AMBIGUOUS',
+    );
+
+    const priorRejection = scenario('prior-rejection');
+    const priorRejectedRequest = priorRequestFor(priorRejection);
+    const priorRejectedHash = writeFinalizeAttempt(
+      priorRejection.command.outDir,
+      priorRejectedRequest,
+    );
+    writeFinalizeRejection(priorRejection.command.outDir, priorRejectedHash);
+    const priorRejectionResult = await execute(priorRejection);
+    assert.equal(priorRejectionResult.status, 'blocked');
+    assert.equal(priorRejectionResult.issues[0]?.code, 'FLOW_IDENTITY_FINALIZE_SCOPE_BUSY');
+
+    const vanishedPrior = scenario('prior-attempt-vanished');
+    const vanishedHash = HASH('vanished-prior-attempt');
+    writePrivateImmutableJson(path.join(vanishedPrior.command.outDir, 'ledger-anchor.json'), {
+      purpose: 'create-private-test-directory',
+    });
+    symlinkSync(
+      path.join(vanishedPrior.command.outDir, 'missing-finalize-attempt.json'),
+      path.join(vanishedPrior.command.outDir, `finalize-attempt-${vanishedHash}.json`),
+    );
+    let vanishedFinalizeCalls = 0;
+    const vanishedResult = await execute(vanishedPrior, {
+      finalize: async () => {
+        vanishedFinalizeCalls += 1;
+        return {
+          ok: false,
+          command: 'cmd_dataset_flow_identity_scope_finalize_guarded',
+          code: 'FLOW_IDENTITY_FINALIZE_SCOPE_BUSY',
+          status: 409,
+          message: 'Current finalize reached after vanished prior marker',
+        };
+      },
+    });
+    assert.equal(vanishedResult.status, 'blocked');
+    assert.equal(vanishedFinalizeCalls, 1);
+
+    for (const [variant, expected] of [
+      ['failed', 'failed'],
+      ['completed', 'blocked'],
+    ] as const) {
+      const prior = scenario(`prior-proof-${variant}`);
+      const priorRequest = priorRequestFor(prior);
+      const priorHash = writeFinalizeAttempt(prior.command.outDir, priorRequest);
+      writeProof(prior, priorRequest, priorHash, variant);
+      const result = await execute(prior);
+      assert.equal(result.status, expected);
+      assert.equal(
+        result.issues[0]?.code,
+        'DATASET_FLOW_IDENTITY_FINALIZE_NEW_REQUEST_NOT_AUTHORIZED',
+      );
+    }
+
+    const authorized = scenario('prior-pending-authorizes-new-request');
+    const authorizedPriorRequest = priorRequestFor(authorized);
+    const authorizedPriorHash = writeFinalizeAttempt(
+      authorized.command.outDir,
+      authorizedPriorRequest,
+    );
+    writeProof(authorized, authorizedPriorRequest, authorizedPriorHash, 'pending');
+    let authorizedFinalizeCalls = 0;
+    const authorizedResult = await execute(authorized, {
+      finalize: async () => {
+        authorizedFinalizeCalls += 1;
+        return {
+          ok: false,
+          command: 'cmd_dataset_flow_identity_scope_finalize_guarded',
+          code: 'FLOW_IDENTITY_FINALIZE_SCOPE_BUSY',
+          status: 409,
+        };
+      },
+    });
+    assert.equal(authorizedResult.status, 'blocked');
+    assert.equal(
+      authorizedResult.issues[0]?.message,
+      'The database deterministically rejected finalize.',
+    );
+    assert.equal(authorizedFinalizeCalls, 1);
   } finally {
     rmSync(root, { recursive: true, force: true });
   }

@@ -16,7 +16,7 @@ checkPaths:
   - src/lib/supabase-client.ts
   - src/lib/tidas-sdk-package-validator.ts
   - test/**
-lastReviewedAt: 2026-07-16
+lastReviewedAt: 2026-07-17
 lastReviewedCommit: 1aa9b58f7a62f50d2cb680f372452fe829686d75
 related:
   - ../AGENTS.md
@@ -44,6 +44,8 @@ related:
 - 直到 repo 级验证、PR、workspace integration 全部完成，才算结束。
 
 当前状态：
+
+2026-07-17 复核：Issue #157 COMMON 的双 #29 readback、domain rejection、verify pending 收紧、DB one-wrapper rotating permit、create-only local claim 与 fresh exact recovery approval/read-only lookup 继续复用现有 TypeScript、Node `fs`/`crypto`、`@supabase/supabase-js` session/RPC 和 TIDAS SDK 校验，不新增或改变直接依赖。尚余 merge、Preview 与 DB/CLI 发布门禁；本文件继续保持历史 TODO 记录用途。
 
 2026-07-16 复核：Issue #157 的 flow-identity 工作流复用现有 `@supabase/supabase-js` 用户 session、authenticated RPC 和 `@tiangong-lca/tidas-sdk` ProcessSchema 校验，不新增或改变直接依赖；本文件继续保持历史 TODO 记录用途。
 

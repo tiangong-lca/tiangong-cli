@@ -32,7 +32,7 @@ checkPaths:
   - scripts/docpact
   - scripts/docpact-gate.sh
   - scripts/install-git-hooks.sh
-lastReviewedAt: 2026-07-16
+lastReviewedAt: 2026-07-17
 lastReviewedCommit: 497ac46bba02297b46cee255429371bf20074487
 related:
   - .docpact/config.yaml
@@ -70,6 +70,8 @@ Review note, 2026-07-15: `dataset maintenance run-protected` is the CLI-owned pr
 Review note, 2026-07-15: Issue #171 keeps protected preparation in the same CLI-owned maintenance boundary. `freeze-protected` may authenticate only to the explicitly confirmed production project and is limited to complete RLS reads plus the protected derivative snapshot RPC; `seal-protected-approval` is local-only and receives no environment, session, or network client. Only `run-protected` owns preflight/admission/execution. Foundry and skills remain thin published-CLI callers and must not duplicate database access, canonical hashing, or approval construction.
 
 Review note, 2026-07-16: Issue #157 adds a separate `dataset maintenance flow-identity capture|plan|freeze|seal-approval|run|verify` boundary for Step 3. Capture performs one complete authenticated source/process census, persists only the reviewed process reference closure, and submits exactly one immutable semantic request for a database receipt; it performs no rewrite/finalize or client-side derivative-baseline RPC. Plan accepts only that fresh post-Step2/post-#29 305-source v3 authority and database receipt. Process requests are thin ordinal/intent-proof commands; the immutable database receipt/ledger owns rewrite semantics and derivative baselines. The runner is serial, writes an immutable attempt marker, and never automatically replays an ambiguous process response. Independent verification owns terminal success. Derivative failure cannot trigger process replay; any later derivative-only compensation requires a new plan/freeze/approval.
+
+Review note, 2026-07-17: Issue #157 COMMON hardening requires independent `status=passed` readback identities for both Issue #29 derivative prerequisites before capture. An HTTP-success RPC body with `ok:false` is a deterministic database domain rejection, not a transport ambiguity; after a process rejection the current invocation performs exactly one fresh scope read and never replays the process. Independent verify may report `pending` only for an exact `derivatives_pending` database status with no hard readback mismatch. The protected runner now enforces `approval_reusable=false` with a database-minted one-wrapper rotating permit as the cross-machine authority; a create-only local approval claim is defense in depth. Permit or preflight-response loss requires a fresh exact recovery approval and can locate the existing actor-owned scope only through the exact read-only lookup. The remaining production gate is merge, Preview validation, and coordinated DB/CLI release, not an unresolved design boundary.
 
 Review note, 2026-07-16: Issue #175 keeps protected preflight validation fail-closed while allowing up to five seconds of server-ahead clock skew only for the client-side `completed_at` comparison. Expired, reversed, over-180-second, foreign, and malformed proofs still fail before gates or admission, the database remains authoritative for token expiry and one-shot consumption, and timing diagnostics never include the preflight token. The command, ownership, release, and workspace-integration boundaries are unchanged.
 

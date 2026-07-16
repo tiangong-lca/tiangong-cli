@@ -24,6 +24,7 @@ import {
   attestMaintenanceFlowIdentityCapture,
   fetchMaintenanceAccountTableRows,
   fetchMaintenanceExactRows,
+  isMaintenanceRpcDomainFailure,
   resolveMaintenanceRemoteContext,
   type DatasetMaintenanceRemoteContext,
 } from './dataset-maintenance-remote.js';
@@ -47,13 +48,18 @@ const UUID = /^[a-f0-9]{8}-[a-f0-9]{4}-[1-5][a-f0-9]{3}-[89ab][a-f0-9]{3}-[a-f0-
 const VERSION = /^\d{2}\.\d{2}\.\d{3}$/u;
 
 export type FlowIdentityPrerequisites = {
-  schema_version: 'dataset-flow-identity-prerequisites.v1';
+  schema_version: 'dataset-flow-identity-prerequisites.v2';
   step2: {
     readback_sha256: string;
     completed_at_utc: string;
     status: 'passed';
   };
   issue29_target1: {
+    readback_sha256: string;
+    completed_at_utc: string;
+    status: 'passed';
+  };
+  issue29_target2: {
     readback_sha256: string;
     completed_at_utc: string;
     status: 'passed';
@@ -158,21 +164,26 @@ export function parseFlowIdentityPrerequisites(value: unknown): FlowIdentityPrer
     !isJsonObject(value) ||
     !isJsonObject(value.step2) ||
     !isJsonObject(value.issue29_target1) ||
-    !exactKeys(value, ['schema_version', 'step2', 'issue29_target1']) ||
+    !isJsonObject(value.issue29_target2) ||
+    !exactKeys(value, ['schema_version', 'step2', 'issue29_target1', 'issue29_target2']) ||
     !exactKeys(value.step2, ['readback_sha256', 'completed_at_utc', 'status']) ||
-    !exactKeys(value.issue29_target1, ['readback_sha256', 'completed_at_utc', 'status'])
+    !exactKeys(value.issue29_target1, ['readback_sha256', 'completed_at_utc', 'status']) ||
+    !exactKeys(value.issue29_target2, ['readback_sha256', 'completed_at_utc', 'status'])
   ) {
     fail('Flow identity prerequisites are invalid.');
   }
   const parsed = value as FlowIdentityPrerequisites;
   if (
-    parsed.schema_version !== 'dataset-flow-identity-prerequisites.v1' ||
+    parsed.schema_version !== 'dataset-flow-identity-prerequisites.v2' ||
     parsed.step2.status !== 'passed' ||
     parsed.issue29_target1.status !== 'passed' ||
+    parsed.issue29_target2.status !== 'passed' ||
     !HASH.test(parsed.step2.readback_sha256) ||
     !HASH.test(parsed.issue29_target1.readback_sha256) ||
+    !HASH.test(parsed.issue29_target2.readback_sha256) ||
     !Number.isFinite(Date.parse(parsed.step2.completed_at_utc)) ||
-    !Number.isFinite(Date.parse(parsed.issue29_target1.completed_at_utc))
+    !Number.isFinite(Date.parse(parsed.issue29_target1.completed_at_utc)) ||
+    !Number.isFinite(Date.parse(parsed.issue29_target2.completed_at_utc))
   ) {
     fail('Flow identity prerequisites do not prove passed Step 2 and issue #29 readbacks.');
   }
@@ -366,7 +377,8 @@ async function executeCapture(
   const capturedAt = options.now ?? new Date();
   if (
     Date.parse(prerequisites.step2.completed_at_utc) > capturedAt.getTime() ||
-    Date.parse(prerequisites.issue29_target1.completed_at_utc) > capturedAt.getTime()
+    Date.parse(prerequisites.issue29_target1.completed_at_utc) > capturedAt.getTime() ||
+    Date.parse(prerequisites.issue29_target2.completed_at_utc) > capturedAt.getTime()
   ) {
     fail('Capture time precedes a required passed prerequisite.');
   }
@@ -530,8 +542,10 @@ async function executeCapture(
     prerequisites: {
       step2_readback_sha256: prerequisites.step2.readback_sha256,
       step2_completed_at_utc: prerequisites.step2.completed_at_utc,
-      issue29_readback_sha256: prerequisites.issue29_target1.readback_sha256,
-      issue29_completed_at_utc: prerequisites.issue29_target1.completed_at_utc,
+      issue29_target1_readback_sha256: prerequisites.issue29_target1.readback_sha256,
+      issue29_target1_completed_at_utc: prerequisites.issue29_target1.completed_at_utc,
+      issue29_target2_readback_sha256: prerequisites.issue29_target2.readback_sha256,
+      issue29_target2_completed_at_utc: prerequisites.issue29_target2.completed_at_utc,
     },
     sdk: { package: '@tiangong-lca/tidas-sdk', version: options.sdkVersion.trim() },
     artifact_evidence: {
@@ -603,6 +617,25 @@ async function executeCapture(
       });
     });
   };
+  const materializeRejected = (rawResponse: JsonObject): void => {
+    dependencies.materialize(path.resolve(options.outDir), (staging) => {
+      writePrivateImmutableJson(
+        path.join(staging, 'flow-identity-capture-request.json'),
+        capture.capture_request,
+      );
+      writePrivateImmutableJson(path.join(staging, 'flow-identity-capture-domain-rejection.json'), {
+        schema_version: 'dataset-flow-identity-capture-domain-rejection.v1',
+        status: 'rejected',
+        request_id: options.requestId,
+        capture_request_sha256: requestSha256,
+        post_attempt_count: 1,
+        automatic_retry: false,
+        same_request_replay_allowed: false,
+        recovery: 'new_request_and_output_directory_required',
+        response: rawResponse,
+      });
+    });
+  };
   let rawAttestation: JsonObject;
   try {
     rawAttestation = await dependencies.attest({
@@ -612,6 +645,19 @@ async function executeCapture(
   } catch (error) {
     materializeIndeterminate(error);
     throw error;
+  }
+  if (isMaintenanceRpcDomainFailure(rawAttestation)) {
+    materializeRejected(rawAttestation);
+    throw new CliError(
+      typeof rawAttestation.message === 'string'
+        ? rawAttestation.message
+        : 'Flow identity capture was rejected by the database.',
+      {
+        code: rawAttestation.code,
+        exitCode: 1,
+        details: rawAttestation,
+      },
+    );
   }
   try {
     capture.attestation = rawAttestation as FlowIdentityLiveCapture['attestation'];

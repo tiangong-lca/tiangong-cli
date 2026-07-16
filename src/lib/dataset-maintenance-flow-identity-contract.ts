@@ -147,8 +147,10 @@ export type FlowIdentityLiveCapture = {
   prerequisites: {
     step2_readback_sha256: string;
     step2_completed_at_utc: string;
-    issue29_readback_sha256: string;
-    issue29_completed_at_utc: string;
+    issue29_target1_readback_sha256: string;
+    issue29_target1_completed_at_utc: string;
+    issue29_target2_readback_sha256: string;
+    issue29_target2_completed_at_utc: string;
   };
   sdk: { package: '@tiangong-lca/tidas-sdk'; version: string };
   artifact_evidence: {
@@ -642,8 +644,17 @@ export function parseFlowIdentityCapture(value: unknown): FlowIdentityLiveCaptur
   const step2At = Date.parse(
     instant(capture.prerequisites.step2_completed_at_utc, 'step2_completed_at_utc'),
   );
-  const issue29At = Date.parse(
-    instant(capture.prerequisites.issue29_completed_at_utc, 'issue29_completed_at_utc'),
+  const issue29Target1At = Date.parse(
+    instant(
+      capture.prerequisites.issue29_target1_completed_at_utc,
+      'issue29_target1_completed_at_utc',
+    ),
+  );
+  const issue29Target2At = Date.parse(
+    instant(
+      capture.prerequisites.issue29_target2_completed_at_utc,
+      'issue29_target2_completed_at_utc',
+    ),
   );
   const attestation = capture.attestation;
   const attestedAt = Date.parse(instant(attestation.captured_at, 'attestation.captured_at'));
@@ -801,9 +812,11 @@ export function parseFlowIdentityCapture(value: unknown): FlowIdentityLiveCaptur
     attestation.target_count !== capture.target_rows.length ||
     attestation.support_count !== capture.support_rows.length ||
     capturedAt < step2At ||
-    capturedAt < issue29At ||
+    capturedAt < issue29Target1At ||
+    capturedAt < issue29Target2At ||
     !HASH_PATTERN.test(capture.prerequisites.step2_readback_sha256) ||
-    !HASH_PATTERN.test(capture.prerequisites.issue29_readback_sha256) ||
+    !HASH_PATTERN.test(capture.prerequisites.issue29_target1_readback_sha256) ||
+    !HASH_PATTERN.test(capture.prerequisites.issue29_target2_readback_sha256) ||
     !HASH_PATTERN.test(capture.artifact_evidence.review_ledger_sha256) ||
     !HASH_PATTERN.test(capture.artifact_evidence.live_capture_artifact_sha256) ||
     !HASH_PATTERN.test(capture.artifact_evidence.toolchain_evidence_sha256) ||

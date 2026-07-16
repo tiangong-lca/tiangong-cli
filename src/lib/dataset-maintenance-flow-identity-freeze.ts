@@ -20,7 +20,7 @@ import {
 import { CliError } from './errors.js';
 
 export type FlowIdentityExecutionApprovalRequestCore = {
-  schema_version: 'dataset-flow-identity-execution-approval-request.v2';
+  schema_version: 'dataset-flow-identity-execution-approval-request.v3';
   approved_at_utc: string;
   environment: 'production';
   project_ref: string;
@@ -55,6 +55,12 @@ export type FlowIdentityExecutionApprovalRequestCore = {
   deletes: 0;
   source_mutations: 0;
   public_target_mutations: 0;
+  user_state_claim: 'authenticated_actor_state_100_plus_own_state_0';
+  approval_reusable: false;
+  maximum_wrapper_invocations: 1;
+  maximum_cli_apply_spawns: 1;
+  maximum_process_posts: number;
+  maximum_finalize_posts: 1;
   max_process_concurrency: 1;
   automatic_retry: false;
 };
@@ -173,6 +179,12 @@ export function renderFlowIdentityExecutionApprovalText(
     `deletes=${core.deletes}`,
     `source_mutations=${core.source_mutations}`,
     `public_target_mutations=${core.public_target_mutations}`,
+    `user_state_claim=${core.user_state_claim}`,
+    `approval_reusable=${String(core.approval_reusable)}`,
+    `maximum_wrapper_invocations=${core.maximum_wrapper_invocations}`,
+    `maximum_cli_apply_spawns=${core.maximum_cli_apply_spawns}`,
+    `maximum_process_posts=${core.maximum_process_posts}`,
+    `maximum_finalize_posts=${core.maximum_finalize_posts}`,
     `max_process_concurrency=${core.max_process_concurrency}`,
     `automatic_retry=${String(core.automatic_retry)}`,
     'Approve only by returning this text byte-for-byte without edits.',
@@ -220,6 +232,12 @@ export function parseFlowIdentityApprovalRequest(value: unknown): FlowIdentityAp
     'deletes',
     'source_mutations',
     'public_target_mutations',
+    'user_state_claim',
+    'approval_reusable',
+    'maximum_wrapper_invocations',
+    'maximum_cli_apply_spawns',
+    'maximum_process_posts',
+    'maximum_finalize_posts',
     'max_process_concurrency',
     'automatic_retry',
     'request_sha256',
@@ -240,7 +258,7 @@ export function parseFlowIdentityApprovalRequest(value: unknown): FlowIdentityAp
     request.rewrite_count,
   ];
   if (
-    request.schema_version !== 'dataset-flow-identity-execution-approval-request.v2' ||
+    request.schema_version !== 'dataset-flow-identity-execution-approval-request.v3' ||
     request.environment !== 'production' ||
     request.target_visibility !== 'owner_draft' ||
     request.semantic_source_count !== 305 ||
@@ -248,6 +266,12 @@ export function parseFlowIdentityApprovalRequest(value: unknown): FlowIdentityAp
     request.deletes !== 0 ||
     request.source_mutations !== 0 ||
     request.public_target_mutations !== 0 ||
+    request.user_state_claim !== 'authenticated_actor_state_100_plus_own_state_0' ||
+    request.approval_reusable !== false ||
+    request.maximum_wrapper_invocations !== 1 ||
+    request.maximum_cli_apply_spawns !== 1 ||
+    request.maximum_process_posts !== request.process_count ||
+    request.maximum_finalize_posts !== 1 ||
     request.max_process_concurrency !== 1 ||
     request.automatic_retry !== false ||
     !counts.every((count) => Number.isSafeInteger(count) && count >= 0) ||
@@ -350,7 +374,7 @@ export function freezeFlowIdentity(options: FreezeFlowIdentityOptions): FlowIden
   const freezeText = `${stableJsonText(freeze)}\n`;
   const freezeFileSha256 = sha256Text(freezeText);
   const core: FlowIdentityExecutionApprovalRequestCore = {
-    schema_version: 'dataset-flow-identity-execution-approval-request.v2',
+    schema_version: 'dataset-flow-identity-execution-approval-request.v3',
     approved_at_utc: approvedAt,
     environment: 'production',
     project_ref: plan.project_ref,
@@ -385,6 +409,12 @@ export function freezeFlowIdentity(options: FreezeFlowIdentityOptions): FlowIden
     deletes: 0,
     source_mutations: 0,
     public_target_mutations: 0,
+    user_state_claim: 'authenticated_actor_state_100_plus_own_state_0',
+    approval_reusable: false,
+    maximum_wrapper_invocations: 1,
+    maximum_cli_apply_spawns: 1,
+    maximum_process_posts: plan.processes.length,
+    maximum_finalize_posts: 1,
     max_process_concurrency: 1,
     automatic_retry: false,
   };

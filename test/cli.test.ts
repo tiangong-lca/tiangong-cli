@@ -1208,7 +1208,10 @@ test('executeCli exposes the dedicated flow-identity capture/plan/freeze/seal/ru
   const deps = makeDeps();
   const help = await executeCli(['dataset', 'maintenance', 'flow-identity', '--help'], deps);
   assert.equal(help.exitCode, 0);
-  assert.match(help.stdout, /capture\|plan\|freeze\|seal-approval\|run\|verify/u);
+  assert.match(
+    help.stdout,
+    /capture\|plan\|freeze\|seal-approval\|run\|freeze-recovery\|seal-recovery-approval\|run-recovery\|verify/u,
+  );
   assert.match(help.stdout, /never retry a process/u);
   assert.match(help.stdout, /separate plan, new freeze, and new exact human approval/u);
 

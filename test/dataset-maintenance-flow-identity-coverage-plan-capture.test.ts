@@ -345,8 +345,10 @@ function scenario(environment: 'local' | 'production' = 'local') {
     prerequisites: {
       step2_readback_sha256: HASH('step2'),
       step2_completed_at_utc: '2026-07-16T02:00:00.000Z',
-      issue29_readback_sha256: HASH('issue29'),
-      issue29_completed_at_utc: '2026-07-16T04:00:00.000Z',
+      issue29_target1_readback_sha256: HASH('issue29-target1'),
+      issue29_target1_completed_at_utc: '2026-07-16T03:00:00.000Z',
+      issue29_target2_readback_sha256: HASH('issue29-target2'),
+      issue29_target2_completed_at_utc: '2026-07-16T04:00:00.000Z',
     },
     sdk: { package: '@tiangong-lca/tidas-sdk', version: '0.1.45' },
     artifact_evidence: {
@@ -489,14 +491,19 @@ function toolchainEvidence() {
 
 function prerequisites() {
   return {
-    schema_version: 'dataset-flow-identity-prerequisites.v1',
+    schema_version: 'dataset-flow-identity-prerequisites.v2',
     step2: {
       readback_sha256: HASH('step2'),
       completed_at_utc: '2026-07-16T02:00:00.000Z',
       status: 'passed',
     },
     issue29_target1: {
-      readback_sha256: HASH('issue29'),
+      readback_sha256: HASH('issue29-target1'),
+      completed_at_utc: '2026-07-16T03:00:00.000Z',
+      status: 'passed',
+    },
+    issue29_target2: {
+      readback_sha256: HASH('issue29-target2'),
       completed_at_utc: '2026-07-16T04:00:00.000Z',
       status: 'passed',
     },
@@ -628,12 +635,18 @@ test('wire coverage closes cycle, large-index, and canonical-key ordering branch
 
 test('capture helper coverage rejects malformed prerequisites, rows, and supports', async () => {
   assert.throws(() => parseFlowIdentityPrerequisites(null), /prerequisites are invalid/u);
+  const missingTarget2 = structuredClone(prerequisites()) as JsonObject;
+  delete missingTarget2.issue29_target2;
+  assert.throws(() => parseFlowIdentityPrerequisites(missingTarget2), /prerequisites are invalid/u);
   const badPrerequisites = structuredClone(prerequisites()) as JsonObject;
   (badPrerequisites.step2 as JsonObject).status = 'failed';
   assert.throws(
     () => parseFlowIdentityPrerequisites(badPrerequisites),
     /do not prove passed Step 2/u,
   );
+  const openTarget2 = structuredClone(prerequisites()) as JsonObject;
+  (openTarget2.issue29_target2 as JsonObject).status = 'pending';
+  assert.throws(() => parseFlowIdentityPrerequisites(openTarget2), /do not prove passed Step 2/u);
   assert.throws(
     () =>
       captureInternals.snapshot({
@@ -979,6 +992,47 @@ test('capture coverage persists both transport and invalid-response recovery evi
     );
     const recovery = `${path.resolve(invalid.options.outDir)}.indeterminate-${invalid.options.requestId}`;
     assert.equal(existsSync(path.join(recovery, 'flow-identity-capture-raw-response.json')), true);
+
+    const rejected = captureFixture(path.join(root, 'rejected'));
+    const domainResponse = {
+      ok: false,
+      command: 'cmd_dataset_flow_identity_capture_attest_guarded',
+      code: 'FLOW_IDENTITY_CAPTURE_LOCK_BUSY',
+      status: 409,
+      message: 'Capture lock is busy',
+    };
+    await assert.rejects(
+      captureInternals.executeCapture(rejected.options, {
+        ...rejected.dependencies,
+        attest: async () => domainResponse,
+      }),
+      (error: unknown) =>
+        error instanceof Error &&
+        'code' in error &&
+        error.code === 'FLOW_IDENTITY_CAPTURE_LOCK_BUSY',
+    );
+    assert.equal(
+      existsSync(path.join(rejected.options.outDir, 'flow-identity-capture-domain-rejection.json')),
+      true,
+    );
+    assert.equal(
+      existsSync(path.join(rejected.options.outDir, 'flow-identity-capture-indeterminate.json')),
+      false,
+    );
+
+    const rejectedWithoutMessage = captureFixture(path.join(root, 'rejected-without-message'));
+    await assert.rejects(
+      captureInternals.executeCapture(rejectedWithoutMessage.options, {
+        ...rejectedWithoutMessage.dependencies,
+        attest: async () => ({
+          ok: false,
+          command: 'cmd_dataset_flow_identity_capture_attest_guarded',
+          code: 'FLOW_IDENTITY_CAPTURE_LOCK_BUSY',
+          status: 409,
+        }),
+      }),
+      /Flow identity capture was rejected by the database/u,
+    );
   } finally {
     rmSync(root, { recursive: true, force: true });
   }

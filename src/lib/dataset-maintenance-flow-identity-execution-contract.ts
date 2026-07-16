@@ -77,6 +77,25 @@ export type FlowIdentityExecutionIdentity = {
   toolchain_evidence_sha256: string;
 };
 
+/**
+ * A database-minted bearer capability for exactly one live CLI wrapper.
+ *
+ * The token is deliberately absent from every durable artifact type in this
+ * module.  Callers must keep this value in memory, rotate it after each
+ * successful write response, and discard it when the wrapper exits.
+ */
+export type FlowIdentityExecutionPermit = {
+  schema_version: 'dataset-flow-identity-execution-permit.v1';
+  invocation_id: string;
+  generation: number;
+  token: string;
+};
+
+export type FlowIdentityPermitResponse<T> = {
+  proof: T;
+  executionPermit: FlowIdentityExecutionPermit | null;
+};
+
 export type FlowIdentityScopePreflightProof = {
   ok: true;
   command: 'cmd_dataset_flow_identity_scope_preflight_guarded';
@@ -100,6 +119,33 @@ export type FlowIdentityScopePreflightProof = {
   replay: boolean;
 };
 
+export type FlowIdentityScopeLookupProof = {
+  ok: true;
+  command: 'cmd_dataset_flow_identity_scope_lookup';
+  schema_version: 'dataset-flow-identity-scope-lookup-result.v1';
+  read_only: true;
+  scope_id: string;
+  receipt_id: string;
+  receipt_proof_sha256: string;
+  mapping_guard_set_sha256: string;
+  process_intent_set_sha256: string;
+  operation_id: string;
+  plan_sha256: string;
+  scope_proof_sha256: string;
+  status: 'sealed' | 'running' | 'primary_complete' | 'derivatives_pending' | 'completed';
+  process_count: number;
+  mapping_count: number;
+  support_snapshot_count: number;
+  source_universe_count: 305;
+  rewrite_count: number;
+  next_ordinal: number;
+  audit_id: string;
+  whole_scope_proof_sha256: string;
+  execution_permit: null;
+};
+
+export type FlowIdentityScopeProof = FlowIdentityScopePreflightProof | FlowIdentityScopeLookupProof;
+
 export type FlowIdentityProcessProof = {
   ok: true;
   command: 'cmd_dataset_flow_identity_process_rewrite_guarded';
@@ -109,6 +155,8 @@ export type FlowIdentityProcessProof = {
   receipt_proof_sha256: string;
   mapping_guard_set_sha256: string;
   process_intent_set_sha256: string;
+  invocation_id: string;
+  permit_generation_before: number;
   ordinal: number;
   process_id: string;
   process_version: string;
@@ -312,6 +360,8 @@ export type FlowIdentityFinalizeProof = {
   operation_id: string;
   plan_sha256: string;
   scope_proof_sha256: string;
+  invocation_id: string;
+  permit_generation_before: number;
   status: 'derivatives_pending' | 'completed' | 'live_drift' | 'failed';
   process_count: number;
   rewrite_count: number;
@@ -530,8 +580,105 @@ export function buildFlowIdentityScopePreflightRequest(options: {
     execution_approval_text_sha256: options.identity.execution_approval_text_sha256,
     execution_approval_identity_sha256: options.identity.execution_approval_identity_sha256,
     toolchain_evidence_sha256: options.identity.toolchain_evidence_sha256,
+    user_state_claim: 'authenticated_actor_state_100_plus_own_state_0',
+    approval_reusable: false,
+    maximum_wrapper_invocations: 1,
+    maximum_cli_apply_spawns: 1,
+    maximum_process_posts: options.plan.processes.length,
+    maximum_finalize_posts: 1,
+    automatic_retry: false,
   };
   return request;
+}
+
+export function buildFlowIdentityScopeLookupRequest(options: {
+  identity: FlowIdentityExecutionIdentity;
+}): JsonObject {
+  return {
+    schema_version: 'dataset-flow-identity-scope-lookup.v1',
+    request_id: options.identity.request_id,
+    receipt_id: options.identity.receipt_id,
+    receipt_proof_sha256: options.identity.receipt_proof_sha256,
+    environment: options.identity.environment,
+    project_ref: options.identity.project_ref,
+    actor: options.identity.actor,
+    target_visibility: options.identity.target_visibility,
+    user_state_claim: 'authenticated_actor_state_100_plus_own_state_0',
+    operation_id: options.identity.operation_id,
+    plan_sha256: options.identity.plan_sha256,
+    freeze_sha256: options.identity.freeze_sha256,
+    policy_approval_text_sha256: options.identity.policy_approval_text_sha256,
+    execution_approval_request_sha256: options.identity.execution_approval_request_sha256,
+    execution_approval_text_sha256: options.identity.execution_approval_text_sha256,
+    execution_approval_identity_sha256: options.identity.execution_approval_identity_sha256,
+    toolchain_evidence_sha256: options.identity.toolchain_evidence_sha256,
+  };
+}
+
+function parseFlowIdentityExecutionPermit(
+  value: unknown,
+  options: {
+    expectedGeneration: number;
+    expectedInvocationId?: string;
+    label: string;
+  },
+): FlowIdentityExecutionPermit {
+  if (!isJsonObject(value)) fail(`${options.label} execution permit is invalid.`);
+  assertExactKeys(
+    value,
+    ['schema_version', 'invocation_id', 'generation', 'token'],
+    `${options.label} execution permit`,
+  );
+  if (
+    value.schema_version !== 'dataset-flow-identity-execution-permit.v1' ||
+    integer(value.generation, 'execution permit generation') !== options.expectedGeneration ||
+    (options.expectedInvocationId !== undefined &&
+      value.invocation_id !== options.expectedInvocationId)
+  ) {
+    fail(`${options.label} execution permit does not bind the expected live wrapper generation.`);
+  }
+  uuid(value.invocation_id, 'execution permit invocation_id');
+  hash(value.token, 'execution permit token');
+  return value as FlowIdentityExecutionPermit;
+}
+
+/**
+ * Removes the memory-only permit before a response enters a proof parser or
+ * durable artifact writer.  Exact proof parsers therefore cannot accidentally
+ * accept or persist the bearer token.
+ */
+export function splitFlowIdentityPermitResponse(options: {
+  value: unknown;
+  expectedGeneration: number;
+  expectedInvocationId?: string;
+  permitRequired: boolean;
+  permitForbidden?: boolean;
+  label: string;
+}): FlowIdentityPermitResponse<JsonObject> {
+  if (!isJsonObject(options.value)) fail(`${options.label} response is invalid.`);
+  if (!Object.hasOwn(options.value, 'execution_permit')) {
+    fail(`${options.label} response omitted the execution permit envelope.`);
+  }
+  const proof = { ...options.value };
+  const rawPermit = proof.execution_permit;
+  delete proof.execution_permit;
+  if (rawPermit === null) {
+    if (options.permitRequired) {
+      fail(`${options.label} response did not provide a fresh write-capable permit.`);
+    }
+    return { proof, executionPermit: null };
+  }
+  if (options.permitForbidden === true) {
+    fail(`${options.label} replay unexpectedly contained a write-capable execution permit.`);
+  }
+  return {
+    proof,
+    executionPermit: parseFlowIdentityExecutionPermit(rawPermit, {
+      expectedGeneration: options.expectedGeneration,
+      expectedInvocationId: options.expectedInvocationId,
+      label: options.label,
+    }),
+  };
 }
 
 export function computeFlowIdentityProcessRequestSha256(request: JsonObject): string {
@@ -584,7 +731,9 @@ export function buildFlowIdentityFinalizeRequest(options: {
   return {
     schema_version: 'dataset-flow-identity-scope-finalize.v2',
     request_id: deterministicUuidFromSha256(
-      sha256Text(`dataset-flow-identity-finalize.v2\u0000${options.scopeProofSha256}`),
+      sha256Text(
+        `dataset-flow-identity-finalize.v2\u0000${options.scopeProofSha256}\u0000${options.status.whole_scope_proof_sha256}`,
+      ),
     ),
     scope_proof_sha256: hash(options.scopeProofSha256, 'scope_proof_sha256'),
     expected,
@@ -664,6 +813,69 @@ export function parseFlowIdentityScopePreflightProof(
   return value as FlowIdentityScopePreflightProof;
 }
 
+export function parseFlowIdentityScopeLookupProof(
+  value: unknown,
+  plan: FlowIdentityPlan,
+  identity: FlowIdentityExecutionIdentity,
+): FlowIdentityScopeLookupProof {
+  if (!isJsonObject(value)) fail('Flow identity scope lookup proof is invalid.');
+  assertExactKeys(
+    value,
+    [
+      'ok',
+      'command',
+      'schema_version',
+      'read_only',
+      'scope_id',
+      'receipt_id',
+      'receipt_proof_sha256',
+      'mapping_guard_set_sha256',
+      'process_intent_set_sha256',
+      'operation_id',
+      'plan_sha256',
+      'scope_proof_sha256',
+      'status',
+      'process_count',
+      'mapping_count',
+      'support_snapshot_count',
+      'source_universe_count',
+      'rewrite_count',
+      'next_ordinal',
+      'audit_id',
+      'whole_scope_proof_sha256',
+      'execution_permit',
+    ],
+    'scope lookup result',
+  );
+  requireScopeCounts(value, plan);
+  if (
+    value.ok !== true ||
+    value.command !== 'cmd_dataset_flow_identity_scope_lookup' ||
+    value.schema_version !== 'dataset-flow-identity-scope-lookup-result.v1' ||
+    value.read_only !== true ||
+    value.execution_permit !== null ||
+    value.receipt_id !== identity.receipt_id ||
+    value.receipt_proof_sha256 !== identity.receipt_proof_sha256 ||
+    value.mapping_guard_set_sha256 !== plan.mapping_guard_set_sha256 ||
+    value.process_intent_set_sha256 !== plan.process_intent_set_sha256 ||
+    value.operation_id !== identity.operation_id ||
+    value.plan_sha256 !== identity.plan_sha256 ||
+    !['sealed', 'running', 'primary_complete', 'derivatives_pending', 'completed'].includes(
+      String(value.status),
+    ) ||
+    value.support_snapshot_count !== plan.support_snapshots.length ||
+    value.source_universe_count !== 305
+  ) {
+    fail('Flow identity scope lookup proof does not bind the immutable execution.');
+  }
+  uuid(value.scope_id, 'lookup scope_id');
+  hash(value.scope_proof_sha256, 'lookup scope_proof_sha256');
+  integer(value.next_ordinal, 'lookup next_ordinal', 1);
+  token(value.audit_id, 'lookup audit_id');
+  hash(value.whole_scope_proof_sha256, 'lookup whole_scope_proof_sha256');
+  return value as FlowIdentityScopeLookupProof;
+}
+
 export function parseFlowIdentityProcessProof(options: {
   value: unknown;
   scopeId: string;
@@ -675,6 +887,8 @@ export function parseFlowIdentityProcessProof(options: {
   processIntentSetSha256: string;
   processIntentProofSha256: string;
   processCount: number;
+  expectedInvocationId?: string;
+  expectedPermitGenerationBefore?: number;
 }): FlowIdentityProcessProof {
   if (!isJsonObject(options.value)) fail('Flow identity process proof is invalid.');
   if (
@@ -696,6 +910,8 @@ export function parseFlowIdentityProcessProof(options: {
       'receipt_proof_sha256',
       'mapping_guard_set_sha256',
       'process_intent_set_sha256',
+      'invocation_id',
+      'permit_generation_before',
       'ordinal',
       'process_id',
       'process_version',
@@ -727,6 +943,13 @@ export function parseFlowIdentityProcessProof(options: {
     value.receipt_proof_sha256 !== options.receiptProofSha256 ||
     value.mapping_guard_set_sha256 !== options.mappingGuardSetSha256 ||
     value.process_intent_set_sha256 !== options.processIntentSetSha256 ||
+    !UUID_PATTERN.test(String(value.invocation_id)) ||
+    !Number.isSafeInteger(value.permit_generation_before) ||
+    Number(value.permit_generation_before) < 0 ||
+    (options.expectedInvocationId !== undefined &&
+      value.invocation_id !== options.expectedInvocationId) ||
+    (options.expectedPermitGenerationBefore !== undefined &&
+      value.permit_generation_before !== options.expectedPermitGenerationBefore) ||
     value.ordinal !== options.process.ordinal ||
     value.process_id !== options.process.id ||
     value.process_version !== options.process.version ||
@@ -1602,6 +1825,8 @@ export function parseFlowIdentityFinalizeProof(options: {
   scopeId: string;
   scopeProofSha256: string;
   request: JsonObject;
+  expectedInvocationId?: string;
+  expectedPermitGenerationBefore?: number;
 }): FlowIdentityFinalizeProof {
   if (!isJsonObject(options.value) || !isJsonObject(options.request.expected)) {
     fail('Flow identity finalize proof is invalid.');
@@ -1630,6 +1855,8 @@ export function parseFlowIdentityFinalizeProof(options: {
     'operation_id',
     'plan_sha256',
     'scope_proof_sha256',
+    'invocation_id',
+    'permit_generation_before',
     'status',
     'process_count',
     'completed_process_count',
@@ -1663,6 +1890,13 @@ export function parseFlowIdentityFinalizeProof(options: {
     value.operation_id !== options.plan.operation_id ||
     value.plan_sha256 !== options.plan.plan_sha256 ||
     value.scope_proof_sha256 !== options.scopeProofSha256 ||
+    !UUID_PATTERN.test(String(value.invocation_id)) ||
+    !Number.isSafeInteger(value.permit_generation_before) ||
+    Number(value.permit_generation_before) < 0 ||
+    (options.expectedInvocationId !== undefined &&
+      value.invocation_id !== options.expectedInvocationId) ||
+    (options.expectedPermitGenerationBefore !== undefined &&
+      value.permit_generation_before !== options.expectedPermitGenerationBefore) ||
     !['derivatives_pending', 'completed', 'live_drift', 'failed'].includes(String(value.status)) ||
     value.process_count !== expected.process_count ||
     value.rewrite_count !== expected.rewrite_count ||

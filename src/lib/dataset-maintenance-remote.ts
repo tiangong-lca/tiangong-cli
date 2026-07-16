@@ -97,6 +97,7 @@ async function fetchJsonResponse(options: {
   url: string;
   init?: RequestInit;
   label: string;
+  redactResponseDetails?: boolean;
 }): Promise<{ body: unknown; headers: ResponseLike['headers'] }> {
   const response = await options.context.fetch_impl(options.url, {
     ...options.init,
@@ -111,7 +112,9 @@ async function fetchJsonResponse(options: {
     throw new CliError(`HTTP ${response.status} returned from ${options.label}`, {
       code: 'DATASET_MAINTENANCE_REMOTE_REQUEST_FAILED',
       exitCode: 1,
-      details: { url: options.url, response: text },
+      details: options.redactResponseDetails
+        ? { url: options.url, response_redacted: true }
+        : { url: options.url, response: text },
     });
   }
   if (!text.trim()) {
@@ -139,6 +142,7 @@ async function fetchJson(options: {
   url: string;
   init?: RequestInit;
   label: string;
+  redactResponseDetails?: boolean;
 }): Promise<unknown> {
   return (await fetchJsonResponse(options)).body;
 }
@@ -416,6 +420,8 @@ async function invokeMaintenanceRpc(options: {
     | 'cmd_dataset_derivative_rebuild_read'
     | 'cmd_dataset_flow_identity_capture_attest_guarded'
     | 'cmd_dataset_flow_identity_scope_preflight_guarded'
+    | 'cmd_dataset_flow_identity_scope_lookup'
+    | 'cmd_dataset_flow_identity_scope_recover_guarded'
     | 'cmd_dataset_flow_identity_process_rewrite_guarded'
     | 'cmd_dataset_flow_identity_scope_read'
     | 'cmd_dataset_flow_identity_scope_finalize_guarded';
@@ -424,6 +430,7 @@ async function invokeMaintenanceRpc(options: {
   allowDomainFailure?: boolean;
 }): Promise<JsonObject> {
   const url = `${options.context.rest_base_url}/rpc/${options.rpc}`;
+  const redactResponseDetails = options.rpc.startsWith('cmd_dataset_flow_identity_');
   const body = await fetchJson({
     context: {
       ...options.context,
@@ -436,23 +443,51 @@ async function invokeMaintenanceRpc(options: {
       body: JSON.stringify(options.body),
     },
     label: options.rpc,
+    redactResponseDetails,
   });
+  if (
+    redactResponseDetails &&
+    isJsonObject(body) &&
+    body.ok !== true &&
+    Object.hasOwn(body, 'execution_permit')
+  ) {
+    throw new CliError(`${options.rpc} returned an invalid rejection envelope.`, {
+      code: 'DATASET_MAINTENANCE_RPC_FAILED',
+      exitCode: 1,
+      details: { rpc: options.rpc, response_redacted: true },
+    });
+  }
   if (
     !isJsonObject(body) ||
     (body.ok !== true &&
-      !(
-        options.allowDomainFailure === true &&
-        body.ok === false &&
-        typeof body.schema_version === 'string'
-      ))
+      !(options.allowDomainFailure === true && isMaintenanceRpcDomainFailure(body)))
   ) {
     throw new CliError(`${options.rpc} returned an unexpected response.`, {
       code: 'DATASET_MAINTENANCE_RPC_FAILED',
       exitCode: 1,
-      details: body,
+      details: redactResponseDetails ? { rpc: options.rpc, response_redacted: true } : body,
     });
   }
   return body;
+}
+
+export type MaintenanceRpcDomainFailure = JsonObject & {
+  ok: false;
+  code: string;
+  status: string | number;
+};
+
+export function isMaintenanceRpcDomainFailure(
+  value: unknown,
+): value is MaintenanceRpcDomainFailure {
+  return Boolean(
+    isJsonObject(value) &&
+    value.ok === false &&
+    typeof value.code === 'string' &&
+    value.code.trim() &&
+    ((typeof value.status === 'number' && Number.isSafeInteger(value.status)) ||
+      (typeof value.status === 'string' && value.status.trim())),
+  );
 }
 
 export async function preflightMaintenanceAliasExecution(options: {
@@ -647,6 +682,21 @@ export async function preflightMaintenanceFlowIdentityScope(options: {
     rpc: 'cmd_dataset_flow_identity_scope_preflight_guarded',
     body,
     minimumTimeoutMs: 130_000,
+    allowDomainFailure: true,
+  });
+}
+
+export async function lookupMaintenanceFlowIdentityScope(options: {
+  context: DatasetMaintenanceRemoteContext;
+  request: JsonObject;
+}): Promise<JsonObject> {
+  const body = assertFlowIdentityWireJson({ p_request: options.request });
+  return invokeMaintenanceRpc({
+    context: options.context,
+    rpc: 'cmd_dataset_flow_identity_scope_lookup',
+    body,
+    minimumTimeoutMs: 90_000,
+    allowDomainFailure: true,
   });
 }
 
@@ -654,16 +704,19 @@ export async function rewriteMaintenanceFlowIdentityProcess(options: {
   context: DatasetMaintenanceRemoteContext;
   scopeId: string;
   request: JsonObject;
+  authorization: JsonObject;
 }): Promise<JsonObject> {
   const body = assertFlowIdentityWireJson({
     p_scope_id: options.scopeId,
     p_request: options.request,
+    p_authorization: options.authorization,
   });
   return invokeMaintenanceRpc({
     context: options.context,
     rpc: 'cmd_dataset_flow_identity_process_rewrite_guarded',
     body,
     minimumTimeoutMs: 90_000,
+    allowDomainFailure: true,
   });
 }
 
@@ -685,6 +738,26 @@ export async function finalizeMaintenanceFlowIdentityScope(options: {
   context: DatasetMaintenanceRemoteContext;
   scopeId: string;
   request: JsonObject;
+  authorization: JsonObject;
+}): Promise<JsonObject> {
+  const body = assertFlowIdentityWireJson({
+    p_scope_id: options.scopeId,
+    p_request: options.request,
+    p_authorization: options.authorization,
+  });
+  return invokeMaintenanceRpc({
+    context: options.context,
+    rpc: 'cmd_dataset_flow_identity_scope_finalize_guarded',
+    body,
+    minimumTimeoutMs: 190_000,
+    allowDomainFailure: true,
+  });
+}
+
+export async function recoverMaintenanceFlowIdentityScope(options: {
+  context: DatasetMaintenanceRemoteContext;
+  scopeId: string;
+  request: JsonObject;
 }): Promise<JsonObject> {
   const body = assertFlowIdentityWireJson({
     p_scope_id: options.scopeId,
@@ -692,9 +765,9 @@ export async function finalizeMaintenanceFlowIdentityScope(options: {
   });
   return invokeMaintenanceRpc({
     context: options.context,
-    rpc: 'cmd_dataset_flow_identity_scope_finalize_guarded',
+    rpc: 'cmd_dataset_flow_identity_scope_recover_guarded',
     body,
-    minimumTimeoutMs: 190_000,
+    minimumTimeoutMs: 130_000,
     allowDomainFailure: true,
   });
 }
@@ -709,6 +782,7 @@ export async function attestMaintenanceFlowIdentityCapture(options: {
     rpc: 'cmd_dataset_flow_identity_capture_attest_guarded',
     body,
     minimumTimeoutMs: 190_000,
+    allowDomainFailure: true,
   });
 }
 
