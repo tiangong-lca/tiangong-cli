@@ -33,7 +33,7 @@ checkPaths:
   - scripts/docpact-gate.sh
   - scripts/install-git-hooks.sh
 lastReviewedAt: 2026-07-16
-lastReviewedCommit: e8a458c63a4c59d7ea1fcf4618cd5034ead6e836
+lastReviewedCommit: 497ac46bba02297b46cee255429371bf20074487
 related:
   - .docpact/config.yaml
   - docs/agents/repo-validation.md
@@ -76,6 +76,8 @@ Review note, 2026-07-16: Issue #177 changes tests only: native path helpers repl
 Review note, 2026-07-16: Issue #178 is the dedicated 0.0.27 version-bump release for the merged protected clock-skew fix and Windows-portable validation suite. It adds no command, runtime, dependency, approval, database, or alternate publication path; automated tag creation, Trusted Publishing, and exact released-commit workspace integration remain mandatory.
 
 Review note, 2026-07-16: Issue #182 corrects only the terminal protected verifier's JSON hash-domain bridge. Independent RLS rows remain bound to the approved plan with the CLI canonical hash; the already closure-hash-validated primary action evidence binds PostgreSQL `jsonb::text` hashes to the fresh derivative snapshot; and the snapshot SHA remains bound to the terminal completion proof. Cross-domain hashes are never compared directly. Missing, duplicate, foreign, invalid, or drifting evidence still fails closed, and admission, ownership, database, release, and workspace-integration boundaries are unchanged.
+
+Review note, 2026-07-16: Issue #184 is the dedicated 0.0.28 version-bump release for merged verifier fix #182. It adds no command, runtime, dependency, approval, database, or alternate publication path; automated tag creation, Trusted Publishing, provenance verification, and exact released-commit workspace integration remain mandatory before production status-only verification.
 
 ## Bootstrap Order
 
