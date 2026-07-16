@@ -27,7 +27,7 @@ checkPaths:
   - scripts/docpact-gate.sh
   - scripts/install-git-hooks.sh
 lastReviewedAt: 2026-07-16
-lastReviewedCommit: 65a446a8650ec2aa5712d6d13dbab57a400b433d
+lastReviewedCommit: 7c9a252226fb411d3ffba2f2e4f37b91b9658be8
 related:
   - ../../AGENTS.md
   - ../../.docpact/config.yaml
@@ -65,6 +65,8 @@ Review note, 2026-07-15: Issue #171 adds two preparation commands without broade
 Review note, 2026-07-16: Issue #175 remains inside `protected-contract` parsing and tests. The client accepts at most five seconds of server-ahead skew for `completed_at`, but does not extend token expiry or the 180-second duration; the database still owns authoritative server-clock gate/admission expiry and one-shot uniqueness. No new runtime, adapter, dependency, artifact family, or database behavior is introduced.
 
 Review note, 2026-07-16: Issue #177 modifies only `test/**` portability assumptions. Native path helpers, a guaranteed-missing temporary executable for the default-spawn failure path, an injected successful spawn, and platform-appropriate permission assertions preserve the existing launcher, artifact, protected-maintenance, dependency, and release architecture.
+
+Review note, 2026-07-16: Issue #178 changes the package version to 0.0.27 and updates the one package-version dispatch fixture. No command family, launcher, session, artifact, protected-maintenance, dependency, tag, publication, or workspace-integration architecture changes.
 
 ## Stable Path Map
 

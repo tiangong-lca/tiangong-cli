@@ -20,7 +20,7 @@ checkPaths:
   - scripts/docpact-gate.sh
   - scripts/install-git-hooks.sh
 lastReviewedAt: 2026-07-16
-lastReviewedCommit: 65a446a8650ec2aa5712d6d13dbab57a400b433d
+lastReviewedCommit: 7c9a252226fb411d3ffba2f2e4f37b91b9658be8
 related:
   - ../AGENTS.md
   - ../.docpact/config.yaml
@@ -58,6 +58,8 @@ Review note, 2026-07-15: Issue #171's protected freeze/seal commands require no 
 Review note, 2026-07-16: Issue #175's bounded preflight clock-skew fix requires no new secret, environment, Trusted Publisher setting, workflow, tag rule, credential, or database change. It follows the unchanged feature-then-patch-release path.
 
 Review note, 2026-07-16: Issue #177's test-only Windows portability changes require no new secret, environment, runner configuration, Trusted Publisher setting, workflow, tag rule, credential, or database change.
+
+Review note, 2026-07-16: Issue #178 publishes 0.0.27 through the existing merge-triggered tag and npm Trusted Publishing workflows. It requires no new secret, environment, runner, Trusted Publisher setting, workflow, tag rule, credential, or database change.
 
 Review note, 2026-07-13: exact-count maintenance pagination requires no repository secret, Trusted Publisher, environment, workflow filename, or tag-semantics change.
 

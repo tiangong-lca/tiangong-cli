@@ -1064,7 +1064,7 @@ test('executeCli separates production read-only freeze from offline approval sea
     outDir: './protected-freeze',
     expectedProjectRef: 'production-ref',
     confirm: 'bafudata@126.com',
-    cliVersion: '0.0.26',
+    cliVersion: '0.0.27',
     pageSize: 250,
     timeoutMs: 12000,
     env: deps.env,

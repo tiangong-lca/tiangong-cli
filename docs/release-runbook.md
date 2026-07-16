@@ -23,7 +23,7 @@ checkPaths:
   - scripts/docpact-gate.sh
   - scripts/install-git-hooks.sh
 lastReviewedAt: 2026-07-16
-lastReviewedCommit: 65a446a8650ec2aa5712d6d13dbab57a400b433d
+lastReviewedCommit: 7c9a252226fb411d3ffba2f2e4f37b91b9658be8
 related:
   - ../AGENTS.md
   - ../.docpact/config.yaml
@@ -44,6 +44,8 @@ Review note, 2026-07-15: Issue #171 adds production-read-only protected freeze g
 Review note, 2026-07-16: Issue #175 fixes bounded client clock-skew validation without changing release mechanics. The feature PR keeps package metadata unchanged and must pass focused timing/one-shot tests, exact coverage, docpact, and the full pre-push gate. Recovery then requires a separate patch version-bump PR, Trusted Publishing verification, and a new root-workspace integration before any fresh protected freeze.
 
 Review note, 2026-07-16: Issue #177 changes only cross-platform tests needed to make the existing four-platform quality matrix authoritative. It does not alter package metadata, tag creation, Trusted Publishing, release eligibility, protected-execution behavior, or the requirement for a separate 0.0.27 release PR after all matrix jobs pass.
+
+Review note, 2026-07-16: Issue #178 is that separate 0.0.27 release PR. It must prove the version is unpublished, retain exact coverage and all four platform results, and use the existing merge-triggered tag plus tag-triggered Trusted Publishing workflows. Local publish or manual tag creation remains forbidden; npm provenance and `gitHead` must match the immutable release merge commit before workspace integration starts.
 
 Use this document for:
 
