@@ -15,8 +15,8 @@ checkPaths:
   - src/lib/user-api-key.ts
   - src/lib/supabase-session.ts
   - src/lib/supabase-client.ts
-lastReviewedAt: 2026-07-15
-lastReviewedCommit: bd145f692b3fd11e398302dd6a1d2831e058883a
+lastReviewedAt: 2026-07-16
+lastReviewedCommit: c44415cacc78fea6ac63dfe256d748cb6ab95782
 related:
   - ../AGENTS.md
   - ../.docpact/config.yaml
@@ -41,6 +41,7 @@ related:
 - 2026-07-14 复核：`dataset maintenance rebuild-derivatives` 复用既有用户 session 与 authenticated PostgREST RPC，不新增认证 env、alternate bearer、service-role、Edge/admin 或 raw queue 路径；本历史设计结论不变。
 - 2026-07-15 复核：`dataset maintenance run-protected` 继续复用同一用户 session、publishable key 与 authenticated PostgREST RPC。CLI 不持有 service-role；服务器调度的内部执行器不改变 CLI bearer/env contract。状态读取仍绑定 `auth.uid()`、actor 与 plan，独立表读回继续走用户 RLS；本历史设计结论不变。
 - 2026-07-15 复核：`dataset maintenance freeze-protected` 只复用现有用户 session，对显式确认的 production project 做 RLS 表读取与受保护 derivative snapshot RPC；不新增 service-role、alternate bearer、Edge/admin 或 Dev 回放链。`seal-protected-approval` 的 CLI dispatch 不传 env、session、HTTP 或 remote client，完全离线；本历史设计结论不变。
+- 2026-07-16 复核：Issue #175 只调整已认证 preflight proof 的本地时间边界判断，不改变用户 API key、publishable key、session cache、bearer、RLS、RPC 或 service-role 边界；本历史设计结论不变。
 
 ## 1. 已确认事实
 

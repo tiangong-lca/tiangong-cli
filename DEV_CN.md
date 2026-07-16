@@ -18,8 +18,8 @@ checkPaths:
   - src/**
   - scripts/**
   - .github/workflows/**
-lastReviewedAt: 2026-07-15
-lastReviewedCommit: bd145f692b3fd11e398302dd6a1d2831e058883a
+lastReviewedAt: 2026-07-16
+lastReviewedCommit: c44415cacc78fea6ac63dfe256d748cb6ab95782
 related:
   - AGENTS.md
   - .docpact/config.yaml
@@ -50,6 +50,8 @@ Review note, 2026-07-14: `rebuild-derivatives` 扩展现有 maintenance command 
 Review note, 2026-07-15: `dataset maintenance run-protected` 为已经冻结和人工批准的 private alias 计划提供 production-only 的一次性执行/恢复入口。受保护写入由服务器调度，以认证 owner 及精确 actor/user_id/state_code=0、plan/closure 栅栏限制范围；RLS 继续保护公开入口与独立读回。commit 路径只做一次 server preflight、在唯一 admission POST 前写 immutable attempt marker；marker 或不明确响应之后只能 `--status-only`。它不回退 dev、旧 alias RPC、发布或 state-code 修改。
 
 Review note, 2026-07-15: `dataset maintenance freeze-protected` 与 `seal-protected-approval` 补齐 protected runner 之前的准备链。freeze 使用既有用户 session 直接对显式确认的 production project 做只读 census/support/50-target snapshot，且不会 preflight、gate、admit 或 mutate；seal 不接收 env、session 或网络 client，只按人类返回原始 UTF-8 字节及显式 hash/account/timestamp 生成 approval。二者不新增依赖、认证变量或发布路径。
+
+Review note, 2026-07-16: Issue #175 只修正 `run-protected` 对服务端领先本机时钟的有界判断：`completed_at` 最多允许领先 5 秒，过期、时间倒序、超过 180 秒与一次性 admission 约束不变。它不新增 env、依赖、认证路径、命令面或发布机制。
 
 设计原则：
 

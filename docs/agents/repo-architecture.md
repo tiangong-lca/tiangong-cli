@@ -26,8 +26,8 @@ checkPaths:
   - scripts/docpact
   - scripts/docpact-gate.sh
   - scripts/install-git-hooks.sh
-lastReviewedAt: 2026-07-15
-lastReviewedCommit: ea0aceef09d9b4fee11c26dd11d34ae50d387162
+lastReviewedAt: 2026-07-16
+lastReviewedCommit: c44415cacc78fea6ac63dfe256d748cb6ab95782
 related:
   - ../../AGENTS.md
   - ../../.docpact/config.yaml
@@ -61,6 +61,8 @@ Review note, 2026-07-14: `rebuild-derivatives` stays inside the native dataset-m
 Review note, 2026-07-15: `run-protected` remains in the native dataset-maintenance family and adds no second orchestration runtime. The command separates sealed request parsing, one-shot execution/recovery, and terminal independent verification into dedicated modules; it is production-only, admits at most once, and requires exact 23-flow + 27-process derivative closure without adding a Dev data replay or legacy-RPC fallback.
 
 Review note, 2026-07-15: Issue #171 adds two preparation commands without broadening the mutation surface. `freeze-protected` owns production-authenticated read-only census/support/derivative capture and canonical unapproved artifacts; `seal-protected-approval` owns byte-exact offline human-approval recording and receives no session, environment, or network client. Only the existing `run-protected` module owns preflight, admission, execution, or recovery. Foundry remains a thin published-CLI caller and must not duplicate canonical hashing or database access.
+
+Review note, 2026-07-16: Issue #175 remains inside `protected-contract` parsing and tests. The client accepts at most five seconds of server-ahead skew for `completed_at`, but does not extend token expiry or the 180-second duration; the database still owns authoritative server-clock gate/admission expiry and one-shot uniqueness. No new runtime, adapter, dependency, artifact family, or database behavior is introduced.
 
 ## Stable Path Map
 

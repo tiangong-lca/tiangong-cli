@@ -41,6 +41,8 @@ export const PROTECTED_EXECUTION_COUNTS = {
 const SHA256 = /^[a-f0-9]{64}$/u;
 const UUID = /^[a-f0-9]{8}-[a-f0-9]{4}-[1-5][a-f0-9]{3}-[89ab][a-f0-9]{3}-[a-f0-9]{12}$/iu;
 const VERSION = /^[0-9]{2}\.[0-9]{2}\.[0-9]{3}$/u;
+const PROTECTED_PREFLIGHT_MAX_WINDOW_MS = 180_000;
+const PROTECTED_SERVER_CLOCK_SKEW_TOLERANCE_MS = 5_000;
 
 export type ProtectedExecutionStatus =
   | 'not_admitted'
@@ -355,10 +357,11 @@ export type ProtectedExecutionStatusProof = {
   failure: JsonObject | null;
 };
 
-function fail(message: string): never {
+function fail(message: string, details?: unknown): never {
   throw new CliError(message, {
     code: 'DATASET_MAINTENANCE_PROTECTED_CONTRACT_INVALID',
     exitCode: 2,
+    details,
   });
 }
 
@@ -958,8 +961,30 @@ export function parseProtectedPreflightProof(
   }
   const issued = Date.parse(proof.completed_at);
   const expires = Date.parse(proof.expires_at);
-  if (issued > now.getTime() || expires <= now.getTime() || expires - issued > 180_000) {
-    fail('Preflight token is stale, future-issued, or exceeds the 180-second admission window.');
+  const nowMs = now.getTime();
+  const windowMs = expires - issued;
+  const timingDetails = {
+    completed_at: proof.completed_at,
+    expires_at: proof.expires_at,
+    observed_at: now.toISOString(),
+    window_ms: windowMs,
+    future_skew_ms: issued - nowMs,
+    allowed_future_skew_ms: PROTECTED_SERVER_CLOCK_SKEW_TOLERANCE_MS,
+  };
+  if (windowMs <= 0) {
+    fail('Preflight token expiry must be later than its completion time.', timingDetails);
+  }
+  if (windowMs > PROTECTED_PREFLIGHT_MAX_WINDOW_MS) {
+    fail('Preflight token exceeds the 180-second admission window.', timingDetails);
+  }
+  if (issued - nowMs > PROTECTED_SERVER_CLOCK_SKEW_TOLERANCE_MS) {
+    fail(
+      'Preflight token is future-issued beyond the 5-second clock-skew allowance.',
+      timingDetails,
+    );
+  }
+  if (expires <= nowMs) {
+    fail('Preflight token is stale.', timingDetails);
   }
   return proof;
 }

@@ -19,8 +19,8 @@ checkPaths:
   - scripts/docpact
   - scripts/docpact-gate.sh
   - scripts/install-git-hooks.sh
-lastReviewedAt: 2026-07-15
-lastReviewedCommit: ea0aceef09d9b4fee11c26dd11d34ae50d387162
+lastReviewedAt: 2026-07-16
+lastReviewedCommit: c44415cacc78fea6ac63dfe256d748cb6ab95782
 related:
   - ../AGENTS.md
   - ../.docpact/config.yaml
@@ -54,6 +54,8 @@ Review note, 2026-07-14: Issue #165's guarded derivative-rebuild command require
 Review note, 2026-07-15: Issue #168's protected owner-draft runner requires no new npm secret, GitHub environment, Trusted Publisher setting, workflow filename, or tag rule. The released database-engine#262 production contract is a runtime prerequisite for the later CLI patch release, not a change to release setup.
 
 Review note, 2026-07-15: Issue #171's protected freeze/seal commands require no new npm secret, GitHub environment, Trusted Publisher setting, workflow filename, tag rule, database service-role credential, or alternate CLI authentication variable. Freeze reuses the existing user-session contract; seal receives no authentication or network input. The feature still follows a normal feature PR, separate version-bump PR, automated tag, and npm Trusted Publishing path.
+
+Review note, 2026-07-16: Issue #175's bounded preflight clock-skew fix requires no new secret, environment, Trusted Publisher setting, workflow, tag rule, credential, or database change. It follows the unchanged feature-then-patch-release path.
 
 Review note, 2026-07-13: exact-count maintenance pagination requires no repository secret, Trusted Publisher, environment, workflow filename, or tag-semantics change.
 

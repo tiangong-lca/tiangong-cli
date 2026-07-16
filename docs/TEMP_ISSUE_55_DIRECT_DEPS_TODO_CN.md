@@ -16,8 +16,8 @@ checkPaths:
   - src/lib/supabase-client.ts
   - src/lib/tidas-sdk-package-validator.ts
   - test/**
-lastReviewedAt: 2026-07-15
-lastReviewedCommit: bd145f692b3fd11e398302dd6a1d2831e058883a
+lastReviewedAt: 2026-07-16
+lastReviewedCommit: c44415cacc78fea6ac63dfe256d748cb6ab95782
 related:
   - ../AGENTS.md
   - ../.docpact/config.yaml
@@ -44,6 +44,8 @@ related:
 - 直到 repo 级验证、PR、workspace integration 全部完成，才算结束。
 
 当前状态：
+
+2026-07-16 复核：Issue #175 的 protected preflight 时钟边界修复只使用现有 TypeScript、`Date` 与 `CliError` 能力，不新增或改变 Supabase JS、TIDAS SDK 或其他直接依赖；本文件继续保持历史 TODO 记录用途。
 
 2026-07-15 复核：`dataset maintenance run-protected` 复用现有 `@supabase/supabase-js` 用户 session / authenticated RPC 与 direct TIDAS SDK 依赖模型，不新增依赖，也不改变 Issue #55 的历史结论；本文件继续保持历史 TODO 记录用途。
 
