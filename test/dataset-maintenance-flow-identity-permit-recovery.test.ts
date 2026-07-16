@@ -165,6 +165,11 @@ test('approval claim root, validation, and private-file guards fail closed', () 
   assert.equal(claimInternals.hasPrivateClaimPermissions(0o600, 'linux'), true);
   assert.equal(claimInternals.hasPrivateClaimPermissions(0o644, 'linux'), false);
   assert.equal(claimInternals.hasPrivateClaimPermissions(0o666, 'win32'), true);
+  const genericCreateError = Object.assign(new Error('claim write failed'), { code: 'EACCES' });
+  assert.throws(
+    () => claimInternals.rethrowClaimCreateError(genericCreateError, '/claim/path'),
+    (error) => error === genericCreateError,
+  );
   for (const invalid of [
     { ...claim(), claimed_at_utc: 'not-a-timestamp' },
     { ...claim(), approval_kind: 'foreign' },

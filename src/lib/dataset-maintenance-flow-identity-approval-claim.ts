@@ -77,6 +77,17 @@ function hasPrivateClaimPermissions(mode: number, platform: NodeJS.Platform): bo
   return platform === 'win32' || (mode & 0o077) === 0;
 }
 
+function rethrowClaimCreateError(error: unknown, claimPath: string): never {
+  if (isErrno(error, 'EEXIST')) {
+    fail(
+      'This exact flow identity approval was already claimed by a CLI wrapper. Only read-only status or a newly frozen recovery approval is allowed.',
+      'DATASET_FLOW_IDENTITY_APPROVAL_ALREADY_CLAIMED',
+      { claim_path: claimPath },
+    );
+  }
+  throw error;
+}
+
 function validateClaim(value: unknown, expectedIdentity: string): FlowIdentityApprovalClaim {
   if (!value || typeof value !== 'object' || Array.isArray(value)) {
     fail(
@@ -189,14 +200,7 @@ export function claimFlowIdentityApproval(options: {
     writeFileSync(descriptor, bytes, 'utf8');
     fsyncSync(descriptor);
   } catch (error) {
-    if (isErrno(error, 'EEXIST')) {
-      fail(
-        'This exact flow identity approval was already claimed by a CLI wrapper. Only read-only status or a newly frozen recovery approval is allowed.',
-        'DATASET_FLOW_IDENTITY_APPROVAL_ALREADY_CLAIMED',
-        { claim_path: claimPath },
-      );
-    }
-    throw error;
+    rethrowClaimCreateError(error, claimPath);
   } finally {
     if (descriptor !== null) closeSync(descriptor);
   }
@@ -247,4 +251,9 @@ export function readFlowIdentityApprovalClaim(options: {
   return validateClaim(value, options.approvalIdentitySha256);
 }
 
-export const __testInternals = { hasPrivateClaimPermissions, isErrno, validateClaim };
+export const __testInternals = {
+  hasPrivateClaimPermissions,
+  isErrno,
+  rethrowClaimCreateError,
+  validateClaim,
+};
