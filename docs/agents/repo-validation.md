@@ -28,7 +28,7 @@ checkPaths:
   - scripts/docpact-gate.sh
   - scripts/install-git-hooks.sh
 lastReviewedAt: 2026-07-16
-lastReviewedCommit: 65a446a8650ec2aa5712d6d13dbab57a400b433d
+lastReviewedCommit: 7c9a252226fb411d3ffba2f2e4f37b91b9658be8
 related:
   - ../../AGENTS.md
   - ../../.docpact/config.yaml
@@ -87,6 +87,8 @@ Review note, 2026-07-15: Issue #171 preparation proof additionally requires a st
 Review note, 2026-07-16: Issue #175 proof requires a fixed five-second allowance only when server `completed_at` is slightly ahead of the client clock. Tests must accept the exact tolerance boundary, reject one millisecond beyond it, retain strict stale/reversed/over-180-second rejection, expose only token-free timing diagnostics, and prove parse failure still occurs before gate capture, submission-marker creation, or admission. Server-side expiry and one-shot enforcement are unchanged.
 
 Review note, 2026-07-16: Issue #177 keeps the validation contract unchanged while making existing tests portable across the four-platform quality matrix. Tests use native path helpers and deterministic spawn doubles; POSIX permission-bit checks remain required on non-Windows platforms, while byte preservation, immutability, hashing, and overwrite rejection remain required everywhere.
+
+Review note, 2026-07-16: Issue #178 keeps the validation contract unchanged for the dedicated 0.0.27 release. In addition to the existing exact-coverage and pre-push gates, release proof requires an unpublished-version check, tag-name check, dry-run package inspection, a fresh four-platform matrix, and Docpact with no diagnostics before merge.
 
 ## Validation Matrix
 

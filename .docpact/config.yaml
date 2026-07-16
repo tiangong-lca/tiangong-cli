@@ -8,8 +8,9 @@ layout: repo
 # Review note, 2026-07-15: Issue #171 protected freeze/seal preparation remains inside the existing dataset-maintenance command/runtime, remote-adapter, artifact, and validation domains. Existing `src/lib/dataset-*.ts`, `src/cli.ts`, `test/**`, and governed-doc wildcards cover production-read-only capture, offline byte-exact approval sealing, canonical toolchain evidence, and their tests; no ownership, routing, dependency, auth, or release-rule change is required.
 # Review note, 2026-07-16: Issue #175 changes only the protected preflight proof's bounded client clock-skew validation and safe timing diagnostics. Existing dataset-maintenance and test wildcards already cover the implementation, tests, and governed docs; no ownership, routing, dependency, auth, database, or release-rule change is required.
 # Review note, 2026-07-16: Issue #177 removes Windows-only assumptions from existing CLI tests. The same test and validation wildcards cover native path handling, deterministic spawn doubles, and platform-appropriate permission assertions; no runtime, ownership, routing, dependency, auth, database, protected-execution, or release-rule change is required.
+# Review note, 2026-07-16: Issue #178 is the dedicated 0.0.27 package-version release after Issues #175 and #177. It changes only package metadata, the package-version dispatch fixture, and governed review records; ownership, routing, dependencies, protected execution, database behavior, tag automation, Trusted Publishing, and workspace-integration rules remain unchanged.
 lastReviewedAt: "2026-07-16"
-lastReviewedCommit: "65a446a8650ec2aa5712d6d13dbab57a400b433d"
+lastReviewedCommit: "7c9a252226fb411d3ffba2f2e4f37b91b9658be8"
 
 catalog:
   repos:
