@@ -18,7 +18,7 @@ checkPaths:
   - src/**
   - test/**
 lastReviewedAt: 2026-07-16
-lastReviewedCommit: c44415cacc78fea6ac63dfe256d748cb6ab95782
+lastReviewedCommit: e8a458c63a4c59d7ea1fcf4618cd5034ead6e836
 related:
   - ../AGENTS.md
   - ../.docpact/config.yaml
@@ -52,6 +52,7 @@ related:
 - 2026-07-15 复核：`dataset maintenance run-protected` 继续由 TypeScript / Node 原生 CLI 负责 sealed request、一次 admission、本地 immutable evidence 与只读恢复；不新增 Python、POSIX shell、MCP runtime、私有 skill runtime 或新 npm 依赖，skills 仍只能薄编排 CLI。
 - 2026-07-15 复核：`dataset maintenance freeze-protected` 与 `seal-protected-approval` 继续由 TypeScript / Node 原生 CLI 分别负责生产只读冻结和完全离线的人类批准记录；不新增 Python、POSIX shell、MCP runtime、私有 skill runtime 或 npm 依赖。Foundry/skills 只能调用已发布 CLI 并保留其产物，不得读取数据库 env、直调 RPC、重算 canonical JSON/hash 或复制 freeze/seal 逻辑。
 - 2026-07-16 复核：Issue #175 只在 TypeScript protected contract parser 中加入固定 5 秒的服务端领先时钟容差与无 token 诊断；不新增 Python、POSIX shell、MCP runtime、私有 skill runtime 或 npm 依赖，也不改变 skills 薄调用边界。
+- 2026-07-16 复核：Issue #182 只在 TypeScript protected verifier 内用既有 primary action evidence 修正 JSON hash 域桥接；不新增 Python、POSIX shell、MCP runtime、私有 skill runtime 或 npm 依赖，也不改变 skills 薄调用边界。
 
 这份文档记录的是：
 

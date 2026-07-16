@@ -19,7 +19,7 @@ checkPaths:
   - scripts/**
   - .github/workflows/**
 lastReviewedAt: 2026-07-16
-lastReviewedCommit: c44415cacc78fea6ac63dfe256d748cb6ab95782
+lastReviewedCommit: e8a458c63a4c59d7ea1fcf4618cd5034ead6e836
 related:
   - AGENTS.md
   - .docpact/config.yaml
@@ -52,6 +52,8 @@ Review note, 2026-07-15: `dataset maintenance run-protected` 为已经冻结和�
 Review note, 2026-07-15: `dataset maintenance freeze-protected` 与 `seal-protected-approval` 补齐 protected runner 之前的准备链。freeze 使用既有用户 session 直接对显式确认的 production project 做只读 census/support/50-target snapshot，且不会 preflight、gate、admit 或 mutate；seal 不接收 env、session 或网络 client，只按人类返回原始 UTF-8 字节及显式 hash/account/timestamp 生成 approval。二者不新增依赖、认证变量或发布路径。
 
 Review note, 2026-07-16: Issue #175 只修正 `run-protected` 对服务端领先本机时钟的有界判断：`completed_at` 最多允许领先 5 秒，过期、时间倒序、超过 180 秒与一次性 admission 约束不变。它不新增 env、依赖、认证路径、命令面或发布机制。
+
+Review note, 2026-07-16: Issue #182 只修正 protected 终态 verifier 的跨 JSON 序列化域比较，复用现有 plan、primary closure、RLS readback、snapshot 与 terminal proof；不新增 env、依赖、命令、认证、数据库/RPC 或发布机制。feature PR 不改包版本，后续仍通过独立 patch release、npm provenance 和 root integration 后才对既有 request 做 `--status-only`。
 
 设计原则：
 

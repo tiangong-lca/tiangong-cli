@@ -72,6 +72,55 @@ function derivativeTargets(): ProtectedDerivativeTarget[] {
   ];
 }
 
+function protectedActionTargets(targets: ProtectedDerivativeTarget[]) {
+  return [
+    {
+      table: 'flowproperties' as const,
+      id: '44444444-4444-4444-8444-444444444441',
+      version: VERSION,
+    },
+    {
+      table: 'flowproperties' as const,
+      id: '44444444-4444-4444-8444-444444444442',
+      version: VERSION,
+    },
+    ...targets.map(({ table, id, version }) => ({ table, id, version })),
+  ];
+}
+
+function databaseJsonbHash(target: { table: string; id: string; version: string }): string {
+  return sha256Json({
+    hash_domain: 'postgres_jsonb_text',
+    table: target.table,
+    id: target.id,
+    version: target.version,
+  });
+}
+
+function primaryActionEvidence(executionIdentity: ProtectedExecutionIdentity): JsonObject[] {
+  return protectedActionTargets(executionIdentity.derivative_targets).map((target, index) => {
+    const databaseHash = databaseJsonbHash(target);
+    return {
+      batch_ordinality: index < 2 ? 1 : 2,
+      action_ordinality: index + 1,
+      dimension: index < 2 ? 'time' : 'length_time',
+      action_id: `action-${String(index + 1).padStart(2, '0')}`,
+      table: target.table,
+      id: target.id,
+      version: target.version,
+      row_found: true,
+      owner_matches: true,
+      state_code_matches: true,
+      json_matches: true,
+      json_ordered_matches: true,
+      desired_json_ordered_sha256: databaseHash,
+      live_json_sha256: databaseHash,
+      live_json_ordered_sha256: databaseHash,
+      valid: true,
+    };
+  });
+}
+
 function identity(targets = derivativeTargets()): ProtectedExecutionIdentity {
   return {
     request_id: '33333333-3333-4333-8333-333333333333',
@@ -167,17 +216,7 @@ function scenario() {
   const planDir = mkdtempSync(path.join(os.tmpdir(), 'protected-verify-'));
   mkdirSync(path.join(planDir, 'payloads'));
   const targets = derivativeTargets();
-  const actionTargets = [
-    {
-      table: 'flowproperties' as const,
-      id: '44444444-4444-4444-8444-444444444441',
-    },
-    {
-      table: 'flowproperties' as const,
-      id: '44444444-4444-4444-8444-444444444442',
-    },
-    ...targets.map(({ table, id }) => ({ table, id })),
-  ];
+  const actionTargets = protectedActionTargets(targets);
   const beforeRows: DatasetMaintenanceRemoteRow[] = [];
   const finalRows: DatasetMaintenanceRemoteRow[] = [];
   const actions = actionTargets.map((target, index) => {
@@ -283,7 +322,10 @@ function gateReceipts(): ProtectedExecutionStatusProof['gates'] {
   }));
 }
 
-function auditClosure(actorUserId = USER_ID): JsonObject {
+function auditClosure(
+  actorUserId = USER_ID,
+  executionIdentity: ProtectedExecutionIdentity = identity(),
+): JsonObject {
   const proofMaterial: JsonObject = {
     schema_version: 'dataset-alias-primary-closure.v1',
     actor_user_id: actorUserId,
@@ -299,7 +341,7 @@ function auditClosure(actorUserId = USER_ID): JsonObject {
     source_unitgroup_support_count: 2,
     invalid_action_count: 0,
     invalid_support_count: 0,
-    action_evidence: Array.from({ length: 52 }, (_, index) => ({ ordinal: index + 1 })),
+    action_evidence: primaryActionEvidence(executionIdentity),
     support_evidence: Array.from({ length: 6 }, (_, index) => ({ ordinal: index + 1 })),
     live_closure_proof: true,
   };
@@ -451,7 +493,7 @@ function proof(
             exchange_count: 59,
             alias_audit_count: 55,
             live_closure_proof: true,
-            closure: auditClosure(),
+            closure: auditClosure(USER_ID, executionIdentity),
           }
         : null,
     derivative_readback: derivativeReadback,
@@ -500,7 +542,8 @@ function liveRows(s: Scenario): DatasetMaintenanceDerivativeRemoteRow[] {
 function snapshots(s: Scenario): ProtectedDerivativeSnapshot[] {
   return s.identity.derivative_targets.map((target) => {
     const payload = desiredPayloadByTarget(s, target.table, target.id);
-    const payloadHash = sha256Json(payload);
+    const payloadHash = databaseJsonbHash(target);
+    assert.notEqual(payloadHash, sha256Json(payload));
     return {
       schema_version: 'dataset-derivative-snapshot.v1',
       table: target.table,
@@ -950,19 +993,27 @@ test('matchLiveTargets requires exact unique live/snapshot sets and completed sn
     const terminalProofs = terminalTargets(s.identity);
     const validLive = liveReadbacks(s);
     const validSnapshots = snapshots(s);
+    const validPrimaryClosure = auditClosure(USER_ID, s.identity);
     const verify = (
       live: ProtectedLiveDerivativeReadback[] = validLive,
       snapshotRows: ProtectedDerivativeSnapshot[] = validSnapshots,
       proofs: ProtectedTerminalTargetProof[] = terminalProofs,
       plan: DatasetMaintenancePlan = s.plan,
+      primaryClosure: unknown = validPrimaryClosure,
     ) =>
       __testInternals.matchLiveTargets({
         proofs,
         live,
         snapshots: snapshotRows,
+        primaryClosure,
         plan,
         identity: s.identity,
       });
+    assert.ok(
+      validLive.every(
+        (row, index) => row.json_ordered_sha256 !== validSnapshots[index]!.json_ordered_sha256,
+      ),
+    );
     assert.deepEqual(verify(), []);
 
     const setMutations: Array<[ProtectedLiveDerivativeReadback[], ProtectedDerivativeSnapshot[]]> =
@@ -1002,6 +1053,77 @@ test('matchLiveTargets requires exact unique live/snapshot sets and completed sn
       const rows = copy(validSnapshots);
       mutate(rows[0]!);
       assert.ok(issueCodes(verify(validLive, rows)).includes('PROTECTED_DERIVATIVE_LIVE_MISMATCH'));
+    }
+
+    const primaryClosureShapeMutations: Array<(closure: JsonObject) => void> = [
+      (closure) => (closure.action_evidence = {}),
+      (closure) => (closure.action_evidence = (closure.action_evidence as JsonObject[]).slice(1)),
+      (closure) => ((closure.action_evidence as unknown[])[2] = null),
+      (closure) => {
+        const evidence = closure.action_evidence as JsonObject[];
+        evidence[3] = copy(evidence[2]!);
+      },
+      (closure) => {
+        const evidence = closure.action_evidence as JsonObject[];
+        evidence[3]!.action_id = evidence[2]!.action_id;
+      },
+      (closure) =>
+        ((closure.action_evidence as JsonObject[])[2]!.id = '99999999-9999-4999-8999-999999999999'),
+      (closure) => ((closure.action_evidence as JsonObject[])[2]!.action_id = 'foreign-action'),
+    ];
+    for (const mutate of primaryClosureShapeMutations) {
+      const closure = copy(validPrimaryClosure);
+      mutate(closure);
+      assert.ok(
+        issueCodes(verify(validLive, validSnapshots, terminalProofs, s.plan, closure)).includes(
+          'PROTECTED_DERIVATIVE_LIVE_MISMATCH',
+        ),
+      );
+    }
+    assert.ok(
+      issueCodes(verify(validLive, validSnapshots, terminalProofs, s.plan, null)).includes(
+        'PROTECTED_DERIVATIVE_LIVE_MISMATCH',
+      ),
+    );
+
+    const invalidEvidenceValues: Array<[string, unknown]> = [
+      ['action_id', ''],
+      ['table', 'sources'],
+      ['id', ''],
+      ['version', ''],
+      ['row_found', false],
+      ['owner_matches', false],
+      ['state_code_matches', false],
+      ['json_matches', false],
+      ['json_ordered_matches', false],
+      ['desired_json_ordered_sha256', 'bad'],
+      ['live_json_sha256', 'bad'],
+      ['live_json_ordered_sha256', 'bad'],
+      ['valid', false],
+    ];
+    for (const [field, value] of invalidEvidenceValues) {
+      const closure = copy(validPrimaryClosure);
+      (closure.action_evidence as JsonObject[])[2]![field] = value;
+      assert.ok(
+        issueCodes(verify(validLive, validSnapshots, terminalProofs, s.plan, closure)).includes(
+          'PROTECTED_DERIVATIVE_LIVE_MISMATCH',
+        ),
+      );
+    }
+
+    const primaryHashMutations = [
+      'desired_json_ordered_sha256',
+      'live_json_sha256',
+      'live_json_ordered_sha256',
+    ];
+    for (const field of primaryHashMutations) {
+      const closure = copy(validPrimaryClosure);
+      (closure.action_evidence as JsonObject[])[2]![field] = HASH_F;
+      assert.ok(
+        issueCodes(verify(validLive, validSnapshots, terminalProofs, s.plan, closure)).includes(
+          'PROTECTED_DERIVATIVE_LIVE_MISMATCH',
+        ),
+      );
     }
 
     assert.ok(

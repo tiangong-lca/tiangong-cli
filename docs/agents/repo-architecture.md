@@ -27,7 +27,7 @@ checkPaths:
   - scripts/docpact-gate.sh
   - scripts/install-git-hooks.sh
 lastReviewedAt: 2026-07-16
-lastReviewedCommit: 7c9a252226fb411d3ffba2f2e4f37b91b9658be8
+lastReviewedCommit: e8a458c63a4c59d7ea1fcf4618cd5034ead6e836
 related:
   - ../../AGENTS.md
   - ../../.docpact/config.yaml
@@ -67,6 +67,8 @@ Review note, 2026-07-16: Issue #175 remains inside `protected-contract` parsing 
 Review note, 2026-07-16: Issue #177 modifies only `test/**` portability assumptions. Native path helpers, a guaranteed-missing temporary executable for the default-spawn failure path, an injected successful spawn, and platform-appropriate permission assertions preserve the existing launcher, artifact, protected-maintenance, dependency, and release architecture.
 
 Review note, 2026-07-16: Issue #178 changes the package version to 0.0.27 and updates the one package-version dispatch fixture. No command family, launcher, session, artifact, protected-maintenance, dependency, tag, publication, or workspace-integration architecture changes.
+
+Review note, 2026-07-16: Issue #182 remains entirely inside `dataset-maintenance-protected-verify`. It replaces one invalid cross-serialization equality with an exact three-part proof bridge: CLI-canonical RLS row to approved plan, PostgreSQL-domain primary action evidence to fresh derivative snapshot, and snapshot SHA to terminal completion proof. It adds no runtime, adapter, artifact schema, RPC, database, dependency, or command surface.
 
 ## Stable Path Map
 
@@ -186,7 +188,7 @@ The row-level maintenance family is deliberately split by responsibility:
 - `protected-freeze` owns production-authenticated read-only preparation. It performs no server preflight, gate, admission, execution, or mutation call and writes only an unapproved alias request, complete 50-row baseline, freeze, approval request text/JSON, and zero-write report.
 - `protected-seal` owns completely offline approval recording. It receives no environment or remote client, preserves the human-returned UTF-8 bytes exactly, verifies explicit freeze/request/text/account/timestamp bindings, and writes approval artifacts without submitting execution.
 - `protected-run` owns the production-only full scan, server preflight, three ordered gate receipts, immutable attempt allocation, single admission transport, and status-only recovery state machine. Commit mode shares the preparation denylist so superseded historical approvals cannot bypass a fresh freeze; it never retries admission or falls back to Dev or the legacy whole-plan alias RPC.
-- `protected-verify` owns the terminal server proof plus independent current-user RLS cross-read of primary rows, audits, and all 23 flow + 27 process derivative snapshots. Local artifacts or a server status alone cannot produce `passed`.
+- `protected-verify` owns the terminal server proof plus independent current-user RLS cross-read of primary rows, audits, and all 23 flow + 27 process derivative snapshots. It compares only like-for-like hash domains: RLS canonical JSON to the approved plan, closure-hash-validated database action evidence to database snapshots, and snapshot SHA to terminal completion. Local artifacts or a server status alone cannot produce `passed`.
 - `alias-rewrite` owns the fixed two-dimension BAFU profile, reviewed target-reference derivation, closure counting, and arbitrary-precision decimal scaling. It never uses JavaScript binary floating point for exchange amounts.
 - `support-validation` validates frozen owner-draft FP/UG payload schemas plus embedded root UUID/version without importing publication behavior.
 - `plan` requires a complete exact-count account scan before writing `maintenance-scope.json`, `rls-visible-snapshot.json`, `protected-rows.jsonl`, `reference-impact-report.json`, `maintenance-plan.json`, and `dry-run-report.json`; newly generated plans bind the aggregate completeness proof into the plan hash. Alias plans additionally freeze `exchange-rewrite-plan.jsonl`, three support snapshots per batch, per-process exchange locators/hashes, desired payloads, and exact postconditions. Derivative rebuild plans additionally bind a database-produced snapshot for only the one target action; markdown/vector fields do not expand the account-wide scan.
