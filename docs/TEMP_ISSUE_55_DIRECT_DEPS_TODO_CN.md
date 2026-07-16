@@ -17,7 +17,7 @@ checkPaths:
   - src/lib/tidas-sdk-package-validator.ts
   - test/**
 lastReviewedAt: 2026-07-16
-lastReviewedCommit: e8a458c63a4c59d7ea1fcf4618cd5034ead6e836
+lastReviewedCommit: 1aa9b58f7a62f50d2cb680f372452fe829686d75
 related:
   - ../AGENTS.md
   - ../.docpact/config.yaml
@@ -44,6 +44,8 @@ related:
 - 直到 repo 级验证、PR、workspace integration 全部完成，才算结束。
 
 当前状态：
+
+2026-07-16 复核：Issue #157 的 flow-identity 工作流复用现有 `@supabase/supabase-js` 用户 session、authenticated RPC 和 `@tiangong-lca/tidas-sdk` ProcessSchema 校验，不新增或改变直接依赖；本文件继续保持历史 TODO 记录用途。
 
 2026-07-16 复核：Issue #182 的 protected verifier hash 域桥接只使用现有 TypeScript、plan/closure evidence 与 SHA 校验能力，不新增或改变 Supabase JS、TIDAS SDK 或其他直接依赖；本文件继续保持历史 TODO 记录用途。
 

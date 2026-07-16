@@ -11,8 +11,9 @@ layout: repo
 # Review note, 2026-07-16: Issue #178 is the dedicated 0.0.27 package-version release after Issues #175 and #177. It changes only package metadata, the package-version dispatch fixture, and governed review records; ownership, routing, dependencies, protected execution, database behavior, tag automation, Trusted Publishing, and workspace-integration rules remain unchanged.
 # Review note, 2026-07-16: Issue #182 corrects the protected verifier's cross-hash-domain comparison inside the existing dataset-maintenance runtime and tests. Existing wildcards and ownership cover the CLI-plan, database action-evidence, derivative-snapshot, and terminal-proof bridge; no routing, dependency, auth, database, release, or integration rule changes are required.
 # Review note, 2026-07-16: Issue #184 is the dedicated 0.0.28 package-version release for merged Issue #182. It changes only package metadata, the live package-version fixture, and governed review records; ownership, routing, dependencies, protected execution, database behavior, tag automation, Trusted Publishing, and workspace-integration rules remain unchanged.
+# Review note, 2026-07-16: Issue #157 adds the native dataset-maintenance flow-identity capture/plan/freeze/seal/run/verify family inside existing command, remote-adapter, artifact, validation, and release routing. It adds no dependency, alternate auth, service-role, tag, or publishing path; the existing src/lib/dataset-*.ts, src/cli.ts, test/**, and governed-doc rules cover the implementation.
 lastReviewedAt: "2026-07-16"
-lastReviewedCommit: "497ac46bba02297b46cee255429371bf20074487"
+lastReviewedCommit: "1aa9b58f7a62f50d2cb680f372452fe829686d75"
 
 catalog:
   repos:

@@ -20,7 +20,7 @@ checkPaths:
   - scripts/docpact-gate.sh
   - scripts/install-git-hooks.sh
 lastReviewedAt: 2026-07-16
-lastReviewedCommit: 497ac46bba02297b46cee255429371bf20074487
+lastReviewedCommit: 1aa9b58f7a62f50d2cb680f372452fe829686d75
 related:
   - ../AGENTS.md
   - ../.docpact/config.yaml
@@ -64,6 +64,8 @@ Review note, 2026-07-16: Issue #178 publishes 0.0.27 through the existing merge-
 Review note, 2026-07-16: Issue #182's protected-verifier hash-domain fix requires no new secret, environment, runner, Trusted Publisher setting, workflow, tag rule, credential, or database change. It follows the unchanged feature-then-patch-release path.
 
 Review note, 2026-07-16: Issue #184 publishes 0.0.28 through the existing merge-triggered tag and npm Trusted Publishing workflows. It requires no new secret, environment, runner, Trusted Publisher setting, workflow, tag rule, credential, or database change.
+
+Review note, 2026-07-16: Issue #157's flow-identity workflow requires no new npm secret, GitHub environment, Trusted Publisher setting, workflow filename, tag rule, service-role credential, or alternate CLI authentication variable. It follows the unchanged feature PR, separate version-bump PR, automated tag, and Trusted Publishing path.
 
 Review note, 2026-07-13: exact-count maintenance pagination requires no repository secret, Trusted Publisher, environment, workflow filename, or tag-semantics change.
 

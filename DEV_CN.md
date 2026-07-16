@@ -19,7 +19,7 @@ checkPaths:
   - scripts/**
   - .github/workflows/**
 lastReviewedAt: 2026-07-16
-lastReviewedCommit: e8a458c63a4c59d7ea1fcf4618cd5034ead6e836
+lastReviewedCommit: 1aa9b58f7a62f50d2cb680f372452fe829686d75
 related:
   - AGENTS.md
   - .docpact/config.yaml
@@ -54,6 +54,8 @@ Review note, 2026-07-15: `dataset maintenance freeze-protected` 与 `seal-protec
 Review note, 2026-07-16: Issue #175 只修正 `run-protected` 对服务端领先本机时钟的有界判断：`completed_at` 最多允许领先 5 秒，过期、时间倒序、超过 180 秒与一次性 admission 约束不变。它不新增 env、依赖、认证路径、命令面或发布机制。
 
 Review note, 2026-07-16: Issue #182 只修正 protected 终态 verifier 的跨 JSON 序列化域比较，复用现有 plan、primary closure、RLS readback、snapshot 与 terminal proof；不新增 env、依赖、命令、认证、数据库/RPC 或发布机制。feature PR 不改包版本，后续仍通过独立 patch release、npm provenance 和 root integration 后才对既有 request 做 `--status-only`。
+
+Review note, 2026-07-16: Issue #157 新增原生 `dataset maintenance flow-identity capture|plan|freeze|seal-approval|run|verify`，继续复用 Node 24、现有用户 session、authenticated Supabase RPC、私有 artifact 与独立 patch-release 流程；不新增 env、依赖、service-role、alternate bearer、本地发布或 Dev 数据回放。生产 Step 3 仍必须等待数据库能力发布、fresh live plan/freeze 和新的精确人工批准。
 
 设计原则：
 

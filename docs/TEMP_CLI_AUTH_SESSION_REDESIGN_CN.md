@@ -16,7 +16,7 @@ checkPaths:
   - src/lib/supabase-session.ts
   - src/lib/supabase-client.ts
 lastReviewedAt: 2026-07-16
-lastReviewedCommit: e8a458c63a4c59d7ea1fcf4618cd5034ead6e836
+lastReviewedCommit: 1aa9b58f7a62f50d2cb680f372452fe829686d75
 related:
   - ../AGENTS.md
   - ../.docpact/config.yaml
@@ -43,6 +43,7 @@ related:
 - 2026-07-15 复核：`dataset maintenance freeze-protected` 只复用现有用户 session，对显式确认的 production project 做 RLS 表读取与受保护 derivative snapshot RPC；不新增 service-role、alternate bearer、Edge/admin 或 Dev 回放链。`seal-protected-approval` 的 CLI dispatch 不传 env、session、HTTP 或 remote client，完全离线；本历史设计结论不变。
 - 2026-07-16 复核：Issue #175 只调整已认证 preflight proof 的本地时间边界判断，不改变用户 API key、publishable key、session cache、bearer、RLS、RPC 或 service-role 边界；本历史设计结论不变。
 - 2026-07-16 复核：Issue #182 只调整同一已认证状态响应、RLS readback 与 snapshot proof 的本地 hash 域桥接，不改变用户 API key、publishable key、session cache、bearer、RLS、RPC 或 service-role 边界；本历史设计结论不变。
+- 2026-07-16 复核：Issue #157 的 flow-identity capture/run/verify 继续使用现有用户 API key 到 authenticated session、publishable key、RLS 表读取与受保护 RPC；freeze/seal 的离线边界不引入 service-role、alternate bearer 或新认证 env，本历史设计结论不变。
 
 ## 1. 已确认事实
 
