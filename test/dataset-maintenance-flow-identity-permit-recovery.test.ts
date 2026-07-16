@@ -242,23 +242,25 @@ test('approval claim root, validation, and private-file guards fail closed', () 
     rmSync(stateRoot, { recursive: true, force: true });
   }
 
-  const blockedRoot = mkdtempSync(path.join(os.tmpdir(), 'tg-flow-claim-blocked-'));
-  const blockedClaim = claim(hash('2'), '/tmp/blocked-claim-run');
-  const blockedPath = flowIdentityApprovalClaimPath({
-    stateRoot: blockedRoot,
-    approvalIdentitySha256: blockedClaim.approval_identity_sha256,
-  });
-  const blockedDirectory = path.dirname(blockedPath);
-  try {
-    mkdirSync(blockedDirectory, { recursive: true });
-    chmodSync(blockedDirectory, 0o500);
-    assert.throws(
-      () => claimFlowIdentityApproval({ claim: blockedClaim, env: {}, stateRoot: blockedRoot }),
-      /EACCES|permission denied/u,
-    );
-  } finally {
-    chmodSync(blockedDirectory, 0o700);
-    rmSync(blockedRoot, { recursive: true, force: true });
+  if (process.platform !== 'win32') {
+    const blockedRoot = mkdtempSync(path.join(os.tmpdir(), 'tg-flow-claim-blocked-'));
+    const blockedClaim = claim(hash('2'), '/tmp/blocked-claim-run');
+    const blockedPath = flowIdentityApprovalClaimPath({
+      stateRoot: blockedRoot,
+      approvalIdentitySha256: blockedClaim.approval_identity_sha256,
+    });
+    const blockedDirectory = path.dirname(blockedPath);
+    try {
+      mkdirSync(blockedDirectory, { recursive: true });
+      chmodSync(blockedDirectory, 0o500);
+      assert.throws(
+        () => claimFlowIdentityApproval({ claim: blockedClaim, env: {}, stateRoot: blockedRoot }),
+        /EACCES|permission denied/u,
+      );
+    } finally {
+      chmodSync(blockedDirectory, 0o700);
+      rmSync(blockedRoot, { recursive: true, force: true });
+    }
   }
 });
 
