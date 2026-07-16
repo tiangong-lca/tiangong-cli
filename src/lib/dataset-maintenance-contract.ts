@@ -150,6 +150,7 @@ export type DatasetMaintenanceRemoteRow = {
   user_id: string | null;
   state_code: number | null;
   modified_at: string | null;
+  json?: JsonObject | null;
   json_ordered: JsonObject | null;
   model_id: string | null;
   rule_verification: boolean | null;

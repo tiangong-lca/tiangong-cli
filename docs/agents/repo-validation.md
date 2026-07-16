@@ -27,7 +27,7 @@ checkPaths:
   - scripts/docpact
   - scripts/docpact-gate.sh
   - scripts/install-git-hooks.sh
-lastReviewedAt: 2026-07-16
+lastReviewedAt: 2026-07-17
 lastReviewedCommit: 497ac46bba02297b46cee255429371bf20074487
 related:
   - ../../AGENTS.md
@@ -79,6 +79,10 @@ Review note, 2026-07-12: `merge-support-aliases` validation freezes and proves t
 Review note, 2026-07-13: maintenance pagination proof now covers requested page sizes above a server cap, actual-length offset progression, exact `Content-Range` totals, strict ordered identities, aggregate entity counts, and fail-before-artifact/write behavior. Tests must not describe the resulting multi-request traversal as a transaction-level or MVCC snapshot.
 
 Review note, 2026-07-14: `rebuild-derivatives` proof requires exactly one owner-draft state-0 process action with the exact `extracted_md` plus `embedding_ft` components, a plan-bound action-scoped database snapshot, guarded-RPC-only admission, idempotent request replay, and independent `pending`/`passed`/`failed` verification. Tests must reject any direct Edge/admin/raw queue/SQL/REST mutation fallback and must not treat `accepted`/`queued` as terminal completion.
+
+Review note, 2026-07-16: Step 3 flow-identity tests must cover all 305 reviewed source decisions, one complete census with unaffected process payloads omitted from persisted capture, exactly one capture-attestation POST, permanent rejection of pre-Step2/224-row authority, equal-count semantic tamper rejection, exact five-field reference patches, collision preservation, pending/blocker/orphan closure, process-schema gates, database-owned derivative baselines, safe no-cycle request hashing, exact v2 response variants, serial next-ordinal execution, bounded scope reads, ambiguous-response zero-retry recovery, offline freeze/seal, and independent terminal readback. Runner tests must prove pending and failed derivative decisions make zero finalize calls, exact causal/current readiness makes one finalize call, and a post-read readiness race returning pending is never retried in the same invocation. A failed/stale derivative must stop without process replay; derivative-only compensation is not authorized without a separate plan, freeze, and exact approval.
+
+Review note, 2026-07-17: Issue #157 COMMON proof additionally requires separate `passed` readback hashes/timestamps for both Issue #29 derivative prerequisites; HTTP-success `ok:false` coverage; exactly one fresh scope read after process rejection; and verifier `pending` only for exact `derivatives_pending`. Tests now also prove exact rotating-permit generation/invocation binding, zero bearer persistence, create-only local approval claims across output directories, replay-with-permit rejection, fresh exact recovery approval, and lost-preflight recovery through one exact read-only lookup with zero guarded writes. The database permit is the cross-machine authority and the local claim is defense in depth. Remaining release gates are merge, Preview validation, and coordinated DB/CLI publication.
 
 Review note, 2026-07-15: protected alias-runner proof requires production-only environment binding, a complete pre-token account/support/50-target scan, three server-derived ordered gates inside the at-most-180-second window, immutable attempt evidence before exactly zero or one admission POST, and status-only recovery after every consumed or ambiguous attempt. Terminal verification must prove the exact 52-row/59-exchange/55-audit primary closure plus 23-flow + 27-process causal derivative closure and independent live RLS parity. Zero-child terminal `failed`/`indeterminate` is valid only with the exact not-started envelope; `completed` and `derivatives_pending` must reject that shape.
 

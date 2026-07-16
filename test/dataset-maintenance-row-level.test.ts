@@ -3243,6 +3243,10 @@ test('maintenance contracts and remote adapters reject unsafe inputs and invalid
   );
   assert.equal(remoteInternals.selectForTable('processes').includes('model_id'), true);
   assert.equal(remoteInternals.selectForTable('flows').includes('model_id'), false);
+  assert.equal(
+    remoteInternals.selectForTable('flows', true).includes('modified_at,json,json_ordered'),
+    true,
+  );
   assert.equal(remoteInternals.normalizeRemoteRow('flows', null), null);
   assert.equal(remoteInternals.normalizeRemoteRow('flows', { id: '', version: '' }), null);
   assert.deepEqual(
@@ -3274,6 +3278,24 @@ test('maintenance contracts and remote adapters reject unsafe inputs and invalid
       version: '01.00.000',
       state_code: 'bad',
     })?.state_code,
+    null,
+  );
+  assert.deepEqual(
+    remoteInternals.normalizeRemoteRow(
+      'flows',
+      {
+        id: 'id',
+        version: '01.00.000',
+        json: { mirrored: true },
+        json_ordered: { mirrored: true },
+      },
+      true,
+    )?.json,
+    { mirrored: true },
+  );
+  assert.equal(
+    remoteInternals.normalizeRemoteRow('flows', { id: 'id', version: '01.00.000', json: [] }, true)
+      ?.json,
     null,
   );
   assert.throws(() => remoteInternals.normalizeRemoteRows('flows', {}, 'test'), /not an array/u);

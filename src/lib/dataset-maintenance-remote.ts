@@ -3,6 +3,7 @@ import type { FetchLike, ResponseLike } from './http.js';
 import {
   buildSnapshotCompleteness,
   fetchCompletePostgrestPages,
+  type DatasetMaintenanceTableCompleteness,
   type DatasetMaintenanceSnapshotCompleteness,
 } from './dataset-maintenance-pagination.js';
 import {
@@ -19,6 +20,7 @@ import {
   type DatasetMaintenanceScanTable,
   type JsonObject,
 } from './dataset-maintenance-contract.js';
+import { assertFlowIdentityWireJson } from './dataset-maintenance-flow-identity-wire.js';
 
 const DEFAULT_PAGE_SIZE = 1_000;
 const DEFAULT_TIMEOUT_MS = 10_000;
@@ -95,6 +97,7 @@ async function fetchJsonResponse(options: {
   url: string;
   init?: RequestInit;
   label: string;
+  redactResponseDetails?: boolean;
 }): Promise<{ body: unknown; headers: ResponseLike['headers'] }> {
   const response = await options.context.fetch_impl(options.url, {
     ...options.init,
@@ -109,7 +112,9 @@ async function fetchJsonResponse(options: {
     throw new CliError(`HTTP ${response.status} returned from ${options.label}`, {
       code: 'DATASET_MAINTENANCE_REMOTE_REQUEST_FAILED',
       exitCode: 1,
-      details: { url: options.url, response: text },
+      details: options.redactResponseDetails
+        ? { url: options.url, response_redacted: true }
+        : { url: options.url, response: text },
     });
   }
   if (!text.trim()) {
@@ -137,18 +142,20 @@ async function fetchJson(options: {
   url: string;
   init?: RequestInit;
   label: string;
+  redactResponseDetails?: boolean;
 }): Promise<unknown> {
   return (await fetchJsonResponse(options)).body;
 }
 
-function selectForTable(table: DatasetMaintenanceScanTable): string {
-  const common = 'id,version,user_id,state_code,modified_at,json_ordered,rule_verification';
+function selectForTable(table: DatasetMaintenanceScanTable, includeJson = false): string {
+  const common = `id,version,user_id,state_code,modified_at,${includeJson ? 'json,' : ''}json_ordered,rule_verification`;
   return table === 'processes' ? `${common},model_id` : common;
 }
 
 function normalizeRemoteRow(
   table: DatasetMaintenanceScanTable,
   value: unknown,
+  includeJson = false,
 ): DatasetMaintenanceRemoteRow | null {
   if (!isJsonObject(value)) {
     return null;
@@ -165,6 +172,7 @@ function normalizeRemoteRow(
     user_id: trimToken(value.user_id),
     state_code: normalizeStateCode(value.state_code),
     modified_at: trimToken(value.modified_at),
+    ...(includeJson ? { json: isJsonObject(value.json) ? value.json : null } : {}),
     json_ordered: isJsonObject(value.json_ordered) ? value.json_ordered : null,
     model_id: trimToken(value.model_id),
     rule_verification:
@@ -176,6 +184,7 @@ function normalizeRemoteRows(
   table: DatasetMaintenanceScanTable,
   value: unknown,
   label: string,
+  includeJson = false,
 ): DatasetMaintenanceRemoteRow[] {
   if (!Array.isArray(value)) {
     throw new CliError(`Remote response was not an array for ${label}.`, {
@@ -184,7 +193,7 @@ function normalizeRemoteRows(
       details: value,
     });
   }
-  const rows = value.map((entry) => normalizeRemoteRow(table, entry));
+  const rows = value.map((entry) => normalizeRemoteRow(table, entry, includeJson));
   if (rows.some((row) => row === null)) {
     throw new CliError(`Remote response contained an invalid row for ${label}.`, {
       code: 'DATASET_MAINTENANCE_REMOTE_ROW_INVALID',
@@ -254,9 +263,10 @@ export async function fetchMaintenanceExactRows(options: {
   table: DatasetMaintenanceScanTable;
   id: string;
   version: string;
+  includeJson?: boolean;
 }): Promise<{ rows: DatasetMaintenanceRemoteRow[]; source_url: string }> {
   const url = new URL(`${options.context.rest_base_url}/${options.table}`);
-  url.searchParams.set('select', selectForTable(options.table));
+  url.searchParams.set('select', selectForTable(options.table, options.includeJson));
   url.searchParams.set('id', `eq.${options.id}`);
   url.searchParams.set('version', `eq.${options.version}`);
   url.searchParams.set('limit', '2');
@@ -267,7 +277,7 @@ export async function fetchMaintenanceExactRows(options: {
     label: `${options.table} exact maintenance lookup`,
   });
   return {
-    rows: normalizeRemoteRows(options.table, body, sourceUrl),
+    rows: normalizeRemoteRows(options.table, body, sourceUrl, options.includeJson),
     source_url: sourceUrl,
   };
 }
@@ -334,6 +344,67 @@ export async function fetchMaintenanceAccountRows(options: {
   };
 }
 
+export async function fetchMaintenanceAccountTableRows(options: {
+  context: DatasetMaintenanceRemoteContext;
+  userId: string;
+  table: DatasetMaintenanceScanTable;
+  stateCode?: number;
+  includeJson?: boolean;
+  pageSize?: number;
+}): Promise<{
+  rows: DatasetMaintenanceRemoteRow[];
+  source_urls: string[];
+  completeness: DatasetMaintenanceTableCompleteness;
+}> {
+  const pageSize = normalizeMaintenancePageSize(options.pageSize);
+  return fetchCompletePostgrestPages({
+    table: options.table,
+    requestedPageSize: pageSize,
+    rowIdentity: (row: DatasetMaintenanceRemoteRow) => `${row.id}\u0000${row.version}`,
+    fetchPage: async (offset) => {
+      const url = new URL(`${options.context.rest_base_url}/${options.table}`);
+      url.searchParams.set('select', selectForTable(options.table, options.includeJson));
+      url.searchParams.set('user_id', `eq.${options.userId}`);
+      if (options.stateCode !== undefined) {
+        url.searchParams.set('state_code', `eq.${options.stateCode}`);
+      }
+      url.searchParams.set('order', 'id.asc,version.asc');
+      url.searchParams.set('limit', String(pageSize));
+      url.searchParams.set('offset', String(offset));
+      const sourceUrl = url.toString();
+      const response = await fetchJsonResponse({
+        context: options.context,
+        url: sourceUrl,
+        init: { headers: { Prefer: 'count=exact' } },
+        label: `${options.table} account maintenance snapshot`,
+      });
+      const rows = normalizeRemoteRows(
+        options.table,
+        response.body,
+        sourceUrl,
+        options.includeJson,
+      );
+      if (
+        rows.some(
+          (row) =>
+            row.user_id !== options.userId ||
+            (options.stateCode !== undefined && row.state_code !== options.stateCode),
+        )
+      ) {
+        throw new CliError(`Remote ${options.table} snapshot violated the account/state fence.`, {
+          code: 'DATASET_MAINTENANCE_REMOTE_ROW_INVALID',
+          exitCode: 1,
+        });
+      }
+      return {
+        rows,
+        source_url: sourceUrl,
+        content_range: response.headers.get('content-range'),
+      };
+    },
+  });
+}
+
 async function invokeMaintenanceRpc(options: {
   context: DatasetMaintenanceRemoteContext;
   rpc:
@@ -346,11 +417,20 @@ async function invokeMaintenanceRpc(options: {
     | 'cmd_dataset_alias_execution_read'
     | 'cmd_dataset_derivative_rebuild_snapshot'
     | 'cmd_dataset_derivative_rebuild_plan_guarded'
-    | 'cmd_dataset_derivative_rebuild_read';
+    | 'cmd_dataset_derivative_rebuild_read'
+    | 'cmd_dataset_flow_identity_capture_attest_guarded'
+    | 'cmd_dataset_flow_identity_scope_preflight_guarded'
+    | 'cmd_dataset_flow_identity_scope_lookup'
+    | 'cmd_dataset_flow_identity_scope_recover_guarded'
+    | 'cmd_dataset_flow_identity_process_rewrite_guarded'
+    | 'cmd_dataset_flow_identity_scope_read'
+    | 'cmd_dataset_flow_identity_scope_finalize_guarded';
   body: JsonObject;
   minimumTimeoutMs?: number;
+  allowDomainFailure?: boolean;
 }): Promise<JsonObject> {
   const url = `${options.context.rest_base_url}/rpc/${options.rpc}`;
+  const redactResponseDetails = options.rpc.startsWith('cmd_dataset_flow_identity_');
   const body = await fetchJson({
     context: {
       ...options.context,
@@ -363,15 +443,51 @@ async function invokeMaintenanceRpc(options: {
       body: JSON.stringify(options.body),
     },
     label: options.rpc,
+    redactResponseDetails,
   });
-  if (!isJsonObject(body) || body.ok !== true) {
+  if (
+    redactResponseDetails &&
+    isJsonObject(body) &&
+    body.ok !== true &&
+    Object.hasOwn(body, 'execution_permit')
+  ) {
+    throw new CliError(`${options.rpc} returned an invalid rejection envelope.`, {
+      code: 'DATASET_MAINTENANCE_RPC_FAILED',
+      exitCode: 1,
+      details: { rpc: options.rpc, response_redacted: true },
+    });
+  }
+  if (
+    !isJsonObject(body) ||
+    (body.ok !== true &&
+      !(options.allowDomainFailure === true && isMaintenanceRpcDomainFailure(body)))
+  ) {
     throw new CliError(`${options.rpc} returned an unexpected response.`, {
       code: 'DATASET_MAINTENANCE_RPC_FAILED',
       exitCode: 1,
-      details: body,
+      details: redactResponseDetails ? { rpc: options.rpc, response_redacted: true } : body,
     });
   }
   return body;
+}
+
+export type MaintenanceRpcDomainFailure = JsonObject & {
+  ok: false;
+  code: string;
+  status: string | number;
+};
+
+export function isMaintenanceRpcDomainFailure(
+  value: unknown,
+): value is MaintenanceRpcDomainFailure {
+  return Boolean(
+    isJsonObject(value) &&
+    value.ok === false &&
+    typeof value.code === 'string' &&
+    value.code.trim() &&
+    ((typeof value.status === 'number' && Number.isSafeInteger(value.status)) ||
+      (typeof value.status === 'string' && value.status.trim())),
+  );
 }
 
 export async function preflightMaintenanceAliasExecution(options: {
@@ -553,6 +669,120 @@ export async function applyMaintenanceAliasPlan(options: {
     context: options.context,
     rpc: 'cmd_dataset_alias_plan_guarded',
     body: { p_plan: options.plan },
+  });
+}
+
+export async function preflightMaintenanceFlowIdentityScope(options: {
+  context: DatasetMaintenanceRemoteContext;
+  request: JsonObject;
+}): Promise<JsonObject> {
+  const body = assertFlowIdentityWireJson({ p_request: options.request });
+  return invokeMaintenanceRpc({
+    context: options.context,
+    rpc: 'cmd_dataset_flow_identity_scope_preflight_guarded',
+    body,
+    minimumTimeoutMs: 130_000,
+    allowDomainFailure: true,
+  });
+}
+
+export async function lookupMaintenanceFlowIdentityScope(options: {
+  context: DatasetMaintenanceRemoteContext;
+  request: JsonObject;
+}): Promise<JsonObject> {
+  const body = assertFlowIdentityWireJson({ p_request: options.request });
+  return invokeMaintenanceRpc({
+    context: options.context,
+    rpc: 'cmd_dataset_flow_identity_scope_lookup',
+    body,
+    minimumTimeoutMs: 90_000,
+    allowDomainFailure: true,
+  });
+}
+
+export async function rewriteMaintenanceFlowIdentityProcess(options: {
+  context: DatasetMaintenanceRemoteContext;
+  scopeId: string;
+  request: JsonObject;
+  authorization: JsonObject;
+}): Promise<JsonObject> {
+  const body = assertFlowIdentityWireJson({
+    p_scope_id: options.scopeId,
+    p_request: options.request,
+    p_authorization: options.authorization,
+  });
+  return invokeMaintenanceRpc({
+    context: options.context,
+    rpc: 'cmd_dataset_flow_identity_process_rewrite_guarded',
+    body,
+    minimumTimeoutMs: 90_000,
+    allowDomainFailure: true,
+  });
+}
+
+export async function readMaintenanceFlowIdentityScope(options: {
+  context: DatasetMaintenanceRemoteContext;
+  scopeId: string;
+}): Promise<JsonObject> {
+  const body = assertFlowIdentityWireJson({ p_scope_id: options.scopeId });
+  return invokeMaintenanceRpc({
+    context: options.context,
+    rpc: 'cmd_dataset_flow_identity_scope_read',
+    body,
+    minimumTimeoutMs: 90_000,
+    allowDomainFailure: true,
+  });
+}
+
+export async function finalizeMaintenanceFlowIdentityScope(options: {
+  context: DatasetMaintenanceRemoteContext;
+  scopeId: string;
+  request: JsonObject;
+  authorization: JsonObject;
+}): Promise<JsonObject> {
+  const body = assertFlowIdentityWireJson({
+    p_scope_id: options.scopeId,
+    p_request: options.request,
+    p_authorization: options.authorization,
+  });
+  return invokeMaintenanceRpc({
+    context: options.context,
+    rpc: 'cmd_dataset_flow_identity_scope_finalize_guarded',
+    body,
+    minimumTimeoutMs: 190_000,
+    allowDomainFailure: true,
+  });
+}
+
+export async function recoverMaintenanceFlowIdentityScope(options: {
+  context: DatasetMaintenanceRemoteContext;
+  scopeId: string;
+  request: JsonObject;
+}): Promise<JsonObject> {
+  const body = assertFlowIdentityWireJson({
+    p_scope_id: options.scopeId,
+    p_request: options.request,
+  });
+  return invokeMaintenanceRpc({
+    context: options.context,
+    rpc: 'cmd_dataset_flow_identity_scope_recover_guarded',
+    body,
+    minimumTimeoutMs: 130_000,
+    allowDomainFailure: true,
+  });
+}
+
+export async function attestMaintenanceFlowIdentityCapture(options: {
+  context: DatasetMaintenanceRemoteContext;
+  request: JsonObject;
+}): Promise<JsonObject> {
+  const body = assertFlowIdentityWireJson({ p_request: options.request });
+  return invokeMaintenanceRpc({
+    context: options.context,
+    rpc: 'cmd_dataset_flow_identity_capture_attest_guarded',
+    body,
+    minimumTimeoutMs: 190_000,
+    allowDomainFailure: true,
   });
 }
 

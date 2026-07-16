@@ -1204,6 +1204,286 @@ test('executeCli separates production read-only freeze from offline approval sea
   assert.equal(invalidSeal.exitCode, 2);
 });
 
+test('executeCli exposes the dedicated flow-identity capture/plan/freeze/seal/run/verify workflow', async () => {
+  const deps = makeDeps();
+  const help = await executeCli(['dataset', 'maintenance', 'flow-identity', '--help'], deps);
+  assert.equal(help.exitCode, 0);
+  assert.match(
+    help.stdout,
+    /capture\|plan\|freeze\|seal-approval\|run\|freeze-recovery\|seal-recovery-approval\|run-recovery\|verify/u,
+  );
+  assert.match(help.stdout, /never retry a process/u);
+  assert.match(help.stdout, /separate plan, new freeze, and new exact human approval/u);
+
+  let observed: unknown = null;
+  const capture = await executeCli(
+    [
+      'dataset',
+      'maintenance',
+      'flow-identity',
+      'capture',
+      '--policy',
+      'policy.json',
+      '--review-ledger',
+      'review.json',
+      '--prerequisites',
+      'prerequisites.json',
+      '--toolchain-evidence',
+      'toolchain.json',
+      '--request-id',
+      'bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb',
+      '--operation-id',
+      'flow-identity-v2-capture',
+      '--expected-project-ref',
+      'prod',
+      '--confirm',
+      'owner@example.com',
+      '--sdk-version',
+      '0.1.45',
+      '--out-dir',
+      'capture-out',
+      '--page-size',
+      '1000',
+      '--read-concurrency',
+      '5',
+      '--json',
+    ],
+    {
+      ...deps,
+      captureFlowIdentityImpl: async (options) => {
+        observed = options;
+        return { status: 'captured' } as never;
+      },
+    },
+  );
+  assert.equal(capture.exitCode, 0);
+  assert.deepEqual(observed, {
+    policyPath: 'policy.json',
+    reviewLedgerPath: 'review.json',
+    prerequisitesPath: 'prerequisites.json',
+    toolchainEvidencePath: 'toolchain.json',
+    requestId: 'bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb',
+    operationId: 'flow-identity-v2-capture',
+    expectedProjectRef: 'prod',
+    confirm: 'owner@example.com',
+    cliVersion: '0.0.28',
+    sdkVersion: '0.1.45',
+    outDir: 'capture-out',
+    pageSize: 1000,
+    readConcurrency: 5,
+    timeoutMs: undefined,
+    env: deps.env,
+    fetchImpl: deps.fetchImpl,
+  });
+
+  const plan = await executeCli(
+    [
+      'dataset',
+      'maintenance',
+      'flow-identity',
+      'plan',
+      '--policy',
+      'policy.json',
+      '--review-ledger',
+      'review.json',
+      '--live-capture',
+      'capture.json',
+      '--out-dir',
+      'plan-out',
+      '--json',
+    ],
+    {
+      ...deps,
+      runFlowIdentityPlanFromFilesImpl: (options) => {
+        observed = options;
+        return { status: 'ready', plan_sha256: 'a'.repeat(64) } as never;
+      },
+    },
+  );
+  assert.equal(plan.exitCode, 0);
+  assert.deepEqual(observed, {
+    policyPath: 'policy.json',
+    reviewLedgerPath: 'review.json',
+    liveCapturePath: 'capture.json',
+    outDir: 'plan-out',
+  });
+
+  const freeze = await executeCli(
+    [
+      'dataset',
+      'maintenance',
+      'flow-identity',
+      'freeze',
+      '--plan',
+      'plan.json',
+      '--toolchain-evidence',
+      'toolchain.json',
+      '--approved-at',
+      '2026-07-16T05:00:00Z',
+      '--expected-project-ref',
+      'prod',
+      '--confirm',
+      'owner@example.com',
+      '--out-dir',
+      'freeze-out',
+      '--json',
+    ],
+    {
+      ...deps,
+      freezeFlowIdentityImpl: (options) => {
+        observed = options;
+        return { status: 'frozen' } as never;
+      },
+    },
+  );
+  assert.equal(freeze.exitCode, 0);
+  assert.deepEqual(observed, {
+    planPath: 'plan.json',
+    toolchainEvidencePath: 'toolchain.json',
+    approvedAtUtc: '2026-07-16T05:00:00Z',
+    expectedProjectRef: 'prod',
+    confirm: 'owner@example.com',
+    cliVersion: '0.0.28',
+    outDir: 'freeze-out',
+  });
+
+  const hash = 'a'.repeat(64);
+  const seal = await executeCli(
+    [
+      'dataset',
+      'maintenance',
+      'flow-identity',
+      'seal-approval',
+      '--plan',
+      'plan.json',
+      '--freeze',
+      'freeze.json',
+      '--approval-request',
+      'request.json',
+      '--human-approval',
+      'human.txt',
+      '--approve-freeze-file',
+      hash,
+      '--approve-request',
+      hash,
+      '--approve-text',
+      hash,
+      '--confirm',
+      'owner@example.com',
+      '--approved-at',
+      '2026-07-16T05:00:00Z',
+      '--out-dir',
+      'approval-out',
+      '--json',
+    ],
+    {
+      ...deps,
+      sealFlowIdentityApprovalImpl: (options) => {
+        observed = options;
+        return { status: 'sealed' } as never;
+      },
+    },
+  );
+  assert.equal(seal.exitCode, 0);
+  assert.deepEqual(observed, {
+    planPath: 'plan.json',
+    freezePath: 'freeze.json',
+    approvalRequestPath: 'request.json',
+    humanApprovalPath: 'human.txt',
+    approveFreezeFile: hash,
+    approveRequest: hash,
+    approveText: hash,
+    confirm: 'owner@example.com',
+    approvedAtUtc: '2026-07-16T05:00:00Z',
+    outDir: 'approval-out',
+  });
+
+  const run = await executeCli(
+    [
+      'dataset',
+      'maintenance',
+      'flow-identity',
+      'run',
+      '--plan',
+      'plan.json',
+      '--freeze',
+      'freeze.json',
+      '--approval',
+      'approval.json',
+      '--out-dir',
+      'run-out',
+      '--status-only',
+      '--wait-seconds',
+      '0',
+      '--json',
+    ],
+    {
+      ...deps,
+      runFlowIdentityImpl: async (options) => {
+        observed = options;
+        return { status: 'pending' } as never;
+      },
+    },
+  );
+  assert.equal(run.exitCode, 1);
+  assert.deepEqual(observed, {
+    planPath: 'plan.json',
+    freezePath: 'freeze.json',
+    approvalPath: 'approval.json',
+    outDir: 'run-out',
+    commit: false,
+    statusOnly: true,
+    approveExecution: undefined,
+    confirm: undefined,
+    waitSeconds: 0,
+    pollMs: undefined,
+    timeoutMs: undefined,
+    env: deps.env,
+    fetchImpl: deps.fetchImpl,
+  });
+
+  const verify = await executeCli(
+    [
+      'dataset',
+      'maintenance',
+      'flow-identity',
+      'verify',
+      '--plan',
+      'plan.json',
+      '--freeze',
+      'freeze.json',
+      '--approval',
+      'approval.json',
+      '--run-dir',
+      'run-out',
+      '--out-dir',
+      'verify-out',
+      '--page-size',
+      '250',
+      '--json',
+    ],
+    {
+      ...deps,
+      verifyFlowIdentityImpl: async (options) => {
+        observed = options;
+        return { status: 'passed' } as never;
+      },
+    },
+  );
+  assert.equal(verify.exitCode, 0);
+  assert.deepEqual(observed, {
+    planPath: 'plan.json',
+    freezePath: 'freeze.json',
+    approvalPath: 'approval.json',
+    runDir: 'run-out',
+    outDir: 'verify-out',
+    pageSize: 250,
+    timeoutMs: undefined,
+    env: deps.env,
+    fetchImpl: deps.fetchImpl,
+  });
+});
+
 test('executeCli dispatches dataset and lifecyclemodel friction-fix commands', async () => {
   const datasetValidate = await executeCli(
     [

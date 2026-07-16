@@ -17,7 +17,7 @@ checkPaths:
   - package.json
   - src/**
   - test/**
-lastReviewedAt: 2026-07-16
+lastReviewedAt: 2026-07-17
 lastReviewedCommit: e8a458c63a4c59d7ea1fcf4618cd5034ead6e836
 related:
   - ../AGENTS.md
@@ -53,6 +53,8 @@ related:
 - 2026-07-15 复核：`dataset maintenance freeze-protected` 与 `seal-protected-approval` 继续由 TypeScript / Node 原生 CLI 分别负责生产只读冻结和完全离线的人类批准记录；不新增 Python、POSIX shell、MCP runtime、私有 skill runtime 或 npm 依赖。Foundry/skills 只能调用已发布 CLI 并保留其产物，不得读取数据库 env、直调 RPC、重算 canonical JSON/hash 或复制 freeze/seal 逻辑。
 - 2026-07-16 复核：Issue #175 只在 TypeScript protected contract parser 中加入固定 5 秒的服务端领先时钟容差与无 token 诊断；不新增 Python、POSIX shell、MCP runtime、私有 skill runtime 或 npm 依赖，也不改变 skills 薄调用边界。
 - 2026-07-16 复核：Issue #182 只在 TypeScript protected verifier 内用既有 primary action evidence 修正 JSON hash 域桥接；不新增 Python、POSIX shell、MCP runtime、私有 skill runtime 或 npm 依赖，也不改变 skills 薄调用边界。
+- 2026-07-16 复核：`dataset maintenance flow-identity capture|plan|freeze|seal-approval|run|verify` 继续由 TypeScript / Node 原生 CLI 负责 305-source Step 3 单次 census/attestation、immutable plan、离线批准、guarded serial execution 与独立 readback；不新增 npm、Python、shell、MCP 或私有 skill runtime。Foundry/skills 不得复制哈希、数据库 receipt/scope、重试、derivative baseline 或补偿逻辑。
+- 2026-07-17 复核：Issue #157 COMMON 的双 #29 passed-readback、HTTP-success domain rejection、`derivatives_pending` 验证、数据库 one-wrapper rotating permit、本地 create-only claim，以及 fresh exact recovery approval + read-only lookup 均属于 DB/TypeScript CLI 契约。Foundry/skills 不得复制这些执行权限或恢复逻辑；尚余 merge、Preview 与 DB/CLI 发布门禁，不改变本迁移结论。
 
 这份文档记录的是：
 
