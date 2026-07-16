@@ -285,6 +285,12 @@ import { freezeDatasetMaintenanceProtected } from './lib/dataset-maintenance-pro
 import { runDatasetMaintenanceProtected } from './lib/dataset-maintenance-protected-run.js';
 import { sealDatasetMaintenanceProtectedApproval } from './lib/dataset-maintenance-protected-seal.js';
 import { runDatasetMaintenanceVerify } from './lib/dataset-maintenance-verify.js';
+import { runFlowIdentityPlanFromFiles } from './lib/dataset-maintenance-flow-identity-command.js';
+import { captureFlowIdentity } from './lib/dataset-maintenance-flow-identity-capture.js';
+import { freezeFlowIdentity } from './lib/dataset-maintenance-flow-identity-freeze.js';
+import { sealFlowIdentityApproval } from './lib/dataset-maintenance-flow-identity-seal.js';
+import { runFlowIdentity } from './lib/dataset-maintenance-flow-identity-run.js';
+import { verifyFlowIdentity } from './lib/dataset-maintenance-flow-identity-verify.js';
 import type { DatasetMaintenanceOperation } from './lib/dataset-maintenance-contract.js';
 import {
   runDatasetSourceUploadAttachments,
@@ -471,6 +477,12 @@ export type CliDeps = {
   runDatasetMaintenanceProtectedImpl?: typeof runDatasetMaintenanceProtected;
   sealDatasetMaintenanceProtectedApprovalImpl?: typeof sealDatasetMaintenanceProtectedApproval;
   runDatasetMaintenanceVerifyImpl?: typeof runDatasetMaintenanceVerify;
+  runFlowIdentityPlanFromFilesImpl?: typeof runFlowIdentityPlanFromFiles;
+  captureFlowIdentityImpl?: typeof captureFlowIdentity;
+  freezeFlowIdentityImpl?: typeof freezeFlowIdentity;
+  sealFlowIdentityApprovalImpl?: typeof sealFlowIdentityApproval;
+  runFlowIdentityImpl?: typeof runFlowIdentity;
+  verifyFlowIdentityImpl?: typeof verifyFlowIdentity;
   runDatasetSourceUploadAttachmentsImpl?: (
     options: RunDatasetSourceUploadAttachmentsOptions,
   ) => Promise<DatasetSourceUploadAttachmentsReport>;
@@ -506,7 +518,7 @@ Implemented Commands:
   doctor     show environment diagnostics
   search     flow | process | lifecyclemodel
   process    get | list | identity-preflight | build-plan | scope-statistics | dedup-review | auto-build | resume-build | publish-build | complete-required-fields | save-draft | batch-build | refresh-references | verify-rows
-  dataset    contract get | context-pack | classification children/path/audit/apply | curation-queue build/next/verify | import-lca convert | author | patch apply | save-draft | source upload-attachments | validate | verify-remote | bilingual extract/apply/validate | evidence-search plan/run | references rewrite/refresh-remote | maintenance clear-account/plan/apply/verify
+  dataset    contract get | context-pack | classification children/path/audit/apply | curation-queue build/next/verify | import-lca convert | author | patch apply | save-draft | source upload-attachments | validate | verify-remote | bilingual extract/apply/validate | evidence-search plan/run | references rewrite/refresh-remote | maintenance clear-account/plan/apply/verify/flow-identity
   flow       get | list | identity-preflight | build-plan | fetch-rows | materialize-decisions | remediate | publish-version | publish-reviewed-data | build-alias-map | scan-process-flow-refs | plan-process-flow-repairs | apply-process-flow-repairs | regen-product | validate-processes
   lifecyclemodel auto-build | validate-build | publish-build | save-draft | graph | build-resulting-process | publish-resulting-process | orchestrate
   qa         process | flow | lifecyclemodel
@@ -724,6 +736,7 @@ Implemented Subcommands:
   maintenance seal-protected-approval Record byte-exact human approval entirely offline
   maintenance run-protected Run or inspect one sealed, one-shot production maintenance execution
   maintenance verify  Read back affected rows and references against the immutable plan
+  maintenance flow-identity Dedicated Step 3 capture/plan/freeze/approval/serial-run/verify workflow
 
 Examples:
   tiangong-lca dataset contract get --type process --include schema,methodology,ruleset --out-dir ./contract --help
@@ -753,12 +766,13 @@ Examples:
   tiangong-lca dataset maintenance freeze-protected --help
   tiangong-lca dataset maintenance seal-protected-approval --help
   tiangong-lca dataset maintenance run-protected --help
+  tiangong-lca dataset maintenance flow-identity --help
 `.trim();
 }
 
 function renderDatasetMaintenanceHelp(): string {
   return `Usage:
-  tiangong-lca dataset maintenance <clear-account|plan|apply|freeze-protected|seal-protected-approval|run-protected|verify> [options]
+  tiangong-lca dataset maintenance <clear-account|plan|apply|freeze-protected|seal-protected-approval|run-protected|verify|flow-identity> [options]
 
 Actions:
   clear-account Dry-run or delete current authenticated account-owned lifecyclemodels, processes, flows, sources, and contacts.
@@ -768,6 +782,7 @@ Actions:
   seal-protected-approval Record a byte-exact human response into an approval artifact with no authentication or network access.
   run-protected Run or inspect one sealed production execution with one-shot admission and terminal derivative proof.
   verify  Re-fetch rows, references, or derivative request state and report passed, pending, or failed independently of apply.
+  flow-identity Run the dedicated Step 3 capture/plan/freeze/seal-approval/serial-run/independent-verify workflow.
 
 Safety:
   plan, verify, and freeze-protected are read-only; seal-protected-approval is local-only.
@@ -776,6 +791,7 @@ Safety:
   freeze-protected is production-only and never calls preflight, gate, admission, execution, or mutation RPCs.
   seal-protected-approval only records the exact human-approved bytes; it never authenticates, connects, or submits execution.
   run-protected is production-only: authenticated owner context plus server-side actor/user_id/state_code=0 and exact-plan closure fences protect writes; RLS remains a defense on public and independent-read surfaces. It never falls back to dev, a legacy alias RPC, or a second admission POST.
+  flow-identity never reuses the Step 2 runner. Process writes are strictly ordinal and ambiguous responses permit read-only recovery, never automatic process replay.
 
 Required Artifact Contract:
   - maintenance-plan.json
@@ -797,6 +813,54 @@ Examples:
   tiangong-lca dataset maintenance seal-protected-approval --freeze ./protected-freeze/protected-execution-freeze.json --approval-request ./protected-freeze/protected-approval-request.json --human-approval ./human-approval.txt --approve-freeze-file <sha256> --approve-request <sha256> --approve-text <sha256> --confirm bafudata@126.com --approved-at <iso> --out-dir ./protected-approval
   tiangong-lca dataset maintenance run-protected --plan ./maintenance-plan.json --freeze ./protected-execution-seal.json --approval ./protected-approval.json --out-dir ./protected-run --status-only
   tiangong-lca dataset maintenance verify --plan ./dataset-maintenance/maintenance-plan.json --out-dir ./dataset-maintenance/verify
+  tiangong-lca dataset maintenance flow-identity --help
+`.trim();
+}
+
+function renderDatasetMaintenanceFlowIdentityHelp(): string {
+  return `Usage:
+  tiangong-lca dataset maintenance flow-identity <capture|plan|freeze|seal-approval|run|verify> [options]
+
+Actions:
+  capture       Authenticated production census and one database attestation; performs zero scope/preflight/rewrite/finalize calls.
+  plan          Build immutable Step 3 reference-only process templates from an approved v3 review ledger and fresh post-Step2/post-#29 live capture.
+  freeze        Offline-bind one production plan/toolchain/receipt and generate this execution's byte-exact approval request.
+  seal-approval Offline-record byte-exact human approval; performs zero authentication, network, or database calls.
+  run           Create/read one guarded scope, serially submit only its durable next ordinal, then wait read-only for derivative readiness before at most one finalize POST. Ambiguous responses are never retried in the same invocation.
+  verify        Independently re-read the terminal scope, all 305 source rows, public/support rows, exact affected processes, and the complete owner-draft process reference closure.
+
+Plan:
+  --policy <file> --review-ledger <file> --live-capture <file> --out-dir <dir>
+
+Capture:
+  --policy <file> --review-ledger <file> --prerequisites <file> --toolchain-evidence <file>
+  --request-id <uuid> --operation-id <value> --expected-project-ref <ref> --confirm <email>
+  --sdk-version <value> --out-dir <dir>
+  [--page-size <n>] [--read-concurrency <n>] [--timeout-ms <n>]
+
+Freeze:
+  --plan <file> --toolchain-evidence <file> --approved-at <iso> --expected-project-ref <ref> --confirm <email> --out-dir <dir>
+
+Seal approval:
+  --plan <file> --freeze <file> --approval-request <file> --human-approval <file>
+  --approve-freeze-file <sha256> --approve-request <sha256> --approve-text <sha256>
+  --confirm <email> --approved-at <iso> --out-dir <dir>
+
+Run:
+  --plan <file> --freeze <file> --approval <file> --out-dir <dir>
+  (--commit --approve-execution <sha256> --confirm <email> | --status-only)
+  [--wait-seconds <n>] [--poll-ms <n>] [--timeout-ms <n>]
+
+Verify:
+  --plan <file> --freeze <file> --approval <file> --run-dir <dir> --out-dir <dir>
+  [--page-size <n>] [--timeout-ms <n>]
+
+Derivative failure boundary:
+  A failed/stale derivative will never retry a process. This command stops. Any derivative-only compensation requires a separate plan, new freeze, and new exact human approval.
+
+Common:
+  --json
+  -h, --help
 `.trim();
 }
 
@@ -3924,7 +3988,7 @@ function parseDatasetMaintenanceClearAccountFlags(args: string[]): {
 
 function parseDatasetMaintenancePositiveInteger(
   value: unknown,
-  flagName: '--page-size' | '--poll-ms' | '--timeout-ms',
+  flagName: '--page-size' | '--poll-ms' | '--read-concurrency' | '--timeout-ms',
 ): number | undefined {
   if (typeof value !== 'string') {
     return undefined;
@@ -4237,6 +4301,96 @@ function parseDatasetMaintenanceProtectedFlags(args: string[]): {
     ),
     pollMs: parseDatasetMaintenancePositiveInteger(values['poll-ms'], '--poll-ms'),
     pageSize: parseDatasetMaintenancePositiveInteger(values['page-size'], '--page-size'),
+    timeoutMs: parseDatasetMaintenancePositiveInteger(values['timeout-ms'], '--timeout-ms'),
+  };
+}
+
+function parseDatasetMaintenanceFlowIdentityFlags(args: string[]) {
+  let values: ReturnType<typeof parseArgs>['values'];
+  try {
+    ({ values } = parseArgs({
+      args,
+      allowPositionals: false,
+      strict: true,
+      options: {
+        help: { type: 'boolean', short: 'h' },
+        json: { type: 'boolean' },
+        policy: { type: 'string' },
+        'review-ledger': { type: 'string' },
+        prerequisites: { type: 'string' },
+        'live-capture': { type: 'string' },
+        plan: { type: 'string' },
+        'toolchain-evidence': { type: 'string' },
+        'approval-text': { type: 'string' },
+        'expected-project-ref': { type: 'string' },
+        'request-id': { type: 'string' },
+        'operation-id': { type: 'string' },
+        'sdk-version': { type: 'string' },
+        freeze: { type: 'string' },
+        'approval-request': { type: 'string' },
+        'human-approval': { type: 'string' },
+        approval: { type: 'string' },
+        'approve-freeze-file': { type: 'string' },
+        'approve-request': { type: 'string' },
+        'approve-text': { type: 'string' },
+        'approve-execution': { type: 'string' },
+        confirm: { type: 'string' },
+        'approved-at': { type: 'string' },
+        'out-dir': { type: 'string' },
+        'run-dir': { type: 'string' },
+        commit: { type: 'boolean' },
+        'status-only': { type: 'boolean' },
+        'wait-seconds': { type: 'string' },
+        'poll-ms': { type: 'string' },
+        'page-size': { type: 'string' },
+        'read-concurrency': { type: 'string' },
+        'timeout-ms': { type: 'string' },
+      },
+    }));
+  } catch (error) {
+    throw new CliError(String(error), { code: 'INVALID_ARGS', exitCode: 2 });
+  }
+  const valueRecord = values as Record<string, unknown>;
+  const string = (name: string): string =>
+    typeof valueRecord[name] === 'string' ? String(valueRecord[name]) : '';
+  return {
+    help: Boolean(values.help),
+    json: Boolean(values.json),
+    policyPath: string('policy'),
+    reviewLedgerPath: string('review-ledger'),
+    prerequisitesPath: string('prerequisites'),
+    liveCapturePath: string('live-capture'),
+    planPath: string('plan'),
+    toolchainEvidencePath: string('toolchain-evidence'),
+    approvalTextPath: string('approval-text'),
+    expectedProjectRef: string('expected-project-ref'),
+    requestId: string('request-id'),
+    operationId: string('operation-id'),
+    sdkVersion: string('sdk-version'),
+    freezePath: string('freeze'),
+    approvalRequestPath: string('approval-request'),
+    humanApprovalPath: string('human-approval'),
+    approvalPath: string('approval'),
+    approveFreezeFile: string('approve-freeze-file'),
+    approveRequest: string('approve-request'),
+    approveText: string('approve-text'),
+    approveExecution: string('approve-execution'),
+    confirm: string('confirm'),
+    approvedAtUtc: string('approved-at'),
+    outDir: string('out-dir'),
+    runDir: string('run-dir'),
+    commit: Boolean(values.commit),
+    statusOnly: Boolean(values['status-only']),
+    waitSeconds: parseDatasetMaintenanceNonNegativeInteger(
+      values['wait-seconds'],
+      '--wait-seconds',
+    ),
+    pollMs: parseDatasetMaintenancePositiveInteger(values['poll-ms'], '--poll-ms'),
+    pageSize: parseDatasetMaintenancePositiveInteger(values['page-size'], '--page-size'),
+    readConcurrency: parseDatasetMaintenancePositiveInteger(
+      values['read-concurrency'],
+      '--read-concurrency',
+    ),
     timeoutMs: parseDatasetMaintenancePositiveInteger(values['timeout-ms'], '--timeout-ms'),
   };
 }
@@ -6582,6 +6736,14 @@ export async function executeCli(argv: string[], deps: CliDeps): Promise<CliResu
       deps.sealDatasetMaintenanceProtectedApprovalImpl ?? sealDatasetMaintenanceProtectedApproval;
     const datasetMaintenanceVerifyImpl =
       deps.runDatasetMaintenanceVerifyImpl ?? runDatasetMaintenanceVerify;
+    const flowIdentityPlanImpl =
+      deps.runFlowIdentityPlanFromFilesImpl ?? runFlowIdentityPlanFromFiles;
+    const flowIdentityCaptureImpl = deps.captureFlowIdentityImpl ?? captureFlowIdentity;
+    const flowIdentityFreezeImpl = deps.freezeFlowIdentityImpl ?? freezeFlowIdentity;
+    const flowIdentityApprovalSealImpl =
+      deps.sealFlowIdentityApprovalImpl ?? sealFlowIdentityApproval;
+    const flowIdentityRunImpl = deps.runFlowIdentityImpl ?? runFlowIdentity;
+    const flowIdentityVerifyImpl = deps.verifyFlowIdentityImpl ?? verifyFlowIdentity;
     const datasetSourceUploadAttachmentsImpl =
       deps.runDatasetSourceUploadAttachmentsImpl ?? runDatasetSourceUploadAttachments;
 
@@ -7214,6 +7376,153 @@ export async function executeCli(argv: string[], deps: CliDeps): Promise<CliResu
       if (!action || action === '--help' || action === '-h') {
         return { exitCode: 0, stdout: `${renderDatasetMaintenanceHelp()}\n`, stderr: '' };
       }
+      if (action === 'flow-identity') {
+        const flowAction = commandArgs[1] ?? '';
+        if (!flowAction || flowAction === '--help' || flowAction === '-h') {
+          return {
+            exitCode: 0,
+            stdout: `${renderDatasetMaintenanceFlowIdentityHelp()}\n`,
+            stderr: '',
+          };
+        }
+        const datasetFlags = parseDatasetMaintenanceFlowIdentityFlags(commandArgs.slice(2));
+        if (datasetFlags.help) {
+          return {
+            exitCode: 0,
+            stdout: `${renderDatasetMaintenanceFlowIdentityHelp()}\n`,
+            stderr: '',
+          };
+        }
+        const required = (value: string, flag: string): string => {
+          if (!value) {
+            throw new CliError(
+              `dataset maintenance flow-identity ${flowAction} requires ${flag}.`,
+              {
+                code: 'DATASET_FLOW_IDENTITY_ARGUMENT_REQUIRED',
+                exitCode: 2,
+              },
+            );
+          }
+          return value;
+        };
+        if (flowAction === 'capture') {
+          const report = await flowIdentityCaptureImpl({
+            policyPath: required(datasetFlags.policyPath, '--policy'),
+            reviewLedgerPath: required(datasetFlags.reviewLedgerPath, '--review-ledger'),
+            prerequisitesPath: required(datasetFlags.prerequisitesPath, '--prerequisites'),
+            toolchainEvidencePath: required(
+              datasetFlags.toolchainEvidencePath,
+              '--toolchain-evidence',
+            ),
+            requestId: required(datasetFlags.requestId, '--request-id'),
+            operationId: required(datasetFlags.operationId, '--operation-id'),
+            expectedProjectRef: required(datasetFlags.expectedProjectRef, '--expected-project-ref'),
+            confirm: required(datasetFlags.confirm, '--confirm'),
+            cliVersion: loadCliPackageVersion(import.meta.url),
+            sdkVersion: required(datasetFlags.sdkVersion, '--sdk-version'),
+            outDir: required(datasetFlags.outDir, '--out-dir'),
+            pageSize: datasetFlags.pageSize,
+            readConcurrency: datasetFlags.readConcurrency,
+            timeoutMs: datasetFlags.timeoutMs,
+            env: deps.env,
+            fetchImpl: deps.fetchImpl,
+          });
+          return { exitCode: 0, stdout: stringifyJson(report, datasetFlags.json), stderr: '' };
+        }
+        if (flowAction === 'plan') {
+          const plan = await flowIdentityPlanImpl({
+            policyPath: required(datasetFlags.policyPath, '--policy'),
+            reviewLedgerPath: required(datasetFlags.reviewLedgerPath, '--review-ledger'),
+            liveCapturePath: required(datasetFlags.liveCapturePath, '--live-capture'),
+            outDir: required(datasetFlags.outDir, '--out-dir'),
+          });
+          return { exitCode: 0, stdout: stringifyJson(plan, datasetFlags.json), stderr: '' };
+        }
+        if (flowAction === 'freeze') {
+          const report = await flowIdentityFreezeImpl({
+            planPath: required(datasetFlags.planPath, '--plan'),
+            toolchainEvidencePath: required(
+              datasetFlags.toolchainEvidencePath,
+              '--toolchain-evidence',
+            ),
+            approvedAtUtc: required(datasetFlags.approvedAtUtc, '--approved-at'),
+            expectedProjectRef: required(datasetFlags.expectedProjectRef, '--expected-project-ref'),
+            confirm: required(datasetFlags.confirm, '--confirm'),
+            cliVersion: loadCliPackageVersion(import.meta.url),
+            outDir: required(datasetFlags.outDir, '--out-dir'),
+          });
+          return { exitCode: 0, stdout: stringifyJson(report, datasetFlags.json), stderr: '' };
+        }
+        if (flowAction === 'seal-approval') {
+          const report = await flowIdentityApprovalSealImpl({
+            planPath: required(datasetFlags.planPath, '--plan'),
+            freezePath: required(datasetFlags.freezePath, '--freeze'),
+            approvalRequestPath: required(datasetFlags.approvalRequestPath, '--approval-request'),
+            humanApprovalPath: required(datasetFlags.humanApprovalPath, '--human-approval'),
+            approveFreezeFile: required(datasetFlags.approveFreezeFile, '--approve-freeze-file'),
+            approveRequest: required(datasetFlags.approveRequest, '--approve-request'),
+            approveText: required(datasetFlags.approveText, '--approve-text'),
+            confirm: required(datasetFlags.confirm, '--confirm'),
+            approvedAtUtc: required(datasetFlags.approvedAtUtc, '--approved-at'),
+            outDir: required(datasetFlags.outDir, '--out-dir'),
+          });
+          return { exitCode: 0, stdout: stringifyJson(report, datasetFlags.json), stderr: '' };
+        }
+        if (flowAction === 'run') {
+          if (datasetFlags.commit === datasetFlags.statusOnly) {
+            throw new CliError(
+              'flow-identity run requires exactly one of --commit or --status-only.',
+              { code: 'DATASET_FLOW_IDENTITY_RUN_MODE_INVALID', exitCode: 2 },
+            );
+          }
+          if (datasetFlags.commit) {
+            required(datasetFlags.approveExecution, '--approve-execution');
+            required(datasetFlags.confirm, '--confirm');
+          }
+          const report = await flowIdentityRunImpl({
+            planPath: required(datasetFlags.planPath, '--plan'),
+            freezePath: required(datasetFlags.freezePath, '--freeze'),
+            approvalPath: required(datasetFlags.approvalPath, '--approval'),
+            outDir: required(datasetFlags.outDir, '--out-dir'),
+            commit: datasetFlags.commit,
+            statusOnly: datasetFlags.statusOnly,
+            approveExecution: datasetFlags.approveExecution || undefined,
+            confirm: datasetFlags.confirm || undefined,
+            waitSeconds: datasetFlags.waitSeconds,
+            pollMs: datasetFlags.pollMs,
+            timeoutMs: datasetFlags.timeoutMs,
+            env: deps.env,
+            fetchImpl: deps.fetchImpl,
+          });
+          return {
+            exitCode: report.status === 'passed' ? 0 : 1,
+            stdout: stringifyJson(report, datasetFlags.json),
+            stderr: '',
+          };
+        }
+        if (flowAction === 'verify') {
+          const report = await flowIdentityVerifyImpl({
+            planPath: required(datasetFlags.planPath, '--plan'),
+            freezePath: required(datasetFlags.freezePath, '--freeze'),
+            approvalPath: required(datasetFlags.approvalPath, '--approval'),
+            runDir: required(datasetFlags.runDir, '--run-dir'),
+            outDir: required(datasetFlags.outDir, '--out-dir'),
+            pageSize: datasetFlags.pageSize,
+            timeoutMs: datasetFlags.timeoutMs,
+            env: deps.env,
+            fetchImpl: deps.fetchImpl,
+          });
+          return {
+            exitCode: report.status === 'passed' ? 0 : 1,
+            stdout: stringifyJson(report, datasetFlags.json),
+            stderr: '',
+          };
+        }
+        throw new CliError(
+          "dataset maintenance flow-identity action must be 'capture', 'plan', 'freeze', 'seal-approval', 'run', or 'verify'.",
+          { code: 'DATASET_FLOW_IDENTITY_ACTION_INVALID', exitCode: 2 },
+        );
+      }
       if (action === 'clear-account') {
         const datasetFlags = parseDatasetMaintenanceClearAccountFlags(commandArgs.slice(1));
         if (datasetFlags.help) {
@@ -7632,7 +7941,7 @@ export async function executeCli(argv: string[], deps: CliDeps): Promise<CliResu
       }
 
       throw new CliError(
-        "dataset maintenance action must be 'clear-account', 'plan', 'apply', 'freeze-protected', 'seal-protected-approval', 'run-protected', or 'verify'.",
+        "dataset maintenance action must be 'clear-account', 'plan', 'apply', 'freeze-protected', 'seal-protected-approval', 'run-protected', 'verify', or 'flow-identity'.",
         {
           code: 'DATASET_MAINTENANCE_ACTION_INVALID',
           exitCode: 2,
