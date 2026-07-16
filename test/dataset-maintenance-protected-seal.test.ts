@@ -7,6 +7,7 @@ import {
 } from '../src/lib/dataset-maintenance-protected-seal.js';
 import { stableJsonText } from '../src/lib/dataset-maintenance-contract.js';
 import { PROTECTED_PRODUCTION_PROJECT_REF } from '../src/lib/dataset-maintenance-protected-preparation.js';
+import path from 'node:path';
 
 const HASH_A = 'a'.repeat(64);
 const HASH_B = 'b'.repeat(64);
@@ -118,7 +119,7 @@ test('seal-protected-approval records byte-exact approval entirely offline', asy
     'seal',
   ]);
   assert.deepEqual(
-    fixture.writes.map(({ filePath }) => filePath.split('/').at(-1)),
+    fixture.writes.map(({ filePath }) => path.basename(filePath)),
     [
       'protected-human-approval.txt',
       'protected-approval.json',
@@ -209,10 +210,11 @@ test('seal-protected-approval rejects non-production evidence before reading app
 });
 
 test('seal helper paths and canonical checks are deterministic', () => {
-  assert.deepEqual(__testInternals.artifactPaths('/private/out'), {
-    human_approval_text: '/private/out/protected-human-approval.txt',
-    approval: '/private/out/protected-approval.json',
-    report: '/private/out/protected-approval-seal-report.json',
+  const outDir = path.resolve('/private/out');
+  assert.deepEqual(__testInternals.artifactPaths(outDir), {
+    human_approval_text: path.join(outDir, 'protected-human-approval.txt'),
+    approval: path.join(outDir, 'protected-approval.json'),
+    report: path.join(outDir, 'protected-approval-seal-report.json'),
   });
   assert.doesNotThrow(() =>
     __testInternals.assertCanonicalJsonArtifact({

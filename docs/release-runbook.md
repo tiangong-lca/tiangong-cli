@@ -23,7 +23,7 @@ checkPaths:
   - scripts/docpact-gate.sh
   - scripts/install-git-hooks.sh
 lastReviewedAt: 2026-07-16
-lastReviewedCommit: c44415cacc78fea6ac63dfe256d748cb6ab95782
+lastReviewedCommit: 65a446a8650ec2aa5712d6d13dbab57a400b433d
 related:
   - ../AGENTS.md
   - ../.docpact/config.yaml
@@ -42,6 +42,8 @@ Review note, 2026-07-15: Issue #168 adds the production-only protected alias run
 Review note, 2026-07-15: Issue #171 adds production-read-only protected freeze generation and completely offline human-approval sealing without changing release mechanics. Its feature PR must keep package metadata at the current released version and pass focused contract/zero-write tests, exact 100% coverage, docpact, and the full pre-push gate. Only after that feature PR merges may a separate patch version-bump PR publish through the existing tag/Trusted Publishing workflows. A fresh production freeze is not permitted until the published package provenance/registry integrity is verified and the exact release commit is merged into root-workspace integration Issue #406.
 
 Review note, 2026-07-16: Issue #175 fixes bounded client clock-skew validation without changing release mechanics. The feature PR keeps package metadata unchanged and must pass focused timing/one-shot tests, exact coverage, docpact, and the full pre-push gate. Recovery then requires a separate patch version-bump PR, Trusted Publishing verification, and a new root-workspace integration before any fresh protected freeze.
+
+Review note, 2026-07-16: Issue #177 changes only cross-platform tests needed to make the existing four-platform quality matrix authoritative. It does not alter package metadata, tag creation, Trusted Publishing, release eligibility, protected-execution behavior, or the requirement for a separate 0.0.27 release PR after all matrix jobs pass.
 
 Use this document for:
 

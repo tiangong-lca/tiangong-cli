@@ -28,7 +28,7 @@ checkPaths:
   - scripts/docpact-gate.sh
   - scripts/install-git-hooks.sh
 lastReviewedAt: 2026-07-16
-lastReviewedCommit: c44415cacc78fea6ac63dfe256d748cb6ab95782
+lastReviewedCommit: 65a446a8650ec2aa5712d6d13dbab57a400b433d
 related:
   - ../../AGENTS.md
   - ../../.docpact/config.yaml
@@ -85,6 +85,8 @@ Review note, 2026-07-15: protected alias-runner proof requires production-only e
 Review note, 2026-07-15: Issue #171 preparation proof additionally requires a strict freeze/seal split. Freeze tests must prove complete production owner-draft reads, stable exact 23-flow + 27-process capture, canonical toolchain evidence, zero preflight/gate/admission/mutation/approval artifacts, and rejection of public/foreign/stale/malformed closure. Seal tests must prove zero authentication/network/database calls, exact UTF-8 whitespace and final-newline preservation, explicit freeze-file/request/text/account/timestamp hashes, historical-plan rejection, immutable artifacts, and builder/parser/runner round-trip compatibility. The full `src/**/*.ts` coverage gate remains exactly 100%.
 
 Review note, 2026-07-16: Issue #175 proof requires a fixed five-second allowance only when server `completed_at` is slightly ahead of the client clock. Tests must accept the exact tolerance boundary, reject one millisecond beyond it, retain strict stale/reversed/over-180-second rejection, expose only token-free timing diagnostics, and prove parse failure still occurs before gate capture, submission-marker creation, or admission. Server-side expiry and one-shot enforcement are unchanged.
+
+Review note, 2026-07-16: Issue #177 keeps the validation contract unchanged while making existing tests portable across the four-platform quality matrix. Tests use native path helpers and deterministic spawn doubles; POSIX permission-bit checks remain required on non-Windows platforms, while byte preservation, immutability, hashing, and overwrite rejection remain required everywhere.
 
 ## Validation Matrix
 
