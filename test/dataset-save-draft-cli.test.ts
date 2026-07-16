@@ -401,16 +401,19 @@ test('dataset save-draft internals cover row preparation and failure reports', (
     { id: 'row-id', version: 'row-version' },
   );
 
-  const files = __testInternals.buildFiles('/tmp/out');
-  assert.equal(files.summary_json, '/tmp/out/outputs/dataset-save-draft/summary.json');
-  assert.match(
-    __testInternals.defaultOutDir(
-      '/tmp/input/rows.jsonl',
-      true,
-      new Date('2026-06-04T00:00:00.000Z'),
-    ),
-    /dataset-save-draft\/commit-2026-06-04T000000000Z/u,
+  const outDir = path.resolve('/tmp/out');
+  const files = __testInternals.buildFiles(outDir);
+  assert.equal(
+    files.summary_json,
+    path.join(outDir, 'outputs', 'dataset-save-draft', 'summary.json'),
   );
+  const defaultOutDir = __testInternals.defaultOutDir(
+    path.resolve('/tmp/input/rows.jsonl'),
+    true,
+    new Date('2026-06-04T00:00:00.000Z'),
+  );
+  assert.equal(path.basename(defaultOutDir), 'commit-2026-06-04T000000000Z');
+  assert.equal(path.basename(path.dirname(defaultOutDir)), 'dataset-save-draft');
   assert.deepEqual(
     __testInternals.operationCount([
       { operation: 'insert', status: 'executed' },

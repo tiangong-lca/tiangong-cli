@@ -5,6 +5,7 @@ import {
   __testInternals,
   type FreezeDatasetMaintenanceProtectedOptions,
 } from '../src/lib/dataset-maintenance-protected-freeze.js';
+import path from 'node:path';
 import { stableJsonText } from '../src/lib/dataset-maintenance-contract.js';
 import type { DatasetMaintenanceRemoteContext } from '../src/lib/dataset-maintenance-remote.js';
 import type { DatasetMaintenanceProtectedToolchainEvidence } from '../src/lib/dataset-maintenance-protected-toolchain.js';
@@ -203,7 +204,7 @@ test('freeze-protected performs one read-only preparation and writes no approval
     'validate-before',
   ]);
   assert.deepEqual(
-    fixture.writes.map(({ filePath }) => filePath.split('/').at(-1)),
+    fixture.writes.map(({ filePath }) => path.basename(filePath)),
     [
       'protected-alias-plan-request.json',
       'protected-derivative-baselines.json',
@@ -214,7 +215,7 @@ test('freeze-protected performs one read-only preparation and writes no approval
     ],
   );
   assert.equal(
-    fixture.writes.some(({ filePath }) => /(^|\/)protected-approval\.json$/u.test(filePath)),
+    fixture.writes.some(({ filePath }) => path.basename(filePath) === 'protected-approval.json'),
     false,
   );
   const baseline = JSON.parse(

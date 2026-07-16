@@ -424,8 +424,10 @@ test('protected runner validates scalar options and keeps private evidence immut
     const artifactPath = path.join(root, 'private', 'evidence.json');
     assert.equal(runInternals.writePrivateImmutableJson(artifactPath, { ok: true }), artifactPath);
     assert.equal(runInternals.writePrivateImmutableJson(artifactPath, { ok: true }), artifactPath);
-    assert.equal(statSync(path.dirname(artifactPath)).mode & 0o777, 0o700);
-    assert.equal(statSync(artifactPath).mode & 0o777, 0o600);
+    if (process.platform !== 'win32') {
+      assert.equal(statSync(path.dirname(artifactPath)).mode & 0o777, 0o700);
+      assert.equal(statSync(artifactPath).mode & 0o777, 0o600);
+    }
     assert.throws(
       () => runInternals.writePrivateImmutableJson(artifactPath, { ok: false }),
       /Refusing to overwrite/u,

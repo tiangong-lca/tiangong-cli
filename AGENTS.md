@@ -33,7 +33,7 @@ checkPaths:
   - scripts/docpact-gate.sh
   - scripts/install-git-hooks.sh
 lastReviewedAt: 2026-07-16
-lastReviewedCommit: c44415cacc78fea6ac63dfe256d748cb6ab95782
+lastReviewedCommit: 65a446a8650ec2aa5712d6d13dbab57a400b433d
 related:
   - .docpact/config.yaml
   - docs/agents/repo-validation.md
@@ -70,6 +70,8 @@ Review note, 2026-07-15: `dataset maintenance run-protected` is the CLI-owned pr
 Review note, 2026-07-15: Issue #171 keeps protected preparation in the same CLI-owned maintenance boundary. `freeze-protected` may authenticate only to the explicitly confirmed production project and is limited to complete RLS reads plus the protected derivative snapshot RPC; `seal-protected-approval` is local-only and receives no environment, session, or network client. Only `run-protected` owns preflight/admission/execution. Foundry and skills remain thin published-CLI callers and must not duplicate database access, canonical hashing, or approval construction.
 
 Review note, 2026-07-16: Issue #175 keeps protected preflight validation fail-closed while allowing up to five seconds of server-ahead clock skew only for the client-side `completed_at` comparison. Expired, reversed, over-180-second, foreign, and malformed proofs still fail before gates or admission, the database remains authoritative for token expiry and one-shot consumption, and timing diagnostics never include the preflight token. The command, ownership, release, and workspace-integration boundaries are unchanged.
+
+Review note, 2026-07-16: Issue #177 changes tests only: native path helpers replace POSIX separators, the default-spawn failure uses a guaranteed-missing temporary executable, successful spawn remains injected, and POSIX mode-bit assertions run only where those semantics exist. Runtime behavior, raw protected bytes, ownership, release, and workspace-integration boundaries are unchanged.
 
 ## Bootstrap Order
 

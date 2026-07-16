@@ -25,13 +25,17 @@ function withTempDirectory(run: (root: string) => void): void {
 test('protected artifacts are canonical, private, immutable, and readable', () => {
   withTempDirectory((root) => {
     const directory = ensurePrivateArtifactDirectory(path.join(root, 'nested'));
-    assert.equal(statSync(directory).mode & 0o777, 0o700);
+    if (process.platform !== 'win32') {
+      assert.equal(statSync(directory).mode & 0o777, 0o700);
+    }
 
     const filePath = path.join(directory, 'evidence.json');
     const resolved = writePrivateImmutableJson(filePath, { z: 2, a: 1 });
     assert.equal(resolved, path.resolve(filePath));
     assert.equal(readFileSync(filePath, 'utf8'), '{"a":1,"z":2}\n');
-    assert.equal(statSync(filePath).mode & 0o777, 0o600);
+    if (process.platform !== 'win32') {
+      assert.equal(statSync(filePath).mode & 0o777, 0o600);
+    }
 
     assert.equal(writePrivateImmutableJson(filePath, { a: 1, z: 2 }), resolved);
     const artifact = readProtectedJsonArtifact({ filePath, label: 'Evidence' });

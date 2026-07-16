@@ -7,8 +7,9 @@ layout: repo
 # Review note, 2026-07-15: the production-only protected owner-draft runner remains inside the existing dataset-maintenance command/runtime and remote-adapter domains. Existing `src/lib/dataset-*.ts`, `src/cli.ts`, and `test/**` wildcards cover its sealed request contract, one-shot admission, immutable local evidence, status-only recovery, and 23-flow + 27-process terminal proof; no ownership, routing, dependency, or release-rule change is required.
 # Review note, 2026-07-15: Issue #171 protected freeze/seal preparation remains inside the existing dataset-maintenance command/runtime, remote-adapter, artifact, and validation domains. Existing `src/lib/dataset-*.ts`, `src/cli.ts`, `test/**`, and governed-doc wildcards cover production-read-only capture, offline byte-exact approval sealing, canonical toolchain evidence, and their tests; no ownership, routing, dependency, auth, or release-rule change is required.
 # Review note, 2026-07-16: Issue #175 changes only the protected preflight proof's bounded client clock-skew validation and safe timing diagnostics. Existing dataset-maintenance and test wildcards already cover the implementation, tests, and governed docs; no ownership, routing, dependency, auth, database, or release-rule change is required.
+# Review note, 2026-07-16: Issue #177 removes Windows-only assumptions from existing CLI tests. The same test and validation wildcards cover native path handling, deterministic spawn doubles, and platform-appropriate permission assertions; no runtime, ownership, routing, dependency, auth, database, protected-execution, or release-rule change is required.
 lastReviewedAt: "2026-07-16"
-lastReviewedCommit: "c44415cacc78fea6ac63dfe256d748cb6ab95782"
+lastReviewedCommit: "65a446a8650ec2aa5712d6d13dbab57a400b433d"
 
 catalog:
   repos:

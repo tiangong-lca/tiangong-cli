@@ -298,15 +298,34 @@ test('runDatasetImportLcaConvert records blocked commands and default spawn outp
     assert.equal(blocked.files.process_bundles_dir, null);
     assert.equal(blocked.files.process_bundles_index, null);
 
-    const completed = runDatasetImportLcaConvert({
+    const missingPython = path.join(dir, 'missing-python-executable');
+    const defaultSpawnBlocked = runDatasetImportLcaConvert({
       inputPath,
-      outputDir: path.join(dir, 'true-out'),
-      pythonBin: '/usr/bin/true',
+      outputDir: path.join(dir, 'missing-python-out'),
+      pythonBin: missingPython,
       tidasToolsDir: toolsDir,
       processBundles: false,
     });
+    assert.equal(defaultSpawnBlocked.status, 'blocked');
+    assert.equal(defaultSpawnBlocked.command.executable, missingPython);
+
+    const completed = runDatasetImportLcaConvert({
+      inputPath,
+      outputDir: path.join(dir, 'completed-out'),
+      pythonBin: 'python-custom',
+      tidasToolsDir: toolsDir,
+      processBundles: false,
+      spawnImpl: (() => ({
+        status: 0,
+        signal: null,
+        output: [],
+        pid: 1,
+        stdout: '',
+        stderr: '',
+      })) as unknown as typeof spawnSync,
+    });
     assert.equal(completed.status, 'completed');
-    assert.equal(completed.command.executable, '/usr/bin/true');
+    assert.equal(completed.command.executable, 'python-custom');
     assert.equal(completed.command.args.includes('--no-process-bundles'), true);
     assert.equal(completed.command.args.includes('--process-bundles'), false);
     assert.equal(completed.files.process_bundles_dir, null);
