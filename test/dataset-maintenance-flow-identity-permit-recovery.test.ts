@@ -126,7 +126,7 @@ test('approval claim root, validation, and private-file guards fail closed', () 
       platform: 'linux',
       homeDir: '/home/owner',
     }),
-    '/tmp/xdg-state/tiangong-lca-cli',
+    path.resolve('/tmp/xdg-state', 'tiangong-lca-cli'),
   );
   assert.equal(
     resolveFlowIdentityApprovalClaimRoot({
@@ -162,6 +162,9 @@ test('approval claim root, validation, and private-file guards fail closed', () 
   );
   assert.throws(() => claimInternals.validateClaim(null, hash('a')), /malformed or foreign/u);
   assert.throws(() => claimInternals.validateClaim([], hash('a')), /malformed or foreign/u);
+  assert.equal(claimInternals.hasPrivateClaimPermissions(0o600, 'linux'), true);
+  assert.equal(claimInternals.hasPrivateClaimPermissions(0o644, 'linux'), false);
+  assert.equal(claimInternals.hasPrivateClaimPermissions(0o666, 'win32'), true);
   for (const invalid of [
     { ...claim(), claimed_at_utc: 'not-a-timestamp' },
     { ...claim(), approval_kind: 'foreign' },
@@ -188,16 +191,18 @@ test('approval claim root, validation, and private-file guards fail closed', () 
     );
     const publicClaim = claim(hash('e'), '/tmp/public-claim-run');
     const publicPath = claimFlowIdentityApproval({ claim: publicClaim, env: {}, stateRoot });
-    chmodSync(publicPath, 0o644);
-    assert.throws(
-      () =>
-        readFlowIdentityApprovalClaim({
-          approvalIdentitySha256: publicClaim.approval_identity_sha256,
-          env: {},
-          stateRoot,
-        }),
-      /not a private regular file/u,
-    );
+    if (process.platform !== 'win32') {
+      chmodSync(publicPath, 0o644);
+      assert.throws(
+        () =>
+          readFlowIdentityApprovalClaim({
+            approvalIdentitySha256: publicClaim.approval_identity_sha256,
+            env: {},
+            stateRoot,
+          }),
+        /not a private regular file/u,
+      );
+    }
 
     const invalidJsonClaim = claim(hash('f'), '/tmp/invalid-json-claim-run');
     const invalidJsonPath = claimFlowIdentityApproval({

@@ -69,6 +69,14 @@ function isErrno(error: unknown, code: string): boolean {
   );
 }
 
+function hasPrivateClaimPermissions(mode: number, platform: NodeJS.Platform): boolean {
+  // Windows does not expose its ACLs through POSIX permission bits. The claim
+  // still has to be a non-symlink regular file and is created exclusively below
+  // the current user's state directory; enforce 0600-style bits where they are
+  // meaningful.
+  return platform === 'win32' || (mode & 0o077) === 0;
+}
+
 function validateClaim(value: unknown, expectedIdentity: string): FlowIdentityApprovalClaim {
   if (!value || typeof value !== 'object' || Array.isArray(value)) {
     fail(
@@ -206,7 +214,11 @@ export function readFlowIdentityApprovalClaim(options: {
   });
   if (!existsSync(claimPath)) return null;
   const metadata = lstatSync(claimPath);
-  if (!metadata.isFile() || metadata.isSymbolicLink() || (metadata.mode & 0o077) !== 0) {
+  if (
+    !metadata.isFile() ||
+    metadata.isSymbolicLink() ||
+    !hasPrivateClaimPermissions(metadata.mode, process.platform)
+  ) {
     return fail(
       'Existing flow identity approval claim is not a private regular file.',
       'DATASET_FLOW_IDENTITY_APPROVAL_CLAIM_INVALID',
@@ -235,4 +247,4 @@ export function readFlowIdentityApprovalClaim(options: {
   return validateClaim(value, options.approvalIdentitySha256);
 }
 
-export const __testInternals = { isErrno, validateClaim };
+export const __testInternals = { hasPrivateClaimPermissions, isErrno, validateClaim };
