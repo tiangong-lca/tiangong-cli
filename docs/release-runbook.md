@@ -23,7 +23,7 @@ checkPaths:
   - scripts/docpact-gate.sh
   - scripts/install-git-hooks.sh
 lastReviewedAt: 2026-07-16
-lastReviewedCommit: e8a458c63a4c59d7ea1fcf4618cd5034ead6e836
+lastReviewedCommit: 497ac46bba02297b46cee255429371bf20074487
 related:
   - ../AGENTS.md
   - ../.docpact/config.yaml
@@ -48,6 +48,8 @@ Review note, 2026-07-16: Issue #177 changes only cross-platform tests needed to 
 Review note, 2026-07-16: Issue #178 is that separate 0.0.27 release PR. It must prove the version is unpublished, retain exact coverage and all four platform results, and use the existing merge-triggered tag plus tag-triggered Trusted Publishing workflows. Local publish or manual tag creation remains forbidden; npm provenance and `gitHead` must match the immutable release merge commit before workspace integration starts.
 
 Review note, 2026-07-16: Issue #182 fixes the protected terminal verifier without changing package metadata or release mechanics. Its feature PR must pass the production-shaped cross-hash-domain regression, exact coverage, docpact, and the full pre-push gate. Only after it merges may a separate patch version-bump PR use the existing tag and Trusted Publishing workflows; npm provenance and exact root-workspace integration must be verified before the existing protected request receives one status-only readback.
+
+Review note, 2026-07-16: Issue #184 is that separate 0.0.28 release. It must prove the version and tag are absent, retain exact coverage and all four platform results, pass AI Doc Lint and Docpact, and use only the existing merge-triggered tag plus tag-triggered Trusted Publishing workflows. Local publish or manual tag creation remains forbidden; npm provenance and `gitHead` must match the immutable release merge commit before workspace integration and status-only verification.
 
 Use this document for:
 

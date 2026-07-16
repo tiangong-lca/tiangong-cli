@@ -28,7 +28,7 @@ checkPaths:
   - scripts/docpact-gate.sh
   - scripts/install-git-hooks.sh
 lastReviewedAt: 2026-07-16
-lastReviewedCommit: e8a458c63a4c59d7ea1fcf4618cd5034ead6e836
+lastReviewedCommit: 497ac46bba02297b46cee255429371bf20074487
 related:
   - ../../AGENTS.md
   - ../../.docpact/config.yaml
@@ -89,6 +89,8 @@ Review note, 2026-07-16: Issue #175 proof requires a fixed five-second allowance
 Review note, 2026-07-16: Issue #177 keeps the validation contract unchanged while making existing tests portable across the four-platform quality matrix. Tests use native path helpers and deterministic spawn doubles; POSIX permission-bit checks remain required on non-Windows platforms, while byte preservation, immutability, hashing, and overwrite rejection remain required everywhere.
 
 Review note, 2026-07-16: Issue #182 adds a production-shaped protected-verifier regression in which the CLI canonical payload hash deliberately differs from the PostgreSQL `jsonb::text` hash. Passing proof must bind RLS live row to the approved plan in the CLI domain, exact unique valid primary `action_evidence` to the fresh snapshot in the database domain, and snapshot SHA to terminal completion. Missing, duplicate, foreign, wrong-action, false owner/state/JSON flags, malformed or unequal hashes, and snapshot/terminal drift must all remain fail-closed. Exact `src/**/*.ts` coverage remains 100%.
+
+Review note, 2026-07-16: Issue #184 keeps the validation contract unchanged for the dedicated 0.0.28 release. In addition to the existing exact-coverage and pre-push gates, release proof requires an unpublished-version check, absent-tag check, dry-run package inspection, a fresh four-platform matrix, AI Doc Lint, and Docpact with no diagnostics before merge.
 
 Review note, 2026-07-16: Issue #178 keeps the validation contract unchanged for the dedicated 0.0.27 release. In addition to the existing exact-coverage and pre-push gates, release proof requires an unpublished-version check, tag-name check, dry-run package inspection, a fresh four-platform matrix, and Docpact with no diagnostics before merge.
 

@@ -27,7 +27,7 @@ checkPaths:
   - scripts/docpact-gate.sh
   - scripts/install-git-hooks.sh
 lastReviewedAt: 2026-07-16
-lastReviewedCommit: e8a458c63a4c59d7ea1fcf4618cd5034ead6e836
+lastReviewedCommit: 497ac46bba02297b46cee255429371bf20074487
 related:
   - ../../AGENTS.md
   - ../../.docpact/config.yaml
@@ -69,6 +69,8 @@ Review note, 2026-07-16: Issue #177 modifies only `test/**` portability assumpti
 Review note, 2026-07-16: Issue #178 changes the package version to 0.0.27 and updates the one package-version dispatch fixture. No command family, launcher, session, artifact, protected-maintenance, dependency, tag, publication, or workspace-integration architecture changes.
 
 Review note, 2026-07-16: Issue #182 remains entirely inside `dataset-maintenance-protected-verify`. It replaces one invalid cross-serialization equality with an exact three-part proof bridge: CLI-canonical RLS row to approved plan, PostgreSQL-domain primary action evidence to fresh derivative snapshot, and snapshot SHA to terminal completion proof. It adds no runtime, adapter, artifact schema, RPC, database, dependency, or command surface.
+
+Review note, 2026-07-16: Issue #184 changes the package version to 0.0.28 and updates the one live package-version dispatch fixture. No command family, launcher, session, artifact, protected-maintenance, dependency, tag, publication, or workspace-integration architecture changes.
 
 ## Stable Path Map
 
