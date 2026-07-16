@@ -32,8 +32,8 @@ checkPaths:
   - scripts/docpact
   - scripts/docpact-gate.sh
   - scripts/install-git-hooks.sh
-lastReviewedAt: 2026-07-15
-lastReviewedCommit: ea0aceef09d9b4fee11c26dd11d34ae50d387162
+lastReviewedAt: 2026-07-16
+lastReviewedCommit: c44415cacc78fea6ac63dfe256d748cb6ab95782
 related:
   - .docpact/config.yaml
   - docs/agents/repo-validation.md
@@ -68,6 +68,8 @@ Review note, 2026-07-14: `rebuild-derivatives` extends the maintenance contract 
 Review note, 2026-07-15: `dataset maintenance run-protected` is the CLI-owned production-only path for one already sealed and exactly approved owner-draft alias execution. It completes full account and derivative-baseline checks before server preflight, binds three ordered live gates to a server window of at most 180 seconds, writes an immutable local marker before at most one admission POST, and permits only status/readback recovery afterward. Terminal success requires the database proof and independent RLS reads to agree on 52 rows, 59 exchanges, 55 audits, and exactly 23 flow plus 27 process derivative targets. It has no Dev replay, legacy alias RPC, automatic retry, publication, or state-code fallback.
 
 Review note, 2026-07-15: Issue #171 keeps protected preparation in the same CLI-owned maintenance boundary. `freeze-protected` may authenticate only to the explicitly confirmed production project and is limited to complete RLS reads plus the protected derivative snapshot RPC; `seal-protected-approval` is local-only and receives no environment, session, or network client. Only `run-protected` owns preflight/admission/execution. Foundry and skills remain thin published-CLI callers and must not duplicate database access, canonical hashing, or approval construction.
+
+Review note, 2026-07-16: Issue #175 keeps protected preflight validation fail-closed while allowing up to five seconds of server-ahead clock skew only for the client-side `completed_at` comparison. Expired, reversed, over-180-second, foreign, and malformed proofs still fail before gates or admission, the database remains authoritative for token expiry and one-shot consumption, and timing diagnostics never include the preflight token. The command, ownership, release, and workspace-integration boundaries are unchanged.
 
 ## Bootstrap Order
 

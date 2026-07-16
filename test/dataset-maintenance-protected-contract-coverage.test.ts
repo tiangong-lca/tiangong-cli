@@ -966,7 +966,71 @@ test('preflight, gate, and admission reject foreign, stale, or mismatched proofs
   const expired = preflightResponse(identity);
   rejects(
     () => parseProtectedPreflightProof(expired, identity, new Date('2026-07-15T00:03:01.000Z')),
-    /stale, future-issued/u,
+    /token is stale/u,
+  );
+
+  const atExpiry = preflightResponse(identity);
+  rejects(
+    () => parseProtectedPreflightProof(atExpiry, identity, new Date(atExpiry.expires_at)),
+    /token is stale/u,
+  );
+
+  const exactWindow = preflightResponse(identity);
+  assert.equal(
+    parseProtectedPreflightProof(exactWindow, identity, new Date('2026-07-15T00:00:00.000Z'))
+      .request_id,
+    identity.request_id,
+  );
+
+  const withinClockSkew = preflightResponse(identity);
+  withinClockSkew.completed_at = '2026-07-15T00:00:05.000Z';
+  withinClockSkew.expires_at = '2026-07-15T00:03:05.000Z';
+  assert.equal(
+    parseProtectedPreflightProof(withinClockSkew, identity, new Date('2026-07-15T00:00:00.000Z'))
+      .completed_at,
+    withinClockSkew.completed_at,
+  );
+
+  const beyondClockSkew = preflightResponse(identity);
+  beyondClockSkew.completed_at = '2026-07-15T00:00:05.001Z';
+  beyondClockSkew.expires_at = '2026-07-15T00:03:05.001Z';
+  assert.throws(
+    () =>
+      parseProtectedPreflightProof(beyondClockSkew, identity, new Date('2026-07-15T00:00:00.000Z')),
+    (error: unknown) => {
+      assert.ok(error instanceof CliError);
+      assert.match(error.message, /future-issued beyond the 5-second/u);
+      assert.deepEqual(error.details, {
+        completed_at: beyondClockSkew.completed_at,
+        expires_at: beyondClockSkew.expires_at,
+        observed_at: '2026-07-15T00:00:00.000Z',
+        window_ms: 180_000,
+        future_skew_ms: 5_001,
+        allowed_future_skew_ms: 5_000,
+      });
+      return true;
+    },
+  );
+
+  const overlong = preflightResponse(identity);
+  overlong.expires_at = '2026-07-15T00:03:00.001Z';
+  rejects(
+    () => parseProtectedPreflightProof(overlong, identity, new Date('2026-07-15T00:00:30.000Z')),
+    /exceeds the 180-second/u,
+  );
+
+  const zeroWindow = preflightResponse(identity);
+  zeroWindow.expires_at = zeroWindow.completed_at;
+  rejects(
+    () => parseProtectedPreflightProof(zeroWindow, identity, new Date('2026-07-14T23:59:59.000Z')),
+    /expiry must be later/u,
+  );
+
+  const reversed = preflightResponse(identity);
+  reversed.expires_at = '2026-07-14T23:59:59.999Z';
+  rejects(
+    () => parseProtectedPreflightProof(reversed, identity, new Date('2026-07-14T23:59:59.000Z')),
+    /expiry must be later/u,
   );
 
   const preflight = preflightFixture(identity);

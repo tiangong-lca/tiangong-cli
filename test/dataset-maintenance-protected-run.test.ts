@@ -1149,6 +1149,7 @@ function runtimeDependencies(options: {
     verification: ProtectedVerificationResult;
   };
   admissionError?: Error;
+  preflightParseError?: Error;
   counters: Record<string, number>;
 }) {
   const bump = (name: string) => {
@@ -1177,7 +1178,10 @@ function runtimeDependencies(options: {
       bump('preflight');
       return { raw: 'preflight' };
     },
-    parsePreflight: () => preflight,
+    parsePreflight: () => {
+      if (options.preflightParseError) throw options.preflightParseError;
+      return preflight;
+    },
     captureGates: async () => {
       bump('gates');
       return gateBundle();
@@ -1378,6 +1382,37 @@ test('commit core writes one-shot evidence and treats admission exceptions as co
     assert.equal(ambiguousCounters.admit, 1);
     assert.equal(ambiguousCounters.read, 1);
     assert.equal(existsSync(ambiguous.prepared.artifacts.admission_transport_error), true);
+  } finally {
+    rmSync(root, { recursive: true, force: true });
+  }
+});
+
+test('commit core stops before gates, marker, and admission when preflight proof parsing fails', async () => {
+  const root = mkdtempSync(path.join(os.tmpdir(), 'tg-protected-preflight-rejected-'));
+  try {
+    const fixture = preparedFixture(root, true);
+    const counters: Record<string, number> = {};
+    await assert.rejects(
+      () =>
+        runInternals.runPreparedProtectedExecution(
+          fixture.command,
+          fixture.prepared,
+          runtimeDependencies({
+            counters,
+            rows: fixture.rows,
+            completeness: fixture.plan.snapshot_completeness,
+            preflightParseError: new Error('future-issued proof rejected'),
+          }),
+        ),
+      /future-issued proof rejected/u,
+    );
+    assert.equal(counters.preflight, 1);
+    assert.equal(counters.gates ?? 0, 0);
+    assert.equal(counters.admit ?? 0, 0);
+    assert.equal(counters.read ?? 0, 0);
+    assert.equal(existsSync(fixture.prepared.artifacts.execution_seal), true);
+    assert.equal(existsSync(fixture.prepared.artifacts.preflight_evidence), false);
+    assert.equal(existsSync(fixture.prepared.artifacts.submission_attempt), false);
   } finally {
     rmSync(root, { recursive: true, force: true });
   }

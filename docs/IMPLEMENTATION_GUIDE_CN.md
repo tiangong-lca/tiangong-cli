@@ -16,8 +16,8 @@ checkPaths:
   - README.md
   - src/**
   - test/**
-lastReviewedAt: 2026-07-15
-lastReviewedCommit: bd145f692b3fd11e398302dd6a1d2831e058883a
+lastReviewedAt: 2026-07-16
+lastReviewedCommit: c44415cacc78fea6ac63dfe256d748cb6ab95782
 related:
   - ../AGENTS.md
   - ../.docpact/config.yaml
@@ -37,6 +37,8 @@ Review note, 2026-07-14: `rebuild-derivatives` 已进入 maintenance v1 固定�
 Review note, 2026-07-15: `dataset maintenance run-protected` 为 seal 绑定且已经人工批准的 private alias 计划增加 production-only 的一次性执行与恢复契约。受保护写入由服务器调度，并以认证 owner 及精确 actor/user_id/state_code=0、plan/closure 栅栏限制范围；RLS 继续保护公开入口与独立读回。它在 preflight 前完成完整扫描，随后使用服务器给出的三项 gate 期望摘要与最长 180 秒 token 捕获 live receipt，写入 immutable attempt marker 后最多发送一次 admission POST；marker 或不明确 admission 响应之后只能 `--status-only`。终态必须精确证明 52 行、59 exchanges、55 audits 与 50 个 derivative targets（23 flows + 27 processes），且不回退 dev、旧 alias RPC、发布或 state-code 修改。
 
 Review note, 2026-07-15: `dataset maintenance freeze-protected` 与 `seal-protected-approval` 把生产只读冻结和人工批准记录拆成两个不可混淆的命令。前者只对显式确认的 production project 做完整 owner-draft census/support/projected-reference 与 23+27 derivative snapshot 读取，输出未批准请求，绝不 preflight/gate/admit/mutate；后者不接收 env 或 HTTP client，只按原始 UTF-8 字节核对人类返回文本及 freeze/request/text/account/timestamp 后生成 approval。真正执行仍只属于后续 `run-protected`。
+
+Review note, 2026-07-16: `run-protected` 的 preflight proof 客户端时间校验允许服务端 `completed_at` 最多领先本机 5 秒，仅用于吸收正常时钟偏差。过期、时间倒序、超过 180 秒、foreign 或 malformed proof 仍在 gate/marker/admission 前阻断；数据库继续用 server clock 强制 token 到期与一次性消费。错误只输出 `completed_at`、`expires_at`、观察时间和差值等无 token 诊断，不持久化或暴露 preflight token。
 
 ## 1. 目标
 
