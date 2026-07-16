@@ -84,7 +84,7 @@ test('local approval claim is one-shot across output directories and tamper fail
     assert.throws(
       () =>
         claimFlowIdentityApproval({
-          claim: { ...first, canonical_out_dir: '/tmp/a-different-run' },
+          claim: { ...first, canonical_out_dir: path.resolve('/tmp/a-different-run') },
           env: {},
           stateRoot,
         }),
@@ -142,7 +142,7 @@ test('approval claim root, validation, and private-file guards fail closed', () 
       platform: 'linux',
       homeDir: '/home/owner',
     }),
-    '/home/owner/.local/state/tiangong-lca-cli',
+    path.resolve('/home/owner', '.local', 'state', 'tiangong-lca-cli'),
   );
   assert.equal(
     resolveFlowIdentityApprovalClaimRoot({ env: {}, platform: 'linux', homeDir: '' }),
