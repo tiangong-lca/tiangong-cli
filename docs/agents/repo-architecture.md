@@ -27,7 +27,7 @@ checkPaths:
   - scripts/docpact-gate.sh
   - scripts/install-git-hooks.sh
 lastReviewedAt: 2026-07-17
-lastReviewedCommit: 497ac46bba02297b46cee255429371bf20074487
+lastReviewedCommit: 670acda2dd05a8ddae3d1968720c2ea176fb1b16
 related:
   - ../../AGENTS.md
   - ../../.docpact/config.yaml
@@ -79,6 +79,8 @@ Review note, 2026-07-16: Issue #184 changes the package version to 0.0.28 and up
 Review note, 2026-07-16: Issue #186 introduces `src/lib/lca-release.ts` as the CLI transport boundary for LCI/LCIA data releases. The standalone release repository owns the 20-stage workflow and canonical plan construction; Edge and Database own authorization/state transitions. The CLI exchanges only a user API key for a session, verifies the exact four-ZIP set before signed upload, derives the publish credential fingerprint locally, and verifies durable byte size/SHA-256 before exposing downloaded bundle or release artifacts.
 
 Review note, 2026-07-17: Issue #191 changes only platform-specific assertions in `test/lca-release.test.ts`. The LCI/LCIA transport, artifact writer, command surface, filesystem architecture, and release workflow remain unchanged; POSIX mode and chmod failure semantics continue to be tested on platforms that implement them.
+
+Review note, 2026-07-17: Issue #189 changes the CLI package version to 0.0.29 and updates the four live CLI-version fixtures. No command family, launcher, session, artifact, dependency, authorization, tag, publication, or workspace-integration architecture changes.
 
 ## Stable Path Map
 
