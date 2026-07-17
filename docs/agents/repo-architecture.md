@@ -76,6 +76,8 @@ Review note, 2026-07-16: Issue #182 remains entirely inside `dataset-maintenance
 
 Review note, 2026-07-16: Issue #184 changes the package version to 0.0.28 and updates the one live package-version dispatch fixture. No command family, launcher, session, artifact, protected-maintenance, dependency, tag, publication, or workspace-integration architecture changes.
 
+Review note, 2026-07-16: Issue #186 introduces `src/lib/lca-release.ts` as the CLI transport boundary for LCI/LCIA data releases. The standalone release repository owns the 20-stage workflow and canonical plan construction; Edge and Database own authorization/state transitions. The CLI exchanges only a user API key for a session, verifies the exact four-ZIP set before signed upload, derives the publish credential fingerprint locally, and verifies durable byte size/SHA-256 before exposing downloaded bundle or release artifacts.
+
 ## Stable Path Map
 
 | Path group | Role |
@@ -124,10 +126,22 @@ The widest feature families currently live in:
 - `src/lib/*-qa.ts`
 - `src/lib/process-*.ts`
 - `src/lib/lifecyclemodel-*.ts`
+- `src/lib/lca-release.ts`
 - `src/lib/publish.ts`
 - `src/lib/run.ts`
 
 These files own the public CLI semantics for those workflows.
+
+### LCI/LCIA data-release transport
+
+`src/lib/lca-release.ts` is deliberately a narrow authenticated adapter, not a second release control plane:
+
+- `src/cli.ts` owns `release prepare|upload|finalize|approve|publish|readback-verify|unpublish|status|current|calculation-bundle|calculation-artifact|artifact-download` parsing, help, and human/JSON rendering.
+- The normal `TIANGONG_LCA_API_KEY` bootstrap is exchanged for a user session; no service-role credential or release-specific API key is accepted.
+- Edge/Database assert the live `data_product_manager` role for private and mutating actions. CLI-side checks are input and integrity checks, never an authorization substitute.
+- Upload requires exactly the Unit Process and standalone LifecycleModel+Result profiles in both TIDAS and ILCD. Local size, SHA-256, media type, and profile/format cardinality are validated before requesting signed upload URLs.
+- Calculation Bundle projections, chunks, and ZIPs are file-first. The CLI writes atomically with private permissions, refuses overwrite without `--force`, and exposes downloaded bytes only after exact size and SHA-256 verification.
+- The result profile reuses existing TIDAS Process exchange and LCIA result structures. Schema identity/version policy and self-contained package closure are produced upstream by the release control plane and TIDAS tools, not reimplemented here.
 
 ### Process maintenance and QA commands
 

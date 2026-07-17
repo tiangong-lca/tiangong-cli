@@ -9,6 +9,7 @@ export type ResponseLike = {
     get(name: string): string | null;
   };
   text(): Promise<string>;
+  arrayBuffer?(): Promise<ArrayBuffer>;
 };
 
 export type FetchLike = (input: string, init?: RequestInit) => Promise<ResponseLike>;

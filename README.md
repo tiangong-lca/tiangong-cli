@@ -17,8 +17,10 @@ checkPaths:
   - bin/**
   - src/cli.ts
   - src/main.ts
-lastReviewedAt: 2026-07-15
-lastReviewedCommit: bd145f692b3fd11e398302dd6a1d2831e058883a
+  - src/lib/lca-release.ts
+  - test/lca-release*.test.ts
+lastReviewedAt: 2026-07-16
+lastReviewedCommit: 1aa9b58f7a62f50d2cb680f372452fe829686d75
 ---
 
 # TianGong LCA CLI
@@ -34,6 +36,8 @@ Review note, 2026-07-14: maintenance now includes the protected derivative-only 
 Review note, 2026-07-15: `dataset maintenance run-protected` adds a production-only path for one sealed private alias execution and its exact 50-target derivative closure. The protected executor is server-dispatched and fenced by the authenticated owner plus exact actor/user_id/state_code=0 and plan-closure checks; RLS remains a defense on public and independent-read surfaces. It performs one server preflight, writes an immutable local attempt marker before one admission POST, and requires status-only recovery after any marker or ambiguous response. It has no dev, legacy-alias, publication, or state-code fallback.
 
 Review note, 2026-07-15: `dataset maintenance freeze-protected` and `seal-protected-approval` close the preparation gap without adding a second execution path. Freeze preparation authenticates directly to the explicitly confirmed production project, performs only complete account/support reads plus the 50 derivative snapshot RPCs, and writes an unapproved canonical request. Approval sealing is entirely local and requires the exact human-returned UTF-8 bytes plus explicit freeze/request/text hashes and account confirmation. Only the later `run-protected` command can preflight or admit work.
+
+Review note, 2026-07-16: `release ...` is the LCI/LCIA data-release command family, not the npm package release workflow. It uses the normal user-session bootstrap, requires the server to authorize `data_product_manager` for private and mutating operations, never accepts a service-role key, and keeps large Calculation Bundle or ZIP payloads in hash-verified files instead of stdout.
 
 Review note, 2026-07-17: `dataset maintenance flow-identity capture|plan|freeze|seal-approval|run|freeze-recovery|seal-recovery-approval|run-recovery|verify` is the dedicated Step 3 workflow for approved BAFU elementary-flow identity mappings. Capture performs one complete authenticated census and one database-attestation POST; plan rejects historical authorities and binds the exact 305-source request to its immutable receipt. The write path uses a database-minted one-wrapper permit that rotates after each successful process/finalize write and is never stored in proof artifacts; a create-only local approval claim is defense in depth. A lost permit or preflight response cannot be replayed: the operator must freeze and approve an exact recovery baseline, while status/recovery may locate only the same actor-owned scope through the exact read-only lookup. Terminal verification independently proves unchanged source/public/support rows, exact desired owner-draft processes, zero approved-source residue, unchanged pending/blocker/orphan closure, and causal derivative completion. Failed/stale derivatives still require a separate derivative-only plan, freeze, and approval and never replay the process mutation. Production use remains gated on merge, Preview validation, and coordinated database/CLI release.
 
@@ -88,6 +92,83 @@ TIANGONG_LCA_SESSION_FILE=
 TIANGONG_LCA_DISABLE_SESSION_CACHE=false
 TIANGONG_LCA_FORCE_REAUTH=false
 ```
+
+## LCI/LCIA Data Release
+
+The `release` command family is the authenticated transport used by the standalone release control plane. It does not introduce a TIDAS schema variant: result packages reuse the existing Process exchange structure for LCI and the existing Process LCIA result fields, with a LifecycleModel referencing the resulting Process.
+
+The canonical publication set contains four self-contained ZIPs:
+
+- Unit Process full closure in TIDAS and ILCD.
+- Standalone LifecycleModel + Result full closure in TIDAS and ILCD. This package repeats the required canonical Unit Process and support closure, so it has no dependency on another ZIP.
+
+Workflow:
+
+```bash
+tiangong-lca release prepare --input ./release-prepare.json --json
+tiangong-lca release upload --input ./release-upload.json --output ./upload-receipt.json
+tiangong-lca release finalize --input ./release-finalize.json --json
+tiangong-lca release approve --input ./release-approval.json --json
+tiangong-lca release publish --input ./release-publish.json --json
+tiangong-lca release readback-verify --input ./release-readback.json --json
+tiangong-lca release status --release-run-id <release-run-id> --json
+```
+
+`release-upload.json` contains the immutable plan identity plus exactly one artifact for each profile/format pair. Paths are resolved relative to the request file:
+
+```json
+{
+  "releaseRunId": "11111111-1111-4111-8111-111111111111",
+  "publishPlanHash": "<64 lowercase hex characters>",
+  "artifacts": [
+    {
+      "profileId": "unit-process-full-closure.v1",
+      "format": "tidas",
+      "path": "./packages/unit-process.tidas.zip",
+      "sha256": "<64 lowercase hex characters>",
+      "byteSize": 1234,
+      "mediaType": "application/zip"
+    },
+    {
+      "profileId": "unit-process-full-closure.v1",
+      "format": "ilcd",
+      "path": "./packages/unit-process.ilcd.zip",
+      "sha256": "<64 lowercase hex characters>",
+      "byteSize": 1234,
+      "mediaType": "application/zip"
+    },
+    {
+      "profileId": "standalone-lifecyclemodel-result-full-closure.v1",
+      "format": "tidas",
+      "path": "./packages/result.tidas.zip",
+      "sha256": "<64 lowercase hex characters>",
+      "byteSize": 1234,
+      "mediaType": "application/zip"
+    },
+    {
+      "profileId": "standalone-lifecyclemodel-result-full-closure.v1",
+      "format": "ilcd",
+      "path": "./packages/result.ilcd.zip",
+      "sha256": "<64 lowercase hex characters>",
+      "byteSize": 1234,
+      "mediaType": "application/zip"
+    }
+  ]
+}
+```
+
+The CLI verifies every local upload against its declared byte size, SHA-256, media type, and required pair before requesting signed URLs. Upload receipts and downloads are written atomically with private file permissions. Existing outputs are preserved unless `--force` is explicit. The publish credential fingerprint is derived locally from `TIANGONG_LCA_API_KEY`; callers cannot inject it through the request file.
+
+Calculation results and published artifacts remain file-first:
+
+```bash
+tiangong-lca release calculation-bundle --package-id <package-id> --output ./calculation-bundle.json
+tiangong-lca release calculation-artifact --package-id <package-id> --artifact-path chunks/lci-00000.jsonl.gz --output ./lci-00000.jsonl.gz
+tiangong-lca release current --json
+tiangong-lca release artifact-download --artifact-id <artifact-id> --output ./release.zip
+```
+
+`calculation-bundle` writes a verified manifest projection with short-lived URLs for its declared artifacts. Artifact downloads are accepted only when their exact path is present in that manifest, and downloaded bytes must match the durable size and SHA-256 before the output is exposed. Use `--dry-run` to validate inputs and inspect a credential-masked request without network writes.
 
 Optional LLM review env, only for `qa process --enable-llm` or `qa flow --enable-llm`:
 

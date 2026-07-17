@@ -11,6 +11,7 @@ layout: repo
 # Review note, 2026-07-16: Issue #178 is the dedicated 0.0.27 package-version release after Issues #175 and #177. It changes only package metadata, the package-version dispatch fixture, and governed review records; ownership, routing, dependencies, protected execution, database behavior, tag automation, Trusted Publishing, and workspace-integration rules remain unchanged.
 # Review note, 2026-07-16: Issue #182 corrects the protected verifier's cross-hash-domain comparison inside the existing dataset-maintenance runtime and tests. Existing wildcards and ownership cover the CLI-plan, database action-evidence, derivative-snapshot, and terminal-proof bridge; no routing, dependency, auth, database, release, or integration rule changes are required.
 # Review note, 2026-07-16: Issue #184 is the dedicated 0.0.28 package-version release for merged Issue #182. It changes only package metadata, the live package-version fixture, and governed review records; ownership, routing, dependencies, protected execution, database behavior, tag automation, Trusted Publishing, and workspace-integration rules remain unchanged.
+# Review note, 2026-07-16: Issue #186 adds the authenticated LCI/LCIA data-release command family. `src/lib/lca-release.ts` owns manager-scoped Edge command calls, exact four-ZIP upload verification, Calculation Bundle projection, and hash-checked file downloads; it is routed separately from this package's npm release automation.
 # Review note, 2026-07-16: Issue #157 adds the native dataset-maintenance flow-identity capture/plan/freeze/seal/run/verify family inside existing command, remote-adapter, artifact, validation, and release routing. It adds no dependency, alternate auth, service-role, tag, or publishing path; the existing src/lib/dataset-*.ts, src/cli.ts, test/**, and governed-doc rules cover the implementation.
 # Review note, 2026-07-17: Issue #157 COMMON hardening remains inside the same flow-identity command, remote-adapter, artifact, validation, and release domains. Both Issue #29 derivative prerequisites require separate passed readbacks; HTTP-success `ok:false` envelopes are deterministic domain rejections; and verifier `pending` is limited to `derivatives_pending`. The protected runner now uses a database-enforced one-wrapper rotating permit as the cross-machine authority, a strict local approval claim as defense in depth, and a fresh exact recovery approval plus read-only scope lookup after permit or preflight-response loss. The remaining production gate is merge, Preview validation, and coordinated DB/CLI release, not an unresolved protocol design. No ownership, routing, dependency, auth, tag, or publishing rule changes are required.
 lastReviewedAt: '2026-07-17'
@@ -67,6 +68,7 @@ ownership:
           - src/lib/identity-preflight.ts
           - src/lib/io.ts
           - src/lib/lifecyclemodel-*.ts
+          - src/lib/lca-release.ts
           - src/lib/package-version.ts
           - src/lib/process-*.ts
           - src/lib/publish.ts
@@ -204,6 +206,7 @@ routing:
         - src/lib/identity-preflight.ts
         - src/lib/io.ts
         - src/lib/lifecyclemodel-*.ts
+        - src/lib/lca-release.ts
         - src/lib/package-version.ts
         - src/lib/process-*.ts
         - src/lib/publish.ts
@@ -213,6 +216,17 @@ routing:
         - src/lib/state-lock.ts
         - src/lib/tidas-languages.ts
         - docs/IMPLEMENTATION_GUIDE_CN.md
+    lca-data-release:
+      paths:
+        - src/cli.ts
+        - src/lib/lca-release.ts
+        - src/lib/http.ts
+        - test/lca-release*.test.ts
+        - README.md
+        - DEV_CN.md
+        - docs/IMPLEMENTATION_GUIDE_CN.md
+        - docs/agents/repo-architecture.md
+        - docs/agents/repo-validation.md
     tidas-sdk-validation:
       paths:
         - src/lib/tidas-sdk-validation.ts
@@ -388,6 +402,8 @@ rules:
       - path: src/lib/io.ts
         kind: shared-runtime
       - path: src/lib/lifecyclemodel-*.ts
+        kind: command-logic
+      - path: src/lib/lca-release.ts
         kind: command-logic
       - path: src/lib/package-version.ts
         kind: package-runtime

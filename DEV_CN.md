@@ -55,6 +55,8 @@ Review note, 2026-07-16: Issue #175 只修正 `run-protected` 对服务端领先
 
 Review note, 2026-07-16: Issue #182 只修正 protected 终态 verifier 的跨 JSON 序列化域比较，复用现有 plan、primary closure、RLS readback、snapshot 与 terminal proof；不新增 env、依赖、命令、认证、数据库/RPC 或发布机制。feature PR 不改包版本，后续仍通过独立 patch release、npm provenance 和 root integration 后才对既有 request 做 `--status-only`。
 
+Review note, 2026-07-16: Issue #186 新增 `release` LCI/LCIA 数据发布命令族。它复用现有三项 `TIANGONG_LCA_API_*` 用户 session 配置，不新增 release 专用 key，更不接收 service-role；私有读取和状态迁移由 Edge/Database 再检查实时账号的 `data_product_manager` 权限。CLI 只负责文件化输入、四个 ZIP 的本地完整性校验、稳定报告及下载后的 byte-size/SHA-256 校验。
+
 Review note, 2026-07-16: Issue #157 新增原生 `dataset maintenance flow-identity capture|plan|freeze|seal-approval|run|verify`，继续复用 Node 24、现有用户 session、authenticated Supabase RPC、私有 artifact 与独立 patch-release 流程；不新增 env、依赖、service-role、alternate bearer、本地发布或 Dev 数据回放。生产 Step 3 仍必须等待数据库能力发布、fresh live plan/freeze 和新的精确人工批准。
 
 Review note, 2026-07-17: Issue #157 COMMON 收紧要求两个 Issue #29 derivative prerequisite 各自提供独立 `passed` readback；HTTP 200 但 body 为 `ok:false` 时按确定性数据库 domain rejection 处理。process 被拒后，本 invocation 只做一次 fresh scope read，绝不重放 process；verify 只有在数据库状态恰为 `derivatives_pending` 且没有其他硬性 readback mismatch 时才返回 `pending`。受保护 runner 现以数据库签发、每次成功写后轮换的 one-wrapper permit 作为跨机器权威，并以 create-only 本地 approval claim 作纵深防御；permit 或 preflight 响应丢失后，必须重新冻结并取得精确 recovery approval，只能经严格只读 lookup 找回原 actor-owned scope。尚未完成的是 merge、Preview 验证与 DB/CLI 协同发布，而不是协议设计缺口。
@@ -101,6 +103,7 @@ Review note, 2026-07-17: Issue #157 COMMON 收紧要求两个 Issue #29 derivati
 - `tiangong-lca lifecyclemodel build-resulting-process`
 - `tiangong-lca lifecyclemodel publish-resulting-process`
 - `tiangong-lca lifecyclemodel orchestrate`
+- `tiangong-lca release prepare/upload/finalize/approve/publish/readback-verify/unpublish/status/current/calculation-bundle/calculation-artifact/artifact-download`
 - `tiangong-lca review process`
 - `tiangong-lca review flow`
 - `tiangong-lca review lifecyclemodel`
@@ -243,6 +246,7 @@ TIANGONG_LCA_UNSTRUCTURED_RETURN_TXT=true
 | `flow remediate` | 无 |
 | `flow publish-version` | `TIANGONG_LCA_API_BASE_URL`、`TIANGONG_LCA_API_KEY`、`TIANGONG_LCA_SUPABASE_PUBLISHABLE_KEY` |
 | `flow publish-reviewed-data` | 本地 dry-run 默认无；若 `--commit` 发布 prepared flow/process rows，则需要 `TIANGONG_LCA_API_BASE_URL`、`TIANGONG_LCA_API_KEY`、`TIANGONG_LCA_SUPABASE_PUBLISHABLE_KEY` |
+| `release *` | `TIANGONG_LCA_API_BASE_URL`、`TIANGONG_LCA_API_KEY`、`TIANGONG_LCA_SUPABASE_PUBLISHABLE_KEY`；写操作与私有结果读取还要求该 session 对应账号具备服务端 `data_product_manager` 权限，禁止配置 service-role |
 | `flow build-alias-map` | 无 |
 | `flow scan-process-flow-refs` | 无 |
 | `flow plan-process-flow-repairs` | 无 |

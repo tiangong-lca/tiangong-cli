@@ -48,6 +48,8 @@ finalize request 绑定 fresh whole-scope proof，attempt/domain-rejection/proof
 
 Review note, 2026-07-16: Issue #182 修正 protected 终态验证中的 JSON hash 域混用。独立 RLS row 继续用 CLI canonical hash 对齐 approved plan；已经过 closure SHA 校验的 primary `action_evidence` 用 PostgreSQL `jsonb::text` hash 对齐 fresh derivative snapshot；snapshot SHA 再对齐 terminal completed proof。不同序列化域不直接比较，证据缺失、重复、身份/owner/state/JSON 标志错误或任一同域 hash 漂移仍 fail-closed；数据库/RPC 与一次性 admission 契约不变。
 
+Review note, 2026-07-16: Issue #186 将 LCI/LCIA 数据发布的远程执行面收口为 `release` 命令族，但不把 20-stage release workflow、TIDAS identity/version 规则或包闭包算法复制进 CLI。CLI 复用用户 API key 换 session，服务端检查 `data_product_manager`，本地严格校验 Unit Process 与 standalone LifecycleModel+Result 两类包的 TIDAS/ILCD 四个 ZIP，并对 Calculation Bundle/ZIP 下载执行 exact-path、byte-size 与 SHA-256 校验。service-role 不属于该命令契约。
+
 ## 1. 目标
 
 `tiangong-lca-cli` 是 TianGong 的统一执行面。
@@ -134,6 +136,19 @@ tiangong-lca
     run
   validation
     run
+  release
+    prepare
+    upload
+    finalize
+    approve
+    publish
+    readback-verify
+    unpublish
+    status
+    current
+    calculation-bundle
+    calculation-artifact
+    artifact-download
   admin
     embedding-run
 ```
@@ -185,6 +200,7 @@ tiangong-lca
 | `tiangong-lca qa flow` | 本地 flow governance QA、rows-file 物化、artifact-first 报告输出、可选 CLI LLM 语义审核 |
 | `tiangong-lca publish run` | 本地 publish 契约归一化、dry-run/commit、`verification-report.json` 与 `publish-report.json` 输出；当提供 Supabase runtime 时默认通过共享 dataset command executor 提交 `lifecyclemodels` / `processes` / `sources` |
 | `tiangong-lca validation run` | 本地 `@tiangong-lca/tidas-sdk` 直接依赖校验收口 |
+| `tiangong-lca release ...` | LCI/LCIA 数据发布的 authenticated Edge transport；写入/私有读取由服务端 `data_product_manager` 权限保护，upload 固定校验四个 self-contained TIDAS/ILCD ZIP，Calculation Bundle 与 release artifact 固定落盘并执行大小/SHA-256 读回校验；不持有 service-role，也不重做 release control plane 的 identity/version/package 逻辑 |
 | `tiangong-lca admin embedding-run` | `embedding_ft` |
 
 此外，CLI 现在已经正式引入 `tiangong-lca lifecyclemodel ...` 一级命名空间，其中：
@@ -1072,6 +1088,7 @@ TIANGONG_LCA_COVERAGE=0
 - `qa process` 的可选语义审核统一走 QA-only 的 `TIANGONG_LCA_REVIEW_LLM_*`，不再引入 `OPENAI_*`
 - `qa flow` 的可选语义审核也统一走 QA-only 的 `TIANGONG_LCA_REVIEW_LLM_*`，不再引入 `OPENAI_*`
 - `publish run` / `validation run` 都是本地契约与执行收口，不新增远程 env
+- `release *` 复用既有 `TIANGONG_LCA_API_BASE_URL`、用户 `TIANGONG_LCA_API_KEY` 与 `TIANGONG_LCA_SUPABASE_PUBLISHABLE_KEY`；release 项目只继承这组三项，不读取或持久化 API key，CLI 也不接受 service-role
 - `TIANGONG_LCA_KB_SEARCH_*` 与 `TIANGONG_LCA_UNSTRUCTURED_*` 目前只属于 internal/preparatory 层，不属于公开命令契约
 
 命令级 env 矩阵：
@@ -1107,6 +1124,7 @@ TIANGONG_LCA_COVERAGE=0
 | `flow validate-processes` | 无 |
 | `publish run` | 无 |
 | `validation run` | 无 |
+| `release *` | `TIANGONG_LCA_API_BASE_URL`、`TIANGONG_LCA_API_KEY`、`TIANGONG_LCA_SUPABASE_PUBLISHABLE_KEY`；服务端对管理动作与私有结果读取额外要求 `data_product_manager` |
 
 ## 6. 质量门
 
