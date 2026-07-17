@@ -1,15 +1,7 @@
 import test, { afterEach } from 'node:test';
 import assert from 'node:assert/strict';
 import { createHash } from 'node:crypto';
-import {
-  chmodSync,
-  mkdirSync,
-  mkdtempSync,
-  readFileSync,
-  rmSync,
-  statSync,
-  writeFileSync,
-} from 'node:fs';
+import { mkdtempSync, readFileSync, rmSync, statSync, writeFileSync } from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import { CliError } from '../src/lib/errors.js';
@@ -882,29 +874,13 @@ test('next-action, summary, and human rendering stay bounded and explicit', () =
   );
 });
 
-test(
-  'writeOutput preserves its actionable error when temporary cleanup is unreachable',
-  { skip: process.platform === 'win32' },
-  () => {
-    const directory = tempDir();
-    const target = path.join(directory, 'result');
-    try {
-      mkdirSync(target);
-      chmodSync(target, 0o000);
-      assert.throws(
-        () =>
-          __testInternals.writeOutput(
-            path.join(target, 'child', 'x'),
-            Buffer.from('x'),
-            'x',
-            false,
-          ),
-        CliError,
-      );
-    } finally {
-      chmodSync(target, 0o700);
-      chmodSync(directory, 0o700);
-      rmSync(directory, { recursive: true, force: true });
-    }
-  },
-);
+test('writeOutput preserves its actionable error when temporary cleanup also fails', () => {
+  assert.throws(
+    () => __testInternals.writeOutput('\0', Buffer.from('x'), 'x', false),
+    (error) => {
+      assert.ok(error instanceof CliError);
+      assert.equal(error.code, 'LCA_RELEASE_OUTPUT_WRITE_FAILED');
+      return true;
+    },
+  );
+});
