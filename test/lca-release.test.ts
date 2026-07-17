@@ -294,7 +294,9 @@ test('upload obtains canonical signed URLs, uploads bytes, and writes a secret-f
     assert.equal(report.complete, true);
     assert.equal(storagePuts.length, 4);
     assert.equal(report.output?.path, outputPath);
-    assert.equal(statSync(outputPath).mode & 0o777, 0o600);
+    if (process.platform !== 'win32') {
+      assert.equal(statSync(outputPath).mode & 0o777, 0o600);
+    }
     const receiptText = readFileSync(outputPath, 'utf8');
     assert.doesNotMatch(receiptText, /token-/u);
     assert.doesNotMatch(receiptText, /signedUploadUrl/u);
@@ -880,20 +882,29 @@ test('next-action, summary, and human rendering stay bounded and explicit', () =
   );
 });
 
-test('writeOutput preserves its actionable error when temporary cleanup is unreachable', () => {
-  const directory = tempDir();
-  const target = path.join(directory, 'result');
-  try {
-    mkdirSync(target);
-    chmodSync(target, 0o000);
-    assert.throws(
-      () =>
-        __testInternals.writeOutput(path.join(target, 'child', 'x'), Buffer.from('x'), 'x', false),
-      CliError,
-    );
-  } finally {
-    chmodSync(target, 0o700);
-    chmodSync(directory, 0o700);
-    rmSync(directory, { recursive: true, force: true });
-  }
-});
+test(
+  'writeOutput preserves its actionable error when temporary cleanup is unreachable',
+  { skip: process.platform === 'win32' },
+  () => {
+    const directory = tempDir();
+    const target = path.join(directory, 'result');
+    try {
+      mkdirSync(target);
+      chmodSync(target, 0o000);
+      assert.throws(
+        () =>
+          __testInternals.writeOutput(
+            path.join(target, 'child', 'x'),
+            Buffer.from('x'),
+            'x',
+            false,
+          ),
+        CliError,
+      );
+    } finally {
+      chmodSync(target, 0o700);
+      chmodSync(directory, 0o700);
+      rmSync(directory, { recursive: true, force: true });
+    }
+  },
+);
