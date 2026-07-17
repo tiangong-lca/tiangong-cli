@@ -78,6 +78,8 @@ Review note, 2026-07-16: Issue #184 changes the package version to 0.0.28 and up
 
 Review note, 2026-07-16: Issue #186 introduces `src/lib/lca-release.ts` as the CLI transport boundary for LCI/LCIA data releases. The standalone release repository owns the 20-stage workflow and canonical plan construction; Edge and Database own authorization/state transitions. The CLI exchanges only a user API key for a session, verifies the exact four-ZIP set before signed upload, derives the publish credential fingerprint locally, and verifies durable byte size/SHA-256 before exposing downloaded bundle or release artifacts.
 
+Review note, 2026-07-17: Issue #191 changes only platform-specific assertions in `test/lca-release.test.ts`. The LCI/LCIA transport, artifact writer, command surface, filesystem architecture, and release workflow remain unchanged; POSIX mode and chmod failure semantics continue to be tested on platforms that implement them.
+
 ## Stable Path Map
 
 | Path group | Role |

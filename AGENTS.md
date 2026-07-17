@@ -85,6 +85,8 @@ Review note, 2026-07-16: Issue #184 is the dedicated 0.0.28 version-bump release
 
 Review note, 2026-07-16: Issue #186 adds the CLI-owned `release` transport for LCI/LCIA data releases. The standalone release control plane remains the workflow owner, Edge/Database remain the authorization and state-machine owners, and this repo owns file-first command parsing, user-session exchange, exact four-ZIP upload verification, stable reports, and hash-verified downloads. The CLI never receives a service-role key; private and mutating operations depend on a server-verified `data_product_manager` account.
 
+Review note, 2026-07-17: Issue #191 changes only LCI/LCIA release tests so the four-platform matrix asserts POSIX mode bits and chmod-based cleanup failures only where those semantics exist. Runtime behavior, command ownership, credentials, release automation, and workspace-integration requirements are unchanged.
+
 ## Bootstrap Order
 
 Load docs in this order:

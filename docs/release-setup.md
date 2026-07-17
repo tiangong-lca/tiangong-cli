@@ -67,6 +67,8 @@ Review note, 2026-07-16: Issue #184 publishes 0.0.28 through the existing merge-
 
 Review note, 2026-07-16: Issue #186 requires no new GitHub secret, npm token, Trusted Publisher setting, workflow, or tag rule. The LCI/LCIA data-release runtime uses an operator's existing user API key and publishable key outside GitHub Actions; a service-role key must not be configured in the CLI or standalone release project.
 
+Review note, 2026-07-17: Issue #191 is a test-only Windows portability prerequisite for CLI 0.0.29. It requires no new secret, runner, environment, Trusted Publisher setting, workflow, tag rule, credential, or database change.
+
 Review note, 2026-07-16: Issue #157's flow-identity workflow requires no new npm secret, GitHub environment, Trusted Publisher setting, workflow filename, tag rule, service-role credential, or alternate CLI authentication variable. It follows the unchanged feature PR, separate version-bump PR, automated tag, and Trusted Publishing path.
 
 Review note, 2026-07-17: Issue #157 COMMON hardening still requires no new npm secret, GitHub environment, Trusted Publisher setting, workflow filename, tag rule, or release credential. The DB/CLI contract now supplies the cross-machine one-wrapper rotating permit, a create-only local claim as defense in depth, and a separately frozen and approved recovery path with read-only scope lookup. Production remains gated on merge, Preview validation, and coordinated DB/CLI release.

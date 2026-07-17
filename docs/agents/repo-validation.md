@@ -100,6 +100,8 @@ Review note, 2026-07-16: Issue #178 keeps the validation contract unchanged for 
 
 Review note, 2026-07-16: Issue #186 adds focused LCI/LCIA release proof for command dispatch, masked dry-runs, exact four-profile ZIP validation, signed-upload metadata binding, manager authorization error preservation, Calculation Bundle path allowlisting, atomic private outputs, overwrite refusal, and exact size/SHA-256 verification for every download. The full `src/**/*.ts` coverage requirement remains 100%, and no live mutation test may use a service-role credential.
 
+Review note, 2026-07-17: Issue #191 keeps the validation contract unchanged while making two LCI/LCIA release permission assertions platform-appropriate. POSIX platforms retain the `0600` output-mode and unreachable-cleanup checks; Windows must pass the same functional, integrity, secrecy, full-coverage, and four-platform gates without pretending to enforce POSIX chmod semantics.
+
 ## Validation Matrix
 
 | Change type | Minimum local proof | Additional proof when risk is higher | Notes |
