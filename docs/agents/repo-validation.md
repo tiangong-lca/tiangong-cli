@@ -28,7 +28,7 @@ checkPaths:
   - scripts/docpact-gate.sh
   - scripts/install-git-hooks.sh
 lastReviewedAt: 2026-07-17
-lastReviewedCommit: 497ac46bba02297b46cee255429371bf20074487
+lastReviewedCommit: 670acda2dd05a8ddae3d1968720c2ea176fb1b16
 related:
   - ../../AGENTS.md
   - ../../.docpact/config.yaml
@@ -101,6 +101,8 @@ Review note, 2026-07-16: Issue #178 keeps the validation contract unchanged for 
 Review note, 2026-07-16: Issue #186 adds focused LCI/LCIA release proof for command dispatch, masked dry-runs, exact four-profile ZIP validation, signed-upload metadata binding, manager authorization error preservation, Calculation Bundle path allowlisting, atomic private outputs, overwrite refusal, and exact size/SHA-256 verification for every download. The full `src/**/*.ts` coverage requirement remains 100%, and no live mutation test may use a service-role credential.
 
 Review note, 2026-07-17: Issue #191 keeps the validation contract unchanged while making two LCI/LCIA release permission assertions platform-appropriate. POSIX platforms retain the `0600` output-mode and unreachable-cleanup checks; Windows must pass the same functional, integrity, secrecy, full-coverage, and four-platform gates without pretending to enforce POSIX chmod semantics.
+
+Review note, 2026-07-17: Issue #189 keeps the validation contract unchanged for the dedicated 0.0.29 release. In addition to the exact-coverage and pre-push gates, release proof requires unpublished-version and absent-tag checks, all four live CLI-version fixtures at 0.0.29, dry-run package inspection, AI Doc Lint, Docpact, and the release-time platform matrix before npm publication.
 
 ## Validation Matrix
 

@@ -23,7 +23,7 @@ checkPaths:
   - scripts/docpact-gate.sh
   - scripts/install-git-hooks.sh
 lastReviewedAt: 2026-07-17
-lastReviewedCommit: 1aa9b58f7a62f50d2cb680f372452fe829686d75
+lastReviewedCommit: 670acda2dd05a8ddae3d1968720c2ea176fb1b16
 related:
   - ../AGENTS.md
   - ../.docpact/config.yaml
@@ -54,6 +54,8 @@ Review note, 2026-07-16: Issue #184 is that separate 0.0.28 release. It must pro
 Review note, 2026-07-16: Issue #186 adds an LCI/LCIA data-release command family but does not change this npm package-release procedure. The feature PR keeps package metadata unchanged and must pass focused release command tests, exact coverage, docpact, and the full pre-push gate; any later npm publication remains a separate version-bump PR through the existing tag and Trusted Publishing workflows.
 
 Review note, 2026-07-17: Issue #191 fixes two Windows-only permission-test assumptions before the 0.0.29 release without changing package metadata or release mechanics. The test-only prerequisite must pass all four quality-matrix platforms before the existing dedicated version-bump PR is updated and merged.
+
+Review note, 2026-07-17: Issue #189 is that separate 0.0.29 release. It must prove the version and tag are absent, retain exact coverage, pass AI Doc Lint and Docpact, and use only the merge-triggered tag plus tag-triggered npm Trusted Publishing workflows. Local publish and manual tag creation remain forbidden; npm provenance and `gitHead` must match the immutable release merge commit before workspace integration.
 
 Review note, 2026-07-16: Issue #157 adds the Step 3 flow-identity feature without changing package metadata or release mechanics. Its feature PR must pass the exact DB contract, production-scale Preview capture timing, 100% CLI coverage, Docpact, and the full pre-push gate. A separate patch version-bump PR may begin only after database-engine #235 is promoted and deployed; production capture/plan/freeze still requires the released CLI plus a fresh exact human approval.
 
