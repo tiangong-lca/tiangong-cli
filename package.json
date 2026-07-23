@@ -1,6 +1,6 @@
 {
   "name": "@tiangong-lca/cli",
-  "version": "0.0.29",
+  "version": "0.0.30",
   "description": "Unified TianGong LCA CLI with direct REST adapters and low-entropy command surface.",
   "repository": {
     "type": "git",

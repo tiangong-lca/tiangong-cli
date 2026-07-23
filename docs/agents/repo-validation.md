@@ -28,7 +28,7 @@ checkPaths:
   - scripts/docpact-gate.sh
   - scripts/install-git-hooks.sh
 lastReviewedAt: 2026-07-23
-lastReviewedCommit: 5c90ddd60328748ab6d8d89717e59dcaeca8cde7
+lastReviewedCommit: 8c47d832617ac6dad19f01f766e14fdfe97ce4c3
 related:
   - ../../AGENTS.md
   - ../../.docpact/config.yaml
@@ -105,6 +105,8 @@ Review note, 2026-07-17: Issue #191 keeps the validation contract unchanged whil
 Review note, 2026-07-17: Issue #189 keeps the validation contract unchanged for the dedicated 0.0.29 release. In addition to the exact-coverage and pre-push gates, release proof requires unpublished-version and absent-tag checks, all four live CLI-version fixtures at 0.0.29, dry-run package inspection, AI Doc Lint, Docpact, and the release-time platform matrix before npm publication.
 
 Review note, 2026-07-23: Issue #194 adds focused proof for ordered contract binding, stable action-ledger replay exclusion across copied contract/output paths, exact insert/update before-state checks, crash/orphan recovery, ambiguous transport readback, dependency isolation, owner/project mismatch, ledger corruption, and zero-dispatch parser/preflight failures. The same exact 100% `src/**/*.ts`, lint, build, docpact, and pre-push gates remain authoritative.
+
+Review note, 2026-07-23: Issue #196 keeps the validation contract unchanged for the dedicated 0.0.30 release. Release proof requires unpublished-version and absent-tag checks, all four live CLI-version fixtures at 0.0.30, exact 100% coverage, dry-run package inspection, Docpact, tag/publish workflows, and npm provenance with an exact release `gitHead`.
 
 ## Validation Matrix
 

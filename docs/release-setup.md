@@ -20,7 +20,7 @@ checkPaths:
   - scripts/docpact-gate.sh
   - scripts/install-git-hooks.sh
 lastReviewedAt: 2026-07-23
-lastReviewedCommit: 5c90ddd60328748ab6d8d89717e59dcaeca8cde7
+lastReviewedCommit: 8c47d832617ac6dad19f01f766e14fdfe97ce4c3
 related:
   - ../AGENTS.md
   - ../.docpact/config.yaml
@@ -76,6 +76,8 @@ Review note, 2026-07-16: Issue #157's flow-identity workflow requires no new npm
 Review note, 2026-07-17: Issue #157 COMMON hardening still requires no new npm secret, GitHub environment, Trusted Publisher setting, workflow filename, tag rule, or release credential. The DB/CLI contract now supplies the cross-machine one-wrapper rotating permit, a create-only local claim as defense in depth, and a separately frozen and approved recovery path with read-only scope lookup. Production remains gated on merge, Preview validation, and coordinated DB/CLI release.
 
 Review note, 2026-07-23: Issue #194 requires no new npm secret, GitHub environment, Trusted Publisher setting, workflow filename, tag rule, service-role credential, or alternate CLI authentication variable. Its stable user-state execution ledger is local runtime state, not release infrastructure; the feature follows the unchanged feature PR, separate version-bump PR, automated tag, and Trusted Publishing path.
+
+Review note, 2026-07-23: Issue #196 publishes 0.0.30 through the existing merge-triggered tag and npm Trusted Publishing workflows. It requires no new secret, environment, runner, Trusted Publisher setting, workflow filename, tag rule, service-role credential, or alternate CLI authentication variable.
 
 Review note, 2026-07-13: exact-count maintenance pagination requires no repository secret, Trusted Publisher, environment, workflow filename, or tag-semantics change.
 
