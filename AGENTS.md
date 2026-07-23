@@ -32,8 +32,8 @@ checkPaths:
   - scripts/docpact
   - scripts/docpact-gate.sh
   - scripts/install-git-hooks.sh
-lastReviewedAt: 2026-07-23
-lastReviewedCommit: 4daf99c1b0b0fe3e084b5903163cdf6b11fe4de2
+lastReviewedAt: 2026-07-24
+lastReviewedCommit: 0cbbf9cef373675ad39ae2b8103003d05b48ccb8
 related:
   - .docpact/config.yaml
   - docs/agents/repo-validation.md
@@ -94,6 +94,8 @@ Review note, 2026-07-23: Issue #194 extends `dataset save-draft` with an explici
 Review note, 2026-07-23: Issue #196 is the dedicated 0.0.30 release for merged Issue #194 / PR #195. Windows release-gate evidence exposed that `fsync` on a reopened read-only execution-ledger descriptor returns `EPERM`; the release now fsyncs create/append operations on their write-capable descriptors before close. Attempt-before-dispatch ordering, no-replay semantics, dependencies, authorization, tag automation, npm Trusted Publishing, provenance verification, and exact released-commit workspace integration remain unchanged.
 
 Review note, 2026-07-23: Issue #198 releases 0.0.31 and makes dataset save-draft validation side-effect free. SDK schema/entity validation receives a deep clone, while execution-contract hashing, dispatch, and readback remain bound to the original exact input payload. Owner/state/project fencing, attempt-before-dispatch ordering, no-replay semantics, command ownership, and publication boundaries remain unchanged.
+
+Review note, 2026-07-24: Issue #200 releases 0.0.32 and makes large ordered owner-draft contracts finish within the authenticated session window. `--max-parallel` remains opt-in and capped at 8: every action through the highest referenced dependency stays serial, and only the remaining unique-target suffix can overlap. The command resolves and revalidates the exact owner token immediately before each DML dispatch. Attempt-before-dispatch durability, exact readback, dependency blocking, UNKNOWN/success no-replay, and all public/foreign/publication/delete/state/schema/service-role prohibitions remain unchanged.
 
 ## Bootstrap Order
 

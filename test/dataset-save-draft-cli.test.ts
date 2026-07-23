@@ -275,6 +275,7 @@ test('executeCli exposes generic dataset save-draft for support rows', async () 
   assert.equal(help.exitCode, 0);
   assert.match(help.stdout, /tiangong-lca dataset save-draft --input <file>/u);
   assert.match(help.stdout, /auto, contact, source, flow, process/u);
+  assert.match(help.stdout, /--max-parallel <1-8>/u);
   assert.match(help.stdout, /Unit group and flow property rows are reference-only/u);
 
   const result = await executeCli(
@@ -290,6 +291,8 @@ test('executeCli exposes generic dataset save-draft for support rows', async () 
       'contact-save',
       '--execution-contract',
       'contract.json',
+      '--max-parallel',
+      '8',
       '--commit',
     ],
     makeDeps({
@@ -310,6 +313,7 @@ test('executeCli exposes generic dataset save-draft for support rows', async () 
     commit: true,
     allowReferenceOnlySupport: false,
     executionContractPath: 'contract.json',
+    maxParallel: 8,
     env: {},
     fetchImpl: (observed[0] as { fetchImpl: unknown }).fetchImpl,
   });
@@ -339,6 +343,25 @@ test('executeCli maps generic dataset save-draft failures and rejects mode confl
   );
   assert.equal(conflict.exitCode, 2);
   assert.match(conflict.stderr, /Cannot pass both --commit and --dry-run/u);
+
+  for (const invalid of ['0', '9', '1.5', 'nope']) {
+    const invalidParallel = await executeCli(
+      [
+        'dataset',
+        'save-draft',
+        '--input',
+        'contacts.jsonl',
+        '--execution-contract',
+        'contract.json',
+        '--max-parallel',
+        invalid,
+        '--commit',
+      ],
+      makeDeps(),
+    );
+    assert.equal(invalidParallel.exitCode, 2);
+    assert.match(invalidParallel.stderr, /integer from 1 to 8/u);
+  }
 });
 
 test('dataset save-draft rejects explicit reference-only support types', () => {

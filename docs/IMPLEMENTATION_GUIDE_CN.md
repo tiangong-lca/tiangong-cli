@@ -16,8 +16,8 @@ checkPaths:
   - README.md
   - src/**
   - test/**
-lastReviewedAt: 2026-07-23
-lastReviewedCommit: 5c90ddd60328748ab6d8d89717e59dcaeca8cde7
+lastReviewedAt: 2026-07-24
+lastReviewedCommit: 0cbbf9cef373675ad39ae2b8103003d05b48ccb8
 related:
   - ../AGENTS.md
   - ../.docpact/config.yaml
@@ -55,6 +55,8 @@ Review note, 2026-07-23: Issue #194 为通用 `dataset save-draft` 增加 opt-in
 Review note, 2026-07-23: Issue #196 在发布 0.0.30 前补齐 Windows 持久化兼容性。execution ledger 的首次创建和后续追加均在可写文件描述符上完成写入与 `fsync` 后再关闭，不再重新以只读方式打开后执行 Windows 会拒绝的 `fsync`。attempt-before-dispatch、每行事件顺序、exact readback 恢复及成功行不重放语义保持不变。
 
 Review note, 2026-07-23: Issue #198 发布 0.0.31 并将 SDK schema/entity 校验隔离到 payload 深拷贝。原始 JSON 不再被校验器隐式补默认值，execution-contract SHA、受保护 command dispatch 与 exact owner readback 始终引用同一输入；无效行仍在 prepared failure 阶段被拦截，owner/state/project、attempt-before-dispatch 与不重放语义不变。
+
+Review note, 2026-07-24: Issue #200 发布 0.0.32，为大规模 execution contract 增加显式 `--max-parallel 1..8`。调度器先找出所有 dependency 所引用 action 的最大序号，该序号及其之前的完整前缀严格串行并完成 exact readback；只有后续 table/id/version 唯一的 suffix 可以有界并发。每次 DML 前通过既有 session runtime 取得当前 token，并再次核对 user/email；续期成 foreign owner 时在 attempt=0 阻断。每行独立 protected transaction、ledger、UNKNOWN/成功不重放与全部写入禁止项不变。
 
 ## 1. 目标
 
@@ -284,7 +286,7 @@ tiangong-lca
 - 已实现的 `dataset classification` 从 CLI bundled TIDAS schema 提供分类/位置编码治理：`children` 支持按 parent code 步进列子类，`path` 解析 code 的规范 path，`audit --type location` 按 bundled TIDAS schema 派生位置编码字段，并覆盖 TIDAS LCIA geography 和 lifecyclemodel connection location 字段，检查其值是否属于 `tidas_locations_category.json`；`apply --type location` 把 AI/human structured decision 确定性写回 rows 并输出 evidence，当 decision 明确给出 schema-derived location 字段的 `target_path`（如 `flowDataSet.flowInformation.geography.locationOfSupply`）时可创建缺失父对象和字段，缺少 target 或非 location 路径仍保持阻断
 - 已实现的 `dataset curation-queue build/next/verify` 把 Foundry external dataset import 的 support / flow / process rows 收口成 entity-level queue artifact contract：`build` 生成 `curation-queue-manifest.json`、`curation-queue-tasks.jsonl`、`curation-queue-locks.json`、`curation-queue-blockers.jsonl`，以及每个 entity 的 `input.jsonl`、`closure.json`、`entity-run-plan.json`；`next` 读取 task checkpoint 并返回下一条 runnable entity task；`verify` 确认目标 scope 的 checkpoint 完成且没有 build blocker。CLI 只负责稳定状态机、依赖闭包、锁和 blocker；AI authoring 仍必须通过 skill/Codex 输出 structured patch 或 build plan，并在 deterministic apply、schema/QA、prewrite verify、readback 后才允许进入远端写入。
 - 已实现的 `dataset references rewrite` 把 process / lifecyclemodel rows 中的 flow reference rewrite 收口到一个 deterministic 本地入口，默认只写 patch artifacts，只有显式 `--commit` 时才调用 state-aware save-draft 写入路径
-- 已实现的 `dataset save-draft --execution-contract` 读取 `dataset-save-draft-execution-contract.v1`，逐 action 校验 authenticated project/owner、state 0、input identity/order、desired payload hash、expected operation、before hash 与 earlier-only dependencies。账本不放在 contract/out-dir 旁，而放在稳定的 per-owner/project 用户状态根下，并以 `action_id@desired_sha256` 寻址；复制输入或输出目录不会获得新的 attempt。attempt 之后只做 exact owner/state/payload readback，terminal/unknown action 均永不重投；dependency 只阻断后继，independent unresolved actions 仍可继续。每个远端调用继续使用现有 protected platform dataset transaction，不新增 raw SQL/direct-table/service-role/publication/delete/state/schema 写面。
+- 已实现的 `dataset save-draft --execution-contract` 读取 `dataset-save-draft-execution-contract.v1`，逐 action 校验 authenticated project/owner、state 0、input identity/order、desired payload hash、expected operation、before hash 与 earlier-only dependencies。账本不放在 contract/out-dir 旁，而放在稳定的 per-owner/project 用户状态根下，并以 `action_id@desired_sha256` 寻址；复制输入或输出目录不会获得新的 attempt。`--max-parallel` 默认 1、上限 8：dependency prefix 保持串行，只有 target 唯一的 suffix 可并发；每次 DML 前重新取得并核对 exact owner token。attempt 之后只做 exact owner/state/payload readback，terminal/unknown action 均永不重投；dependency 只阻断后继，independent unresolved actions 仍可继续。每个远端调用继续使用现有 protected platform dataset transaction，不新增 raw SQL/direct-table/service-role/publication/delete/state/schema 写面。
 - 已实现的 `dataset maintenance clear-account` 只覆盖当前认证账号的 draft 清空场景：CLI 必须先以 exact-count 分页证明五个可删除表的 RLS 可见快照完整，才写出 `rls-visible-snapshot.json` / `dry-run-report.json`；commit 时要求 `--confirm` 匹配当前账号邮箱，并逐行调用平台 `app_dataset_delete`。除逐表检查外，结束时必须重新扫描全部五表，只有完整 aggregate proof 且 `row_count=0` 才报告成功；若终检失败而之前已有删除，仍写出 `completed_with_failures` 审计报告。初始扫描不完整时不生成快照/approval，且零删除。该命令不绕过 RLS，不直接 REST DELETE，不删除默认保护的 `unitgroups` / `flowproperties`。
 - 已实现的 `dataset maintenance plan/apply/freeze-protected/seal-protected-approval/run-protected/verify` 是错误导入清理、redo 与受保护衍生重建的 row-level 归属面。`plan` 先证明当前用户 account scan 完整，再固化 scope manifest、RLS 可见快照、completeness proof、引用影响、保护行、不可变 plan 和 dry-run。普通 `apply` 只接受 plan SHA-256 与当前账号邮箱都匹配的显式 commit；固定 production alias profile 必须依次经过 production 只读 `freeze-protected`、人类逐字批准、完全离线 `seal-protected-approval`，然后才可进入 `run-protected`，其 `--status-only` 恢复不做 preflight 或 admission。`verify` 以新的完整 account readback 或 action-scoped DB readback 独立检查结果，不依赖 apply 的内存或报告结论。Foundry 只调用已发布 CLI、保存 task ledger/报告/产物，不读取数据库 env、直调 RPC 或重算 canonical hash。
 - `merge-support-aliases` 不是通用 alias 合并器：当前只接受 BAFU `time` 与 `length_time` 两个 batch。计划必须精确覆盖 25 + 27 行和 20 + 39 条 exchange，并保留受影响 process 中的 309 条其他 exchange。原 V1 adapter 只保留冻结请求/artifact 兼容契约，不能作为 seal 绑定 production 执行的 fallback；受保护路径绝不降级为旧 `cmd_dataset_alias_plan_guarded`、逐 dimension 或逐行 `save_draft`。

@@ -399,6 +399,227 @@ test('execution contract runs ordered insert/update once and skips terminal rows
   }
 });
 
+test('execution contract keeps the dependency prefix serial and bounds the unique suffix', async () => {
+  const dir = mkdtempSync(path.join(os.tmpdir(), 'tg-cli-execution-contract-parallel-'));
+  const desired = [
+    flow('10000000-0000-0000-0000-000000000001', 'Prefix one'),
+    flow('10000000-0000-0000-0000-000000000002', 'Prefix two'),
+    flow('10000000-0000-0000-0000-000000000003', 'Suffix three'),
+    flow('10000000-0000-0000-0000-000000000004', 'Suffix four'),
+    flow('10000000-0000-0000-0000-000000000005', 'Suffix five'),
+    flow('10000000-0000-0000-0000-000000000006', 'Suffix six'),
+  ];
+  const state = new Map<string, JsonObject>();
+  const writes: string[] = [];
+  const baseFetch = executionFetch({ state, writes });
+  const starts: string[] = [];
+  const prefixActive: number[] = [];
+  let active = 0;
+  let maxActive = 0;
+  const fetchImpl: FetchLike = async (input, init) => {
+    if (String(input).includes('/functions/v1/app_dataset_')) {
+      const body = JSON.parse(String(init?.body)) as { id: string };
+      active += 1;
+      maxActive = Math.max(maxActive, active);
+      starts.push(body.id);
+      if (
+        body.id === identity(desired[0] as JsonObject).id ||
+        body.id === identity(desired[1] as JsonObject).id
+      ) {
+        prefixActive.push(active);
+      }
+      await new Promise((resolve) => setTimeout(resolve, 15));
+      try {
+        return await baseFetch(input, init);
+      } finally {
+        active -= 1;
+      }
+    }
+    return baseFetch(input, init);
+  };
+  const contractPath = writeContract(
+    dir,
+    contract({
+      desired,
+      dependencies: [[], [], ['action-2'], [], [], []],
+    }),
+  );
+
+  try {
+    const report = await runDatasetSaveDraft({
+      inputPath: path.join(dir, 'rows.json'),
+      rawInput: { rows: desired },
+      type: 'flow',
+      outDir: path.join(dir, 'out'),
+      commit: true,
+      executionContractPath: contractPath,
+      maxParallel: 3,
+      env: executionEnv(dir, 'parallel'),
+      fetchImpl,
+    });
+
+    assert.equal(report.status, 'completed');
+    assert.deepEqual(prefixActive, [1, 1]);
+    assert.equal(maxActive, 3);
+    assert.deepEqual(
+      starts.slice(0, 2),
+      desired.slice(0, 2).map((row) => identity(row).id),
+    );
+    assert.deepEqual(
+      report.rows.map((row) => row.id),
+      desired.map((row) => identity(row).id),
+    );
+    assert.deepEqual(report.execution_contract, {
+      path: path.resolve(contractPath),
+      sha256: sha256Json(
+        __testInternals.parseExecutionContract(
+          contract({ desired, dependencies: [[], [], ['action-2'], [], [], []] }),
+        ),
+      ),
+      execution_id: 'generic-owner-draft-batch-1',
+      target_mode: 'owner_draft',
+      max_parallel: 3,
+      serial_prefix_actions: 2,
+      parallel_suffix_actions: 4,
+    });
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+test('execution contract renews the exact owner token before DML and rejects a foreign renewal', async () => {
+  const runCase = async (
+    foreignRenewal: boolean,
+  ): Promise<{
+    report: Awaited<ReturnType<typeof runDatasetSaveDraft>>;
+    authCalls: number;
+    edgeTokens: Array<string | null>;
+    writes: string[];
+  }> => {
+    const dir = mkdtempSync(path.join(os.tmpdir(), 'tg-cli-execution-contract-renew-'));
+    const desired = flow(
+      foreignRenewal
+        ? '20000000-0000-0000-0000-000000000002'
+        : '20000000-0000-0000-0000-000000000001',
+      foreignRenewal ? 'Foreign renewal' : 'Exact renewal',
+    );
+    const state = new Map<string, JsonObject>();
+    const writes: string[] = [];
+    const edgeTokens: Array<string | null> = [];
+    const baseFetch = executionFetch({ state, writes });
+    const firstToken = jwtWithPayload({ sub: 'user-1', email: 'user@example.com', seq: 1 });
+    const renewedToken = jwtWithPayload({
+      sub: foreignRenewal ? 'foreign-user' : 'user-1',
+      email: foreignRenewal ? 'foreign@example.com' : 'user@example.com',
+      seq: 2,
+    });
+    let authCalls = 0;
+    const fetchImpl: FetchLike = async (input, init) => {
+      const url = String(input);
+      if (isSupabaseAuthTokenUrl(url)) {
+        authCalls += 1;
+        return makeSupabaseAuthResponse({
+          accessToken: authCalls === 1 ? firstToken : renewedToken,
+          refreshToken: 'renew-owner-session',
+          expiresAt: authCalls === 1 ? Math.floor(Date.now() / 1000) + 60 : 4_102_444_800,
+          userId: foreignRenewal && authCalls > 1 ? 'foreign-user' : 'user-1',
+          email: foreignRenewal && authCalls > 1 ? 'foreign@example.com' : 'user@example.com',
+        });
+      }
+      if (url.includes('/functions/v1/app_dataset_')) {
+        edgeTokens.push(new Headers(init?.headers).get('authorization'));
+      }
+      return baseFetch(input, init);
+    };
+    const contractPath = writeContract(dir, contract({ desired: [desired] }));
+    try {
+      const report = await runDatasetSaveDraft({
+        inputPath: path.join(dir, 'rows.json'),
+        rawInput: { rows: [desired] },
+        type: 'flow',
+        outDir: path.join(dir, 'out'),
+        commit: true,
+        executionContractPath: contractPath,
+        env: executionEnv(dir, foreignRenewal ? 'foreign-renewal' : 'exact-renewal'),
+        fetchImpl,
+      });
+      return { report, authCalls, edgeTokens, writes };
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
+  };
+
+  const exact = await runCase(false);
+  assert.equal(exact.report.status, 'completed');
+  assert.ok(exact.authCalls >= 2);
+  assert.deepEqual(exact.edgeTokens, [
+    `Bearer ${jwtWithPayload({ sub: 'user-1', email: 'user@example.com', seq: 2 })}`,
+  ]);
+  assert.equal(exact.writes.length, 1);
+
+  const foreign = await runCase(true);
+  assert.equal(foreign.report.status, 'completed_with_failures');
+  assert.equal(foreign.report.counts.attempts_consumed, 0);
+  assert.match(foreign.report.rows[0]?.error?.message ?? '', /Renewed owner session/u);
+  assert.deepEqual(foreign.edgeTokens, []);
+  assert.deepEqual(foreign.writes, []);
+});
+
+test('execution contract rejects unsafe parallel configuration before DML', async () => {
+  const dir = mkdtempSync(path.join(os.tmpdir(), 'tg-cli-execution-contract-parallel-guard-'));
+  const first = flow('30000000-0000-0000-0000-000000000001', 'First');
+  const repeated = flow('30000000-0000-0000-0000-000000000001', 'Repeated target');
+  const state = new Map<string, JsonObject>();
+  const writes: string[] = [];
+  const fetchImpl = executionFetch({ state, writes });
+  const contractPath = writeContract(dir, contract({ desired: [first, repeated] }));
+  const invalidContractDir = path.join(dir, 'invalid-contract');
+  mkdirSync(invalidContractDir);
+  try {
+    await assert.rejects(
+      runDatasetSaveDraft({
+        inputPath: path.join(dir, 'rows.json'),
+        rawInput: { rows: [first, repeated] },
+        type: 'flow',
+        outDir: path.join(dir, 'duplicate-out'),
+        commit: true,
+        executionContractPath: contractPath,
+        maxParallel: 2,
+        env: executionEnv(dir, 'duplicate-target'),
+        fetchImpl,
+      }),
+      /parallel suffix contains a repeated/u,
+    );
+    await assert.rejects(
+      runDatasetSaveDraft({
+        inputPath: path.join(dir, 'rows.json'),
+        rawInput: { rows: [first] },
+        type: 'flow',
+        outDir: path.join(dir, 'invalid-out'),
+        commit: true,
+        executionContractPath: writeContract(invalidContractDir, contract({ desired: [first] })),
+        maxParallel: 0,
+        env: executionEnv(dir, 'invalid-parallel'),
+        fetchImpl,
+      }),
+      /integer from 1 to 8/u,
+    );
+    await assert.rejects(
+      runDatasetSaveDraft({
+        inputPath: path.join(dir, 'rows.json'),
+        rawInput: { rows: [first] },
+        type: 'flow',
+        outDir: path.join(dir, 'ordinary-out'),
+        maxParallel: 2,
+      }),
+      /requires --execution-contract/u,
+    );
+    assert.deepEqual(writes, []);
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+});
+
 test('execution contract recovers lost success, terminalizes unknown, blocks dependents, and continues independent rows', async () => {
   const dir = mkdtempSync(path.join(os.tmpdir(), 'tg-cli-execution-contract-recovery-'));
   const lostSuccess = flow('11111111-1111-1111-1111-111111111111', 'Lost success');

@@ -627,7 +627,7 @@ test('flow-identity CLI dispatches all recovery actions with exact options', asy
     confirm: 'owner@example.com',
     approvedAtUtc: '2026-07-16T05:20:00.000Z',
     recoveryReason: 'process_response_ambiguous',
-    cliVersion: '0.0.31',
+    cliVersion: '0.0.32',
     outDir: 'recovery-freeze-out',
     timeoutMs: 5000,
     env: {},
