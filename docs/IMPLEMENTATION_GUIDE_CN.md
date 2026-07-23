@@ -54,6 +54,8 @@ Review note, 2026-07-23: Issue #194 为通用 `dataset save-draft` 增加 opt-in
 
 Review note, 2026-07-23: Issue #196 在发布 0.0.30 前补齐 Windows 持久化兼容性。execution ledger 的首次创建和后续追加均在可写文件描述符上完成写入与 `fsync` 后再关闭，不再重新以只读方式打开后执行 Windows 会拒绝的 `fsync`。attempt-before-dispatch、每行事件顺序、exact readback 恢复及成功行不重放语义保持不变。
 
+Review note, 2026-07-23: Issue #198 发布 0.0.31 并将 SDK schema/entity 校验隔离到 payload 深拷贝。原始 JSON 不再被校验器隐式补默认值，execution-contract SHA、受保护 command dispatch 与 exact owner readback 始终引用同一输入；无效行仍在 prepared failure 阶段被拦截，owner/state/project、attempt-before-dispatch 与不重放语义不变。
+
 ## 1. 目标
 
 `tiangong-lca-cli` 是 TianGong 的统一执行面。
