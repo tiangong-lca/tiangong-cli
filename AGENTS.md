@@ -32,8 +32,8 @@ checkPaths:
   - scripts/docpact
   - scripts/docpact-gate.sh
   - scripts/install-git-hooks.sh
-lastReviewedAt: 2026-07-17
-lastReviewedCommit: 670acda2dd05a8ddae3d1968720c2ea176fb1b16
+lastReviewedAt: 2026-07-23
+lastReviewedCommit: 5c90ddd60328748ab6d8d89717e59dcaeca8cde7
 related:
   - .docpact/config.yaml
   - docs/agents/repo-validation.md
@@ -88,6 +88,8 @@ Review note, 2026-07-16: Issue #186 adds the CLI-owned `release` transport for L
 Review note, 2026-07-17: Issue #191 changes only LCI/LCIA release tests so the four-platform matrix asserts POSIX mode bits and chmod-based cleanup failures only where those semantics exist. Runtime behavior, command ownership, credentials, release automation, and workspace-integration requirements are unchanged.
 
 Review note, 2026-07-17: Issue #189 is the dedicated 0.0.29 version-bump release for the merged LCI/LCIA release transport in Issue #186 / PR #187. It adds no command, runtime, dependency, credential, approval, database, or alternate publication path; automated tag creation, npm Trusted Publishing, provenance verification, and exact released-commit workspace integration remain mandatory.
+
+Review note, 2026-07-23: Issue #194 extends `dataset save-draft` with an explicit ordered owner-draft execution contract. The CLI binds project, owner, state 0, row identity, payload hashes, expected operations, before hashes, and earlier-action dependencies; it records each `action_id@desired_sha256` attempt in stable user state before dispatch and resolves ambiguous or orphaned attempts by exact owner readback without replay. This adds no service-role, direct-table, publication, delete, state/schema, or package-release path.
 
 ## Bootstrap Order
 

@@ -27,8 +27,8 @@ checkPaths:
   - scripts/docpact
   - scripts/docpact-gate.sh
   - scripts/install-git-hooks.sh
-lastReviewedAt: 2026-07-17
-lastReviewedCommit: 670acda2dd05a8ddae3d1968720c2ea176fb1b16
+lastReviewedAt: 2026-07-23
+lastReviewedCommit: 5c90ddd60328748ab6d8d89717e59dcaeca8cde7
 related:
   - ../../AGENTS.md
   - ../../.docpact/config.yaml
@@ -104,6 +104,8 @@ Review note, 2026-07-17: Issue #191 keeps the validation contract unchanged whil
 
 Review note, 2026-07-17: Issue #189 keeps the validation contract unchanged for the dedicated 0.0.29 release. In addition to the exact-coverage and pre-push gates, release proof requires unpublished-version and absent-tag checks, all four live CLI-version fixtures at 0.0.29, dry-run package inspection, AI Doc Lint, Docpact, and the release-time platform matrix before npm publication.
 
+Review note, 2026-07-23: Issue #194 adds focused proof for ordered contract binding, stable action-ledger replay exclusion across copied contract/output paths, exact insert/update before-state checks, crash/orphan recovery, ambiguous transport readback, dependency isolation, owner/project mismatch, ledger corruption, and zero-dispatch parser/preflight failures. The same exact 100% `src/**/*.ts`, lint, build, docpact, and pre-push gates remain authoritative.
+
 ## Validation Matrix
 
 | Change type | Minimum local proof | Additional proof when risk is higher | Notes |
@@ -125,7 +127,7 @@ Facts that matter:
 - `npm run prepush:gate` is the exact local test gate
 - the local `pre-push` hook runs docpact first and then `npm run prepush:gate`
 - `.github/workflows/quality-gate.yml` is manual-dispatch only for remote reproduction, not an ordinary push-triggered test runner
-- `process save-draft`, `lifecyclemodel save-draft`, dataset governance commands such as curation queue build/next/verify, BuildPlan gates, publish schema/verification gates, and the newer process maintenance commands are expected to preserve `100%` coverage even when they add schema-validation, rewrite, or fallback branches
+- `process save-draft`, `lifecyclemodel save-draft`, ordered `dataset save-draft --execution-contract`, dataset governance commands such as curation queue build/next/verify, BuildPlan gates, publish schema/verification gates, and the newer process maintenance commands are expected to preserve `100%` coverage even when they add schema-validation, rewrite, recovery, or fallback branches
 - LCI/LCIA release tests must cover all public actions and error branches without real credentials: user-session bootstrap is stubbed, remote error codes are preserved, upload request metadata is bound to local files, Calculation Bundle artifact selection is exact-path only, credentials stay masked, and no file becomes visible before size/hash verification succeeds. Live smoke tests, when explicitly authorized, use a disposable release identity and a real `data_product_manager` account through the public Edge/Database path; service-role or direct SQL evidence is invalid.
 - Dataset maintenance tests must prove exact `id` + `version`, expected state, and current-account ownership are enforced; rows outside the explicitly authorized owner-draft alias profile remain protected; no action runs after full-plan drift or approval mismatch; approval is persisted before the first mutation; each attempted action is appended durably to `apply-progress.jsonl` with plan/action/mode correlation, actor, timing, before/after hashes, result/error, and rollback fields; and `verify` performs its own remote readback instead of trusting `apply` output.
 - Exact-count pagination tests must prove that a requested page size such as 5000 still follows a 1000-row server cap with offsets `0,1000,2000...`; an exact multiple terminates without a speculative empty request; a true zero result accepts `*/0`; and missing/invalid/changing totals, early empty pages, range/body mismatch, page overflow, rows beyond total, missing/duplicate/out-of-order identities, foreign-owner rows, malformed/duplicate aggregate table proofs, or partial aggregate table sets fail closed. `plan`, apply preflight, and `verify` must not produce an accepted artifact or write after an incomplete scan. `clear-account` must execute zero deletes after an incomplete initial scan, re-read all five tables at the end, require aggregate `row_count=0` for success, and retain a failure audit if the final proof cannot complete after mutation starts. The evidence proves pagination completeness under stable filtered membership/order, not transaction-level/MVCC snapshot isolation.

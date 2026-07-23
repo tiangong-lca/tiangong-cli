@@ -22,8 +22,8 @@ checkPaths:
   - scripts/docpact
   - scripts/docpact-gate.sh
   - scripts/install-git-hooks.sh
-lastReviewedAt: 2026-07-17
-lastReviewedCommit: 670acda2dd05a8ddae3d1968720c2ea176fb1b16
+lastReviewedAt: 2026-07-23
+lastReviewedCommit: 5c90ddd60328748ab6d8d89717e59dcaeca8cde7
 related:
   - ../AGENTS.md
   - ../.docpact/config.yaml
@@ -60,6 +60,8 @@ Review note, 2026-07-17: Issue #189 is that separate 0.0.29 release. It must pro
 Review note, 2026-07-16: Issue #157 adds the Step 3 flow-identity feature without changing package metadata or release mechanics. Its feature PR must pass the exact DB contract, production-scale Preview capture timing, 100% CLI coverage, Docpact, and the full pre-push gate. A separate patch version-bump PR may begin only after database-engine #235 is promoted and deployed; production capture/plan/freeze still requires the released CLI plus a fresh exact human approval.
 
 Review note, 2026-07-17: Issue #157 COMMON hardening now includes the DB/CLI one-wrapper rotating permit, strict create-only local claim as defense in depth, fresh exact recovery approval, and exact read-only scope lookup after response loss. This closes the protocol design boundary without changing version, tag, or Trusted Publishing mechanics. The Step 3 patch release remains gated on feature merge, database Preview validation/promotion, focused cross-contract evidence, and the separate coordinated DB/CLI release; local publish and manual tag creation remain forbidden.
+
+Review note, 2026-07-23: Issue #194 adds the generic ordered owner-draft execution contract without changing package metadata or release mechanics. Its feature PR must pass focused ledger/recovery tests, exact 100% coverage, docpact, and the full pre-push gate. Any npm publication remains a separate version-bump PR through the existing merge-triggered tag and Trusted Publishing workflows; local publish and manual tag creation remain forbidden.
 
 Use this document for:
 

@@ -19,8 +19,8 @@ checkPaths:
   - src/main.ts
   - src/lib/lca-release.ts
   - test/lca-release*.test.ts
-lastReviewedAt: 2026-07-16
-lastReviewedCommit: 1aa9b58f7a62f50d2cb680f372452fe829686d75
+lastReviewedAt: 2026-07-23
+lastReviewedCommit: 5c90ddd60328748ab6d8d89717e59dcaeca8cde7
 ---
 
 # TianGong LCA CLI
@@ -40,6 +40,8 @@ Review note, 2026-07-15: `dataset maintenance freeze-protected` and `seal-protec
 Review note, 2026-07-16: `release ...` is the LCI/LCIA data-release command family, not the npm package release workflow. It uses the normal user-session bootstrap, requires the server to authorize `data_product_manager` for private and mutating operations, never accepts a service-role key, and keeps large Calculation Bundle or ZIP payloads in hash-verified files instead of stdout.
 
 Review note, 2026-07-17: `dataset maintenance flow-identity capture|plan|freeze|seal-approval|run|freeze-recovery|seal-recovery-approval|run-recovery|verify` is the dedicated Step 3 workflow for approved BAFU elementary-flow identity mappings. Capture performs one complete authenticated census and one database-attestation POST; plan rejects historical authorities and binds the exact 305-source request to its immutable receipt. The write path uses a database-minted one-wrapper permit that rotates after each successful process/finalize write and is never stored in proof artifacts; a create-only local approval claim is defense in depth. A lost permit or preflight response cannot be replayed: the operator must freeze and approve an exact recovery baseline, while status/recovery may locate only the same actor-owned scope through the exact read-only lookup. Terminal verification independently proves unchanged source/public/support rows, exact desired owner-draft processes, zero approved-source residue, unchanged pending/blocker/orphan closure, and causal derivative completion. Failed/stale derivatives still require a separate derivative-only plan, freeze, and approval and never replay the process mutation. Production use remains gated on merge, Preview validation, and coordinated database/CLI release.
+
+Review note, 2026-07-23: `dataset save-draft --execution-contract` adds an opt-in crash-safe ordered owner-draft batch. The contract binds the authenticated project/owner, state 0, exact input order and payloads, before hashes, expected insert/update operations, and dependencies. A stable per-owner/project `action_id@desired_sha256` ledger prevents replay even if the contract or output directory is copied; ambiguous attempts are recovered only by exact owner/state/payload readback. The ordinary save-draft mode is unchanged.
 
 ## Run
 
@@ -363,6 +365,7 @@ tiangong-lca dataset classification apply --type location --input ./rows/process
 tiangong-lca dataset curation-queue build --processes ./rows/processes.jsonl --flows ./rows/flows.jsonl --support ./rows/sources.jsonl --out-dir /abs/path/to/curation-queue --json
 tiangong-lca dataset curation-queue next --queue-dir /abs/path/to/curation-queue --type support --json
 tiangong-lca dataset curation-queue verify --queue-dir /abs/path/to/curation-queue --type process --json
+tiangong-lca dataset save-draft --input ./rows.jsonl --type auto --execution-contract ./execution-contract.json --out-dir /abs/path/to/dataset-save-draft --commit --json
 tiangong-lca dataset evidence-search plan --query "中国2026年电力结构数据" --out-dir /abs/path/to/evidence-search --json
 tiangong-lca dataset evidence-search run --input ./evidence-search.request.json --results ./search-results.json --out-dir /abs/path/to/evidence-search --json
 tiangong-lca dataset references rewrite --input ./rows.jsonl --from flow:<old-id>@<old-version> --to flow:<new-id>@<new-version> --out-dir /abs/path/to/dataset-rewrite --json
@@ -396,6 +399,8 @@ For `process identity-preflight` and `flow identity-preflight`, canonical TIDAS 
 For `process build-plan` and `flow build-plan`, canonical payloads embedded in the plan are schema-checked during `materialize`. Plan-only materialization now creates deterministic canonical `processDataSet` / `flowDataSet` wrappers from the build plan and validates them with the TIDAS SDK before reporting `passed`.
 
 For `process save-draft`, canonical process payloads are validated locally with `ProcessSchema` before any `--commit` write. Schema-invalid rows remain in `outputs/save-draft-rpc/failures.jsonl` instead of being persisted. Batch import callers should pass `--target-user-id`; the CLI then verifies the current auth session and any visible draft owner before writing, while downstream readback verification still proves the final owner and payload.
+
+For `dataset save-draft --execution-contract`, the JSON contract uses schema `dataset-save-draft-execution-contract.v1` and supplies `execution_id`, `project_ref`, an exact owner (`user_id`, lowercase `email`, `state_code: 0`), and ordered actions. Each action binds `action_id`, `desired_sha256`, `expected_operation` (`insert` or `save_draft`), table/id/version, `before_sha256`, and earlier `dependency_action_ids`. Contract mode requires `--commit`; account-local Unit Group or Flow Property support rows additionally require `--allow-account-local-support`. Attempts and outcomes are stored under the platform user-state directory (`$XDG_STATE_HOME/tiangong-lca-cli` when configured), not beside the contract or report. Any prior terminal or unresolved attempt is read back or retained without re-dispatch; exit status is nonzero unless every action has exact terminal success.
 
 For `flow publish-version`, canonical flow payloads are validated locally with `FlowSchema` before remote visibility planning or writes. The command always writes `flow-publish-version-gate-report.json`; blocked rows are written to the remote-failure JSONL without calling the remote service.
 

@@ -26,8 +26,8 @@ checkPaths:
   - scripts/docpact
   - scripts/docpact-gate.sh
   - scripts/install-git-hooks.sh
-lastReviewedAt: 2026-07-17
-lastReviewedCommit: 670acda2dd05a8ddae3d1968720c2ea176fb1b16
+lastReviewedAt: 2026-07-23
+lastReviewedCommit: 5c90ddd60328748ab6d8d89717e59dcaeca8cde7
 related:
   - ../../AGENTS.md
   - ../../.docpact/config.yaml
@@ -81,6 +81,8 @@ Review note, 2026-07-16: Issue #186 introduces `src/lib/lca-release.ts` as the C
 Review note, 2026-07-17: Issue #191 changes only platform-specific assertions in `test/lca-release.test.ts`. The LCI/LCIA transport, artifact writer, command surface, filesystem architecture, and release workflow remain unchanged; POSIX mode and chmod failure semantics continue to be tested on platforms that implement them.
 
 Review note, 2026-07-17: Issue #189 changes the CLI package version to 0.0.29 and updates the four live CLI-version fixtures. No command family, launcher, session, artifact, dependency, authorization, tag, publication, or workspace-integration architecture changes.
+
+Review note, 2026-07-23: Issue #194 keeps ordered owner-draft execution inside `src/lib/dataset-save-draft-run.ts`. `src/cli.ts` owns the opt-in flag and all-success exit code; the runtime owns contract/session/before-state binding, stable per-owner/project action ledgers, dependency scheduling, exact owner readback, and no-replay recovery. It reuses the current platform dataset command transport and adds no new auth, direct-table, service-role, publication, delete, state/schema, or release architecture.
 
 ## Stable Path Map
 
@@ -178,6 +180,7 @@ These modules share one contract:
 Dataset-local governance now uses the same CLI-native command layer:
 
 - `src/lib/dataset-validate.ts`
+- `src/lib/dataset-save-draft-run.ts`
 - `src/lib/dataset-curation-queue.ts`
 - `src/lib/dataset-references-rewrite.ts`
 - `src/lib/dataset-maintenance-clear-account.ts`
@@ -200,6 +203,8 @@ Dataset-local governance now uses the same CLI-native command layer:
 - `src/lib/lifecyclemodel-graph.ts`
 
 These modules keep validation, entity-level curation queue build/next/verify state, reference rewrites, RLS-scoped account and exact-row maintenance, save-draft preparation, graph extraction, and local artifact reports inside the CLI instead of routing through skills or MCP transports.
+
+Execution-contract mode in `dataset-save-draft-run` is deliberately action-scoped rather than report-directory-scoped. The immutable input binds each ordered row to an `action_id@desired_sha256`, expected insert/update operation, before hash, and earlier-only dependencies. The append-only ledger is rooted in stable platform user state and names one file per owner/project/action identity, so copying a contract or output directory cannot create a replay path. A durable attempt without an outcome is recovered by exact current-owner state-0 payload readback only; terminal and unknown actions are never dispatched again, while unrelated actions may continue.
 
 The row-level maintenance family is deliberately split by responsibility:
 

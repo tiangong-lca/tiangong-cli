@@ -16,8 +16,8 @@ checkPaths:
   - README.md
   - src/**
   - test/**
-lastReviewedAt: 2026-07-17
-lastReviewedCommit: e8a458c63a4c59d7ea1fcf4618cd5034ead6e836
+lastReviewedAt: 2026-07-23
+lastReviewedCommit: 5c90ddd60328748ab6d8d89717e59dcaeca8cde7
 related:
   - ../AGENTS.md
   - ../.docpact/config.yaml
@@ -49,6 +49,8 @@ finalize request 绑定 fresh whole-scope proof，attempt/domain-rejection/proof
 Review note, 2026-07-16: Issue #182 修正 protected 终态验证中的 JSON hash 域混用。独立 RLS row 继续用 CLI canonical hash 对齐 approved plan；已经过 closure SHA 校验的 primary `action_evidence` 用 PostgreSQL `jsonb::text` hash 对齐 fresh derivative snapshot；snapshot SHA 再对齐 terminal completed proof。不同序列化域不直接比较，证据缺失、重复、身份/owner/state/JSON 标志错误或任一同域 hash 漂移仍 fail-closed；数据库/RPC 与一次性 admission 契约不变。
 
 Review note, 2026-07-16: Issue #186 将 LCI/LCIA 数据发布的远程执行面收口为 `release` 命令族，但不把 20-stage release workflow、TIDAS identity/version 规则或包闭包算法复制进 CLI。CLI 复用用户 API key 换 session，服务端检查 `data_product_manager`，本地严格校验 Unit Process 与 standalone LifecycleModel+Result 两类包的 TIDAS/ILCD 四个 ZIP，并对 Calculation Bundle/ZIP 下载执行 exact-path、byte-size 与 SHA-256 校验。service-role 不属于该命令契约。
+
+Review note, 2026-07-23: Issue #194 为通用 `dataset save-draft` 增加 opt-in execution contract。V1 将 session project/owner/state 0、有序 input rows、before/desired hashes、insert/update 操作和依赖绑定为一个离线 JSON 合同；每个 `action_id@desired_sha256` 使用稳定的用户状态 action ledger。首次 dispatch 前落盘 attempt，之后的模糊响应、孤立 attempt 或进程恢复只允许 exact owner readback，不允许自动重放；失败依赖不会阻止无依赖 action 继续。
 
 ## 1. 目标
 
@@ -186,6 +188,7 @@ tiangong-lca
 | `tiangong-lca dataset curation-queue build/next/verify` | 本地 Foundry external dataset import 的 entity-level curation queue 状态机；`build` 输出 manifest、tasks、locks、blockers、per-entity input/closure/run-plan artifacts，`next` 基于 checkpoint 返回下一条 runnable entity task，`verify` 校验 scoped checkpoint 完成度；不执行 AI、不写远端 |
 | `tiangong-lca dataset import-lca convert` | 外部 LCA 包转换入口；调用 `tidas-tools import_lca` 生成 TIDAS/ILCD/conversion report；tidas-tools >= 0.0.28 默认产出每个 process 的依赖子目录（可用 `--no-process-bundles` 关闭、`--process-bundles-dir` 自定义目录），便于后续 entity-level curation |
 | `tiangong-lca dataset references rewrite` | 本地 process / lifecyclemodel rows 的 flow reference rewrite、patch evidence 输出，并可选走 state-aware save-draft commit |
+| `tiangong-lca dataset save-draft` | 通用 canonical dataset dry-run/save-draft 入口；可选 `--execution-contract` 将 project/owner/state 0、输入顺序、before/desired hashes、预期 insert/update 与依赖绑定到稳定 action ledger，并以 exact owner readback 收口模糊响应且不重放 |
 | `tiangong-lca dataset maintenance clear-account` | 已实现的当前账号 draft 清理入口；先生成当前用户 RLS 可见 snapshot，默认 dry-run，只有显式 `--commit --confirm <当前账号邮箱>` 才按 `lifecyclemodels -> processes -> flows -> sources -> contacts` 顺序执行。普通 dataset rows 通过 `app_dataset_delete` / `cmd_dataset_delete` 删除，读回验证剩余行数；`unitgroups` / `flowproperties` 默认保护不删 |
 | `tiangong-lca dataset maintenance plan/apply/freeze-protected/seal-protected-approval/run-protected/verify` | 已实现的 row-level 维护入口。普通 V1 维护通过当前账号 RLS 冻结 exact draft rows 并走平台 `save_draft` / `delete`；固定 BAFU protected profile 先由 `freeze-protected` 直接读取 production owner-draft 状态并生成未批准请求，再由完全离线的 `seal-protected-approval` 记录人类逐字节批准，最后只能由服务器调度的 `run-protected` 以唯一 durable attempt/admission identity 执行和恢复。写入以 actor/user_id/state_code=0 与精确 plan/closure 栅栏保护，RLS 用于公开入口和独立读回；`rebuild-derivatives` V1 仍只允许一个 owner-draft process。所有路径共享不可变 plan、显式审批、durable proof 与独立 readback，且不发布 FP/UG |
 | `tiangong-lca lifecyclemodel auto-build` | 本地 lifecyclemodel local-run intake、graph 推断、reference process 选择、`json_ordered` artifact 输出 |
@@ -252,6 +255,7 @@ tiangong-lca
 - `tiangong-lca dataset curation-queue next` 已可执行
 - `tiangong-lca dataset curation-queue verify` 已可执行
 - `tiangong-lca dataset references rewrite` 已可执行
+- `tiangong-lca dataset save-draft` 已可执行；`--execution-contract` 为显式 opt-in 的 ordered owner-draft 模式
 - `tiangong-lca dataset maintenance plan` 已可执行
 - `tiangong-lca dataset maintenance apply` 已可执行
 - `tiangong-lca dataset maintenance freeze-protected` 已可执行（production 只读）
@@ -276,6 +280,7 @@ tiangong-lca
 - 已实现的 `dataset classification` 从 CLI bundled TIDAS schema 提供分类/位置编码治理：`children` 支持按 parent code 步进列子类，`path` 解析 code 的规范 path，`audit --type location` 按 bundled TIDAS schema 派生位置编码字段，并覆盖 TIDAS LCIA geography 和 lifecyclemodel connection location 字段，检查其值是否属于 `tidas_locations_category.json`；`apply --type location` 把 AI/human structured decision 确定性写回 rows 并输出 evidence，当 decision 明确给出 schema-derived location 字段的 `target_path`（如 `flowDataSet.flowInformation.geography.locationOfSupply`）时可创建缺失父对象和字段，缺少 target 或非 location 路径仍保持阻断
 - 已实现的 `dataset curation-queue build/next/verify` 把 Foundry external dataset import 的 support / flow / process rows 收口成 entity-level queue artifact contract：`build` 生成 `curation-queue-manifest.json`、`curation-queue-tasks.jsonl`、`curation-queue-locks.json`、`curation-queue-blockers.jsonl`，以及每个 entity 的 `input.jsonl`、`closure.json`、`entity-run-plan.json`；`next` 读取 task checkpoint 并返回下一条 runnable entity task；`verify` 确认目标 scope 的 checkpoint 完成且没有 build blocker。CLI 只负责稳定状态机、依赖闭包、锁和 blocker；AI authoring 仍必须通过 skill/Codex 输出 structured patch 或 build plan，并在 deterministic apply、schema/QA、prewrite verify、readback 后才允许进入远端写入。
 - 已实现的 `dataset references rewrite` 把 process / lifecyclemodel rows 中的 flow reference rewrite 收口到一个 deterministic 本地入口，默认只写 patch artifacts，只有显式 `--commit` 时才调用 state-aware save-draft 写入路径
+- 已实现的 `dataset save-draft --execution-contract` 读取 `dataset-save-draft-execution-contract.v1`，逐 action 校验 authenticated project/owner、state 0、input identity/order、desired payload hash、expected operation、before hash 与 earlier-only dependencies。账本不放在 contract/out-dir 旁，而放在稳定的 per-owner/project 用户状态根下，并以 `action_id@desired_sha256` 寻址；复制输入或输出目录不会获得新的 attempt。attempt 之后只做 exact owner/state/payload readback，terminal/unknown action 均永不重投；dependency 只阻断后继，independent unresolved actions 仍可继续。每个远端调用继续使用现有 protected platform dataset transaction，不新增 raw SQL/direct-table/service-role/publication/delete/state/schema 写面。
 - 已实现的 `dataset maintenance clear-account` 只覆盖当前认证账号的 draft 清空场景：CLI 必须先以 exact-count 分页证明五个可删除表的 RLS 可见快照完整，才写出 `rls-visible-snapshot.json` / `dry-run-report.json`；commit 时要求 `--confirm` 匹配当前账号邮箱，并逐行调用平台 `app_dataset_delete`。除逐表检查外，结束时必须重新扫描全部五表，只有完整 aggregate proof 且 `row_count=0` 才报告成功；若终检失败而之前已有删除，仍写出 `completed_with_failures` 审计报告。初始扫描不完整时不生成快照/approval，且零删除。该命令不绕过 RLS，不直接 REST DELETE，不删除默认保护的 `unitgroups` / `flowproperties`。
 - 已实现的 `dataset maintenance plan/apply/freeze-protected/seal-protected-approval/run-protected/verify` 是错误导入清理、redo 与受保护衍生重建的 row-level 归属面。`plan` 先证明当前用户 account scan 完整，再固化 scope manifest、RLS 可见快照、completeness proof、引用影响、保护行、不可变 plan 和 dry-run。普通 `apply` 只接受 plan SHA-256 与当前账号邮箱都匹配的显式 commit；固定 production alias profile 必须依次经过 production 只读 `freeze-protected`、人类逐字批准、完全离线 `seal-protected-approval`，然后才可进入 `run-protected`，其 `--status-only` 恢复不做 preflight 或 admission。`verify` 以新的完整 account readback 或 action-scoped DB readback 独立检查结果，不依赖 apply 的内存或报告结论。Foundry 只调用已发布 CLI、保存 task ledger/报告/产物，不读取数据库 env、直调 RPC 或重算 canonical hash。
 - `merge-support-aliases` 不是通用 alias 合并器：当前只接受 BAFU `time` 与 `length_time` 两个 batch。计划必须精确覆盖 25 + 27 行和 20 + 39 条 exchange，并保留受影响 process 中的 309 条其他 exchange。原 V1 adapter 只保留冻结请求/artifact 兼容契约，不能作为 seal 绑定 production 执行的 fallback；受保护路径绝不降级为旧 `cmd_dataset_alias_plan_guarded`、逐 dimension 或逐行 `save_draft`。
@@ -1100,6 +1105,7 @@ TIANGONG_LCA_COVERAGE=0
 | `dataset evidence-search` | 默认无；若使用 `--provider-url`，认证由 `--provider-key` 显式传入 |
 | `admin embedding-run` | `TIANGONG_LCA_API_BASE_URL`、`TIANGONG_LCA_API_KEY`、`TIANGONG_LCA_SUPABASE_PUBLISHABLE_KEY`（`TIANGONG_LCA_REGION` 可选） |
 | `process get` | `TIANGONG_LCA_API_BASE_URL`、`TIANGONG_LCA_API_KEY`、`TIANGONG_LCA_SUPABASE_PUBLISHABLE_KEY` |
+| `dataset save-draft` | 本地 dry-run 默认无；`--commit`（包括 `--execution-contract`）需要 `TIANGONG_LCA_API_BASE_URL`、`TIANGONG_LCA_API_KEY`、`TIANGONG_LCA_SUPABASE_PUBLISHABLE_KEY`。execution ledger 默认使用平台用户状态目录，`XDG_STATE_HOME` 可改变根目录 |
 | `process identity-preflight` | 默认无；若启用 `--remote-candidates` 或输入 `remote_candidate_search.enabled=true`，则需要 `TIANGONG_LCA_API_BASE_URL`、`TIANGONG_LCA_API_KEY`、`TIANGONG_LCA_SUPABASE_PUBLISHABLE_KEY`（`TIANGONG_LCA_REGION` 可选） |
 | `process build-plan` | 无 |
 | `process auto-build | resume-build | publish-build | batch-build` | 无 |

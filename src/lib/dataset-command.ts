@@ -102,8 +102,17 @@ async function invokeDatasetCommand(options: {
   transport: DatasetCommandTransport;
   commandName: 'app_dataset_create' | 'app_dataset_save_draft' | 'app_dataset_delete';
   body: JsonObject;
+  beforeDispatch?: () => void;
 }): Promise<JsonObject> {
   const url = `${options.transport.functionsBaseUrl}/${options.commandName}`;
+  try {
+    options.beforeDispatch?.();
+  } catch {
+    throw new CliError('Dataset command was blocked before request dispatch.', {
+      code: 'DATASET_COMMAND_BEFORE_DISPATCH_FAILED',
+      exitCode: 1,
+    });
+  }
   return requireCommandSuccessPayload(
     await postJson({
       url,
@@ -162,6 +171,7 @@ export async function createDatasetRecord(options: {
   id: string;
   payload: JsonObject;
   extraData?: JsonObject;
+  beforeDispatch?: () => void;
 }): Promise<JsonObject> {
   const body: JsonObject = {
     table: options.table,
@@ -181,6 +191,7 @@ export async function createDatasetRecord(options: {
     transport: options.transport,
     commandName: 'app_dataset_create',
     body,
+    beforeDispatch: options.beforeDispatch,
   });
 }
 
@@ -191,6 +202,7 @@ export async function saveDraftDatasetRecord(options: {
   version: string;
   payload: JsonObject;
   extraData?: JsonObject;
+  beforeDispatch?: () => void;
 }): Promise<JsonObject> {
   const body: JsonObject = {
     table: options.table,
@@ -211,6 +223,7 @@ export async function saveDraftDatasetRecord(options: {
     transport: options.transport,
     commandName: 'app_dataset_save_draft',
     body,
+    beforeDispatch: options.beforeDispatch,
   });
 }
 

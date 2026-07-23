@@ -288,6 +288,8 @@ test('executeCli exposes generic dataset save-draft for support rows', async () 
       'contact',
       '--out-dir',
       'contact-save',
+      '--execution-contract',
+      'contract.json',
       '--commit',
     ],
     makeDeps({
@@ -307,6 +309,7 @@ test('executeCli exposes generic dataset save-draft for support rows', async () 
     outDir: 'contact-save',
     commit: true,
     allowReferenceOnlySupport: false,
+    executionContractPath: 'contract.json',
     env: {},
     fetchImpl: (observed[0] as { fetchImpl: unknown }).fetchImpl,
   });
