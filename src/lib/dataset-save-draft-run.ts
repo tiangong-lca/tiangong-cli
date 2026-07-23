@@ -794,12 +794,18 @@ function validatePayload(
   config: DatasetTypeConfig,
 ): DatasetSaveDraftValidationResult {
   const { schema, createEntity } = schemaForConfig(config);
-  const outcome = validateSchemaWithDeepFallback(schema, payload, createEntity);
+  // SDK schema/entity validation may apply defaults by mutating its input. Keep validation
+  // isolated so execution-contract hashing, dispatch, and readback all use the exact input.
+  const validationPayload = structuredClone(payload);
+  const outcome = validateSchemaWithDeepFallback(schema, validationPayload, createEntity);
   const processIssues =
     type === 'process'
-      ? [...collectProcessRequiredFieldIssues(payload), ...collectProcessPlaceholderIssues(payload)]
+      ? [
+          ...collectProcessRequiredFieldIssues(validationPayload),
+          ...collectProcessPlaceholderIssues(validationPayload),
+        ]
       : [];
-  const importIssues = type === 'process' ? [] : collectImportContentIssues(payload);
+  const importIssues = type === 'process' ? [] : collectImportContentIssues(validationPayload);
   const issues: DatasetSaveDraftValidationIssue[] = [
     ...outcome.issues.map(normalizeValidationIssue),
     ...processIssues,

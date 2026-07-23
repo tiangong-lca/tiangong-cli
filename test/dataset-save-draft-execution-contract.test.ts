@@ -683,6 +683,58 @@ test('execution contract keeps preparation, reference, and dry-run failures at z
   }
 });
 
+test('execution contract validation cannot mutate its exact desired payload', async () => {
+  const dir = mkdtempSync(path.join(os.tmpdir(), 'tg-cli-execution-contract-validation-clone-'));
+  const desired: JsonObject = {
+    flowDataSet: {
+      flowInformation: {
+        dataSetInformation: {
+          'common:UUID': '11111111-1111-1111-1111-111111111111',
+        },
+      },
+      administrativeInformation: {
+        publicationAndOwnership: {
+          'common:dataSetVersion': '00.00.001',
+        },
+      },
+    },
+  };
+  const exactInput = structuredClone(desired);
+  const executionContract = __testInternals.parseExecutionContract(
+    contract({ desired: [exactInput] }),
+  );
+  const contractPath = writeContract(dir, executionContract as unknown as JsonObject);
+  try {
+    const prepared = __testInternals.prepareRows(
+      path.join(dir, 'rows.json'),
+      { rows: [desired] },
+      'flow',
+    );
+    assert.deepEqual(desired, exactInput);
+    assert.deepEqual(prepared[0]?.payload, exactInput);
+    assert.equal(prepared[0]?.validation?.ok, false);
+    assert.doesNotThrow(() =>
+      __testInternals.bindExecutionContractRows(executionContract, prepared),
+    );
+
+    await assert.rejects(
+      () =>
+        runDatasetSaveDraft({
+          inputPath: path.join(dir, 'rows.json'),
+          rawInput: { rows: [desired] },
+          type: 'flow',
+          outDir: path.join(dir, 'out'),
+          commit: true,
+          executionContractPath: contractPath,
+        }),
+      /commit requires env and fetch runtime bindings/u,
+    );
+    assert.deepEqual(desired, exactInput);
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+});
+
 test('execution contract aborts before dispatch when its durable attempt marker cannot be created', async () => {
   const dir = mkdtempSync(path.join(os.tmpdir(), 'tg-cli-execution-contract-ledger-failure-'));
   const desired = flow('11111111-1111-1111-1111-111111111111', 'No marker');

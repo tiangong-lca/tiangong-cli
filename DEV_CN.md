@@ -39,6 +39,8 @@ Review note, 2026-07-23: Issue #194 在既有 `dataset save-draft` 上增加可�
 
 Review note, 2026-07-23: Issue #196 在 0.0.30 发布门禁中修复 Windows execution-ledger 持久化：创建与追加均在可写 descriptor 上写入、`fsync`、关闭。运行环境、认证变量、合同格式、attempt-before-dispatch 与 npm Trusted Publishing 路径均不变。
 
+Review note, 2026-07-23: Issue #198 发布 0.0.31；`dataset save-draft` 只在深拷贝上运行 SDK 校验，原始 payload 继续作为 execution-contract hash、受保护写请求与精确 readback 的唯一目标。认证、owner/state/project 护栏、attempt-before-dispatch、无重放和 Trusted Publishing 路径均不变。
+
 Review note, 2026-06-07: release 0.0.14 keeps maintainer runtime and release guidance unchanged. `dataset classification apply --type location` now supports explicit missing location targets for Foundry saturation workflows, and still rejects ambiguous target paths.
 
 Review note, 2026-06-11: release 0.0.15 keeps maintainer runtime and release guidance unchanged. `dataset import-lca convert` now adapts to the tidas-tools 0.0.28 process-bundle flags (no bare `--process-bundles`, `--no-process-bundles` only when disabled) and reports bundle/mapping files from actual on-disk state.
