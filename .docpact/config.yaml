@@ -16,8 +16,9 @@ layout: repo
 # Review note, 2026-07-17: Issue #189 is the dedicated 0.0.29 package-version release for merged Issue #186 / PR #187. It changes only package metadata, the four live CLI-version fixtures, and governed review records; ownership, routing, dependencies, release authorization, tag automation, Trusted Publishing, and workspace-integration rules remain unchanged.
 # Review note, 2026-07-16: Issue #157 adds the native dataset-maintenance flow-identity capture/plan/freeze/seal/run/verify family inside existing command, remote-adapter, artifact, validation, and release routing. It adds no dependency, alternate auth, service-role, tag, or publishing path; the existing src/lib/dataset-*.ts, src/cli.ts, test/**, and governed-doc rules cover the implementation.
 # Review note, 2026-07-17: Issue #157 COMMON hardening remains inside the same flow-identity command, remote-adapter, artifact, validation, and release domains. Both Issue #29 derivative prerequisites require separate passed readbacks; HTTP-success `ok:false` envelopes are deterministic domain rejections; and verifier `pending` is limited to `derivatives_pending`. The protected runner now uses a database-enforced one-wrapper rotating permit as the cross-machine authority, a strict local approval claim as defense in depth, and a fresh exact recovery approval plus read-only scope lookup after permit or preflight-response loss. The remaining production gate is merge, Preview validation, and coordinated DB/CLI release, not an unresolved protocol design. No ownership, routing, dependency, auth, tag, or publishing rule changes are required.
-lastReviewedAt: '2026-07-17'
-lastReviewedCommit: '670acda2dd05a8ddae3d1968720c2ea176fb1b16'
+# Review note, 2026-07-23: Issue #194 adds an opt-in execution contract to the existing generic dataset save-draft family. Existing command/runtime, remote-adapter, artifact, test, and governed-doc wildcards cover ordered owner-draft actions, stable action-identity ledgers, exact readback recovery, and fail-closed dependency handling; no ownership, route, dependency, auth, package-release, or publication boundary changes.
+lastReviewedAt: '2026-07-23'
+lastReviewedCommit: '5c90ddd60328748ab6d8d89717e59dcaeca8cde7'
 
 catalog:
   repos:

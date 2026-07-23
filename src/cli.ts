@@ -1415,6 +1415,10 @@ Options:
   --out-dir <dir>  Artifact directory
   --commit         Execute remote save-draft writes
   --dry-run        Validate and plan without remote writes (default)
+  --execution-contract <file>
+                   Execute a content-bound ordered owner-draft batch with append-only attempt/readback evidence (requires --commit)
+  --allow-account-local-support
+                   Explicitly permit account-local Unit Group / Flow Property rows in the execution contract
   --json           Print compact JSON
   -h, --help
 
@@ -1423,6 +1427,7 @@ Outputs written under --out-dir:
   - outputs/dataset-save-draft/progress.jsonl
   - outputs/dataset-save-draft/failures.jsonl
   - outputs/dataset-save-draft/summary.json
+  - $XDG_STATE_HOME/tiangong-lca-cli/execution-ledgers/dataset-save-draft/v1/<owner-scope-sha256>/<action-identity-sha256>.events.jsonl (execution-contract mode; platform state directory fallback applies)
 
 Contract:
   This generic dataset path writes only mutable rows such as contact/source/flow/process. Unit group and flow property rows are reference-only; select existing database rows and rewrite references instead of creating My Data support rows.
@@ -3063,6 +3068,7 @@ function parseDatasetSaveDraftFlags(args: string[]): {
   outDir: string | null;
   commit: boolean;
   allowReferenceOnlySupport: boolean;
+  executionContractPath: string | null;
 } {
   let values: ReturnType<typeof parseArgs>['values'];
   try {
@@ -3079,6 +3085,7 @@ function parseDatasetSaveDraftFlags(args: string[]): {
         commit: { type: 'boolean' },
         'dry-run': { type: 'boolean' },
         'allow-account-local-support': { type: 'boolean' },
+        'execution-contract': { type: 'string' },
       },
     }));
   } catch (error) {
@@ -3103,6 +3110,8 @@ function parseDatasetSaveDraftFlags(args: string[]): {
     outDir: typeof values['out-dir'] === 'string' ? values['out-dir'] : null,
     commit: Boolean(values.commit),
     allowReferenceOnlySupport: Boolean(values['allow-account-local-support']),
+    executionContractPath:
+      typeof values['execution-contract'] === 'string' ? values['execution-contract'] : null,
   };
 }
 
@@ -7341,12 +7350,13 @@ export async function executeCli(argv: string[], deps: CliDeps): Promise<CliResu
         outDir: datasetFlags.outDir,
         commit: datasetFlags.commit,
         allowReferenceOnlySupport: datasetFlags.allowReferenceOnlySupport,
+        executionContractPath: datasetFlags.executionContractPath,
         env: deps.env,
         fetchImpl: deps.fetchImpl,
       });
 
       return {
-        exitCode: report.status === 'completed_with_failures' ? 1 : 0,
+        exitCode: report.status === 'completed' ? 0 : 1,
         stdout: stringifyJson(report, datasetFlags.json),
         stderr: '',
       };

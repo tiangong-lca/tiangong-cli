@@ -1,3 +1,4 @@
+import { closeSync, chmodSync, fsyncSync, mkdirSync, openSync, writeFileSync } from 'node:fs';
 import path from 'node:path';
 import * as tidasSdk from '@tiangong-lca/tidas-sdk';
 import { writeJsonArtifact, writeJsonLinesArtifact } from './artifacts.js';
@@ -35,6 +36,14 @@ import {
   type RemoteDatasetReference,
   type RemoteDatasetTable,
 } from './dataset-remote-verify.js';
+import {
+  appendStableJsonLine,
+  readJsonFile,
+  readJsonLinesIfPresent,
+  sha256Json,
+  stableJsonText,
+} from './dataset-maintenance-contract.js';
+import { resolveFlowIdentityApprovalClaimRoot } from './dataset-maintenance-flow-identity-approval-claim.js';
 
 type JsonObject = Record<string, unknown>;
 
@@ -97,7 +106,7 @@ export type DatasetSaveDraftRowReport = {
   version: string | null;
   type: ConcreteDatasetSaveDraftType | null;
   table: DatasetCommandTable | null;
-  status: 'prepared' | 'executed' | 'failed';
+  status: 'prepared' | 'executed' | 'failed' | 'unknown' | 'blocked';
   operation:
     | 'would_sync'
     | 'insert'
@@ -108,26 +117,36 @@ export type DatasetSaveDraftRowReport = {
     | 'identity_missing'
     | 'elementary_flow_insert_blocked'
     | 'remote_reference_unresolved'
+    | 'recovered_exact_readback'
+    | 'blocked_dependency'
     | null;
   validation: DatasetSaveDraftValidationResult | null;
   visible_row?: VisibleDatasetRow | null;
   error?: { message: string; details?: unknown };
+  action_id?: string;
+  desired_sha256?: string;
+  attempt_consumed?: boolean;
+  replayed?: false;
+  readback?: 'desired_exact' | 'not_desired' | 'not_performed';
 };
 
 export type DatasetSaveDraftReport = {
-  schema_version: 1;
+  schema_version: 1 | 2;
   generated_at_utc: string;
   input_path: string;
   requested_type: DatasetSaveDraftType;
   out_dir: string;
   commit: boolean;
   mode: 'dry_run' | 'commit';
-  status: 'completed' | 'completed_with_failures';
+  status: 'completed' | 'completed_with_failures' | 'completed_with_unknowns';
   counts: {
     selected: number;
     prepared: number;
     executed: number;
     failed: number;
+    unknown?: number;
+    blocked?: number;
+    attempts_consumed?: number;
     by_table: Partial<Record<DatasetCommandTable, number>>;
     operations: Record<string, number>;
   };
@@ -136,8 +155,15 @@ export type DatasetSaveDraftReport = {
     progress_jsonl: string;
     failures_jsonl: string;
     summary_json: string;
+    execution_ledger?: string;
   };
   rows: DatasetSaveDraftRowReport[];
+  execution_contract?: {
+    path: string;
+    sha256: string;
+    execution_id: string;
+    target_mode: 'owner_draft';
+  };
 };
 
 export type RunDatasetSaveDraftOptions = {
@@ -156,6 +182,53 @@ export type RunDatasetSaveDraftOptions = {
    * the CLI safe-by-default for interactive operators.
    */
   allowReferenceOnlySupport?: boolean | null;
+  executionContractPath?: string | null;
+};
+
+type DatasetSaveDraftExecutionAction = {
+  action_id: string;
+  desired_sha256: string;
+  expected_operation: 'insert' | 'save_draft';
+  table: DatasetCommandTable;
+  id: string;
+  version: string;
+  before_sha256: string | null;
+  dependency_action_ids: string[];
+};
+
+type DatasetSaveDraftExecutionContract = {
+  schema_version: 'dataset-save-draft-execution-contract.v1';
+  execution_id: string;
+  project_ref: string;
+  target_mode: 'owner_draft';
+  owner: {
+    user_id: string;
+    email: string;
+    state_code: 0;
+  };
+  actions: DatasetSaveDraftExecutionAction[];
+};
+
+type DatasetSaveDraftLedgerEvent = {
+  schema_version: 'dataset-save-draft-execution-event.v1';
+  sequence: number;
+  contract_sha256: string;
+  action_id: string;
+  desired_sha256: string;
+  action_binding_sha256: string;
+  event_type: 'attempt_emitted' | 'outcome';
+  operation: 'insert' | 'save_draft';
+  outcome: 'executed' | 'unknown' | null;
+  recovered: boolean;
+  recorded_at_utc: string;
+  previous_event_sha256: string | null;
+  event_sha256: string;
+};
+
+type ExecutionLedgerState = {
+  events: Map<string, DatasetSaveDraftLedgerEvent[]>;
+  attempts: Map<string, DatasetSaveDraftLedgerEvent>;
+  outcomes: Map<string, DatasetSaveDraftLedgerEvent>;
 };
 
 type PreparedDatasetRow = {
@@ -174,6 +247,10 @@ type VisibleDatasetRow = {
   version: string;
   user_id: string | null;
   state_code: number | null;
+};
+
+type ExecutionDatasetRow = VisibleDatasetRow & {
+  json_ordered: JsonObject | null;
 };
 
 type SupabaseDataClient = ReturnType<typeof createSupabaseDataClient>['client'];
@@ -242,6 +319,347 @@ const REFERENCE_ONLY_SAVE_DRAFT_TYPES = new Set<ConcreteDatasetSaveDraftType>([
   'unitgroup',
   'flowproperty',
 ]);
+
+const SHA256_PATTERN = /^[0-9a-f]{64}$/u;
+
+function executionContractError(message: string): never {
+  throw new CliError(message, {
+    code: 'DATASET_SAVE_DRAFT_EXECUTION_CONTRACT_INVALID',
+    exitCode: 2,
+  });
+}
+
+function requireExecutionToken(value: unknown, label: string): string {
+  const normalized = trimToken(value);
+  return normalized ?? executionContractError(`${label} must be a non-empty string.`);
+}
+
+function requireExecutionSha(value: unknown, label: string): string {
+  const normalized = requireExecutionToken(value, label);
+  return SHA256_PATTERN.test(normalized)
+    ? normalized
+    : executionContractError(`${label} must be a lowercase SHA-256 digest.`);
+}
+
+function parseExecutionContract(value: unknown): DatasetSaveDraftExecutionContract {
+  if (!isRecord(value)) {
+    executionContractError('Execution contract must be a JSON object.');
+  }
+  if (
+    value.schema_version !== 'dataset-save-draft-execution-contract.v1' ||
+    value.target_mode !== 'owner_draft' ||
+    !isRecord(value.owner) ||
+    value.owner.state_code !== 0 ||
+    !Array.isArray(value.actions) ||
+    value.actions.length === 0
+  ) {
+    executionContractError('Execution contract header is invalid.');
+  }
+  const executionId = requireExecutionToken(value.execution_id, 'execution_id');
+  const projectRef = requireExecutionToken(value.project_ref, 'project_ref');
+  const ownerUserId = requireExecutionToken(value.owner.user_id, 'owner.user_id');
+  const ownerEmail = requireExecutionToken(value.owner.email, 'owner.email').toLowerCase();
+  const actions: DatasetSaveDraftExecutionAction[] = [];
+  const seen = new Set<string>();
+  for (const [index, rawAction] of value.actions.entries()) {
+    if (!isRecord(rawAction) || !Array.isArray(rawAction.dependency_action_ids)) {
+      executionContractError(`actions[${index}] is invalid.`);
+    }
+    const actionId = requireExecutionToken(rawAction.action_id, `actions[${index}].action_id`);
+    if (seen.has(actionId)) {
+      executionContractError(`Duplicate action_id: ${actionId}`);
+    }
+    const table = requireExecutionToken(rawAction.table, `actions[${index}].table`);
+    if (!Object.values(DATASET_CONFIGS).some((config) => config.table === table)) {
+      executionContractError(`actions[${index}].table is unsupported.`);
+    }
+    const expectedOperation = rawAction.expected_operation;
+    if (expectedOperation !== 'insert' && expectedOperation !== 'save_draft') {
+      executionContractError(`actions[${index}].expected_operation is invalid.`);
+    }
+    const beforeSha =
+      rawAction.before_sha256 === null
+        ? null
+        : requireExecutionSha(rawAction.before_sha256, `actions[${index}].before_sha256`);
+    if (
+      (expectedOperation === 'insert' && beforeSha !== null) ||
+      (expectedOperation === 'save_draft' && beforeSha === null)
+    ) {
+      executionContractError(`actions[${index}].before_sha256 contradicts expected_operation.`);
+    }
+    const dependencies = rawAction.dependency_action_ids.map((dependency, dependencyIndex) =>
+      requireExecutionToken(
+        dependency,
+        `actions[${index}].dependency_action_ids[${dependencyIndex}]`,
+      ),
+    );
+    if (
+      new Set(dependencies).size !== dependencies.length ||
+      dependencies.some((id) => !seen.has(id))
+    ) {
+      executionContractError(
+        `actions[${index}].dependency_action_ids must be unique earlier actions.`,
+      );
+    }
+    actions.push({
+      action_id: actionId,
+      desired_sha256: requireExecutionSha(
+        rawAction.desired_sha256,
+        `actions[${index}].desired_sha256`,
+      ),
+      expected_operation: expectedOperation,
+      table: table as DatasetCommandTable,
+      id: requireExecutionToken(rawAction.id, `actions[${index}].id`),
+      version: requireExecutionToken(rawAction.version, `actions[${index}].version`),
+      before_sha256: beforeSha,
+      dependency_action_ids: dependencies,
+    });
+    seen.add(actionId);
+  }
+  return {
+    schema_version: 'dataset-save-draft-execution-contract.v1',
+    execution_id: executionId,
+    project_ref: projectRef,
+    target_mode: 'owner_draft',
+    owner: { user_id: ownerUserId, email: ownerEmail, state_code: 0 },
+    actions,
+  };
+}
+
+function bindExecutionContractRows(
+  contract: DatasetSaveDraftExecutionContract,
+  rows: PreparedDatasetRow[],
+): void {
+  if (contract.actions.length !== rows.length) {
+    executionContractError('Execution contract action count does not match selected rows.');
+  }
+  contract.actions.forEach((action, index) => {
+    const row = rows[index];
+    const payloadIdentity = row?.config
+      ? extractIdentity(row.payload, {}, row.config)
+      : { id: null, version: null };
+    if (
+      !row ||
+      row.config?.table !== action.table ||
+      row.id !== action.id ||
+      row.version !== action.version ||
+      payloadIdentity.id !== action.id ||
+      payloadIdentity.version !== action.version ||
+      sha256Json(row.payload) !== action.desired_sha256
+    ) {
+      executionContractError(
+        `Execution contract action ${action.action_id} does not bind row ${index}.`,
+      );
+    }
+  });
+}
+
+function executionActionBindingSha256(action: DatasetSaveDraftExecutionAction): string {
+  return sha256Json({
+    schema_version: 'dataset-save-draft-action-binding.v1',
+    action_id: action.action_id,
+    desired_sha256: action.desired_sha256,
+    expected_operation: action.expected_operation,
+    table: action.table,
+    id: action.id,
+    version: action.version,
+    before_sha256: action.before_sha256,
+  });
+}
+
+function executionLedgerRoot(
+  env: NodeJS.ProcessEnv,
+  contract: DatasetSaveDraftExecutionContract,
+): string {
+  const ownerScopeSha256 = sha256Json({
+    schema_version: 'dataset-save-draft-owner-scope.v1',
+    project_ref: contract.project_ref,
+    owner: contract.owner,
+  });
+  return path.join(
+    resolveFlowIdentityApprovalClaimRoot({ env }),
+    'execution-ledgers',
+    'dataset-save-draft',
+    'v1',
+    ownerScopeSha256,
+  );
+}
+
+function executionLedgerPath(ledgerRoot: string, action: DatasetSaveDraftExecutionAction): string {
+  const actionIdentitySha256 = sha256Json({
+    schema_version: 'dataset-save-draft-action-identity.v1',
+    action_id: action.action_id,
+    desired_sha256: action.desired_sha256,
+  });
+  return path.join(path.resolve(ledgerRoot), `${actionIdentitySha256}.events.jsonl`);
+}
+
+function eventWithoutSha(
+  event: DatasetSaveDraftLedgerEvent,
+): Omit<DatasetSaveDraftLedgerEvent, 'event_sha256'> {
+  const core: Partial<DatasetSaveDraftLedgerEvent> = { ...event };
+  delete core.event_sha256;
+  return core as Omit<DatasetSaveDraftLedgerEvent, 'event_sha256'>;
+}
+
+function parseLedgerEvent(value: unknown, index: number): DatasetSaveDraftLedgerEvent {
+  if (!isRecord(value)) {
+    executionContractError(`Execution ledger event ${index} is not an object.`);
+  }
+  const event = value as DatasetSaveDraftLedgerEvent;
+  if (
+    event.schema_version !== 'dataset-save-draft-execution-event.v1' ||
+    event.sequence !== index + 1 ||
+    !SHA256_PATTERN.test(event.contract_sha256) ||
+    !trimToken(event.action_id) ||
+    !SHA256_PATTERN.test(event.desired_sha256) ||
+    !SHA256_PATTERN.test(event.action_binding_sha256) ||
+    !['attempt_emitted', 'outcome'].includes(event.event_type) ||
+    !['insert', 'save_draft'].includes(event.operation) ||
+    !['executed', 'unknown', null].includes(event.outcome) ||
+    typeof event.recovered !== 'boolean' ||
+    !trimToken(event.recorded_at_utc) ||
+    !(event.previous_event_sha256 === null || SHA256_PATTERN.test(event.previous_event_sha256)) ||
+    !SHA256_PATTERN.test(event.event_sha256)
+  ) {
+    executionContractError(`Execution ledger event ${index} has an invalid shape.`);
+  }
+  if (
+    (event.event_type === 'attempt_emitted' && event.outcome !== null) ||
+    (event.event_type === 'outcome' && event.outcome === null)
+  ) {
+    executionContractError(`Execution ledger event ${index} has an invalid outcome.`);
+  }
+  return event;
+}
+
+function loadExecutionLedger(
+  ledgerRoot: string,
+  contract: DatasetSaveDraftExecutionContract,
+): ExecutionLedgerState {
+  const events = new Map<string, DatasetSaveDraftLedgerEvent[]>();
+  const attempts = new Map<string, DatasetSaveDraftLedgerEvent>();
+  const outcomes = new Map<string, DatasetSaveDraftLedgerEvent>();
+  for (const action of contract.actions) {
+    const actionEvents: DatasetSaveDraftLedgerEvent[] = [];
+    const rawEvents = readJsonLinesIfPresent(executionLedgerPath(ledgerRoot, action));
+    for (const [index, value] of rawEvents.entries()) {
+      const event = parseLedgerEvent(value, index);
+      const previous = actionEvents.at(-1) ?? null;
+      if (
+        event.action_id !== action.action_id ||
+        event.desired_sha256 !== action.desired_sha256 ||
+        event.action_binding_sha256 !== executionActionBindingSha256(action) ||
+        event.operation !== action.expected_operation ||
+        event.previous_event_sha256 !== (previous?.event_sha256 ?? null) ||
+        event.event_sha256 !== sha256Json(eventWithoutSha(event))
+      ) {
+        executionContractError(
+          `Execution ledger event ${index} failed its hash or action binding for ${action.action_id}.`,
+        );
+      }
+      if (event.event_type === 'attempt_emitted') {
+        if (attempts.has(event.action_id) || outcomes.has(event.action_id)) {
+          executionContractError(`Execution ledger repeats attempt for ${event.action_id}.`);
+        }
+        attempts.set(event.action_id, event);
+      } else {
+        if (!attempts.has(event.action_id) || outcomes.has(event.action_id)) {
+          executionContractError(
+            `Execution ledger outcome ordering is invalid for ${event.action_id}.`,
+          );
+        }
+        outcomes.set(event.action_id, event);
+      }
+      actionEvents.push(event);
+    }
+    events.set(action.action_id, actionEvents);
+  }
+  return { events, attempts, outcomes };
+}
+
+function appendExecutionEvent(options: {
+  ledgerRoot: string;
+  ledger: ExecutionLedgerState;
+  contractSha256: string;
+  action: DatasetSaveDraftExecutionAction;
+  eventType: 'attempt_emitted' | 'outcome';
+  outcome: 'executed' | 'unknown' | null;
+  recovered: boolean;
+  recordedAtUtc: string;
+}): DatasetSaveDraftLedgerEvent {
+  const actionEvents = options.ledger.events.get(
+    options.action.action_id,
+  ) as DatasetSaveDraftLedgerEvent[];
+  const core = {
+    schema_version: 'dataset-save-draft-execution-event.v1' as const,
+    sequence: actionEvents.length + 1,
+    contract_sha256: options.contractSha256,
+    action_id: options.action.action_id,
+    desired_sha256: options.action.desired_sha256,
+    action_binding_sha256: executionActionBindingSha256(options.action),
+    event_type: options.eventType,
+    operation: options.action.expected_operation,
+    outcome: options.outcome,
+    recovered: options.recovered,
+    recorded_at_utc: options.recordedAtUtc,
+    previous_event_sha256: actionEvents.at(-1)?.event_sha256 ?? null,
+  };
+  const event: DatasetSaveDraftLedgerEvent = { ...core, event_sha256: sha256Json(core) };
+  const ledgerPath = executionLedgerPath(options.ledgerRoot, options.action);
+  mkdirSync(path.dirname(ledgerPath), { recursive: true, mode: 0o700 });
+  chmodSync(path.dirname(ledgerPath), 0o700);
+  if (event.event_type === 'attempt_emitted') {
+    const createDescriptor = openSync(ledgerPath, 'wx', 0o600);
+    try {
+      writeFileSync(createDescriptor, `${stableJsonText(event)}\n`, 'utf8');
+      fsyncSync(createDescriptor);
+    } finally {
+      closeSync(createDescriptor);
+    }
+  } else {
+    appendStableJsonLine(ledgerPath, event);
+  }
+  chmodSync(ledgerPath, 0o600);
+  const descriptor = openSync(ledgerPath, 'r');
+  try {
+    fsyncSync(descriptor);
+  } finally {
+    closeSync(descriptor);
+  }
+  actionEvents.push(event);
+  options.ledger.events.set(event.action_id, actionEvents);
+  if (event.event_type === 'attempt_emitted') {
+    options.ledger.attempts.set(event.action_id, event);
+  } else {
+    options.ledger.outcomes.set(event.action_id, event);
+  }
+  return event;
+}
+
+function projectRefFromApiBaseUrl(apiBaseUrl: string): string {
+  return new URL(apiBaseUrl).hostname.split('.')[0] as string;
+}
+
+function decodeExecutionActor(accessToken: string): { user_id: string; email: string } {
+  const payload = accessToken.split('.')[1];
+  if (!payload) {
+    executionContractError('Owner-session access token is not a JWT.');
+  }
+  let decoded: unknown;
+  try {
+    decoded = JSON.parse(Buffer.from(payload, 'base64url').toString('utf8'));
+  } catch {
+    executionContractError('Owner-session access token JWT payload is invalid.');
+  }
+  if (!isRecord(decoded)) {
+    executionContractError('Owner-session access token JWT payload is not an object.');
+  }
+  return {
+    user_id: requireExecutionToken(decoded.sub, 'owner-session sub'),
+    email: requireExecutionToken(decoded.email, 'owner-session email').toLowerCase(),
+  };
+}
 
 function isRecord(value: unknown): value is JsonObject {
   return typeof value === 'object' && value !== null && !Array.isArray(value);
@@ -826,6 +1244,435 @@ async function exactVisibleRows(options: {
   return parseVisibleRows(payload, url);
 }
 
+function parseExecutionRows(payload: unknown, url: string): ExecutionDatasetRow[] {
+  const visible = parseVisibleRows(payload, url);
+  return visible.map((row, index) => {
+    const raw = (payload as unknown[])[index];
+    const jsonOrdered = isRecord(raw) && isRecord(raw.json_ordered) ? raw.json_ordered : null;
+    return { ...row, json_ordered: jsonOrdered };
+  });
+}
+
+async function exactExecutionRows(options: {
+  client: SupabaseDataClient;
+  restBaseUrl: string;
+  table: DatasetCommandTable;
+  id: string;
+  version: string;
+}): Promise<ExecutionDatasetRow[]> {
+  const url = new URL(
+    buildVisibleRowsUrl(options.restBaseUrl, options.table, options.id, options.version),
+  );
+  url.searchParams.set('select', 'id,version,user_id,state_code,json_ordered');
+  const payload = await runSupabaseArrayQuery(
+    options.client
+      .from(options.table)
+      .select('id,version,user_id,state_code,json_ordered')
+      .eq('id', options.id)
+      .eq('version', options.version),
+    url.toString(),
+  );
+  return parseExecutionRows(payload, url.toString());
+}
+
+function exactDesiredReadback(options: {
+  rows: ExecutionDatasetRow[];
+  action: DatasetSaveDraftExecutionAction;
+  contract: DatasetSaveDraftExecutionContract;
+}): boolean {
+  const row = options.rows[0];
+  return Boolean(
+    options.rows.length === 1 &&
+    row &&
+    row.id === options.action.id &&
+    row.version === options.action.version &&
+    row.user_id === options.contract.owner.user_id &&
+    row.state_code === 0 &&
+    row.json_ordered &&
+    sha256Json(row.json_ordered) === options.action.desired_sha256,
+  );
+}
+
+function contractRowReport(options: {
+  row: PreparedDatasetRow;
+  action: DatasetSaveDraftExecutionAction;
+  status: 'executed' | 'failed' | 'unknown' | 'blocked';
+  operation: DatasetSaveDraftRowReport['operation'];
+  attemptConsumed: boolean;
+  readback: DatasetSaveDraftRowReport['readback'];
+  error?: { message: string; details?: unknown };
+}): DatasetSaveDraftRowReport {
+  return {
+    index: options.row.index,
+    id: options.row.id,
+    version: options.row.version,
+    type: options.row.type,
+    table: options.action.table,
+    status: options.status,
+    operation: options.operation,
+    validation: options.row.validation,
+    action_id: options.action.action_id,
+    desired_sha256: options.action.desired_sha256,
+    attempt_consumed: options.attemptConsumed,
+    replayed: false,
+    readback: options.readback,
+    ...(options.error ? { error: options.error } : {}),
+  };
+}
+
+async function finalizeAttemptedAction(options: {
+  row: PreparedDatasetRow;
+  action: DatasetSaveDraftExecutionAction;
+  contract: DatasetSaveDraftExecutionContract;
+  contractSha256: string;
+  ledgerRoot: string;
+  ledger: ExecutionLedgerState;
+  client: SupabaseDataClient;
+  restBaseUrl: string;
+  now: () => string;
+  recovered: boolean;
+}): Promise<DatasetSaveDraftRowReport> {
+  const desiredExact = await readbackIsDesiredExact(options);
+  appendExecutionEvent({
+    ledgerRoot: options.ledgerRoot,
+    ledger: options.ledger,
+    contractSha256: options.contractSha256,
+    action: options.action,
+    eventType: 'outcome',
+    outcome: desiredExact ? 'executed' : 'unknown',
+    recovered: options.recovered,
+    recordedAtUtc: options.now(),
+  });
+  return contractRowReport({
+    row: options.row,
+    action: options.action,
+    status: desiredExact ? 'executed' : 'unknown',
+    operation:
+      desiredExact && options.recovered
+        ? 'recovered_exact_readback'
+        : options.action.expected_operation,
+    attemptConsumed: true,
+    readback: desiredExact ? 'desired_exact' : 'not_desired',
+    ...(desiredExact
+      ? {}
+      : {
+          error: {
+            message:
+              'A prior protected request was emitted without a terminal desired-exact readback; the action is UNKNOWN and will never be replayed.',
+          },
+        }),
+  });
+}
+
+async function readbackIsDesiredExact(options: {
+  client: SupabaseDataClient;
+  restBaseUrl: string;
+  action: DatasetSaveDraftExecutionAction;
+  contract: DatasetSaveDraftExecutionContract;
+}): Promise<boolean> {
+  try {
+    return exactDesiredReadback({
+      rows: await exactExecutionRows({
+        client: options.client,
+        restBaseUrl: options.restBaseUrl,
+        table: options.action.table,
+        id: options.action.id,
+        version: options.action.version,
+      }),
+      action: options.action,
+      contract: options.contract,
+    });
+  } catch {
+    return false;
+  }
+}
+
+async function runExecutionContractBatch(options: {
+  contractPath: string;
+  contract: DatasetSaveDraftExecutionContract;
+  preparedRows: PreparedDatasetRow[];
+  allowReferenceOnlySupport: boolean;
+  files: DatasetSaveDraftReport['files'];
+  inputPath: string;
+  requestedType: DatasetSaveDraftType;
+  outDir: string;
+  env: NodeJS.ProcessEnv;
+  runtime: SupabaseDataRuntime;
+  commandTransport: NonNullable<Awaited<ReturnType<typeof buildDatasetCommandTransport>>>;
+  dataClient: NonNullable<ReturnType<typeof createSupabaseDataClient>>;
+  fetchImpl: FetchLike;
+  timeoutMs: number;
+  now: () => string;
+}): Promise<DatasetSaveDraftReport> {
+  const contractSha256 = sha256Json(options.contract);
+  const ledgerRoot = executionLedgerRoot(options.env, options.contract);
+  const ledger = loadExecutionLedger(ledgerRoot, options.contract);
+  const actor = decodeExecutionActor(options.commandTransport.accessToken);
+  if (
+    projectRefFromApiBaseUrl(options.runtime.apiBaseUrl) !== options.contract.project_ref ||
+    actor.user_id !== options.contract.owner.user_id ||
+    actor.email !== options.contract.owner.email
+  ) {
+    executionContractError('Owner session or project does not match the execution contract.');
+  }
+  options.files.execution_ledger = ledgerRoot;
+  const reports: DatasetSaveDraftRowReport[] = [];
+  const statuses = new Map<string, DatasetSaveDraftRowReport['status']>();
+  const referenceOnlySupportCache = new Map<string, Promise<RemoteDatasetLookup>>();
+
+  for (const [index, action] of options.contract.actions.entries()) {
+    const row = options.preparedRows[index] as PreparedDatasetRow;
+    const preparedFailure = buildPreparedFailure(row, options.allowReferenceOnlySupport);
+    if (preparedFailure) {
+      const report = {
+        ...preparedFailure,
+        action_id: action.action_id,
+        desired_sha256: action.desired_sha256,
+        attempt_consumed: false,
+        replayed: false as const,
+        readback: 'not_performed' as const,
+      };
+      reports.push(report);
+      statuses.set(action.action_id, report.status);
+      continue;
+    }
+
+    const priorOutcome = ledger.outcomes.get(action.action_id);
+    if (priorOutcome) {
+      const desiredStillExact =
+        priorOutcome.outcome === 'executed' &&
+        (await readbackIsDesiredExact({
+          client: options.dataClient.client,
+          restBaseUrl: options.dataClient.restBaseUrl,
+          action,
+          contract: options.contract,
+        }));
+      const status = desiredStillExact ? 'executed' : 'unknown';
+      const report = contractRowReport({
+        row,
+        action,
+        status,
+        operation: action.expected_operation,
+        attemptConsumed: true,
+        readback: desiredStillExact ? 'desired_exact' : 'not_desired',
+        ...(status === 'unknown'
+          ? {
+              error: {
+                message:
+                  priorOutcome.outcome === 'unknown'
+                    ? 'Terminal UNKNOWN action retained; replay is forbidden.'
+                    : 'A terminal success no longer has exact desired owner readback; replay is forbidden.',
+              },
+            }
+          : {}),
+      });
+      reports.push(report);
+      statuses.set(action.action_id, status);
+      continue;
+    }
+
+    if (ledger.attempts.has(action.action_id)) {
+      const report = await finalizeAttemptedAction({
+        row,
+        action,
+        contract: options.contract,
+        contractSha256,
+        ledgerRoot,
+        ledger,
+        client: options.dataClient.client,
+        restBaseUrl: options.dataClient.restBaseUrl,
+        now: options.now,
+        recovered: true,
+      });
+      reports.push(report);
+      statuses.set(action.action_id, report.status);
+      continue;
+    }
+
+    const blockingDependencies = action.dependency_action_ids.filter(
+      (dependency) => statuses.get(dependency) !== 'executed',
+    );
+    if (blockingDependencies.length > 0) {
+      const report = contractRowReport({
+        row,
+        action,
+        status: 'blocked',
+        operation: 'blocked_dependency',
+        attemptConsumed: false,
+        readback: 'not_performed',
+        error: {
+          message: 'Action dependencies are not terminal successes; no request was emitted.',
+          details: { dependency_action_ids: blockingDependencies },
+        },
+      });
+      reports.push(report);
+      statuses.set(action.action_id, report.status);
+      continue;
+    }
+
+    let beforeRows: ExecutionDatasetRow[];
+    let transportFailed = false;
+    try {
+      beforeRows = await exactExecutionRows({
+        client: options.dataClient.client,
+        restBaseUrl: options.dataClient.restBaseUrl,
+        table: action.table,
+        id: action.id,
+        version: action.version,
+      });
+      const before = beforeRows[0];
+      const observedOperation = beforeRows.length === 0 ? 'insert' : 'save_draft';
+      const beforeExact = Boolean(
+        beforeRows.length === 1 &&
+        before &&
+        before.id === action.id &&
+        before.version === action.version &&
+        before.user_id === options.contract.owner.user_id &&
+        before.state_code === 0 &&
+        before.json_ordered &&
+        sha256Json(before.json_ordered) === action.before_sha256,
+      );
+      if (
+        beforeRows.length > 1 ||
+        observedOperation !== action.expected_operation ||
+        (observedOperation === 'save_draft' && !beforeExact)
+      ) {
+        throw new CliError('Execution action before-state or expected operation drifted.', {
+          code: 'DATASET_SAVE_DRAFT_EXECUTION_BEFORE_DRIFT',
+          exitCode: 1,
+        });
+      }
+      if (row.type === 'flow') {
+        const unresolvedReferences = await missingFlowRemoteReferences({
+          runtime: options.runtime,
+          fetchImpl: options.fetchImpl,
+          timeoutMs: options.timeoutMs,
+          cache: referenceOnlySupportCache,
+          payload: row.payload,
+        });
+        if (unresolvedReferences.length > 0) {
+          throw new CliError('Flow execution action has unresolved remote references.', {
+            code: 'DATASET_SAVE_DRAFT_REMOTE_REFERENCE_UNRESOLVED',
+            exitCode: 1,
+            details: { references: unresolvedReferences },
+          });
+        }
+      }
+    } catch (error) {
+      const report = contractRowReport({
+        row,
+        action,
+        status: 'failed',
+        operation: action.expected_operation,
+        attemptConsumed: false,
+        readback: 'not_performed',
+        error: serializeError(error),
+      });
+      reports.push(report);
+      statuses.set(action.action_id, report.status);
+      continue;
+    }
+
+    try {
+      const beforeDispatch = () => {
+        appendExecutionEvent({
+          ledgerRoot,
+          ledger,
+          contractSha256,
+          action,
+          eventType: 'attempt_emitted',
+          outcome: null,
+          recovered: false,
+          recordedAtUtc: options.now(),
+        });
+      };
+      if (action.expected_operation === 'insert') {
+        await createDatasetRecord({
+          transport: options.commandTransport,
+          table: action.table,
+          id: action.id,
+          payload: row.payload,
+          extraData: { ruleVerification: true },
+          beforeDispatch,
+        });
+      } else {
+        await saveDraftDatasetRecord({
+          transport: options.commandTransport,
+          table: action.table,
+          id: action.id,
+          version: action.version,
+          payload: row.payload,
+          extraData: { ruleVerification: true },
+          beforeDispatch,
+        });
+      }
+    } catch (error) {
+      if (error instanceof CliError && error.code === 'DATASET_COMMAND_BEFORE_DISPATCH_FAILED') {
+        throw error;
+      }
+      // Once emission is durably recorded, transport outcomes are resolved by readback only.
+      transportFailed = true;
+    }
+    const report = await finalizeAttemptedAction({
+      row,
+      action,
+      contract: options.contract,
+      contractSha256,
+      ledgerRoot,
+      ledger,
+      client: options.dataClient.client,
+      restBaseUrl: options.dataClient.restBaseUrl,
+      now: options.now,
+      recovered: transportFailed,
+    });
+    reports.push(report);
+    statuses.set(action.action_id, report.status);
+  }
+
+  const failures = reports.filter((row) => ['failed', 'unknown', 'blocked'].includes(row.status));
+  writeJsonLinesArtifact(options.files.progress_jsonl, reports);
+  writeJsonLinesArtifact(options.files.failures_jsonl, failures);
+  const unknown = reports.filter((row) => row.status === 'unknown').length;
+  const failed = reports.filter((row) => row.status === 'failed').length;
+  const blocked = reports.filter((row) => row.status === 'blocked').length;
+  const report: DatasetSaveDraftReport = {
+    schema_version: 2,
+    generated_at_utc: options.now(),
+    input_path: options.inputPath,
+    requested_type: options.requestedType,
+    out_dir: options.outDir,
+    commit: true,
+    mode: 'commit',
+    status:
+      unknown > 0
+        ? 'completed_with_unknowns'
+        : failed + blocked > 0
+          ? 'completed_with_failures'
+          : 'completed',
+    counts: {
+      selected: options.preparedRows.length,
+      prepared: 0,
+      executed: reports.filter((row) => row.status === 'executed').length,
+      failed,
+      unknown,
+      blocked,
+      attempts_consumed: ledger.attempts.size,
+      by_table: byTable(options.preparedRows),
+      operations: operationCount(reports),
+    },
+    files: options.files,
+    rows: reports,
+    execution_contract: {
+      path: path.resolve(options.contractPath),
+      sha256: contractSha256,
+      execution_id: options.contract.execution_id,
+      target_mode: 'owner_draft',
+    },
+  };
+  writeJsonArtifact(options.files.summary_json, report);
+  return report;
+}
+
 export async function runDatasetSaveDraft(
   options: RunDatasetSaveDraftOptions,
 ): Promise<DatasetSaveDraftReport> {
@@ -840,6 +1687,21 @@ export async function runDatasetSaveDraft(
   const files = buildFiles(outDir);
   const preparedRows = prepareRows(inputPath, options.rawInput, requestedType);
   const timeoutMs = options.timeoutMs ?? DEFAULT_TIMEOUT_MS;
+  const executionContractPath = options.executionContractPath
+    ? path.resolve(options.executionContractPath)
+    : null;
+  const executionContract = executionContractPath
+    ? parseExecutionContract(
+        readJsonFile(executionContractPath, 'Dataset save-draft execution contract'),
+      )
+    : null;
+
+  if (executionContract && !commit) {
+    executionContractError('Execution contract mode requires --commit.');
+  }
+  if (executionContract) {
+    bindExecutionContractRows(executionContract, preparedRows);
+  }
 
   if (commit && (!options.env || !options.fetchImpl)) {
     throw new CliError('Dataset save-draft commit requires env and fetch runtime bindings.', {
@@ -871,6 +1733,26 @@ export async function runDatasetSaveDraft(
       ? createSupabaseDataClient(runtime, options.fetchImpl, timeoutMs)
       : null;
   const referenceOnlySupportCache = new Map<string, Promise<RemoteDatasetLookup>>();
+
+  if (executionContract && executionContractPath) {
+    return runExecutionContractBatch({
+      contractPath: executionContractPath,
+      contract: executionContract,
+      preparedRows,
+      allowReferenceOnlySupport,
+      files,
+      inputPath,
+      requestedType,
+      outDir,
+      env: options.env!,
+      runtime: runtime!,
+      commandTransport: commandTransport!,
+      dataClient: dataClient!,
+      fetchImpl: options.fetchImpl!,
+      timeoutMs,
+      now: () => now.toISOString(),
+    });
+  }
 
   const reports: DatasetSaveDraftRowReport[] = [];
   for (const row of preparedRows) {
@@ -1025,6 +1907,13 @@ export const __testInternals = {
   compareVersions,
   defaultOutDir,
   detectType,
+  decodeExecutionActor,
+  bindExecutionContractRows,
+  executionLedgerRoot,
+  executionLedgerPath,
+  executionActionBindingSha256,
+  loadExecutionLedger,
+  exactDesiredReadback,
   extractIdentity,
   flowType,
   isElementaryFlowPayload,
@@ -1034,6 +1923,10 @@ export const __testInternals = {
   normalizeType,
   operationCount,
   parseVisibleRows,
+  parseExecutionContract,
+  parseExecutionRows,
+  parseLedgerEvent,
+  projectRefFromApiBaseUrl,
   prepareRows,
   remoteReferenceFallbackKey,
   selectedRow,

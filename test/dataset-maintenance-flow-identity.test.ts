@@ -1786,6 +1786,10 @@ test('planner rejects phantom orphans, target drift, incompatible directions, mi
     issue_count: 1,
     issues: [{ path: 'process', message: 'bad', code: 'custom' }],
   });
+  const schemaFailureNow = Date.now();
+  schemaFailure.capture.attestation.captured_at = new Date(schemaFailureNow - 60_000).toISOString();
+  schemaFailure.capture.attestation.expires_at = new Date(schemaFailureNow + 60_000).toISOString();
+  bindCaptureReceiptSemantics(schemaFailure.capture, schemaFailure.review);
   assert.throws(
     () =>
       buildFlowIdentityPlan({
@@ -1819,6 +1823,11 @@ test('contract parsers reject review, policy, and plan tampering', () => {
   duplicateReview.entries[304]!.source = { ...duplicateReview.entries[0]!.source };
   duplicateReview.ledger_sha256 = computeFlowIdentityReviewLedgerSha256(duplicateReview);
   assert.throws(() => parseFlowIdentityReviewLedger(duplicateReview), /305 unique/u);
+
+  const currentWindow = Date.now();
+  input.capture.attestation.captured_at = new Date(currentWindow - 60_000).toISOString();
+  input.capture.attestation.expires_at = new Date(currentWindow + 60_000).toISOString();
+  bindCaptureReceiptSemantics(input.capture, input.review);
 
   const bundle = buildFlowIdentityPlan({
     policy: input.policy,
