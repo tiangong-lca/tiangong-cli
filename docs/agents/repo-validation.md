@@ -27,8 +27,8 @@ checkPaths:
   - scripts/docpact
   - scripts/docpact-gate.sh
   - scripts/install-git-hooks.sh
-lastReviewedAt: 2026-07-23
-lastReviewedCommit: 4daf99c1b0b0fe3e084b5903163cdf6b11fe4de2
+lastReviewedAt: 2026-07-24
+lastReviewedCommit: 0cbbf9cef373675ad39ae2b8103003d05b48ccb8
 related:
   - ../../AGENTS.md
   - ../../.docpact/config.yaml
@@ -109,6 +109,8 @@ Review note, 2026-07-23: Issue #194 adds focused proof for ordered contract bind
 Review note, 2026-07-23: Issue #196 keeps the validation contract unchanged for the dedicated 0.0.30 release. The manually dispatched Windows gate is required to prove durable attempt/outcome ledger writes no longer fail on read-only-descriptor `fsync`; all execution-contract recovery/no-replay tests, all four live CLI-version fixtures, exact 100% coverage, dry-run package inspection, Docpact, tag/publish workflows, and exact npm provenance remain required.
 
 Review note, 2026-07-23: Issue #198 adds a regression proving SDK validation cannot mutate the execution-contract input payload, its desired SHA, or the eventual dispatch target, and releases the repair as 0.0.31. Focused execution-contract coverage, all four live CLI-version fixtures, exact 100% coverage, Docpact, the full pre-push gate, the four-platform quality gate, package inspection, and exact npm provenance remain required.
+
+Review note, 2026-07-24: Issue #200 releases 0.0.32 and adds focused proof for serial dependency-prefix completion, bounded suffix concurrency, stable report ordering, repeated-target rejection before DML, owner-token rollover, foreign renewed-session rejection at zero attempts, and unchanged success/UNKNOWN no-replay. Exact 100% coverage, Docpact, pre-push, four-platform quality, package inspection, and npm provenance gates remain required.
 
 ## Validation Matrix
 

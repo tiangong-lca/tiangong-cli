@@ -19,8 +19,8 @@ checkPaths:
   - scripts/docpact
   - scripts/docpact-gate.sh
   - scripts/install-git-hooks.sh
-lastReviewedAt: 2026-07-23
-lastReviewedCommit: 4daf99c1b0b0fe3e084b5903163cdf6b11fe4de2
+lastReviewedAt: 2026-07-24
+lastReviewedCommit: 0cbbf9cef373675ad39ae2b8103003d05b48ccb8
 related:
   - ../AGENTS.md
   - ../.docpact/config.yaml
@@ -80,6 +80,8 @@ Review note, 2026-07-23: Issue #194 requires no new npm secret, GitHub environme
 Review note, 2026-07-23: Issue #196 publishes 0.0.30 through the existing merge-triggered tag and npm Trusted Publishing workflows. Its Windows-compatible write-descriptor `fsync` repair requires no new secret, environment, runner, Trusted Publisher setting, workflow filename, tag rule, service-role credential, or alternate CLI authentication variable.
 
 Review note, 2026-07-23: Issue #198 publishes 0.0.31 through the same merge-triggered tag and npm Trusted Publishing workflows. Isolating SDK validation on a deep clone requires no new secret, environment, runner, Trusted Publisher setting, workflow filename, tag rule, service-role credential, or alternate CLI authentication variable.
+
+Review note, 2026-07-24: Issue #200 publishes 0.0.32 through the unchanged merge-triggered tag and npm Trusted Publishing workflows. Bounded execution-contract concurrency and owner-token renewal reuse the existing CLI session runtime and add no dependency, secret, environment variable, runner, Trusted Publisher setting, workflow filename, service-role credential, or alternate authentication surface.
 
 Review note, 2026-07-13: exact-count maintenance pagination requires no repository secret, Trusted Publisher, environment, workflow filename, or tag-semantics change.
 

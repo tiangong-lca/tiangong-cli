@@ -1417,6 +1417,8 @@ Options:
   --dry-run        Validate and plan without remote writes (default)
   --execution-contract <file>
                    Execute a content-bound ordered owner-draft batch with append-only attempt/readback evidence (requires --commit)
+  --max-parallel <1-8>
+                   Keep the dependency prefix serial, then run only the target-unique suffix with this concurrency (default: 1)
   --allow-account-local-support
                    Explicitly permit account-local Unit Group / Flow Property rows in the execution contract
   --json           Print compact JSON
@@ -3069,6 +3071,7 @@ function parseDatasetSaveDraftFlags(args: string[]): {
   commit: boolean;
   allowReferenceOnlySupport: boolean;
   executionContractPath: string | null;
+  maxParallel: number;
 } {
   let values: ReturnType<typeof parseArgs>['values'];
   try {
@@ -3086,6 +3089,7 @@ function parseDatasetSaveDraftFlags(args: string[]): {
         'dry-run': { type: 'boolean' },
         'allow-account-local-support': { type: 'boolean' },
         'execution-contract': { type: 'string' },
+        'max-parallel': { type: 'string' },
       },
     }));
   } catch (error) {
@@ -3102,6 +3106,20 @@ function parseDatasetSaveDraftFlags(args: string[]): {
     });
   }
 
+  const maxParallelValue = values['max-parallel'];
+  const maxParallel =
+    typeof maxParallelValue === 'string' && /^\d+$/u.test(maxParallelValue)
+      ? Number.parseInt(maxParallelValue, 10)
+      : maxParallelValue === undefined
+        ? 1
+        : Number.NaN;
+  if (!Number.isInteger(maxParallel) || maxParallel < 1 || maxParallel > 8) {
+    throw new CliError('--max-parallel must be an integer from 1 to 8.', {
+      code: 'INVALID_ARGS',
+      exitCode: 2,
+    });
+  }
+
   return {
     help: Boolean(values.help),
     json: Boolean(values.json),
@@ -3112,6 +3130,7 @@ function parseDatasetSaveDraftFlags(args: string[]): {
     allowReferenceOnlySupport: Boolean(values['allow-account-local-support']),
     executionContractPath:
       typeof values['execution-contract'] === 'string' ? values['execution-contract'] : null,
+    maxParallel,
   };
 }
 
@@ -7351,6 +7370,7 @@ export async function executeCli(argv: string[], deps: CliDeps): Promise<CliResu
         commit: datasetFlags.commit,
         allowReferenceOnlySupport: datasetFlags.allowReferenceOnlySupport,
         executionContractPath: datasetFlags.executionContractPath,
+        maxParallel: datasetFlags.maxParallel,
         env: deps.env,
         fetchImpl: deps.fetchImpl,
       });

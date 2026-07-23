@@ -43,6 +43,8 @@ Review note, 2026-07-17: `dataset maintenance flow-identity capture|plan|freeze|
 
 Review note, 2026-07-23: `dataset save-draft --execution-contract` adds an opt-in crash-safe ordered owner-draft batch. The contract binds the authenticated project/owner, state 0, exact input order and payloads, before hashes, expected insert/update operations, and dependencies. A stable per-owner/project `action_id@desired_sha256` ledger prevents replay even if the contract or output directory is copied; ambiguous attempts are recovered only by exact owner/state/payload readback. The ordinary save-draft mode is unchanged.
 
+Review note, 2026-07-24: CLI 0.0.32 adds bounded execution-contract concurrency without changing the sealed payload or replay model. `--max-parallel 1..8` keeps the complete dependency prefix serial and exact-read-back, then overlaps only the unique-target suffix. The current owner token is renewed and revalidated before each DML dispatch so long batches do not turn token expiry into an avoidable UNKNOWN.
+
 ## Run
 
 One-off published run:
@@ -365,7 +367,7 @@ tiangong-lca dataset classification apply --type location --input ./rows/process
 tiangong-lca dataset curation-queue build --processes ./rows/processes.jsonl --flows ./rows/flows.jsonl --support ./rows/sources.jsonl --out-dir /abs/path/to/curation-queue --json
 tiangong-lca dataset curation-queue next --queue-dir /abs/path/to/curation-queue --type support --json
 tiangong-lca dataset curation-queue verify --queue-dir /abs/path/to/curation-queue --type process --json
-tiangong-lca dataset save-draft --input ./rows.jsonl --type auto --execution-contract ./execution-contract.json --out-dir /abs/path/to/dataset-save-draft --commit --json
+tiangong-lca dataset save-draft --input ./rows.jsonl --type auto --execution-contract ./execution-contract.json --max-parallel 8 --out-dir /abs/path/to/dataset-save-draft --commit --json
 tiangong-lca dataset evidence-search plan --query "中国2026年电力结构数据" --out-dir /abs/path/to/evidence-search --json
 tiangong-lca dataset evidence-search run --input ./evidence-search.request.json --results ./search-results.json --out-dir /abs/path/to/evidence-search --json
 tiangong-lca dataset references rewrite --input ./rows.jsonl --from flow:<old-id>@<old-version> --to flow:<new-id>@<new-version> --out-dir /abs/path/to/dataset-rewrite --json
@@ -400,7 +402,7 @@ For `process build-plan` and `flow build-plan`, canonical payloads embedded in t
 
 For `process save-draft`, canonical process payloads are validated locally with `ProcessSchema` before any `--commit` write. Schema-invalid rows remain in `outputs/save-draft-rpc/failures.jsonl` instead of being persisted. Batch import callers should pass `--target-user-id`; the CLI then verifies the current auth session and any visible draft owner before writing, while downstream readback verification still proves the final owner and payload.
 
-For `dataset save-draft --execution-contract`, the JSON contract uses schema `dataset-save-draft-execution-contract.v1` and supplies `execution_id`, `project_ref`, an exact owner (`user_id`, lowercase `email`, `state_code: 0`), and ordered actions. Each action binds `action_id`, `desired_sha256`, `expected_operation` (`insert` or `save_draft`), table/id/version, `before_sha256`, and earlier `dependency_action_ids`. Contract mode requires `--commit`; account-local Unit Group or Flow Property support rows additionally require `--allow-account-local-support`. Attempts and outcomes are stored under the platform user-state directory (`$XDG_STATE_HOME/tiangong-lca-cli` when configured), not beside the contract or report. Any prior terminal or unresolved attempt is read back or retained without re-dispatch; exit status is nonzero unless every action has exact terminal success.
+For `dataset save-draft --execution-contract`, the JSON contract uses schema `dataset-save-draft-execution-contract.v1` and supplies `execution_id`, `project_ref`, an exact owner (`user_id`, lowercase `email`, `state_code: 0`), and ordered actions. Each action binds `action_id`, `desired_sha256`, `expected_operation` (`insert` or `save_draft`), table/id/version, `before_sha256`, and earlier `dependency_action_ids`. Contract mode requires `--commit`; account-local Unit Group or Flow Property support rows additionally require `--allow-account-local-support`. `--max-parallel` defaults to 1 and is capped at 8. When it is greater than 1, every action through the highest referenced dependency remains serial; only the later table/id/version-unique suffix may overlap. The exact owner token is renewed and checked before each DML dispatch. Attempts and outcomes are stored under the platform user-state directory (`$XDG_STATE_HOME/tiangong-lca-cli` when configured), not beside the contract or report. Any prior terminal or unresolved attempt is read back or retained without re-dispatch; exit status is nonzero unless every action has exact terminal success.
 
 For `flow publish-version`, canonical flow payloads are validated locally with `FlowSchema` before remote visibility planning or writes. The command always writes `flow-publish-version-gate-report.json`; blocked rows are written to the remote-failure JSONL without calling the remote service.
 

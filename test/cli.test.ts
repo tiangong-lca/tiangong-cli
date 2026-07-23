@@ -1064,7 +1064,7 @@ test('executeCli separates production read-only freeze from offline approval sea
     outDir: './protected-freeze',
     expectedProjectRef: 'production-ref',
     confirm: 'bafudata@126.com',
-    cliVersion: '0.0.31',
+    cliVersion: '0.0.32',
     pageSize: 250,
     timeoutMs: 12000,
     env: deps.env,
@@ -1266,7 +1266,7 @@ test('executeCli exposes the dedicated flow-identity capture/plan/freeze/seal/ru
     operationId: 'flow-identity-v2-capture',
     expectedProjectRef: 'prod',
     confirm: 'owner@example.com',
-    cliVersion: '0.0.31',
+    cliVersion: '0.0.32',
     sdkVersion: '0.1.45',
     outDir: 'capture-out',
     pageSize: 1000,
@@ -1343,7 +1343,7 @@ test('executeCli exposes the dedicated flow-identity capture/plan/freeze/seal/ru
     approvedAtUtc: '2026-07-16T05:00:00Z',
     expectedProjectRef: 'prod',
     confirm: 'owner@example.com',
-    cliVersion: '0.0.31',
+    cliVersion: '0.0.32',
     outDir: 'freeze-out',
   });
 

@@ -17,8 +17,8 @@ checkPaths:
   - package.json
   - src/**
   - test/**
-lastReviewedAt: 2026-07-23
-lastReviewedCommit: 5c90ddd60328748ab6d8d89717e59dcaeca8cde7
+lastReviewedAt: 2026-07-24
+lastReviewedCommit: 0cbbf9cef373675ad39ae2b8103003d05b48ccb8
 related:
   - ../AGENTS.md
   - ../.docpact/config.yaml
@@ -58,6 +58,7 @@ related:
 - 2026-07-23 复核：Issue #194 的 ordered owner-draft execution contract 继续完全位于 TypeScript / Node 原生 CLI，复用现有用户 session、平台 dataset command 与 TIDAS SDK 校验；action ledger 使用 Node 原生文件能力，不新增 Python、POSIX shell、MCP、私有 skill runtime 或 npm 依赖。skills 若后续接入只能保持薄调用，不得复制 attempt/readback/replay 逻辑。
 - 2026-07-23 复核：Issue #196 仅把 execution ledger 的 `fsync` 固定在同一可写 descriptor 上以通过 Windows release gate，不新增 Python、POSIX shell、MCP、私有 skill runtime 或 npm 依赖，也不改变 skills 薄调用边界。
 - 2026-07-23 复核：Issue #198 仅使用 Node 原生 `structuredClone` 隔离 dataset save-draft 的 SDK 校验副作用并发布 0.0.31，不新增 Python、shell、MCP、私有 skill runtime 或 npm 依赖，也不改变 skills 只负责薄调用的边界。
+- 2026-07-24 复核：Issue #200 在原生 CLI 内发布 0.0.32，使用 Node Promise worker pool 实现 dependency prefix 串行、unique-target suffix 最多 8 路并发，并复用既有 Supabase owner session 续期；不新增 Python、shell、MCP、私有 skill runtime 或 npm 依赖，skills 仍只能传入已审计 contract 与并发上限。
 
 这份文档记录的是：
 

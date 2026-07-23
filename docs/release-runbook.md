@@ -22,8 +22,8 @@ checkPaths:
   - scripts/docpact
   - scripts/docpact-gate.sh
   - scripts/install-git-hooks.sh
-lastReviewedAt: 2026-07-23
-lastReviewedCommit: 4daf99c1b0b0fe3e084b5903163cdf6b11fe4de2
+lastReviewedAt: 2026-07-24
+lastReviewedCommit: 0cbbf9cef373675ad39ae2b8103003d05b48ccb8
 related:
   - ../AGENTS.md
   - ../.docpact/config.yaml
@@ -66,6 +66,8 @@ Review note, 2026-07-23: Issue #194 adds the generic ordered owner-draft executi
 Review note, 2026-07-23: Issue #196 is the separate 0.0.30 release for merged Issue #194 / PR #195. It must prove the version and tag are absent, retain exact coverage, pass Docpact and the four-platform quality gate, including Windows durable-ledger creation/append/recovery, and use only the merge-triggered tag plus tag-triggered npm Trusted Publishing workflows. Local publish and manual tag creation remain forbidden; npm provenance and `gitHead` must match the immutable release merge commit before workspace integration.
 
 Review note, 2026-07-23: Issue #198 is the 0.0.31 hotfix release for side-effect-free dataset save-draft validation. It must prove the exact input remains unchanged through contract binding and dispatch preparation, keep exact coverage, pass Docpact and the four-platform quality gate, and use only the merge-triggered tag plus tag-triggered npm Trusted Publishing workflows. Local publish and manual tag creation remain forbidden; npm provenance and `gitHead` must match the immutable release merge commit before workspace integration.
+
+Review note, 2026-07-24: Issue #200 is the 0.0.32 hotfix release for bounded ordered-batch concurrency and current-owner token renewal. It must prove serial dependency-prefix completion, unique-target suffix concurrency no greater than 8, exact owner revalidation before dispatch, and unchanged durable attempt/no-replay behavior. Publication remains merge-triggered tag creation plus npm Trusted Publishing; local publish/manual tags remain forbidden, and npm provenance plus `gitHead` must match the release merge before workspace integration.
 
 Use this document for:
 

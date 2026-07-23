@@ -18,8 +18,8 @@ checkPaths:
   - src/**
   - scripts/**
   - .github/workflows/**
-lastReviewedAt: 2026-07-23
-lastReviewedCommit: 5c90ddd60328748ab6d8d89717e59dcaeca8cde7
+lastReviewedAt: 2026-07-24
+lastReviewedCommit: 0cbbf9cef373675ad39ae2b8103003d05b48ccb8
 related:
   - AGENTS.md
   - .docpact/config.yaml
@@ -40,6 +40,8 @@ Review note, 2026-07-23: Issue #194 在既有 `dataset save-draft` 上增加可�
 Review note, 2026-07-23: Issue #196 在 0.0.30 发布门禁中修复 Windows execution-ledger 持久化：创建与追加均在可写 descriptor 上写入、`fsync`、关闭。运行环境、认证变量、合同格式、attempt-before-dispatch 与 npm Trusted Publishing 路径均不变。
 
 Review note, 2026-07-23: Issue #198 发布 0.0.31；`dataset save-draft` 只在深拷贝上运行 SDK 校验，原始 payload 继续作为 execution-contract hash、受保护写请求与精确 readback 的唯一目标。认证、owner/state/project 护栏、attempt-before-dispatch、无重放和 Trusted Publishing 路径均不变。
+
+Review note, 2026-07-24: Issue #200 发布 0.0.32；`dataset save-draft --execution-contract` 新增显式 `--max-parallel 1..8`，完整 dependency prefix 仍串行，只有 table/id/version 唯一的 suffix 可有界并发。每次 DML 前通过既有 session runtime 取得当前 token 并重新核对 exact user/email，foreign renewal 在 attempt=0 阻断。环境变量、每行独立事务、durable ledger、成功/UNKNOWN 不重放和 Trusted Publishing 路径均不变。
 
 Review note, 2026-06-07: release 0.0.14 keeps maintainer runtime and release guidance unchanged. `dataset classification apply --type location` now supports explicit missing location targets for Foundry saturation workflows, and still rejects ambiguous target paths.
 
@@ -300,7 +302,7 @@ npm exec tiangong-lca -- lifecyclemodel auto-build --input ./examples/lifecyclem
 npm exec tiangong-lca -- lifecyclemodel validate-build --run-dir /abs/path/to/lifecyclemodel-run --json
 npm exec tiangong-lca -- lifecyclemodel publish-build --run-dir /abs/path/to/lifecyclemodel-run --json
 npm exec tiangong-lca -- lifecyclemodel save-draft --input ./lifecyclemodels.jsonl --out-dir ./lifecyclemodel-save-draft --dry-run --json
-npm exec tiangong-lca -- dataset save-draft --input ./rows.jsonl --type auto --execution-contract ./execution-contract.json --out-dir ./dataset-save-draft --commit --json
+npm exec tiangong-lca -- dataset save-draft --input ./rows.jsonl --type auto --execution-contract ./execution-contract.json --max-parallel 8 --out-dir ./dataset-save-draft --commit --json
 npm exec tiangong-lca -- lifecyclemodel graph --input ./lifecyclemodels.jsonl --out-dir ./lifecyclemodel-graph --format all --json
 npm exec tiangong-lca -- lifecyclemodel orchestrate plan --input ./lifecyclemodel-orchestrate.request.json --out-dir /abs/path/to/lifecyclemodel-recursive-run --json
 npm exec tiangong-lca -- lifecyclemodel build-resulting-process --input ./request.json --json
@@ -381,7 +383,7 @@ Derivative rebuild 的 apply 成功只表示 guarded RPC 已返回 `accepted`/`q
 
 这个命令当前只负责 current-user draft 的 save-draft/update 语义；`--target-user-id` 是批量导入时的账号/写入 guard，不能替代写后 readback verify，也不会替代 public `state_code=100` 的版本修订 publish 路径。
 
-`tiangong-lca dataset save-draft --execution-contract` 是另一条显式 opt-in 的通用批处理契约。`dataset-save-draft-execution-contract.v1` 必须给出 project、精确 owner（含 `state_code=0`）和有序 actions；每个 action 绑定 `action_id@desired_sha256`、table/id/version、expected operation、before hash 与只指向更早 action 的依赖。CLI 在调用受保护平台写入前把 attempt 持久化到稳定的 per-owner/project action ledger，随后只以精确 owner/state/payload readback 判定成功；transport 模糊、进程中断或既有 attempt 都不会自动重投。依赖失败只阻断其后继，无依赖 action 继续；任一 failed/unknown/blocked 都返回非零退出码。Unit Group / Flow Property 仍需额外显式 `--allow-account-local-support`，该模式不新增 direct-table、service-role、publication、delete 或 state/schema mutation 路径。
+`tiangong-lca dataset save-draft --execution-contract` 是另一条显式 opt-in 的通用批处理契约。`dataset-save-draft-execution-contract.v1` 必须给出 project、精确 owner（含 `state_code=0`）和有序 actions；每个 action 绑定 `action_id@desired_sha256`、table/id/version、expected operation、before hash 与只指向更早 action 的依赖。`--max-parallel` 默认 1、上限 8；调度器把所有被 dependency 引用的 action 收进一个完整串行前缀，只有其后 table/id/version 唯一的 suffix 可以并发。每次 DML 前都会从既有 session runtime 取得当前 token 并再次核对 exact user/email。CLI 在调用受保护平台写入前把 attempt 持久化到稳定的 per-owner/project action ledger，随后只以精确 owner/state/payload readback 判定成功；transport 模糊、进程中断或既有 attempt 都不会自动重投。依赖失败只阻断其后继，无依赖 action 继续；任一 failed/unknown/blocked 都返回非零退出码。Unit Group / Flow Property 仍需额外显式 `--allow-account-local-support`，该模式不新增 direct-table、service-role、publication、delete 或 state/schema mutation 路径。
 
 `tiangong-lca process auto-build` 现在已经承担 `process_from_flow` 主链的第一个 CLI 切片，负责：
 

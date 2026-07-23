@@ -162,6 +162,9 @@ export type DatasetSaveDraftReport = {
     sha256: string;
     execution_id: string;
     target_mode: 'owner_draft';
+    max_parallel: number;
+    serial_prefix_actions: number;
+    parallel_suffix_actions: number;
   };
 };
 
@@ -182,6 +185,7 @@ export type RunDatasetSaveDraftOptions = {
    */
   allowReferenceOnlySupport?: boolean | null;
   executionContractPath?: string | null;
+  maxParallel?: number | null;
 };
 
 type DatasetSaveDraftExecutionAction = {
@@ -1392,6 +1396,62 @@ async function readbackIsDesiredExact(options: {
   }
 }
 
+function normalizeExecutionMaxParallel(value: number | null | undefined): number {
+  const normalized = value ?? 1;
+  if (!Number.isInteger(normalized) || normalized < 1 || normalized > 8) {
+    executionContractError('Execution contract --max-parallel must be an integer from 1 to 8.');
+  }
+  return normalized;
+}
+
+function executionSerialPrefixLength(contract: DatasetSaveDraftExecutionContract): number {
+  const actionIndexes = new Map(
+    contract.actions.map((action, index) => [action.action_id, index] as const),
+  );
+  let highestDependencyIndex = -1;
+  for (const action of contract.actions) {
+    for (const dependencyActionId of action.dependency_action_ids) {
+      highestDependencyIndex = Math.max(
+        highestDependencyIndex,
+        actionIndexes.get(dependencyActionId) as number,
+      );
+    }
+  }
+  return highestDependencyIndex + 1;
+}
+
+function assertParallelSuffixTargetsAreUnique(
+  contract: DatasetSaveDraftExecutionContract,
+  serialPrefixLength: number,
+): void {
+  const targets = new Set<string>();
+  for (const action of contract.actions.slice(serialPrefixLength)) {
+    const target = `${action.table}\u0000${action.id}\u0000${action.version}`;
+    if (targets.has(target)) {
+      executionContractError(
+        'Execution contract parallel suffix contains a repeated table/id/version target.',
+      );
+    }
+    targets.add(target);
+  }
+}
+
+async function renewExecutionOwnerToken(options: {
+  runtime: SupabaseDataRuntime;
+  commandTransport: NonNullable<Awaited<ReturnType<typeof buildDatasetCommandTransport>>>;
+  contract: DatasetSaveDraftExecutionContract;
+}): Promise<void> {
+  const accessToken = await options.runtime.getAccessToken();
+  const actor = decodeExecutionActor(accessToken);
+  if (
+    actor.user_id !== options.contract.owner.user_id ||
+    actor.email !== options.contract.owner.email
+  ) {
+    executionContractError('Renewed owner session does not match the execution contract.');
+  }
+  options.commandTransport.accessToken = accessToken;
+}
+
 async function runExecutionContractBatch(options: {
   contractPath: string;
   contract: DatasetSaveDraftExecutionContract;
@@ -1408,6 +1468,7 @@ async function runExecutionContractBatch(options: {
   fetchImpl: FetchLike;
   timeoutMs: number;
   now: () => string;
+  maxParallel: number;
 }): Promise<DatasetSaveDraftReport> {
   const contractSha256 = sha256Json(options.contract);
   const ledgerRoot = executionLedgerRoot(options.env, options.contract);
@@ -1421,12 +1482,23 @@ async function runExecutionContractBatch(options: {
     executionContractError('Owner session or project does not match the execution contract.');
   }
   options.files.execution_ledger = ledgerRoot;
-  const reports: DatasetSaveDraftRowReport[] = [];
+  const serialPrefixLength = executionSerialPrefixLength(options.contract);
+  if (options.maxParallel > 1) {
+    assertParallelSuffixTargetsAreUnique(options.contract, serialPrefixLength);
+  }
+  const reports: Array<DatasetSaveDraftRowReport | undefined> = new Array(
+    options.contract.actions.length,
+  );
   const statuses = new Map<string, DatasetSaveDraftRowReport['status']>();
   const referenceOnlySupportCache = new Map<string, Promise<RemoteDatasetLookup>>();
 
-  for (const [index, action] of options.contract.actions.entries()) {
+  const executeAction = async (index: number): Promise<void> => {
+    const action = options.contract.actions[index] as DatasetSaveDraftExecutionAction;
     const row = options.preparedRows[index] as PreparedDatasetRow;
+    const storeReport = (report: DatasetSaveDraftRowReport): void => {
+      reports[index] = report;
+      statuses.set(action.action_id, report.status);
+    };
     const preparedFailure = buildPreparedFailure(row, options.allowReferenceOnlySupport);
     if (preparedFailure) {
       const report = {
@@ -1437,9 +1509,8 @@ async function runExecutionContractBatch(options: {
         replayed: false as const,
         readback: 'not_performed' as const,
       };
-      reports.push(report);
-      statuses.set(action.action_id, report.status);
-      continue;
+      storeReport(report);
+      return;
     }
 
     const priorOutcome = ledger.outcomes.get(action.action_id);
@@ -1471,9 +1542,8 @@ async function runExecutionContractBatch(options: {
             }
           : {}),
       });
-      reports.push(report);
-      statuses.set(action.action_id, status);
-      continue;
+      storeReport(report);
+      return;
     }
 
     if (ledger.attempts.has(action.action_id)) {
@@ -1489,9 +1559,8 @@ async function runExecutionContractBatch(options: {
         now: options.now,
         recovered: true,
       });
-      reports.push(report);
-      statuses.set(action.action_id, report.status);
-      continue;
+      storeReport(report);
+      return;
     }
 
     const blockingDependencies = action.dependency_action_ids.filter(
@@ -1510,9 +1579,8 @@ async function runExecutionContractBatch(options: {
           details: { dependency_action_ids: blockingDependencies },
         },
       });
-      reports.push(report);
-      statuses.set(action.action_id, report.status);
-      continue;
+      storeReport(report);
+      return;
     }
 
     let beforeRows: ExecutionDatasetRow[];
@@ -1563,6 +1631,11 @@ async function runExecutionContractBatch(options: {
           });
         }
       }
+      await renewExecutionOwnerToken({
+        runtime: options.runtime,
+        commandTransport: options.commandTransport,
+        contract: options.contract,
+      });
     } catch (error) {
       const report = contractRowReport({
         row,
@@ -1573,9 +1646,8 @@ async function runExecutionContractBatch(options: {
         readback: 'not_performed',
         error: serializeError(error),
       });
-      reports.push(report);
-      statuses.set(action.action_id, report.status);
-      continue;
+      storeReport(report);
+      return;
     }
 
     try {
@@ -1630,16 +1702,47 @@ async function runExecutionContractBatch(options: {
       now: options.now,
       recovered: transportFailed,
     });
-    reports.push(report);
-    statuses.set(action.action_id, report.status);
+    storeReport(report);
+  };
+
+  for (let index = 0; index < serialPrefixLength; index += 1) {
+    await executeAction(index);
   }
 
-  const failures = reports.filter((row) => ['failed', 'unknown', 'blocked'].includes(row.status));
-  writeJsonLinesArtifact(options.files.progress_jsonl, reports);
+  let nextParallelIndex = serialPrefixLength;
+  let fatalWorkerError: unknown = null;
+  const runParallelWorker = async (): Promise<void> => {
+    while (fatalWorkerError === null) {
+      const index = nextParallelIndex;
+      nextParallelIndex += 1;
+      if (index >= options.contract.actions.length) {
+        return;
+      }
+      try {
+        await executeAction(index);
+      } catch (error) {
+        fatalWorkerError ??= error;
+      }
+    }
+  };
+  const parallelWorkerCount = Math.min(
+    options.maxParallel,
+    options.contract.actions.length - serialPrefixLength,
+  );
+  await Promise.all(Array.from({ length: parallelWorkerCount }, () => runParallelWorker()));
+  if (fatalWorkerError !== null) {
+    throw fatalWorkerError;
+  }
+
+  const completedReports = reports as DatasetSaveDraftRowReport[];
+  const failures = completedReports.filter((row) =>
+    ['failed', 'unknown', 'blocked'].includes(row.status),
+  );
+  writeJsonLinesArtifact(options.files.progress_jsonl, completedReports);
   writeJsonLinesArtifact(options.files.failures_jsonl, failures);
-  const unknown = reports.filter((row) => row.status === 'unknown').length;
-  const failed = reports.filter((row) => row.status === 'failed').length;
-  const blocked = reports.filter((row) => row.status === 'blocked').length;
+  const unknown = completedReports.filter((row) => row.status === 'unknown').length;
+  const failed = completedReports.filter((row) => row.status === 'failed').length;
+  const blocked = completedReports.filter((row) => row.status === 'blocked').length;
   const report: DatasetSaveDraftReport = {
     schema_version: 2,
     generated_at_utc: options.now(),
@@ -1657,21 +1760,24 @@ async function runExecutionContractBatch(options: {
     counts: {
       selected: options.preparedRows.length,
       prepared: 0,
-      executed: reports.filter((row) => row.status === 'executed').length,
+      executed: completedReports.filter((row) => row.status === 'executed').length,
       failed,
       unknown,
       blocked,
       attempts_consumed: ledger.attempts.size,
       by_table: byTable(options.preparedRows),
-      operations: operationCount(reports),
+      operations: operationCount(completedReports),
     },
     files: options.files,
-    rows: reports,
+    rows: completedReports,
     execution_contract: {
       path: path.resolve(options.contractPath),
       sha256: contractSha256,
       execution_id: options.contract.execution_id,
       target_mode: 'owner_draft',
+      max_parallel: options.maxParallel,
+      serial_prefix_actions: serialPrefixLength,
+      parallel_suffix_actions: options.contract.actions.length - serialPrefixLength,
     },
   };
   writeJsonArtifact(options.files.summary_json, report);
@@ -1692,6 +1798,7 @@ export async function runDatasetSaveDraft(
   const files = buildFiles(outDir);
   const preparedRows = prepareRows(inputPath, options.rawInput, requestedType);
   const timeoutMs = options.timeoutMs ?? DEFAULT_TIMEOUT_MS;
+  const maxParallel = normalizeExecutionMaxParallel(options.maxParallel);
   const executionContractPath = options.executionContractPath
     ? path.resolve(options.executionContractPath)
     : null;
@@ -1703,6 +1810,9 @@ export async function runDatasetSaveDraft(
 
   if (executionContract && !commit) {
     executionContractError('Execution contract mode requires --commit.');
+  }
+  if (!executionContract && maxParallel !== 1) {
+    executionContractError('--max-parallel greater than 1 requires --execution-contract.');
   }
   if (executionContract) {
     bindExecutionContractRows(executionContract, preparedRows);
@@ -1756,6 +1866,7 @@ export async function runDatasetSaveDraft(
       fetchImpl: options.fetchImpl!,
       timeoutMs,
       now: () => now.toISOString(),
+      maxParallel,
     });
   }
 
