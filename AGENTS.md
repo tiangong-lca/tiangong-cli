@@ -91,7 +91,7 @@ Review note, 2026-07-17: Issue #189 is the dedicated 0.0.29 version-bump release
 
 Review note, 2026-07-23: Issue #194 extends `dataset save-draft` with an explicit ordered owner-draft execution contract. The CLI binds project, owner, state 0, row identity, payload hashes, expected operations, before hashes, and earlier-action dependencies; it records each `action_id@desired_sha256` attempt in stable user state before dispatch and resolves ambiguous or orphaned attempts by exact owner readback without replay. This adds no service-role, direct-table, publication, delete, state/schema, or package-release path.
 
-Review note, 2026-07-23: Issue #196 is the dedicated 0.0.30 version-bump release for merged Issue #194 / PR #195. It changes only package metadata, the four live CLI-version fixtures, and governed review records; command/runtime behavior, dependencies, authorization, tag automation, npm Trusted Publishing, provenance verification, and exact released-commit workspace integration remain unchanged.
+Review note, 2026-07-23: Issue #196 is the dedicated 0.0.30 release for merged Issue #194 / PR #195. Windows release-gate evidence exposed that `fsync` on a reopened read-only execution-ledger descriptor returns `EPERM`; the release now fsyncs create/append operations on their write-capable descriptors before close. Attempt-before-dispatch ordering, no-replay semantics, dependencies, authorization, tag automation, npm Trusted Publishing, provenance verification, and exact released-commit workspace integration remain unchanged.
 
 ## Bootstrap Order
 

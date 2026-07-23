@@ -106,7 +106,7 @@ Review note, 2026-07-17: Issue #189 keeps the validation contract unchanged for 
 
 Review note, 2026-07-23: Issue #194 adds focused proof for ordered contract binding, stable action-ledger replay exclusion across copied contract/output paths, exact insert/update before-state checks, crash/orphan recovery, ambiguous transport readback, dependency isolation, owner/project mismatch, ledger corruption, and zero-dispatch parser/preflight failures. The same exact 100% `src/**/*.ts`, lint, build, docpact, and pre-push gates remain authoritative.
 
-Review note, 2026-07-23: Issue #196 keeps the validation contract unchanged for the dedicated 0.0.30 release. Release proof requires unpublished-version and absent-tag checks, all four live CLI-version fixtures at 0.0.30, exact 100% coverage, dry-run package inspection, Docpact, tag/publish workflows, and npm provenance with an exact release `gitHead`.
+Review note, 2026-07-23: Issue #196 keeps the validation contract unchanged for the dedicated 0.0.30 release. The manually dispatched Windows gate is required to prove durable attempt/outcome ledger writes no longer fail on read-only-descriptor `fsync`; all execution-contract recovery/no-replay tests, all four live CLI-version fixtures, exact 100% coverage, dry-run package inspection, Docpact, tag/publish workflows, and exact npm provenance remain required.
 
 ## Validation Matrix
 

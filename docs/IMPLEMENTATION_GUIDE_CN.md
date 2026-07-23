@@ -52,6 +52,8 @@ Review note, 2026-07-16: Issue #186 将 LCI/LCIA 数据发布的远程执行面�
 
 Review note, 2026-07-23: Issue #194 为通用 `dataset save-draft` 增加 opt-in execution contract。V1 将 session project/owner/state 0、有序 input rows、before/desired hashes、insert/update 操作和依赖绑定为一个离线 JSON 合同；每个 `action_id@desired_sha256` 使用稳定的用户状态 action ledger。首次 dispatch 前落盘 attempt，之后的模糊响应、孤立 attempt 或进程恢复只允许 exact owner readback，不允许自动重放；失败依赖不会阻止无依赖 action 继续。
 
+Review note, 2026-07-23: Issue #196 在发布 0.0.30 前补齐 Windows 持久化兼容性。execution ledger 的首次创建和后续追加均在可写文件描述符上完成写入与 `fsync` 后再关闭，不再重新以只读方式打开后执行 Windows 会拒绝的 `fsync`。attempt-before-dispatch、每行事件顺序、exact readback 恢复及成功行不重放语义保持不变。
+
 ## 1. 目标
 
 `tiangong-lca-cli` 是 TianGong 的统一执行面。

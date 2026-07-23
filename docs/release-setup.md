@@ -77,7 +77,7 @@ Review note, 2026-07-17: Issue #157 COMMON hardening still requires no new npm s
 
 Review note, 2026-07-23: Issue #194 requires no new npm secret, GitHub environment, Trusted Publisher setting, workflow filename, tag rule, service-role credential, or alternate CLI authentication variable. Its stable user-state execution ledger is local runtime state, not release infrastructure; the feature follows the unchanged feature PR, separate version-bump PR, automated tag, and Trusted Publishing path.
 
-Review note, 2026-07-23: Issue #196 publishes 0.0.30 through the existing merge-triggered tag and npm Trusted Publishing workflows. It requires no new secret, environment, runner, Trusted Publisher setting, workflow filename, tag rule, service-role credential, or alternate CLI authentication variable.
+Review note, 2026-07-23: Issue #196 publishes 0.0.30 through the existing merge-triggered tag and npm Trusted Publishing workflows. Its Windows-compatible write-descriptor `fsync` repair requires no new secret, environment, runner, Trusted Publisher setting, workflow filename, tag rule, service-role credential, or alternate CLI authentication variable.
 
 Review note, 2026-07-13: exact-count maintenance pagination requires no repository secret, Trusted Publisher, environment, workflow filename, or tag-semantics change.
 

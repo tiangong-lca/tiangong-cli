@@ -45,6 +45,8 @@ related:
 
 当前状态：
 
+2026-07-23 复核：Issue #196 只使用 Node 原生文件能力把 execution ledger 的写入与 `fsync` 保持在同一可写 descriptor 上，不新增或改变 Supabase JS、TIDAS SDK 或其他直接依赖；本文件继续保持历史 TODO 记录用途。
+
 2026-07-23 复核：Issue #194 的 ordered owner-draft execution contract 复用现有 `@supabase/supabase-js` 用户 session/RLS 读取、平台 dataset command transport、`@tiangong-lca/tidas-sdk` 校验与 Node 原生文件/crypto 能力，不新增或改变直接依赖；本文件继续保持历史 TODO 记录用途。
 
 2026-07-17 复核：Issue #157 COMMON 的双 #29 readback、domain rejection、verify pending 收紧、DB one-wrapper rotating permit、create-only local claim 与 fresh exact recovery approval/read-only lookup 继续复用现有 TypeScript、Node `fs`/`crypto`、`@supabase/supabase-js` session/RPC 和 TIDAS SDK 校验，不新增或改变直接依赖。尚余 merge、Preview 与 DB/CLI 发布门禁；本文件继续保持历史 TODO 记录用途。
