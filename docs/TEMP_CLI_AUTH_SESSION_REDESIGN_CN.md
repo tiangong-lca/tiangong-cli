@@ -46,6 +46,7 @@ related:
 - 2026-07-16 复核：Issue #157 的 flow-identity capture/run/verify 继续使用现有用户 API key 到 authenticated session、publishable key、RLS 表读取与受保护 RPC；freeze/seal 的离线边界不引入 service-role、alternate bearer 或新认证 env，本历史设计结论不变。
 - 2026-07-17 复核：Issue #157 COMMON 将已认证 RPC 的 HTTP-success `ok:false` 明确为数据库 domain rejection，并实现绑定现有 authenticated actor 的数据库 one-wrapper rotating permit、独立 fresh recovery approval 和 exact read-only scope lookup；create-only 本地 claim 只是纵深防御，不是 bearer 或新认证路径。access token、publishable key、session cache、RLS 与 service-role 边界不变；尚余 merge、Preview 与 DB/CLI 发布门禁。
 - 2026-07-23 复核：Issue #194 的 `dataset save-draft --execution-contract` 继续使用既有 user API key bootstrap、publishable key、access token、session cache 与 current-owner RLS 读回。稳定 action ledger 是本地非 bearer 状态，不保存 token；不新增认证 env、alternate bearer、service-role 或跨账号路径，本历史设计结论不变。
+- 2026-07-23 复核：Issue #196 只修复 Windows 本地 execution-ledger 文件的 durable append，不读取或持久化 bearer，不改变 user API key、session cache、RLS、service-role 或跨账号边界；本历史设计结论不变。
 
 ## 1. 已确认事实
 

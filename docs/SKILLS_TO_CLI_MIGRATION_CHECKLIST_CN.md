@@ -56,6 +56,7 @@ related:
 - 2026-07-16 复核：`dataset maintenance flow-identity capture|plan|freeze|seal-approval|run|verify` 继续由 TypeScript / Node 原生 CLI 负责 305-source Step 3 单次 census/attestation、immutable plan、离线批准、guarded serial execution 与独立 readback；不新增 npm、Python、shell、MCP 或私有 skill runtime。Foundry/skills 不得复制哈希、数据库 receipt/scope、重试、derivative baseline 或补偿逻辑。
 - 2026-07-17 复核：Issue #157 COMMON 的双 #29 passed-readback、HTTP-success domain rejection、`derivatives_pending` 验证、数据库 one-wrapper rotating permit、本地 create-only claim，以及 fresh exact recovery approval + read-only lookup 均属于 DB/TypeScript CLI 契约。Foundry/skills 不得复制这些执行权限或恢复逻辑；尚余 merge、Preview 与 DB/CLI 发布门禁，不改变本迁移结论。
 - 2026-07-23 复核：Issue #194 的 ordered owner-draft execution contract 继续完全位于 TypeScript / Node 原生 CLI，复用现有用户 session、平台 dataset command 与 TIDAS SDK 校验；action ledger 使用 Node 原生文件能力，不新增 Python、POSIX shell、MCP、私有 skill runtime 或 npm 依赖。skills 若后续接入只能保持薄调用，不得复制 attempt/readback/replay 逻辑。
+- 2026-07-23 复核：Issue #196 仅把 execution ledger 的 `fsync` 固定在同一可写 descriptor 上以通过 Windows release gate，不新增 Python、POSIX shell、MCP、私有 skill runtime 或 npm 依赖，也不改变 skills 薄调用边界。
 
 这份文档记录的是：
 

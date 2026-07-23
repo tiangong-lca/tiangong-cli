@@ -27,7 +27,7 @@ checkPaths:
   - scripts/docpact-gate.sh
   - scripts/install-git-hooks.sh
 lastReviewedAt: 2026-07-23
-lastReviewedCommit: 5c90ddd60328748ab6d8d89717e59dcaeca8cde7
+lastReviewedCommit: 8c47d832617ac6dad19f01f766e14fdfe97ce4c3
 related:
   - ../../AGENTS.md
   - ../../.docpact/config.yaml
@@ -83,6 +83,8 @@ Review note, 2026-07-17: Issue #191 changes only platform-specific assertions in
 Review note, 2026-07-17: Issue #189 changes the CLI package version to 0.0.29 and updates the four live CLI-version fixtures. No command family, launcher, session, artifact, dependency, authorization, tag, publication, or workspace-integration architecture changes.
 
 Review note, 2026-07-23: Issue #194 keeps ordered owner-draft execution inside `src/lib/dataset-save-draft-run.ts`. `src/cli.ts` owns the opt-in flag and all-success exit code; the runtime owns contract/session/before-state binding, stable per-owner/project action ledgers, dependency scheduling, exact owner readback, and no-replay recovery. It reuses the current platform dataset command transport and adds no new auth, direct-table, service-role, publication, delete, state/schema, or release architecture.
+
+Review note, 2026-07-23: Issue #196 changes the CLI package version to 0.0.30, updates the four live CLI-version fixtures, and makes execution-ledger durability portable by fsyncing the active write descriptor rather than reopening the ledger read-only. No command family, launcher, session, artifact shape, dependency, authorization, tag, publication, or workspace-integration architecture changes.
 
 ## Stable Path Map
 

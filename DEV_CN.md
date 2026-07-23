@@ -37,6 +37,8 @@ Review note, 2026-06-04: `dataset curation-queue next/verify` extends the existi
 
 Review note, 2026-07-23: Issue #194 在既有 `dataset save-draft` 上增加可选的 ordered owner-draft execution contract。contract 精确绑定 project、owner、state 0、行顺序、before/desired hash、操作和依赖；稳定用户状态目录中的 action ledger 让复制 contract/out-dir 也不能重放成功或模糊 action。普通 save-draft、认证环境变量和 npm 发布流程不变。
 
+Review note, 2026-07-23: Issue #196 在 0.0.30 发布门禁中修复 Windows execution-ledger 持久化：创建与追加均在可写 descriptor 上写入、`fsync`、关闭。运行环境、认证变量、合同格式、attempt-before-dispatch 与 npm Trusted Publishing 路径均不变。
+
 Review note, 2026-06-07: release 0.0.14 keeps maintainer runtime and release guidance unchanged. `dataset classification apply --type location` now supports explicit missing location targets for Foundry saturation workflows, and still rejects ambiguous target paths.
 
 Review note, 2026-06-11: release 0.0.15 keeps maintainer runtime and release guidance unchanged. `dataset import-lca convert` now adapts to the tidas-tools 0.0.28 process-bundle flags (no bare `--process-bundles`, `--no-process-bundles` only when disabled) and reports bundle/mapping files from actual on-disk state.

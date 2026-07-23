@@ -37,7 +37,6 @@ import {
   type RemoteDatasetTable,
 } from './dataset-remote-verify.js';
 import {
-  appendStableJsonLine,
   readJsonFile,
   readJsonLinesIfPresent,
   sha256Json,
@@ -618,15 +617,15 @@ function appendExecutionEvent(options: {
       closeSync(createDescriptor);
     }
   } else {
-    appendStableJsonLine(ledgerPath, event);
+    const appendDescriptor = openSync(ledgerPath, 'a', 0o600);
+    try {
+      writeFileSync(appendDescriptor, `${stableJsonText(event)}\n`, 'utf8');
+      fsyncSync(appendDescriptor);
+    } finally {
+      closeSync(appendDescriptor);
+    }
   }
   chmodSync(ledgerPath, 0o600);
-  const descriptor = openSync(ledgerPath, 'r');
-  try {
-    fsyncSync(descriptor);
-  } finally {
-    closeSync(descriptor);
-  }
   actionEvents.push(event);
   options.ledger.events.set(event.action_id, actionEvents);
   if (event.event_type === 'attempt_emitted') {

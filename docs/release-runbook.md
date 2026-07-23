@@ -23,7 +23,7 @@ checkPaths:
   - scripts/docpact-gate.sh
   - scripts/install-git-hooks.sh
 lastReviewedAt: 2026-07-23
-lastReviewedCommit: 5c90ddd60328748ab6d8d89717e59dcaeca8cde7
+lastReviewedCommit: 8c47d832617ac6dad19f01f766e14fdfe97ce4c3
 related:
   - ../AGENTS.md
   - ../.docpact/config.yaml
@@ -62,6 +62,8 @@ Review note, 2026-07-16: Issue #157 adds the Step 3 flow-identity feature withou
 Review note, 2026-07-17: Issue #157 COMMON hardening now includes the DB/CLI one-wrapper rotating permit, strict create-only local claim as defense in depth, fresh exact recovery approval, and exact read-only scope lookup after response loss. This closes the protocol design boundary without changing version, tag, or Trusted Publishing mechanics. The Step 3 patch release remains gated on feature merge, database Preview validation/promotion, focused cross-contract evidence, and the separate coordinated DB/CLI release; local publish and manual tag creation remain forbidden.
 
 Review note, 2026-07-23: Issue #194 adds the generic ordered owner-draft execution contract without changing package metadata or release mechanics. Its feature PR must pass focused ledger/recovery tests, exact 100% coverage, docpact, and the full pre-push gate. Any npm publication remains a separate version-bump PR through the existing merge-triggered tag and Trusted Publishing workflows; local publish and manual tag creation remain forbidden.
+
+Review note, 2026-07-23: Issue #196 is the separate 0.0.30 release for merged Issue #194 / PR #195. It must prove the version and tag are absent, retain exact coverage, pass Docpact and the four-platform quality gate, including Windows durable-ledger creation/append/recovery, and use only the merge-triggered tag plus tag-triggered npm Trusted Publishing workflows. Local publish and manual tag creation remain forbidden; npm provenance and `gitHead` must match the immutable release merge commit before workspace integration.
 
 Use this document for:
 
