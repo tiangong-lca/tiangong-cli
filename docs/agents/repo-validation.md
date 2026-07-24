@@ -27,8 +27,8 @@ checkPaths:
   - scripts/docpact
   - scripts/docpact-gate.sh
   - scripts/install-git-hooks.sh
-lastReviewedAt: 2026-07-24
-lastReviewedCommit: 0cbbf9cef373675ad39ae2b8103003d05b48ccb8
+lastReviewedAt: 2026-07-25
+lastReviewedCommit: 7c960cac3eab447a2a7d2b7c398ffd53c2de8fea
 related:
   - ../../AGENTS.md
   - ../../.docpact/config.yaml
@@ -113,6 +113,8 @@ Review note, 2026-07-23: Issue #198 adds a regression proving SDK validation can
 Review note, 2026-07-24: Issue #200 releases 0.0.32 and adds focused proof for serial dependency-prefix completion, bounded suffix concurrency, stable report ordering, repeated-target rejection before DML, owner-token rollover, foreign renewed-session rejection at zero attempts, and unchanged success/UNKNOWN no-replay. Exact 100% coverage, Docpact, pre-push, four-platform quality, package inspection, and npm provenance gates remain required.
 
 Review note, 2026-07-24: Issue #202 releases 0.0.33 and adds focused proof for flow delete-only admission, unique targets, complete RLS-visible process inbound scans, bounded concurrency, PREPARED-before-DISPATCHED durability, exact absent commit proof, lost-response recovery, success/UNKNOWN no-replay, independent-row continuation, and public/foreign/non-draft rejection. Exact 100% coverage, Docpact, pre-push, four-platform quality, package inspection, and npm provenance gates remain required.
+
+Review note, 2026-07-24: Issue #204 adds a production-scale regression for the all-visible process fence: more than 250 visible rows must traverse offsets `0,250,...` with `limit=250`, no `user_id` predicate, exact-count completeness, and zero dispatch on scan or inbound-reference failure.
 
 ## Validation Matrix
 

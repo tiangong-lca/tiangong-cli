@@ -126,6 +126,11 @@ export type RunDatasetMaintenanceApplyOptions = {
 
 type ParallelDeleteExecutionStatus = 'PREPARED' | 'DISPATCHED' | 'COMMITTED' | 'UNKNOWN';
 
+// Process payloads can be large enough for the default 1,000-row page to exceed
+// the database statement timeout. Keep the destructive all-visible RLS fence,
+// but bound each SELECT-only page so admission can complete without weakening it.
+const PARALLEL_DELETE_VISIBLE_PROCESS_PAGE_SIZE = 250;
+
 type ParallelDeleteExecutionEntry = {
   schema_version: 1;
   plan_sha256: string;
@@ -2346,7 +2351,11 @@ export async function runDatasetMaintenanceApply(
           userId: plan.account.user_id,
         }),
         parallelDeleteMode
-          ? fetchMaintenanceVisibleTableRows({ context, table: 'processes' })
+          ? fetchMaintenanceVisibleTableRows({
+              context,
+              table: 'processes',
+              pageSize: PARALLEL_DELETE_VISIBLE_PROCESS_PAGE_SIZE,
+            })
           : Promise.resolve(null),
       ]);
       assertApplyPreconditions({

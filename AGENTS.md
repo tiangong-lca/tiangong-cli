@@ -32,8 +32,8 @@ checkPaths:
   - scripts/docpact
   - scripts/docpact-gate.sh
   - scripts/install-git-hooks.sh
-lastReviewedAt: 2026-07-24
-lastReviewedCommit: 0cbbf9cef373675ad39ae2b8103003d05b48ccb8
+lastReviewedAt: 2026-07-25
+lastReviewedCommit: 7c960cac3eab447a2a7d2b7c398ffd53c2de8fea
 related:
   - .docpact/config.yaml
   - docs/agents/repo-validation.md
@@ -98,6 +98,8 @@ Review note, 2026-07-23: Issue #198 releases 0.0.31 and makes dataset save-draft
 Review note, 2026-07-24: Issue #200 releases 0.0.32 and makes large ordered owner-draft contracts finish within the authenticated session window. `--max-parallel` remains opt-in and capped at 8: every action through the highest referenced dependency stays serial, and only the remaining unique-target suffix can overlap. The command resolves and revalidates the exact owner token immediately before each DML dispatch. Attempt-before-dispatch durability, exact readback, dependency blocking, UNKNOWN/success no-replay, and all public/foreign/publication/delete/state/schema/service-role prohibitions remain unchanged.
 
 Review note, 2026-07-24: Issue #202 releases 0.0.33 and keeps high-volume physical flow deletion inside the existing maintenance command boundary. Explicit `maintenance apply --max-parallel 1..8` accepts only unique owner-draft flow delete targets after zero current/projected impact and a fresh complete RLS-visible process inbound scan. Every protected delete remains an independent transaction with durable pre-dispatch evidence and exact absent readback; success/UNKNOWN are never automatically replayed and independent rows continue. No RPC, schema, dependency, alternate auth, publication, state, source, FP/UG, public, foreign-owner, direct-table, or service-role path is added.
+
+Review note, 2026-07-24: Issue #204 bounds each page of the parallel-delete all-visible process inbound preflight at 250 rows so large process JSON cannot exhaust the production statement timeout. The scan still omits a `user_id` predicate, follows exact-count pagination to completion, and blocks every mutation after an incomplete scan or any visible inbound reference. Delete scope, authorization, attempt-before-dispatch, no-replay, RPC/schema, and all protected-row boundaries are unchanged.
 
 ## Bootstrap Order
 

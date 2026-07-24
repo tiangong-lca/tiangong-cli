@@ -1525,7 +1525,24 @@ test('parallel flow delete apply is bounded, durable, globally fenced, and never
       }),
       { user_id: null, state_code: null },
     );
+    for (let index = 3; index <= 253; index += 1) {
+      const suffix = String(index).padStart(12, '0');
+      scenario.remote.add(
+        'processes',
+        `81000000-0000-4000-8000-${suffix}`,
+        processFlowReferencePayload({
+          processId: `81000000-0000-4000-8000-${suffix}`,
+          flowId: `82000000-0000-4000-8000-${suffix}`,
+        }),
+        { user_id: '99999999-9999-4999-8999-999999999999', state_code: 100 },
+      );
+    }
     scenario.remote.deleteDelayMs = 20;
+    const requestedUrls: string[] = [];
+    const fetchImpl: FetchLike = async (input, init) => {
+      requestedUrls.push(String(input));
+      return scenario.remote.fetch(input, init);
+    };
     const report = await runDatasetMaintenanceApply({
       planPath: scenario.planPath,
       commit: true,
@@ -1533,7 +1550,7 @@ test('parallel flow delete apply is bounded, durable, globally fenced, and never
       confirm: scenario.remote.email,
       maxParallel: 4,
       env: scenario.remote.env,
-      fetchImpl: scenario.remote.fetch,
+      fetchImpl,
       now: new Date('2026-07-24T10:01:00.000Z'),
     });
     assert.equal(report.status, 'completed');
@@ -1561,8 +1578,21 @@ test('parallel flow delete apply is bounded, durable, globally fenced, and never
     assert.ok(isJsonObject(barrier));
     assert.equal(barrier.inbound_reference_count, 0);
     assert.equal(barrier.target_count, 4);
-    assert.equal(barrier.process_rows, 2);
-    assert.equal(barrier.process_references, 2);
+    assert.equal(barrier.process_rows, 253);
+    assert.equal(barrier.process_references, 253);
+    const visibleProcessUrls = requestedUrls
+      .filter((requestedUrl) => requestedUrl.includes('/rest/v1/processes'))
+      .map((requestedUrl) => new URL(requestedUrl))
+      .filter((requestedUrl) => !requestedUrl.searchParams.has('user_id'));
+    assert.ok(visibleProcessUrls.length > 0);
+    assert.deepEqual(
+      visibleProcessUrls.map((requestedUrl) => requestedUrl.searchParams.get('offset')),
+      ['0', '250'],
+    );
+    for (const requestedUrl of visibleProcessUrls) {
+      assert.equal(requestedUrl.searchParams.get('limit'), '250');
+      assert.equal(requestedUrl.searchParams.get('user_id'), null);
+    }
 
     const rpcCount = scenario.remote.rpcOrder.length;
     const resumed = await runDatasetMaintenanceApply({
