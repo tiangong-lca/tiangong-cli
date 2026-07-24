@@ -1,4 +1,12 @@
-import { closeSync, existsSync, fchmodSync, fsyncSync, openSync, writeFileSync } from 'node:fs';
+import {
+  closeSync,
+  existsSync,
+  fchmodSync,
+  fsyncSync,
+  openSync,
+  readFileSync,
+  writeFileSync,
+} from 'node:fs';
 import path from 'node:path';
 import { writeJsonArtifact } from './artifacts.js';
 import { collectRemoteReferences } from './dataset-remote-verify.js';
@@ -20,6 +28,7 @@ import {
   readJsonFile,
   readJsonLinesIfPresent,
   sha256Json,
+  sha256Text,
   snapshotRemoteRow,
   stableJsonText,
   writeImmutableJson,
@@ -122,6 +131,8 @@ export type RunDatasetMaintenanceApplyOptions = {
   fetchImpl: FetchLike;
   now?: Date;
   maxParallel?: number;
+  globalInboundProofPath?: string;
+  approveGlobalInboundProof?: string;
 };
 
 type ParallelDeleteExecutionStatus = 'PREPARED' | 'DISPATCHED' | 'COMMITTED' | 'UNKNOWN';
@@ -130,6 +141,50 @@ type ParallelDeleteExecutionStatus = 'PREPARED' | 'DISPATCHED' | 'COMMITTED' | '
 // the database statement timeout. Keep the destructive all-visible RLS fence,
 // but bound each SELECT-only page so admission can complete without weakening it.
 const PARALLEL_DELETE_VISIBLE_PROCESS_PAGE_SIZE = 250;
+const GLOBAL_INBOUND_PROOF_MAX_AGE_MS = 30 * 60 * 1_000;
+const SHA256_PATTERN = /^[0-9a-f]{64}$/u;
+
+type ParallelDeleteGlobalInboundProofChunk = {
+  index: number;
+  start: number;
+  end_exclusive: number;
+  target_count: number;
+  captured_at_utc: string;
+  inbound_exchanges: 0;
+  old_flow_identities_with_inbound: 0;
+  process_identities_with_inbound: 0;
+  owner_draft_inbound: 0;
+  public_inbound: 0;
+  foreign_private_inbound: 0;
+  other_state_inbound: 0;
+  sql_sha256: string;
+};
+
+type ParallelDeleteGlobalInboundProof = {
+  schema_version: 'dataset-maintenance-global-inbound-proof.v1';
+  status: 'PASS_GLOBAL_ALL_PROCESS_INBOUND_ZERO';
+  statement_kind: 'SELECT';
+  source: 'supabase_select_only_raw_sql';
+  process_scope: 'all_process_rows_without_rls_restriction';
+  captured_at_utc: string;
+  project_ref: string;
+  actor_user_id: string;
+  plan_sha256: string;
+  operation: 'delete';
+  target_table: 'flows';
+  target_count: number;
+  target_binding_sha256: string;
+  global_process_rows: number;
+  global_exchange_rows: number;
+  inbound_exchanges: 0;
+  old_flow_identities_with_inbound: 0;
+  process_identities_with_inbound: 0;
+  chunks: ParallelDeleteGlobalInboundProofChunk[];
+  p0: 0;
+  p1: 0;
+  proof_path: string;
+  proof_sha256: string;
+};
 
 type ParallelDeleteExecutionEntry = {
   schema_version: 1;
@@ -359,6 +414,190 @@ function assertParallelDeletePlan(plan: DatasetMaintenancePlan): void {
     }
     targets.add(target);
   }
+}
+
+function parallelDeleteTargetBindingSha256(plan: DatasetMaintenancePlan): string {
+  return sha256Json(
+    plan.actions.map((action, index) => ({
+      index,
+      ordinal: action.ordinal,
+      action_id: action.action_id,
+      table: action.table,
+      id: action.id,
+      version: action.version,
+      expected_user_id: action.expected_user_id,
+      expected_state_code: action.expected_state_code,
+      before_sha256: action.before?.row_sha256 ?? null,
+    })),
+  );
+}
+
+function invalidGlobalInboundProof(message: string, details?: unknown): never {
+  throw new CliError(message, {
+    code: 'DATASET_MAINTENANCE_GLOBAL_INBOUND_PROOF_INVALID',
+    exitCode: 1,
+    details,
+  });
+}
+
+function assertGlobalInboundProofOptionShape(options: {
+  parallelDeleteMode: boolean;
+  proofPath?: string;
+  approveProof?: string;
+}): void {
+  const hasPath = typeof options.proofPath === 'string' && options.proofPath.length > 0;
+  const hasApproval = typeof options.approveProof === 'string' && options.approveProof.length > 0;
+  if (hasPath !== hasApproval) {
+    throw new CliError(
+      '--global-inbound-proof and --approve-global-inbound-proof must be provided together.',
+      {
+        code: 'DATASET_MAINTENANCE_GLOBAL_INBOUND_PROOF_OPTIONS_INCOMPLETE',
+        exitCode: 2,
+      },
+    );
+  }
+  if ((hasPath || hasApproval) && !options.parallelDeleteMode) {
+    throw new CliError(
+      'A global inbound proof is allowed only with --max-parallel flow delete-only execution.',
+      {
+        code: 'DATASET_MAINTENANCE_GLOBAL_INBOUND_PROOF_MODE_INVALID',
+        exitCode: 2,
+      },
+    );
+  }
+  if (hasApproval && !SHA256_PATTERN.test(options.approveProof!)) {
+    throw new CliError('--approve-global-inbound-proof must be a lowercase SHA-256.', {
+      code: 'DATASET_MAINTENANCE_GLOBAL_INBOUND_PROOF_APPROVAL_INVALID',
+      exitCode: 2,
+    });
+  }
+}
+
+function validateParallelDeleteGlobalInboundProof(options: {
+  proofPath: string | undefined;
+  approveProof: string | undefined;
+  plan: DatasetMaintenancePlan;
+  context: DatasetMaintenanceRemoteContext;
+  now: Date;
+}): ParallelDeleteGlobalInboundProof | null {
+  if (!options.proofPath || !options.approveProof) return null;
+  if (!path.isAbsolute(options.proofPath)) {
+    invalidGlobalInboundProof('Global inbound proof path must be absolute.');
+  }
+
+  let proofText: string;
+  try {
+    proofText = readFileSync(options.proofPath, 'utf8');
+  } catch (error) {
+    invalidGlobalInboundProof('Global inbound proof file could not be read.', errorMessage(error));
+  }
+  const proofSha256 = sha256Text(proofText!);
+  if (proofSha256 !== options.approveProof) {
+    invalidGlobalInboundProof('Global inbound proof file SHA-256 does not match approval.', {
+      expected: options.approveProof,
+      actual: proofSha256,
+    });
+  }
+
+  let value: unknown;
+  try {
+    value = JSON.parse(proofText!);
+  } catch (error) {
+    invalidGlobalInboundProof('Global inbound proof is not valid JSON.', errorMessage(error));
+  }
+  if (!isJsonObject(value)) {
+    invalidGlobalInboundProof('Global inbound proof must be a JSON object.');
+  }
+
+  const expectedBinding = parallelDeleteTargetBindingSha256(options.plan);
+  const capturedAt =
+    typeof value.captured_at_utc === 'string' ? Date.parse(value.captured_at_utc) : NaN;
+  const nowMs = options.now.getTime();
+  const capturedAgeMs = nowMs - capturedAt;
+  const safePositiveInteger = (candidate: unknown): candidate is number =>
+    Number.isSafeInteger(candidate) && Number(candidate) > 0;
+  if (
+    value.schema_version !== 'dataset-maintenance-global-inbound-proof.v1' ||
+    value.status !== 'PASS_GLOBAL_ALL_PROCESS_INBOUND_ZERO' ||
+    value.statement_kind !== 'SELECT' ||
+    value.source !== 'supabase_select_only_raw_sql' ||
+    value.process_scope !== 'all_process_rows_without_rls_restriction' ||
+    !Number.isFinite(capturedAt) ||
+    capturedAgeMs < -30_000 ||
+    capturedAgeMs > GLOBAL_INBOUND_PROOF_MAX_AGE_MS ||
+    value.project_ref !== options.context.project_ref ||
+    value.actor_user_id !== options.context.account.user_id ||
+    value.plan_sha256 !== options.plan.plan_sha256 ||
+    value.operation !== 'delete' ||
+    value.target_table !== 'flows' ||
+    value.target_count !== options.plan.actions.length ||
+    value.target_binding_sha256 !== expectedBinding ||
+    !safePositiveInteger(value.global_process_rows) ||
+    !safePositiveInteger(value.global_exchange_rows) ||
+    value.inbound_exchanges !== 0 ||
+    value.old_flow_identities_with_inbound !== 0 ||
+    value.process_identities_with_inbound !== 0 ||
+    value.p0 !== 0 ||
+    value.p1 !== 0 ||
+    !Array.isArray(value.chunks) ||
+    value.chunks.length === 0
+  ) {
+    invalidGlobalInboundProof('Global inbound proof metadata or zero-inbound result is invalid.', {
+      expected_project_ref: options.context.project_ref,
+      expected_actor_user_id: options.context.account.user_id,
+      expected_plan_sha256: options.plan.plan_sha256,
+      expected_target_count: options.plan.actions.length,
+      expected_target_binding_sha256: expectedBinding,
+    });
+  }
+
+  let expectedStart = 0;
+  for (const [index, rawChunk] of value.chunks.entries()) {
+    if (!isJsonObject(rawChunk)) {
+      invalidGlobalInboundProof('Global inbound proof contains a non-object chunk.', { index });
+    }
+    const chunkCapturedAt =
+      typeof rawChunk.captured_at_utc === 'string' ? Date.parse(rawChunk.captured_at_utc) : NaN;
+    const chunkAgeMs = nowMs - chunkCapturedAt;
+    if (
+      rawChunk.index !== index ||
+      rawChunk.start !== expectedStart ||
+      !Number.isSafeInteger(rawChunk.end_exclusive) ||
+      Number(rawChunk.end_exclusive) <= expectedStart ||
+      Number(rawChunk.end_exclusive) > options.plan.actions.length ||
+      rawChunk.target_count !== Number(rawChunk.end_exclusive) - expectedStart ||
+      !Number.isFinite(chunkCapturedAt) ||
+      chunkAgeMs < -30_000 ||
+      chunkAgeMs > GLOBAL_INBOUND_PROOF_MAX_AGE_MS ||
+      rawChunk.inbound_exchanges !== 0 ||
+      rawChunk.old_flow_identities_with_inbound !== 0 ||
+      rawChunk.process_identities_with_inbound !== 0 ||
+      rawChunk.owner_draft_inbound !== 0 ||
+      rawChunk.public_inbound !== 0 ||
+      rawChunk.foreign_private_inbound !== 0 ||
+      rawChunk.other_state_inbound !== 0 ||
+      typeof rawChunk.sql_sha256 !== 'string' ||
+      !SHA256_PATTERN.test(rawChunk.sql_sha256)
+    ) {
+      invalidGlobalInboundProof('Global inbound proof contains an invalid or incomplete chunk.', {
+        index,
+        expected_start: expectedStart,
+      });
+    }
+    expectedStart = Number(rawChunk.end_exclusive);
+  }
+  if (expectedStart !== options.plan.actions.length) {
+    invalidGlobalInboundProof('Global inbound proof chunks do not cover every delete target.', {
+      expected_end: options.plan.actions.length,
+      actual_end: expectedStart,
+    });
+  }
+
+  return {
+    ...(value as Omit<ParallelDeleteGlobalInboundProof, 'proof_path' | 'proof_sha256'>),
+    proof_path: options.proofPath,
+    proof_sha256: proofSha256,
+  };
 }
 
 function parseParallelDeleteExecutionLog(
@@ -2265,6 +2504,11 @@ export async function runDatasetMaintenanceApply(
   const plan = parseMaintenancePlan(readJsonFile(planPath, 'Maintenance plan'));
   const parallelDeleteMode = options.maxParallel !== undefined;
   const maxParallel = normalizeMaintenanceMaxParallel(options.maxParallel);
+  assertGlobalInboundProofOptionShape({
+    parallelDeleteMode,
+    proofPath: options.globalInboundProofPath,
+    approveProof: options.approveGlobalInboundProof,
+  });
   if (parallelDeleteMode) {
     assertParallelDeletePlan(plan);
   }
@@ -2332,6 +2576,15 @@ export async function runDatasetMaintenanceApply(
           exitCode: 2,
         });
       }
+      const globalInboundProof = parallelDeleteMode
+        ? validateParallelDeleteGlobalInboundProof({
+            proofPath: options.globalInboundProofPath,
+            approveProof: options.approveGlobalInboundProof,
+            plan,
+            context,
+            now: options.now ?? new Date(),
+          })
+        : null;
       const derivativeProgress: DerivativeSubmitProgressState =
         plan.operation === 'rebuild-derivatives'
           ? parseDerivativeSubmitProgress(plan, progressPath)
@@ -2350,7 +2603,7 @@ export async function runDatasetMaintenanceApply(
           context,
           userId: plan.account.user_id,
         }),
-        parallelDeleteMode
+        parallelDeleteMode && !globalInboundProof
           ? fetchMaintenanceVisibleTableRows({
               context,
               table: 'processes',
@@ -2368,11 +2621,16 @@ export async function runDatasetMaintenanceApply(
       });
 
       const inboundBarrierPath = nextParallelDeleteInboundBarrierPath(planDir);
-      const inboundBarrier =
-        parallelDeleteMode && visibleProcesses
+      const inboundBarrier = globalInboundProof
+        ? {
+            process_rows: globalInboundProof.global_process_rows,
+            process_references: globalInboundProof.global_exchange_rows,
+            snapshot_sha256: globalInboundProof.proof_sha256,
+          }
+        : parallelDeleteMode && visibleProcesses
           ? assertNoVisibleProcessInboundReferences({ plan, rows: visibleProcesses.rows })
           : null;
-      if (inboundBarrier && visibleProcesses) {
+      if (inboundBarrier && (visibleProcesses || globalInboundProof)) {
         writeImmutableJson(inboundBarrierPath, {
           schema_version: 1,
           generated_at_utc: clock(options),
@@ -2383,7 +2641,23 @@ export async function runDatasetMaintenanceApply(
           target_count: plan.actions.length,
           inbound_reference_count: 0,
           ...inboundBarrier,
-          completeness: visibleProcesses.completeness,
+          completeness: globalInboundProof
+            ? {
+                status: 'complete',
+                complete: true,
+                strategy: 'sha256_approved_global_select_only_all_processes',
+                statement_kind: globalInboundProof.statement_kind,
+                process_scope: globalInboundProof.process_scope,
+                proof_path: globalInboundProof.proof_path,
+                proof_sha256: globalInboundProof.proof_sha256,
+                captured_at_utc: globalInboundProof.captured_at_utc,
+                target_binding_sha256: globalInboundProof.target_binding_sha256,
+                chunk_count: globalInboundProof.chunks.length,
+                global_process_rows: globalInboundProof.global_process_rows,
+                global_exchange_rows: globalInboundProof.global_exchange_rows,
+                inbound_exchanges: globalInboundProof.inbound_exchanges,
+              }
+            : visibleProcesses!.completeness,
         });
       }
 
@@ -2738,6 +3012,7 @@ export const __testInternals = {
   assertNoVisibleProcessInboundReferences,
   assertApplyPreconditions,
   assertAliasSupportSnapshots,
+  assertGlobalInboundProofOptionShape,
   assertParallelDeletePlan,
   buildAliasBatchRequest,
   buildAliasPlanRequest,
@@ -2753,6 +3028,7 @@ export const __testInternals = {
   nextParallelDeleteInboundBarrierPath,
   normalizeMaintenanceMaxParallel,
   parallelDeleteDesiredSha256,
+  parallelDeleteTargetBindingSha256,
   parseDerivativeSubmitProgress,
   validateDerivativeAdmissionAttempt,
   parseAliasBatchProgress,
@@ -2763,4 +3039,5 @@ export const __testInternals = {
   validateAliasRpcResult,
   validateAliasPlanRpcResult,
   validateApprovalRecord,
+  validateParallelDeleteGlobalInboundProof,
 };

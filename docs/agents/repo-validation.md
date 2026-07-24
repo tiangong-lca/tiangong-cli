@@ -28,7 +28,7 @@ checkPaths:
   - scripts/docpact-gate.sh
   - scripts/install-git-hooks.sh
 lastReviewedAt: 2026-07-25
-lastReviewedCommit: 473ad5b54d099ae0584c4d188968446ca0c48409
+lastReviewedCommit: 0b0cd23104088ee477acb7c7be12bccdb5719331
 related:
   - ../../AGENTS.md
   - ../../.docpact/config.yaml
@@ -117,6 +117,8 @@ Review note, 2026-07-24: Issue #202 releases 0.0.33 and adds focused proof for f
 Review note, 2026-07-24: Issue #204 adds a production-scale regression for the all-visible process fence: more than 250 visible rows must traverse offsets `0,250,...` with `limit=250`, no `user_id` predicate, exact-count completeness, and zero dispatch on scan or inbound-reference failure.
 
 Review note, 2026-07-25: Issue #206 extends that regression to require the exact `id.asc,version.asc` primary-key order on every all-visible page while retaining the no-`user_id` and exact-count assertions. The test continues to prove that incomplete scans or inbound references dispatch zero mutations.
+
+Review note, 2026-07-25: Issue #208 adds positive proof that a fresh exact-SHA all-process proof skips only the unfiltered live scan and still performs protected deletes, plus negative vectors for stale, foreign-project, foreign-actor, wrong-plan, wrong-target-binding, non-SELECT, nonzero-inbound, P0, chunk-gap, chunk-inbound, SHA-mismatch, incomplete-option, and wrong-mode evidence. Existing live-scan regressions remain required.
 
 ## Validation Matrix
 

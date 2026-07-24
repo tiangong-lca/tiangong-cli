@@ -27,7 +27,7 @@ checkPaths:
   - scripts/docpact-gate.sh
   - scripts/install-git-hooks.sh
 lastReviewedAt: 2026-07-25
-lastReviewedCommit: 473ad5b54d099ae0584c4d188968446ca0c48409
+lastReviewedCommit: 0b0cd23104088ee477acb7c7be12bccdb5719331
 related:
   - ../../AGENTS.md
   - ../../.docpact/config.yaml
@@ -95,6 +95,8 @@ Review note, 2026-07-24: Issue #202 releases 0.0.33 and extends only ordinary da
 Review note, 2026-07-24: Issue #204 keeps the same all-visible-process inbound barrier but requests it in exact-count pages of at most 250 rows. The query still has no `user_id` predicate, and an incomplete scan still prevents approval or dispatch; only the per-request payload size changes.
 
 Review note, 2026-07-25: Issue #206 keeps the same barrier and exact-count paginator but uses only the globally unique `(id, version)` primary-key order. The database can now satisfy stable pagination through its existing index without a redundant owner/state sort; visibility, filtering, mutation, authorization, and fail-closed semantics do not change.
+
+Review note, 2026-07-25: Issue #208 adds only an admission artifact path: an external all-process SELECT-only zero-inbound proof whose bytes, freshness, project, actor, plan, ordered targets, and chunks are validated before any approval or dispatch. The CLI neither executes SQL nor adds a credential or mutation path; default RLS scanning, protected owner-session delete RPCs, append-only ledgers, and exact readback remain the runtime architecture.
 
 ## Stable Path Map
 

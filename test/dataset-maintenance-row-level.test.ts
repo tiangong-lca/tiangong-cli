@@ -1241,6 +1241,64 @@ async function prepareParallelFlowDeleteScenario(options: {
   return { remote, flowIds, plan, planPath: path.join(outDir, 'maintenance-plan.json') };
 }
 
+function buildParallelDeleteGlobalInboundProof(options: {
+  plan: DatasetMaintenancePlan;
+  projectRef: string;
+  actorUserId: string;
+  capturedAtUtc: string;
+}): JsonObject {
+  return {
+    schema_version: 'dataset-maintenance-global-inbound-proof.v1',
+    status: 'PASS_GLOBAL_ALL_PROCESS_INBOUND_ZERO',
+    statement_kind: 'SELECT',
+    source: 'supabase_select_only_raw_sql',
+    process_scope: 'all_process_rows_without_rls_restriction',
+    captured_at_utc: options.capturedAtUtc,
+    project_ref: options.projectRef,
+    actor_user_id: options.actorUserId,
+    plan_sha256: options.plan.plan_sha256,
+    operation: 'delete',
+    target_table: 'flows',
+    target_count: options.plan.actions.length,
+    target_binding_sha256: applyInternals.parallelDeleteTargetBindingSha256(options.plan),
+    global_process_rows: 253,
+    global_exchange_rows: 253,
+    inbound_exchanges: 0,
+    old_flow_identities_with_inbound: 0,
+    process_identities_with_inbound: 0,
+    chunks: [
+      {
+        index: 0,
+        start: 0,
+        end_exclusive: options.plan.actions.length,
+        target_count: options.plan.actions.length,
+        captured_at_utc: options.capturedAtUtc,
+        inbound_exchanges: 0,
+        old_flow_identities_with_inbound: 0,
+        process_identities_with_inbound: 0,
+        owner_draft_inbound: 0,
+        public_inbound: 0,
+        foreign_private_inbound: 0,
+        other_state_inbound: 0,
+        sql_sha256: 'b'.repeat(64),
+      },
+    ],
+    p0: 0,
+    p1: 0,
+  };
+}
+
+function writeParallelDeleteGlobalInboundProof(options: {
+  root: string;
+  fileName: string;
+  value: JsonObject;
+}): { path: string; sha256: string } {
+  const proofPath = path.join(options.root, options.fileName);
+  const text = `${stableJsonText(options.value)}\n`;
+  writeFileSync(proofPath, text);
+  return { path: proofPath, sha256: sha256Text(text) };
+}
+
 function seed(remote: FakeMaintenanceRemote): void {
   remote.add(
     'processes',
@@ -1610,6 +1668,293 @@ test('parallel flow delete apply is bounded, durable, globally fenced, and never
     assert.equal(resumed.summary.resumed_successes, 4);
     assert.equal(scenario.remote.rpcOrder.length, rpcCount);
     assert.equal(readJsonLinesIfPresent(report.artifacts.execution_log!).length, events.length);
+  } finally {
+    rmSync(root, { recursive: true, force: true });
+  }
+});
+
+test('parallel flow delete accepts an exact fresh global SELECT proof and skips the live all-visible scan', async () => {
+  const root = mkdtempSync(path.join(os.tmpdir(), 'tg-maintenance-global-proof-'));
+  try {
+    const scenario = await prepareParallelFlowDeleteScenario({
+      root,
+      label: 'global-proof',
+      count: 2,
+    });
+    const now = new Date('2026-07-24T10:01:00.000Z');
+    const context = await resolveMaintenanceRemoteContext({
+      env: scenario.remote.env,
+      fetchImpl: scenario.remote.fetch,
+      now,
+    });
+    const proof = writeParallelDeleteGlobalInboundProof({
+      root,
+      fileName: 'global-inbound-proof.json',
+      value: buildParallelDeleteGlobalInboundProof({
+        plan: scenario.plan,
+        projectRef: context.project_ref,
+        actorUserId: context.account.user_id,
+        capturedAtUtc: '2026-07-24T10:00:30.000Z',
+      }),
+    });
+    const requestedUrls: string[] = [];
+    const report = await runDatasetMaintenanceApply({
+      planPath: scenario.planPath,
+      commit: true,
+      approvePlan: scenario.plan.plan_sha256,
+      confirm: scenario.remote.email,
+      maxParallel: 2,
+      globalInboundProofPath: proof.path,
+      approveGlobalInboundProof: proof.sha256,
+      env: scenario.remote.env,
+      fetchImpl: async (input, init) => {
+        requestedUrls.push(String(input));
+        return scenario.remote.fetch(input, init);
+      },
+      now,
+    });
+    assert.equal(report.status, 'completed');
+    assert.equal(report.summary.success, 2);
+    const unfilteredProcessReads = requestedUrls
+      .filter((requestedUrl) => requestedUrl.includes('/rest/v1/processes'))
+      .map((requestedUrl) => new URL(requestedUrl))
+      .filter((requestedUrl) => !requestedUrl.searchParams.has('user_id'));
+    assert.deepEqual(unfilteredProcessReads, []);
+    const barrier = readJsonFile(report.artifacts.inbound_reference_barrier!, 'global barrier');
+    assert.ok(isJsonObject(barrier));
+    assert.equal(barrier.snapshot_sha256, proof.sha256);
+    assert.equal(barrier.process_rows, 253);
+    assert.equal(barrier.process_references, 253);
+    assert.ok(isJsonObject(barrier.completeness));
+    assert.equal(barrier.completeness.strategy, 'sha256_approved_global_select_only_all_processes');
+    assert.equal(barrier.completeness.proof_sha256, proof.sha256);
+    assert.equal(
+      barrier.completeness.target_binding_sha256,
+      applyInternals.parallelDeleteTargetBindingSha256(scenario.plan),
+    );
+  } finally {
+    rmSync(root, { recursive: true, force: true });
+  }
+});
+
+test('global inbound proof admission rejects stale, foreign, mutated, incomplete, or unapproved evidence', async () => {
+  const root = mkdtempSync(path.join(os.tmpdir(), 'tg-maintenance-global-proof-invalid-'));
+  try {
+    const scenario = await prepareParallelFlowDeleteScenario({
+      root,
+      label: 'global-proof-invalid',
+      count: 2,
+    });
+    const now = new Date('2026-07-24T10:01:00.000Z');
+    const context = await resolveMaintenanceRemoteContext({
+      env: scenario.remote.env,
+      fetchImpl: scenario.remote.fetch,
+      now,
+    });
+    const base = buildParallelDeleteGlobalInboundProof({
+      plan: scenario.plan,
+      projectRef: context.project_ref,
+      actorUserId: context.account.user_id,
+      capturedAtUtc: '2026-07-24T10:00:30.000Z',
+    });
+    const absentBeforePlan = structuredClone(scenario.plan);
+    absentBeforePlan.actions[0]!.before = null;
+    assert.notEqual(
+      applyInternals.parallelDeleteTargetBindingSha256(absentBeforePlan),
+      applyInternals.parallelDeleteTargetBindingSha256(scenario.plan),
+    );
+    const mutations: Array<[string, (value: JsonObject) => void]> = [
+      [
+        'stale',
+        (value) => {
+          value.captured_at_utc = '2026-07-24T09:00:00.000Z';
+          (value.chunks as JsonObject[])[0]!.captured_at_utc = '2026-07-24T09:00:00.000Z';
+        },
+      ],
+      [
+        'project',
+        (value) => {
+          value.project_ref = 'foreign-project';
+        },
+      ],
+      [
+        'actor',
+        (value) => {
+          value.actor_user_id = '99999999-9999-4999-8999-999999999999';
+        },
+      ],
+      [
+        'plan',
+        (value) => {
+          value.plan_sha256 = 'c'.repeat(64);
+        },
+      ],
+      [
+        'binding',
+        (value) => {
+          value.target_binding_sha256 = 'd'.repeat(64);
+        },
+      ],
+      [
+        'statement',
+        (value) => {
+          value.statement_kind = 'UPDATE';
+        },
+      ],
+      [
+        'inbound',
+        (value) => {
+          value.inbound_exchanges = 1;
+        },
+      ],
+      [
+        'p0',
+        (value) => {
+          value.p0 = 1;
+        },
+      ],
+      [
+        'captured-type',
+        (value) => {
+          value.captured_at_utc = 1;
+        },
+      ],
+      [
+        'chunk-gap',
+        (value) => {
+          (value.chunks as JsonObject[])[0]!.start = 1;
+        },
+      ],
+      [
+        'chunk-type',
+        (value) => {
+          value.chunks = [null];
+        },
+      ],
+      [
+        'chunk-captured-type',
+        (value) => {
+          (value.chunks as JsonObject[])[0]!.captured_at_utc = 1;
+        },
+      ],
+      [
+        'chunk-inbound',
+        (value) => {
+          (value.chunks as JsonObject[])[0]!.foreign_private_inbound = 1;
+        },
+      ],
+      [
+        'chunk-partial',
+        (value) => {
+          (value.chunks as JsonObject[])[0]!.end_exclusive = 1;
+          (value.chunks as JsonObject[])[0]!.target_count = 1;
+        },
+      ],
+    ];
+    for (const [label, mutate] of mutations) {
+      const value = structuredClone(base);
+      mutate(value);
+      const proof = writeParallelDeleteGlobalInboundProof({
+        root,
+        fileName: `${label}.json`,
+        value,
+      });
+      assert.throws(
+        () =>
+          applyInternals.validateParallelDeleteGlobalInboundProof({
+            proofPath: proof.path,
+            approveProof: proof.sha256,
+            plan: scenario.plan,
+            context,
+            now,
+          }),
+        /Global inbound proof/u,
+        label,
+      );
+    }
+
+    const approved = writeParallelDeleteGlobalInboundProof({
+      root,
+      fileName: 'approved.json',
+      value: base,
+    });
+    assert.throws(
+      () =>
+        applyInternals.validateParallelDeleteGlobalInboundProof({
+          proofPath: approved.path,
+          approveProof: 'e'.repeat(64),
+          plan: scenario.plan,
+          context,
+          now,
+        }),
+      /does not match approval/u,
+    );
+    assert.throws(
+      () =>
+        applyInternals.assertGlobalInboundProofOptionShape({
+          parallelDeleteMode: true,
+          proofPath: approved.path,
+        }),
+      /must be provided together/u,
+    );
+    assert.throws(
+      () =>
+        applyInternals.assertGlobalInboundProofOptionShape({
+          parallelDeleteMode: false,
+          proofPath: approved.path,
+          approveProof: approved.sha256,
+        }),
+      /only with --max-parallel/u,
+    );
+    assert.throws(
+      () =>
+        applyInternals.assertGlobalInboundProofOptionShape({
+          parallelDeleteMode: true,
+          proofPath: approved.path,
+          approveProof: 'BAD',
+        }),
+      /lowercase SHA-256/u,
+    );
+    assert.throws(
+      () =>
+        applyInternals.validateParallelDeleteGlobalInboundProof({
+          proofPath: 'relative-proof.json',
+          approveProof: approved.sha256,
+          plan: scenario.plan,
+          context,
+          now,
+        }),
+      /must be absolute/u,
+    );
+    assert.throws(
+      () =>
+        applyInternals.validateParallelDeleteGlobalInboundProof({
+          proofPath: path.join(root, 'missing-proof.json'),
+          approveProof: 'f'.repeat(64),
+          plan: scenario.plan,
+          context,
+          now,
+        }),
+      /could not be read/u,
+    );
+    for (const [fileName, text, pattern] of [
+      ['malformed.json', '{bad', /not valid JSON/u],
+      ['primitive.json', 'null', /must be a JSON object/u],
+    ] as const) {
+      const invalidPath = path.join(root, fileName);
+      writeFileSync(invalidPath, text);
+      assert.throws(
+        () =>
+          applyInternals.validateParallelDeleteGlobalInboundProof({
+            proofPath: invalidPath,
+            approveProof: sha256Text(text),
+            plan: scenario.plan,
+            context,
+            now,
+          }),
+        pattern,
+      );
+    }
   } finally {
     rmSync(root, { recursive: true, force: true });
   }
