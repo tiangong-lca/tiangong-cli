@@ -23,7 +23,7 @@ checkPaths:
   - scripts/docpact-gate.sh
   - scripts/install-git-hooks.sh
 lastReviewedAt: 2026-07-25
-lastReviewedCommit: 7c960cac3eab447a2a7d2b7c398ffd53c2de8fea
+lastReviewedCommit: 473ad5b54d099ae0584c4d188968446ca0c48409
 related:
   - ../AGENTS.md
   - ../.docpact/config.yaml
@@ -72,6 +72,8 @@ Review note, 2026-07-24: Issue #200 is the 0.0.32 hotfix release for bounded ord
 Review note, 2026-07-24: Issue #202 is the 0.0.33 release for bounded delete-only flow convergence. It must prove a complete visible-process inbound barrier, target uniqueness, owner/state exactness, durable dispatch-before-request evidence, exact absent readback, ambiguity no-replay, and independent-row continuation at concurrency no greater than 8. Publication remains merge-triggered tag creation plus npm Trusted Publishing; local publish/manual tags remain forbidden, and npm provenance plus `gitHead` must match the release merge before workspace integration or production deletion.
 
 Review note, 2026-07-24: Issue #204 is a main-commit operational fix for the all-visible process preflight page size. The BAFU topology run binds the exact merged commit and built-file fingerprint; no package version, manual tag, local publish, or alternate release path is introduced by this fix.
+
+Review note, 2026-07-25: Issue #206 is a main-commit operational fix that changes only the stable order of the same all-visible preflight to `(id, version)`. The BAFU topology run must bind the exact merged commit and built-file fingerprint; no package version, tag, publish, credential, or alternate release path is introduced.
 
 Use this document for:
 

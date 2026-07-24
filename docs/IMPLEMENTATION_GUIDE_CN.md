@@ -17,7 +17,7 @@ checkPaths:
   - src/**
   - test/**
 lastReviewedAt: 2026-07-25
-lastReviewedCommit: 7c960cac3eab447a2a7d2b7c398ffd53c2de8fea
+lastReviewedCommit: 473ad5b54d099ae0584c4d188968446ca0c48409
 related:
   - ../AGENTS.md
   - ../.docpact/config.yaml
@@ -61,6 +61,8 @@ Review note, 2026-07-24: Issue #200 发布 0.0.32，为大规模 execution contr
 Review note, 2026-07-24: Issue #202 发布 0.0.33，为 BAFU flow 物理收敛增加显式 `maintenance apply --max-parallel 1..8`。该模式只接受 flow delete-only、目标唯一、current/projected impact 为零的计划；dispatch 前完成全部 RLS 可见 process 的 fresh SELECT-only 入边复核。`PREPARED/DISPATCHED/COMMITTED/UNKNOWN` 逐行留痕，exact absent 才成功，成功和 UNKNOWN 均不自动重放，独立行继续。
 
 Review note, 2026-07-24: Issue #204 将上述全可见 process 入边复核固定为每页 250 行，以避免大 JSON 页触发生产语句超时；查询仍不带 `user_id` 过滤，必须完成 exact-count 全量分页后才允许 dispatch。
+
+Review note, 2026-07-25: Issue #206 将该完整 RLS 可见 process 扫描的稳定顺序收敛为全局唯一主键 `(id, version)`，让数据库直接走既有索引，避免冗余 owner/state 全结果排序；无 `user_id` 过滤、exact-count 完整性和首写前全局入边阻断均不变。
 
 ## 1. 目标
 
