@@ -1592,6 +1592,7 @@ test('parallel flow delete apply is bounded, durable, globally fenced, and never
     for (const requestedUrl of visibleProcessUrls) {
       assert.equal(requestedUrl.searchParams.get('limit'), '250');
       assert.equal(requestedUrl.searchParams.get('user_id'), null);
+      assert.equal(requestedUrl.searchParams.get('order'), 'id.asc,version.asc');
     }
 
     const rpcCount = scenario.remote.rpcOrder.length;

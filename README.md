@@ -47,6 +47,8 @@ Review note, 2026-07-24: CLI 0.0.32 adds bounded execution-contract concurrency 
 
 Review note, 2026-07-24: CLI 0.0.33 adds an explicit `dataset maintenance apply --max-parallel 1..8` profile for large owner-draft flow convergence. It accepts only unique flow delete-only plans with zero frozen and fresh visible-process inbound references, persists `PREPARED` and `DISPATCHED` before each protected RPC, requires exact absent readback for `COMMITTED`, never automatically replays success or UNKNOWN, and continues independent rows.
 
+Review note, 2026-07-25: The complete RLS-visible process fence now paginates in the strict `(id, version)` primary-key order. It still has no `user_id` filter and retains exact-count completeness, while avoiding a redundant owner/state sort before any deletion can dispatch.
+
 ## Run
 
 One-off published run:

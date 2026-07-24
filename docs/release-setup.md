@@ -20,7 +20,7 @@ checkPaths:
   - scripts/docpact-gate.sh
   - scripts/install-git-hooks.sh
 lastReviewedAt: 2026-07-25
-lastReviewedCommit: 7c960cac3eab447a2a7d2b7c398ffd53c2de8fea
+lastReviewedCommit: 473ad5b54d099ae0584c4d188968446ca0c48409
 related:
   - ../AGENTS.md
   - ../.docpact/config.yaml
@@ -86,6 +86,8 @@ Review note, 2026-07-24: Issue #200 publishes 0.0.32 through the unchanged merge
 Review note, 2026-07-24: Issue #202 publishes 0.0.33 through the unchanged merge-triggered tag and npm Trusted Publishing workflows. Bounded flow delete-only maintenance reuses the existing user session, RLS REST reads, and protected delete RPC and adds no dependency, secret, environment variable, runner, Trusted Publisher setting, workflow filename, service-role credential, or alternate authentication surface.
 
 Review note, 2026-07-24: Issue #204 changes only the main-commit all-visible preflight page size and requires no new secret, environment variable, runner, Trusted Publisher setting, workflow, tag rule, service-role credential, or alternate authentication surface.
+
+Review note, 2026-07-25: Issue #206 changes only that preflight's indexed ordering and requires no new secret, environment variable, runner, Trusted Publisher setting, workflow, tag rule, service-role credential, or alternate authentication surface.
 
 Review note, 2026-07-13: exact-count maintenance pagination requires no repository secret, Trusted Publisher, environment, workflow filename, or tag-semantics change.
 

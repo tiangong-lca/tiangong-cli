@@ -426,17 +426,14 @@ export async function fetchMaintenanceVisibleTableRows(options: {
   return fetchCompletePostgrestPages({
     table: options.table,
     requestedPageSize: pageSize,
-    rowIdentity: (row: DatasetMaintenanceRemoteRow) =>
-      `${row.id}\u0000${row.version}\u0000${row.user_id ?? ''}\u0000${
-        row.state_code === null ? '' : String(row.state_code).padStart(12, '0')
-      }`,
+    // Every maintenance table is keyed by the globally unique (id, version)
+    // pair. Keep the visible scan on that strict primary-key order so Postgres
+    // can paginate through the index without a redundant full-result sort.
+    rowIdentity: (row: DatasetMaintenanceRemoteRow) => `${row.id}\u0000${row.version}`,
     fetchPage: async (offset) => {
       const url = new URL(`${options.context.rest_base_url}/${options.table}`);
       url.searchParams.set('select', selectForTable(options.table, options.includeJson));
-      url.searchParams.set(
-        'order',
-        'id.asc,version.asc,user_id.asc.nullsfirst,state_code.asc.nullsfirst',
-      );
+      url.searchParams.set('order', 'id.asc,version.asc');
       url.searchParams.set('limit', String(pageSize));
       url.searchParams.set('offset', String(offset));
       const sourceUrl = url.toString();

@@ -27,7 +27,7 @@ checkPaths:
   - scripts/docpact-gate.sh
   - scripts/install-git-hooks.sh
 lastReviewedAt: 2026-07-25
-lastReviewedCommit: 7c960cac3eab447a2a7d2b7c398ffd53c2de8fea
+lastReviewedCommit: 473ad5b54d099ae0584c4d188968446ca0c48409
 related:
   - ../../AGENTS.md
   - ../../.docpact/config.yaml
@@ -93,6 +93,8 @@ Review note, 2026-07-24: Issue #200 releases 0.0.32 and extends the existing exe
 Review note, 2026-07-24: Issue #202 releases 0.0.33 and extends only ordinary dataset-maintenance apply. Explicit bounded mode is restricted to flow delete-only plans, reuses owner-session RLS reads and `cmd_dataset_delete`, adds a complete all-visible-process inbound barrier, and records append-only action dispatch/outcome events beside the immutable plan. It adds no RPC, schema, dependency, service-role, direct-table, publication, or cross-owner architecture.
 
 Review note, 2026-07-24: Issue #204 keeps the same all-visible-process inbound barrier but requests it in exact-count pages of at most 250 rows. The query still has no `user_id` predicate, and an incomplete scan still prevents approval or dispatch; only the per-request payload size changes.
+
+Review note, 2026-07-25: Issue #206 keeps the same barrier and exact-count paginator but uses only the globally unique `(id, version)` primary-key order. The database can now satisfy stable pagination through its existing index without a redundant owner/state sort; visibility, filtering, mutation, authorization, and fail-closed semantics do not change.
 
 ## Stable Path Map
 

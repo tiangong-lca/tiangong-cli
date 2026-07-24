@@ -22,8 +22,9 @@ layout: repo
 # Review note, 2026-07-24: Issue #200 releases 0.0.32 and keeps bounded execution-contract scheduling plus owner-token renewal inside the existing dataset command/runtime, remote-session, test, release, and integration domains. Current wildcards already cover `src/cli.ts`, `src/lib/dataset-*.ts`, tests, and governed docs; no ownership, route, dependency, environment, authentication, tag, Trusted Publishing, or publication rule changes are required.
 # Review note, 2026-07-24: Issue #202 releases 0.0.33 and keeps bounded flow delete-only maintenance inside the existing dataset command/runtime, RLS remote-read, artifact, test, release, and integration domains. Current wildcards cover the visible-process inbound barrier, append-only dispatch ledger, tests, and governed docs; no ownership, route, dependency, environment, authentication, RPC/schema, tag, Trusted Publishing, or publication rule changes are required.
 # Review note, 2026-07-24: Issue #204 keeps the parallel-delete all-visible process fence inside the existing maintenance runtime and exact-count paginator. Bounding only that scan to 250 rows per request changes no ownership, route, dependency, authentication, mutation, RPC/schema, release, or publication boundary.
+# Review note, 2026-07-25: Issue #206 keeps that complete RLS-visible fence on the globally unique `(id, version)` primary-key order so Postgres can use the existing index instead of sorting redundant owner/state keys. Completeness, ownership, mutation, retry, RPC/schema, release, and publication boundaries are unchanged.
 lastReviewedAt: "2026-07-25"
-lastReviewedCommit: "7c960cac3eab447a2a7d2b7c398ffd53c2de8fea"
+lastReviewedCommit: "473ad5b54d099ae0584c4d188968446ca0c48409"
 
 catalog:
   repos:

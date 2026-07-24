@@ -33,7 +33,7 @@ checkPaths:
   - scripts/docpact-gate.sh
   - scripts/install-git-hooks.sh
 lastReviewedAt: 2026-07-25
-lastReviewedCommit: 7c960cac3eab447a2a7d2b7c398ffd53c2de8fea
+lastReviewedCommit: 473ad5b54d099ae0584c4d188968446ca0c48409
 related:
   - .docpact/config.yaml
   - docs/agents/repo-validation.md
@@ -100,6 +100,8 @@ Review note, 2026-07-24: Issue #200 releases 0.0.32 and makes large ordered owne
 Review note, 2026-07-24: Issue #202 releases 0.0.33 and keeps high-volume physical flow deletion inside the existing maintenance command boundary. Explicit `maintenance apply --max-parallel 1..8` accepts only unique owner-draft flow delete targets after zero current/projected impact and a fresh complete RLS-visible process inbound scan. Every protected delete remains an independent transaction with durable pre-dispatch evidence and exact absent readback; success/UNKNOWN are never automatically replayed and independent rows continue. No RPC, schema, dependency, alternate auth, publication, state, source, FP/UG, public, foreign-owner, direct-table, or service-role path is added.
 
 Review note, 2026-07-24: Issue #204 bounds each page of the parallel-delete all-visible process inbound preflight at 250 rows so large process JSON cannot exhaust the production statement timeout. The scan still omits a `user_id` predicate, follows exact-count pagination to completion, and blocks every mutation after an incomplete scan or any visible inbound reference. Delete scope, authorization, attempt-before-dispatch, no-replay, RPC/schema, and all protected-row boundaries are unchanged.
+
+Review note, 2026-07-25: Issue #206 orders that complete RLS-visible process scan only by the globally unique `(id, version)` primary key. This preserves deterministic exact-count completeness and every visible-row safety check while avoiding a redundant full-result owner/state sort; filtering, delete scope, authorization, retry, mutation, RPC/schema, and protected-row boundaries remain unchanged.
 
 ## Bootstrap Order
 
