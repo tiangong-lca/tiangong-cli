@@ -45,6 +45,8 @@ Review note, 2026-07-23: `dataset save-draft --execution-contract` adds an opt-i
 
 Review note, 2026-07-24: CLI 0.0.32 adds bounded execution-contract concurrency without changing the sealed payload or replay model. `--max-parallel 1..8` keeps the complete dependency prefix serial and exact-read-back, then overlaps only the unique-target suffix. The current owner token is renewed and revalidated before each DML dispatch so long batches do not turn token expiry into an avoidable UNKNOWN.
 
+Review note, 2026-07-24: CLI 0.0.33 adds an explicit `dataset maintenance apply --max-parallel 1..8` profile for large owner-draft flow convergence. It accepts only unique flow delete-only plans with zero frozen and fresh visible-process inbound references, persists `PREPARED` and `DISPATCHED` before each protected RPC, requires exact absent readback for `COMMITTED`, never automatically replays success or UNKNOWN, and continues independent rows.
+
 ## Run
 
 One-off published run:
@@ -374,6 +376,7 @@ tiangong-lca dataset references rewrite --input ./rows.jsonl --from flow:<old-id
 tiangong-lca dataset maintenance plan --scope ./maintenance-scope.json --operation redo-import --out-dir /abs/path/to/dataset-maintenance --page-size 1000 --timeout-ms 10000 --json
 tiangong-lca dataset maintenance plan --scope ./derivative-rebuild-scope.json --operation rebuild-derivatives --out-dir /abs/path/to/derivative-rebuild --json
 tiangong-lca dataset maintenance apply --plan /abs/path/to/dataset-maintenance/maintenance-plan.json --commit --approve-plan <sha256> --confirm <current-account-email> --timeout-ms 10000 --json
+tiangong-lca dataset maintenance apply --plan /abs/path/to/flow-delete-maintenance/maintenance-plan.json --commit --approve-plan <sha256> --confirm <current-account-email> --max-parallel 8 --timeout-ms 10000 --json
 tiangong-lca dataset maintenance verify --plan /abs/path/to/dataset-maintenance/maintenance-plan.json --out-dir /abs/path/to/dataset-maintenance/verify --page-size 1000 --timeout-ms 10000 --json
 tiangong-lca dataset maintenance run-protected --plan /abs/path/to/maintenance-plan.json --freeze /abs/path/to/protected-execution-freeze.json --approval /abs/path/to/protected-approval.json --out-dir /abs/path/to/protected-run --status-only --json
 tiangong-lca lifecyclemodel auto-build --input ./examples/lifecyclemodel-auto-build.request.json --out-dir /abs/path/to/lifecyclemodel-run --json
@@ -403,6 +406,8 @@ For `process build-plan` and `flow build-plan`, canonical payloads embedded in t
 For `process save-draft`, canonical process payloads are validated locally with `ProcessSchema` before any `--commit` write. Schema-invalid rows remain in `outputs/save-draft-rpc/failures.jsonl` instead of being persisted. Batch import callers should pass `--target-user-id`; the CLI then verifies the current auth session and any visible draft owner before writing, while downstream readback verification still proves the final owner and payload.
 
 For `dataset save-draft --execution-contract`, the JSON contract uses schema `dataset-save-draft-execution-contract.v1` and supplies `execution_id`, `project_ref`, an exact owner (`user_id`, lowercase `email`, `state_code: 0`), and ordered actions. Each action binds `action_id`, `desired_sha256`, `expected_operation` (`insert` or `save_draft`), table/id/version, `before_sha256`, and earlier `dependency_action_ids`. Contract mode requires `--commit`; account-local Unit Group or Flow Property support rows additionally require `--allow-account-local-support`. `--max-parallel` defaults to 1 and is capped at 8. When it is greater than 1, every action through the highest referenced dependency remains serial; only the later table/id/version-unique suffix may overlap. The exact owner token is renewed and checked before each DML dispatch. Attempts and outcomes are stored under the platform user-state directory (`$XDG_STATE_HOME/tiangong-lca-cli` when configured), not beside the contract or report. Any prior terminal or unresolved attempt is read back or retained without re-dispatch; exit status is nonzero unless every action has exact terminal success.
+
+For `dataset maintenance apply`, explicitly passing `--max-parallel 1..8` opts into the destructive flow-convergence profile. It accepts only a non-empty, unique-target, flow delete-only plan whose current and projected reference impacts are both zero. Before dispatch it also completes a fresh SELECT-only scan of every process visible to the owner session and rejects any inbound edge. Each action writes append-only `PREPARED` and `DISPATCHED` evidence before its protected owner-session RPC, then records `COMMITTED` only after exact absent readback. An ambiguous action is read back, marked `UNKNOWN`, and never replayed automatically; independent actions continue. Omit the flag to retain ordinary maintenance apply behavior.
 
 For `flow publish-version`, canonical flow payloads are validated locally with `FlowSchema` before remote visibility planning or writes. The command always writes `flow-publish-version-gate-report.json`; blocked rows are written to the remote-failure JSONL without calling the remote service.
 

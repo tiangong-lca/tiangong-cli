@@ -405,6 +405,56 @@ export async function fetchMaintenanceAccountTableRows(options: {
   });
 }
 
+/**
+ * Read every row visible to the authenticated owner for one maintenance table.
+ *
+ * This deliberately omits a user_id predicate. It is a SELECT-only RLS view used
+ * by destructive maintenance admission to prove that a draft flow has no inbound
+ * reference from either an owner row or another row visible to the owner session.
+ */
+export async function fetchMaintenanceVisibleTableRows(options: {
+  context: DatasetMaintenanceRemoteContext;
+  table: DatasetMaintenanceScanTable;
+  includeJson?: boolean;
+  pageSize?: number;
+}): Promise<{
+  rows: DatasetMaintenanceRemoteRow[];
+  source_urls: string[];
+  completeness: DatasetMaintenanceTableCompleteness;
+}> {
+  const pageSize = normalizeMaintenancePageSize(options.pageSize);
+  return fetchCompletePostgrestPages({
+    table: options.table,
+    requestedPageSize: pageSize,
+    rowIdentity: (row: DatasetMaintenanceRemoteRow) =>
+      `${row.id}\u0000${row.version}\u0000${row.user_id ?? ''}\u0000${
+        row.state_code === null ? '' : String(row.state_code).padStart(12, '0')
+      }`,
+    fetchPage: async (offset) => {
+      const url = new URL(`${options.context.rest_base_url}/${options.table}`);
+      url.searchParams.set('select', selectForTable(options.table, options.includeJson));
+      url.searchParams.set(
+        'order',
+        'id.asc,version.asc,user_id.asc.nullsfirst,state_code.asc.nullsfirst',
+      );
+      url.searchParams.set('limit', String(pageSize));
+      url.searchParams.set('offset', String(offset));
+      const sourceUrl = url.toString();
+      const response = await fetchJsonResponse({
+        context: options.context,
+        url: sourceUrl,
+        init: { headers: { Prefer: 'count=exact' } },
+        label: `${options.table} visible maintenance snapshot`,
+      });
+      return {
+        rows: normalizeRemoteRows(options.table, response.body, sourceUrl, options.includeJson),
+        source_url: sourceUrl,
+        content_range: response.headers.get('content-range'),
+      };
+    },
+  });
+}
+
 async function invokeMaintenanceRpc(options: {
   context: DatasetMaintenanceRemoteContext;
   rpc:

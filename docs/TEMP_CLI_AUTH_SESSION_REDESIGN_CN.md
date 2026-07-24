@@ -49,6 +49,7 @@ related:
 - 2026-07-23 复核：Issue #196 只修复 Windows 本地 execution-ledger 文件的 durable append，不读取或持久化 bearer，不改变 user API key、session cache、RLS、service-role 或跨账号边界；本历史设计结论不变。
 - 2026-07-23 复核：Issue #198 只隔离本地 payload 校验的内存副作用，不读取、复制或持久化 bearer，不改变 user API key、session cache、RLS、owner/project/state 校验、service-role 或跨账号边界；本历史设计结论不变。
 - 2026-07-24 复核：Issue #200 在每个 execution-contract DML 前调用既有 session runtime 获取当前 access token，并重新解码核对 exact user/email；token 仍不写入 action ledger/report，foreign renewal 在 attempt=0 拒绝，不新增认证 env、service-role、跨账号或 blind retry 路径。本历史设计结论不变。
+- 2026-07-24 复核：Issue #202 的 bounded maintenance delete 继续只使用当前用户 session 和 RLS，所有目标必须匹配计划 owner/state，且不接受 target-user、service-role、alternate bearer 或 blind retry。该变更不新增认证 env，也不改变本历史设计结论。
 
 ## 1. 已确认事实
 

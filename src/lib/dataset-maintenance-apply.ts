@@ -1,6 +1,7 @@
-import { existsSync } from 'node:fs';
+import { closeSync, existsSync, fchmodSync, fsyncSync, openSync, writeFileSync } from 'node:fs';
 import path from 'node:path';
 import { writeJsonArtifact } from './artifacts.js';
+import { collectRemoteReferences } from './dataset-remote-verify.js';
 import { CliError } from './errors.js';
 import type { FetchLike } from './http.js';
 import { withStateFileLock } from './state-lock.js';
@@ -20,6 +21,7 @@ import {
   readJsonLinesIfPresent,
   sha256Json,
   snapshotRemoteRow,
+  stableJsonText,
   writeImmutableJson,
   type DatasetMaintenancePlan,
   type DatasetMaintenanceAliasBatchPlan,
@@ -45,6 +47,7 @@ import {
   fetchMaintenanceAccountRows,
   fetchMaintenanceDerivativeSnapshot,
   fetchMaintenanceExactRows,
+  fetchMaintenanceVisibleTableRows,
   resolveMaintenanceRemoteContext,
   saveDraftMaintenanceRow,
   type DatasetMaintenanceRemoteContext,
@@ -53,7 +56,7 @@ import {
 export type DatasetMaintenanceApplyReport = {
   schema_version: 1;
   generated_at_utc: string;
-  status: 'completed' | 'completed_with_failures' | 'accepted';
+  status: 'completed' | 'completed_with_failures' | 'completed_with_unknowns' | 'accepted';
   task_id: string;
   operation: DatasetMaintenancePlan['operation'];
   operation_id: string;
@@ -64,6 +67,7 @@ export type DatasetMaintenanceApplyReport = {
     actions: number;
     success: number;
     failed: number;
+    unknown?: number;
     pending: number;
     resumed_successes: number;
     accepted?: number;
@@ -74,7 +78,7 @@ export type DatasetMaintenanceApplyReport = {
     table: DatasetMaintenancePlanAction['table'];
     id: string;
     version: string;
-    status: 'success' | 'failed' | 'pending' | 'accepted';
+    status: 'success' | 'failed' | 'unknown' | 'pending' | 'accepted';
     error: string | null;
   }>;
   artifacts: {
@@ -87,6 +91,8 @@ export type DatasetMaintenanceApplyReport = {
     alias_exchange_progress?: string;
     derivative_submit_progress?: string;
     derivative_admission_attempt?: string;
+    execution_log?: string;
+    inbound_reference_barrier?: string;
   };
   database_audit: {
     rpc_transaction_log: 'public.command_audit_log';
@@ -115,6 +121,46 @@ export type RunDatasetMaintenanceApplyOptions = {
   env: NodeJS.ProcessEnv;
   fetchImpl: FetchLike;
   now?: Date;
+  maxParallel?: number;
+};
+
+type ParallelDeleteExecutionStatus = 'PREPARED' | 'DISPATCHED' | 'COMMITTED' | 'UNKNOWN';
+
+type ParallelDeleteExecutionEntry = {
+  schema_version: 1;
+  plan_sha256: string;
+  operation_id: string;
+  action_id: string;
+  attempt_key: string;
+  action: 'delete';
+  table: 'flows';
+  id: string;
+  version: string;
+  desired_sha256: string;
+  before_sha256: string;
+  actor: { user_id: string; email: string };
+  status: ParallelDeleteExecutionStatus;
+  recorded_at_utc: string;
+  attempt_consumed: boolean;
+  recovered: boolean;
+  audit_context: {
+    plan_sha256: string;
+    operation_id: string;
+    action_id: string;
+    reason_code: string;
+    source: 'tiangong-lca dataset maintenance apply';
+  };
+  audit_id: string | null;
+  readback_sha256: string | null;
+  remote_result_sha256: string | null;
+  error: string | null;
+};
+
+type ParallelDeleteExecutionState = {
+  entries: ParallelDeleteExecutionEntry[];
+  byAction: Map<string, ParallelDeleteExecutionEntry[]>;
+  dispatched: Set<string>;
+  committed: Set<string>;
 };
 
 type ProgressState = {
@@ -251,6 +297,294 @@ function clock(options: RunDatasetMaintenanceApplyOptions): string {
 
 function errorMessage(error: unknown): string {
   return error instanceof Error ? error.message : String(error);
+}
+
+const ABSENT_READBACK_SHA256 = sha256Json([]);
+
+function parallelDeleteDesiredSha256(action: DatasetMaintenancePlanAction): string {
+  return sha256Json({
+    action: 'delete',
+    table: action.table,
+    id: action.id,
+    version: action.version,
+    desired: 'absent',
+  });
+}
+
+function normalizeMaintenanceMaxParallel(value: number | undefined): number {
+  const normalized = value ?? 1;
+  if (!Number.isInteger(normalized) || normalized < 1 || normalized > 8) {
+    throw new CliError('--max-parallel must be an integer from 1 to 8.', {
+      code: 'DATASET_MAINTENANCE_MAX_PARALLEL_INVALID',
+      exitCode: 2,
+    });
+  }
+  return normalized;
+}
+
+function assertParallelDeletePlan(plan: DatasetMaintenancePlan): void {
+  const targets = new Set<string>();
+  if (
+    plan.operation !== 'delete' ||
+    plan.actions.length === 0 ||
+    plan.actions.some((action) => action.action !== 'delete' || action.table !== 'flows') ||
+    plan.summary.delete !== plan.actions.length ||
+    plan.summary.save_draft !== 0 ||
+    (plan.summary.update_json_ordered ?? 0) !== 0 ||
+    (plan.summary.rebuild_derivatives ?? 0) !== 0 ||
+    plan.summary.current_reference_impacts !== 0 ||
+    plan.summary.projected_reference_impacts !== 0
+  ) {
+    throw new CliError(
+      '--max-parallel maintenance apply requires a non-empty flow delete-only plan with zero current and projected inbound references.',
+      {
+        code: 'DATASET_MAINTENANCE_PARALLEL_DELETE_PLAN_REQUIRED',
+        exitCode: 1,
+      },
+    );
+  }
+  for (const action of plan.actions) {
+    const target = `${action.table}\u0000${action.id}\u0000${action.version}`;
+    if (targets.has(target)) {
+      throw new CliError('Parallel delete plan contains a repeated table/id/version target.', {
+        code: 'DATASET_MAINTENANCE_PARALLEL_DELETE_TARGET_DUPLICATE',
+        exitCode: 1,
+        details: { table: action.table, id: action.id, version: action.version },
+      });
+    }
+    targets.add(target);
+  }
+}
+
+function parseParallelDeleteExecutionLog(
+  plan: DatasetMaintenancePlan,
+  executionLogPath: string,
+): ParallelDeleteExecutionState {
+  const actions = new Map(plan.actions.map((action) => [action.action_id, action]));
+  const entries: ParallelDeleteExecutionEntry[] = [];
+  const byAction = new Map<string, ParallelDeleteExecutionEntry[]>();
+  const dispatched = new Set<string>();
+  const committed = new Set<string>();
+  for (const value of readJsonLinesIfPresent(executionLogPath)) {
+    const action =
+      isJsonObject(value) && typeof value.action_id === 'string'
+        ? actions.get(value.action_id)
+        : null;
+    const expectedDesired = action ? parallelDeleteDesiredSha256(action) : null;
+    const actionEntries = action ? (byAction.get(action.action_id) ?? []) : [];
+    const priorDispatched = actionEntries.some((entry) => entry.status === 'DISPATCHED');
+    const priorCommitted = actionEntries.some((entry) => entry.status === 'COMMITTED');
+    const status = isJsonObject(value) ? value.status : null;
+    const auditIdValid =
+      isJsonObject(value) &&
+      (value.audit_id === null ||
+        (typeof value.audit_id === 'string' && POSITIVE_INTEGER_TEXT.test(value.audit_id)));
+    const remoteHashValid =
+      isJsonObject(value) &&
+      (value.remote_result_sha256 === null ||
+        (typeof value.remote_result_sha256 === 'string' &&
+          /^[a-f0-9]{64}$/u.test(value.remote_result_sha256)));
+    const commonOutcomeFieldsValid =
+      isJsonObject(value) &&
+      typeof value.attempt_consumed === 'boolean' &&
+      typeof value.recovered === 'boolean' &&
+      (value.readback_sha256 === null ||
+        (typeof value.readback_sha256 === 'string' &&
+          /^[a-f0-9]{64}$/u.test(value.readback_sha256))) &&
+      (value.error === null || typeof value.error === 'string');
+    const statusFieldsValid =
+      isJsonObject(value) &&
+      ((status === 'PREPARED' &&
+        value.attempt_consumed === false &&
+        value.recovered === false &&
+        value.audit_id === null &&
+        value.readback_sha256 === null &&
+        value.remote_result_sha256 === null &&
+        value.error === null &&
+        !priorDispatched &&
+        !priorCommitted) ||
+        (status === 'DISPATCHED' &&
+          value.attempt_consumed === true &&
+          value.recovered === false &&
+          value.audit_id === null &&
+          value.readback_sha256 === null &&
+          value.remote_result_sha256 === null &&
+          value.error === null &&
+          actionEntries.some((entry) => entry.status === 'PREPARED') &&
+          !priorDispatched &&
+          !priorCommitted) ||
+        (status === 'UNKNOWN' &&
+          value.attempt_consumed === true &&
+          typeof value.error === 'string' &&
+          value.error.length > 0 &&
+          priorDispatched &&
+          !priorCommitted) ||
+        (status === 'COMMITTED' &&
+          value.attempt_consumed === true &&
+          value.readback_sha256 === ABSENT_READBACK_SHA256 &&
+          value.error === null &&
+          priorDispatched &&
+          !priorCommitted));
+    if (
+      !isJsonObject(value) ||
+      value.schema_version !== 1 ||
+      value.plan_sha256 !== plan.plan_sha256 ||
+      value.operation_id !== plan.operation_id ||
+      !action ||
+      action.action !== 'delete' ||
+      action.table !== 'flows' ||
+      value.attempt_key !== `${action.action_id}@${expectedDesired}` ||
+      value.action !== 'delete' ||
+      value.table !== 'flows' ||
+      value.id !== action.id ||
+      value.version !== action.version ||
+      value.desired_sha256 !== expectedDesired ||
+      value.before_sha256 !== action.before?.row_sha256 ||
+      !isJsonObject(value.actor) ||
+      value.actor.user_id !== plan.account.user_id ||
+      value.actor.email !== plan.account.email ||
+      !isJsonObject(value.audit_context) ||
+      value.audit_context.plan_sha256 !== plan.plan_sha256 ||
+      value.audit_context.operation_id !== plan.operation_id ||
+      value.audit_context.action_id !== action.action_id ||
+      value.audit_context.reason_code !== action.reason_code ||
+      value.audit_context.source !== 'tiangong-lca dataset maintenance apply' ||
+      typeof value.recorded_at_utc !== 'string' ||
+      !Number.isFinite(Date.parse(value.recorded_at_utc)) ||
+      !auditIdValid ||
+      !remoteHashValid ||
+      !commonOutcomeFieldsValid ||
+      !statusFieldsValid
+    ) {
+      throw new CliError('Parallel delete execution log contains an invalid or foreign entry.', {
+        code: 'DATASET_MAINTENANCE_PARALLEL_DELETE_LOG_INVALID',
+        exitCode: 1,
+        details: value,
+      });
+    }
+    const entry = value as ParallelDeleteExecutionEntry;
+    entries.push(entry);
+    actionEntries.push(entry);
+    byAction.set(action.action_id, actionEntries);
+    if (entry.status === 'DISPATCHED') dispatched.add(action.action_id);
+    if (entry.status === 'COMMITTED') committed.add(action.action_id);
+  }
+  return { entries, byAction, dispatched, committed };
+}
+
+function appendParallelDeleteExecutionEntry(options: {
+  path: string;
+  state: ParallelDeleteExecutionState;
+  plan: DatasetMaintenancePlan;
+  action: DatasetMaintenancePlanAction;
+  context: DatasetMaintenanceRemoteContext;
+  status: ParallelDeleteExecutionStatus;
+  recordedAtUtc: string;
+  recovered?: boolean;
+  auditId?: string | null;
+  readbackSha256?: string | null;
+  remoteResultSha256?: string | null;
+  error?: string | null;
+}): ParallelDeleteExecutionEntry {
+  const desiredSha256 = parallelDeleteDesiredSha256(options.action);
+  const entry: ParallelDeleteExecutionEntry = {
+    schema_version: 1,
+    plan_sha256: options.plan.plan_sha256,
+    operation_id: options.plan.operation_id,
+    action_id: options.action.action_id,
+    attempt_key: `${options.action.action_id}@${desiredSha256}`,
+    action: 'delete',
+    table: 'flows',
+    id: options.action.id,
+    version: options.action.version,
+    desired_sha256: desiredSha256,
+    before_sha256: options.action.before!.row_sha256,
+    actor: {
+      user_id: options.context.account.user_id,
+      email: options.context.account.email,
+    },
+    status: options.status,
+    recorded_at_utc: options.recordedAtUtc,
+    attempt_consumed: options.status !== 'PREPARED',
+    recovered: options.recovered ?? false,
+    audit_context: {
+      plan_sha256: options.plan.plan_sha256,
+      operation_id: options.plan.operation_id,
+      action_id: options.action.action_id,
+      reason_code: options.action.reason_code,
+      source: 'tiangong-lca dataset maintenance apply',
+    },
+    audit_id: options.auditId ?? null,
+    readback_sha256: options.readbackSha256 ?? null,
+    remote_result_sha256: options.remoteResultSha256 ?? null,
+    error: options.error ?? null,
+  };
+  const descriptor = openSync(options.path, 'a', 0o600);
+  try {
+    fchmodSync(descriptor, 0o600);
+    writeFileSync(descriptor, `${stableJsonText(entry)}\n`, 'utf8');
+    fsyncSync(descriptor);
+  } finally {
+    closeSync(descriptor);
+  }
+  options.state.entries.push(entry);
+  const actionEntries = options.state.byAction.get(options.action.action_id) ?? [];
+  actionEntries.push(entry);
+  options.state.byAction.set(options.action.action_id, actionEntries);
+  if (entry.status === 'DISPATCHED') options.state.dispatched.add(options.action.action_id);
+  if (entry.status === 'COMMITTED') options.state.committed.add(options.action.action_id);
+  return entry;
+}
+
+function assertNoVisibleProcessInboundReferences(options: {
+  plan: DatasetMaintenancePlan;
+  rows: DatasetMaintenanceRemoteRow[];
+}): { process_rows: number; process_references: number; snapshot_sha256: string } {
+  const targets = new Set(
+    options.plan.actions.map((action) => `${action.id}\u0000${action.version}`),
+  );
+  const targetIds = new Set(options.plan.actions.map((action) => action.id));
+  const payloadRows = options.rows
+    .filter((row) => row.table === 'processes' && row.json_ordered !== null)
+    .map((row) => ({
+      table: row.table,
+      id: row.id,
+      version: row.version,
+      json_ordered: row.json_ordered as JsonObject,
+    }));
+  const references = collectRemoteReferences(payloadRows).filter(
+    (reference) =>
+      reference.role === 'reference' &&
+      reference.table === 'flows' &&
+      typeof reference.id === 'string',
+  );
+  const inbound = references.filter((reference) =>
+    reference.version
+      ? targets.has(`${reference.id}\u0000${reference.version}`)
+      : targetIds.has(reference.id!),
+  );
+  if (inbound.length > 0) {
+    throw new CliError('Parallel flow delete admission found visible process inbound references.', {
+      code: 'DATASET_MAINTENANCE_PARALLEL_DELETE_INBOUND_REFERENCES',
+      exitCode: 1,
+      details: {
+        inbound_count: inbound.length,
+        first: inbound.slice(0, 20),
+      },
+    });
+  }
+  return {
+    process_rows: payloadRows.length,
+    process_references: references.length,
+    snapshot_sha256: sha256Json(
+      payloadRows.map((row) => ({
+        table: row.table,
+        id: row.id,
+        version: row.version,
+        payload_sha256: sha256Json(row.json_ordered),
+      })),
+    ),
+  };
 }
 
 function loadDesiredPayload(planDir: string, action: DatasetMaintenancePlanAction): JsonObject {
@@ -615,6 +949,7 @@ function assertApplyPreconditions(options: {
   currentRows: DatasetMaintenanceRemoteRow[];
   progress: ProgressState;
   aliasPlanProgress?: AliasPlanProgressState;
+  attemptedDeleteActionIds?: Set<string>;
 }): void {
   const current = new Map(options.currentRows.map((row) => [maintenanceRowKey(row), row]));
   const aliasBatchStates = new Map<string, 'before' | 'desired'>();
@@ -703,6 +1038,13 @@ function assertApplyPreconditions(options: {
           exitCode: 1,
         });
       }
+      continue;
+    }
+    if (action.action === 'delete' && options.attemptedDeleteActionIds?.has(action.action_id)) {
+      // A request may have committed before its response or progress row was
+      // persisted, or the target may have drifted after dispatch. The execution
+      // ledger owns both cases and permits only read-only recovery, never an
+      // automatic replay.
       continue;
     }
     if (!currentRow || currentRow.user_id !== action.expected_user_id) {
@@ -1439,6 +1781,377 @@ async function executeAction(options: {
   return { afterSha256: null, remoteResultSha256: sha256Json(remoteResult) };
 }
 
+function appendParallelDeleteProgress(options: {
+  progressPath: string;
+  progress: ProgressState;
+  plan: DatasetMaintenancePlan;
+  action: DatasetMaintenancePlanAction;
+  context: DatasetMaintenanceRemoteContext;
+  startedAtUtc: string;
+  endedAtUtc: string;
+  result: 'success' | 'failed';
+  remoteResultSha256: string | null;
+  error: string | null;
+}): DatasetMaintenanceProgressEntry {
+  const entry: DatasetMaintenanceProgressEntry = {
+    schema_version: 1,
+    plan_sha256: options.plan.plan_sha256,
+    operation_id: options.plan.operation_id,
+    action_id: options.action.action_id,
+    action: 'delete',
+    table: options.action.table,
+    id: options.action.id,
+    version: options.action.version,
+    reason_code: options.action.reason_code,
+    audit_context: {
+      plan_sha256: options.plan.plan_sha256,
+      operation_id: options.plan.operation_id,
+      action_id: options.action.action_id,
+      reason_code: options.action.reason_code,
+      source: 'tiangong-lca dataset maintenance apply',
+    },
+    actor: {
+      user_id: options.context.account.user_id,
+      email: options.context.account.email,
+    },
+    started_at_utc: options.startedAtUtc,
+    ended_at_utc: options.endedAtUtc,
+    before_sha256: options.action.before!.row_sha256,
+    after_sha256: null,
+    remote_result_sha256: options.remoteResultSha256,
+    result: options.result,
+    error: options.error,
+    rollback: options.action.rollback,
+  };
+  appendStableJsonLine(options.progressPath, entry);
+  options.progress.entries.push(entry);
+  if (entry.result === 'success') {
+    options.progress.successes.set(entry.action_id, entry);
+    options.progress.latestFailures.delete(entry.action_id);
+  } else if (!options.progress.successes.has(entry.action_id)) {
+    options.progress.latestFailures.set(entry.action_id, entry);
+  }
+  return entry;
+}
+
+function remoteAuditId(value: JsonObject): string | null {
+  const candidate = value.audit_id;
+  return typeof candidate === 'string' && POSITIVE_INTEGER_TEXT.test(candidate) ? candidate : null;
+}
+
+async function exactParallelDeleteRows(options: {
+  context: DatasetMaintenanceRemoteContext;
+  action: DatasetMaintenancePlanAction;
+}): Promise<DatasetMaintenanceRemoteRow[]> {
+  return (
+    await fetchMaintenanceExactRows({
+      context: options.context,
+      table: options.action.table,
+      id: options.action.id,
+      version: options.action.version,
+    })
+  ).rows;
+}
+
+function exactParallelDeleteBefore(options: {
+  rows: DatasetMaintenanceRemoteRow[];
+  action: DatasetMaintenancePlanAction;
+}): boolean {
+  const row = options.rows[0];
+  return Boolean(
+    options.rows.length === 1 &&
+    row &&
+    row.user_id === options.action.expected_user_id &&
+    row.state_code === 0 &&
+    snapshotRemoteRow(row).row_sha256 === options.action.before?.row_sha256,
+  );
+}
+
+async function executeParallelDeletePlan(options: {
+  plan: DatasetMaintenancePlan;
+  context: DatasetMaintenanceRemoteContext;
+  progress: ProgressState;
+  progressPath: string;
+  executionLogPath: string;
+  execution: ParallelDeleteExecutionState;
+  maxParallel: number;
+  now: () => string;
+}): Promise<Map<string, 'success' | 'failed' | 'unknown'>> {
+  const statuses = new Map<string, 'success' | 'failed' | 'unknown'>();
+
+  const recoverAttempted = async (action: DatasetMaintenancePlanAction): Promise<void> => {
+    const startedAt = options.now();
+    let rows: DatasetMaintenanceRemoteRow[];
+    try {
+      rows = await exactParallelDeleteRows({ context: options.context, action });
+    } catch (error) {
+      statuses.set(action.action_id, 'unknown');
+      if (options.execution.byAction.get(action.action_id)?.at(-1)?.status !== 'UNKNOWN') {
+        appendParallelDeleteExecutionEntry({
+          path: options.executionLogPath,
+          state: options.execution,
+          plan: options.plan,
+          action,
+          context: options.context,
+          status: 'UNKNOWN',
+          recordedAtUtc: options.now(),
+          recovered: true,
+          error: `Read-only recovery failed: ${errorMessage(error)}`,
+        });
+      }
+      return;
+    }
+    if (rows.length === 0) {
+      const priorCommitted = options.execution.committed.has(action.action_id);
+      if (!priorCommitted) {
+        appendParallelDeleteExecutionEntry({
+          path: options.executionLogPath,
+          state: options.execution,
+          plan: options.plan,
+          action,
+          context: options.context,
+          status: 'COMMITTED',
+          recordedAtUtc: options.now(),
+          recovered: true,
+          readbackSha256: ABSENT_READBACK_SHA256,
+        });
+      }
+      if (!options.progress.successes.has(action.action_id)) {
+        appendParallelDeleteProgress({
+          progressPath: options.progressPath,
+          progress: options.progress,
+          plan: options.plan,
+          action,
+          context: options.context,
+          startedAtUtc: startedAt,
+          endedAtUtc: options.now(),
+          result: 'success',
+          remoteResultSha256: sha256Json({
+            recovery: 'desired_absent',
+            action_id: action.action_id,
+            desired_sha256: parallelDeleteDesiredSha256(action),
+          }),
+          error: null,
+        });
+      }
+      statuses.set(action.action_id, 'success');
+      return;
+    }
+    const message = exactParallelDeleteBefore({ rows, action })
+      ? 'Prior dispatch has exact-before readback but no zero-dispatch/zero-mutation audit proof; replay is forbidden.'
+      : 'Prior dispatch has ambiguous or drifted readback; replay is forbidden.';
+    if (
+      !options.execution.committed.has(action.action_id) &&
+      options.execution.byAction.get(action.action_id)?.at(-1)?.status !== 'UNKNOWN'
+    ) {
+      appendParallelDeleteExecutionEntry({
+        path: options.executionLogPath,
+        state: options.execution,
+        plan: options.plan,
+        action,
+        context: options.context,
+        status: 'UNKNOWN',
+        recordedAtUtc: options.now(),
+        recovered: true,
+        readbackSha256: sha256Json(rows.map(snapshotRemoteRow)),
+        error: message,
+      });
+    }
+    if (!options.progress.successes.has(action.action_id)) {
+      appendParallelDeleteProgress({
+        progressPath: options.progressPath,
+        progress: options.progress,
+        plan: options.plan,
+        action,
+        context: options.context,
+        startedAtUtc: startedAt,
+        endedAtUtc: options.now(),
+        result: 'failed',
+        remoteResultSha256: null,
+        error: `UNKNOWN: ${message}`,
+      });
+    }
+    statuses.set(action.action_id, 'unknown');
+  };
+
+  const executeOne = async (action: DatasetMaintenancePlanAction): Promise<void> => {
+    if (options.progress.successes.has(action.action_id)) {
+      statuses.set(action.action_id, 'success');
+      return;
+    }
+    if (options.execution.dispatched.has(action.action_id)) {
+      await recoverAttempted(action);
+      return;
+    }
+
+    const startedAt = options.now();
+    let rows: DatasetMaintenanceRemoteRow[];
+    try {
+      rows = await exactParallelDeleteRows({ context: options.context, action });
+      if (!exactParallelDeleteBefore({ rows, action })) {
+        throw new CliError(`Action row drifted immediately before write: ${action.action_id}`, {
+          code: 'DATASET_MAINTENANCE_ACTION_JUST_IN_TIME_DRIFT',
+          exitCode: 1,
+        });
+      }
+    } catch (error) {
+      appendParallelDeleteProgress({
+        progressPath: options.progressPath,
+        progress: options.progress,
+        plan: options.plan,
+        action,
+        context: options.context,
+        startedAtUtc: startedAt,
+        endedAtUtc: options.now(),
+        result: 'failed',
+        remoteResultSha256: null,
+        error: errorMessage(error),
+      });
+      statuses.set(action.action_id, 'failed');
+      return;
+    }
+
+    appendParallelDeleteExecutionEntry({
+      path: options.executionLogPath,
+      state: options.execution,
+      plan: options.plan,
+      action,
+      context: options.context,
+      status: 'PREPARED',
+      recordedAtUtc: options.now(),
+    });
+    appendParallelDeleteExecutionEntry({
+      path: options.executionLogPath,
+      state: options.execution,
+      plan: options.plan,
+      action,
+      context: options.context,
+      status: 'DISPATCHED',
+      recordedAtUtc: options.now(),
+    });
+
+    let remoteResult: JsonObject | null = null;
+    let dispatchError: unknown = null;
+    try {
+      remoteResult = await deleteMaintenanceRow({
+        context: options.context,
+        table: action.table as DatasetMaintenanceMutableTable,
+        id: action.id,
+        version: action.version,
+        audit: {
+          plan_sha256: options.plan.plan_sha256,
+          operation_id: options.plan.operation_id,
+          action_id: action.action_id,
+          reason_code: action.reason_code,
+          desired_sha256: parallelDeleteDesiredSha256(action),
+          source: 'tiangong-lca dataset maintenance apply',
+        },
+      });
+    } catch (error) {
+      dispatchError = error;
+    }
+
+    let readbackRows: DatasetMaintenanceRemoteRow[] | null = null;
+    let readbackError: unknown = null;
+    try {
+      readbackRows = await exactParallelDeleteRows({ context: options.context, action });
+    } catch (error) {
+      readbackError = error;
+    }
+    if (readbackRows?.length === 0) {
+      const remoteResultSha256 = remoteResult ? sha256Json(remoteResult) : null;
+      appendParallelDeleteExecutionEntry({
+        path: options.executionLogPath,
+        state: options.execution,
+        plan: options.plan,
+        action,
+        context: options.context,
+        status: 'COMMITTED',
+        recordedAtUtc: options.now(),
+        recovered: dispatchError !== null,
+        auditId: remoteResult ? remoteAuditId(remoteResult) : null,
+        readbackSha256: ABSENT_READBACK_SHA256,
+        remoteResultSha256,
+      });
+      appendParallelDeleteProgress({
+        progressPath: options.progressPath,
+        progress: options.progress,
+        plan: options.plan,
+        action,
+        context: options.context,
+        startedAtUtc: startedAt,
+        endedAtUtc: options.now(),
+        result: 'success',
+        remoteResultSha256:
+          remoteResultSha256 ??
+          sha256Json({
+            recovery: 'desired_absent',
+            action_id: action.action_id,
+            desired_sha256: parallelDeleteDesiredSha256(action),
+          }),
+        error: null,
+      });
+      statuses.set(action.action_id, 'success');
+      return;
+    }
+
+    const error = readbackError
+      ? `Readback failed after dispatch: ${errorMessage(readbackError)}`
+      : dispatchError
+        ? `Dispatch outcome ambiguous and desired absence was not observed: ${errorMessage(dispatchError)}`
+        : 'Delete RPC returned but exact absent readback was not observed.';
+    appendParallelDeleteExecutionEntry({
+      path: options.executionLogPath,
+      state: options.execution,
+      plan: options.plan,
+      action,
+      context: options.context,
+      status: 'UNKNOWN',
+      recordedAtUtc: options.now(),
+      recovered: dispatchError !== null,
+      auditId: remoteResult ? remoteAuditId(remoteResult) : null,
+      readbackSha256: readbackRows ? sha256Json(readbackRows.map(snapshotRemoteRow)) : null,
+      remoteResultSha256: remoteResult ? sha256Json(remoteResult) : null,
+      error,
+    });
+    appendParallelDeleteProgress({
+      progressPath: options.progressPath,
+      progress: options.progress,
+      plan: options.plan,
+      action,
+      context: options.context,
+      startedAtUtc: startedAt,
+      endedAtUtc: options.now(),
+      result: 'failed',
+      remoteResultSha256: null,
+      error: `UNKNOWN: ${error}`,
+    });
+    statuses.set(action.action_id, 'unknown');
+  };
+
+  let nextIndex = 0;
+  let fatalError: unknown = null;
+  const worker = async (): Promise<void> => {
+    while (fatalError === null) {
+      const index = nextIndex;
+      nextIndex += 1;
+      if (index >= options.plan.actions.length) return;
+      try {
+        await executeOne(options.plan.actions[index]!);
+      } catch (error) {
+        fatalError ??= error;
+      }
+    }
+  };
+  await Promise.all(
+    Array.from({ length: Math.min(options.maxParallel, options.plan.actions.length) }, () =>
+      worker(),
+    ),
+  );
+  if (fatalError !== null) throw fatalError;
+  return statuses;
+}
+
 async function executeDerivativeAdmission(options: {
   plan: DatasetMaintenancePlan;
   context: DatasetMaintenanceRemoteContext;
@@ -1515,6 +2228,24 @@ function nextAttemptPath(planDir: string): string {
   return path.join(planDir, `commit-report.attempt-${String(attempt).padStart(4, '0')}.json`);
 }
 
+function nextParallelDeleteInboundBarrierPath(planDir: string): string {
+  let attempt = 1;
+  while (
+    existsSync(
+      path.join(
+        planDir,
+        `parallel-delete-inbound-barrier.attempt-${String(attempt).padStart(4, '0')}.json`,
+      ),
+    )
+  ) {
+    attempt += 1;
+  }
+  return path.join(
+    planDir,
+    `parallel-delete-inbound-barrier.attempt-${String(attempt).padStart(4, '0')}.json`,
+  );
+}
+
 export async function runDatasetMaintenanceApply(
   options: RunDatasetMaintenanceApplyOptions,
 ): Promise<DatasetMaintenanceApplyReport> {
@@ -1527,6 +2258,11 @@ export async function runDatasetMaintenanceApply(
   const planPath = path.resolve(options.planPath);
   const planDir = path.dirname(planPath);
   const plan = parseMaintenancePlan(readJsonFile(planPath, 'Maintenance plan'));
+  const parallelDeleteMode = options.maxParallel !== undefined;
+  const maxParallel = normalizeMaintenanceMaxParallel(options.maxParallel);
+  if (parallelDeleteMode) {
+    assertParallelDeletePlan(plan);
+  }
   if (options.approvePlan !== plan.plan_sha256) {
     throw new CliError('approvePlan must exactly match the canonical maintenance plan hash.', {
       code: 'DATASET_MAINTENANCE_PLAN_APPROVAL_REQUIRED',
@@ -1599,18 +2335,48 @@ export async function runDatasetMaintenanceApply(
         plan.operation === 'rebuild-derivatives'
           ? { entries: [], successes: new Map(), latestFailures: new Map() }
           : parseProgress(plan, progressPath);
+      const executionLogPath = path.join(planDir, 'apply-execution-log.jsonl');
+      const parallelDeleteExecution: ParallelDeleteExecutionState = parallelDeleteMode
+        ? parseParallelDeleteExecutionLog(plan, executionLogPath)
+        : { entries: [], byAction: new Map(), dispatched: new Set(), committed: new Set() };
       const resumedSuccesses = progress.successes.size;
-      const current = await fetchMaintenanceAccountRows({
-        context,
-        userId: plan.account.user_id,
-      });
+      const [current, visibleProcesses] = await Promise.all([
+        fetchMaintenanceAccountRows({
+          context,
+          userId: plan.account.user_id,
+        }),
+        parallelDeleteMode
+          ? fetchMaintenanceVisibleTableRows({ context, table: 'processes' })
+          : Promise.resolve(null),
+      ]);
       assertApplyPreconditions({
         plan,
         planDir,
         currentRows: current.rows,
         progress,
         aliasPlanProgress: { entries: [], success: null, latestFailure: null },
+        attemptedDeleteActionIds: parallelDeleteExecution.dispatched,
       });
+
+      const inboundBarrierPath = nextParallelDeleteInboundBarrierPath(planDir);
+      const inboundBarrier =
+        parallelDeleteMode && visibleProcesses
+          ? assertNoVisibleProcessInboundReferences({ plan, rows: visibleProcesses.rows })
+          : null;
+      if (inboundBarrier && visibleProcesses) {
+        writeImmutableJson(inboundBarrierPath, {
+          schema_version: 1,
+          generated_at_utc: clock(options),
+          plan_sha256: plan.plan_sha256,
+          operation_id: plan.operation_id,
+          actor: { user_id: context.account.user_id, email: context.account.email },
+          target_table: 'flows',
+          target_count: plan.actions.length,
+          inbound_reference_count: 0,
+          ...inboundBarrier,
+          completeness: visibleProcesses.completeness,
+        });
+      }
 
       const approvalPath = path.join(planDir, 'approval-record.json');
       const approvalAlreadyExisted = existsSync(approvalPath);
@@ -1730,6 +2496,85 @@ export async function runDatasetMaintenanceApply(
             ],
           },
           derivative_admission: { ...proof, admission: 'accepted' },
+        };
+        writeImmutableJson(attemptPath, report);
+        writeJsonArtifact(report.artifacts.commit_report, report);
+        return report;
+      }
+
+      if (parallelDeleteMode) {
+        const executionStatuses = await executeParallelDeletePlan({
+          plan,
+          context,
+          progress,
+          progressPath,
+          executionLogPath,
+          execution: parallelDeleteExecution,
+          maxParallel,
+          now: () => clock(options),
+        });
+        const actions = plan.actions.map((action) => {
+          const status = executionStatuses.get(action.action_id) as
+            | 'success'
+            | 'failed'
+            | 'unknown';
+          return {
+            action_id: action.action_id,
+            action: action.action,
+            table: action.table,
+            id: action.id,
+            version: action.version,
+            status,
+            error: progress.latestFailures.get(action.action_id)?.error ?? null,
+          };
+        });
+        const successCount = actions.filter((action) => action.status === 'success').length;
+        const failureCount = actions.filter((action) => action.status === 'failed').length;
+        const unknownCount = actions.filter((action) => action.status === 'unknown').length;
+        const attemptPath = nextAttemptPath(planDir);
+        const report: DatasetMaintenanceApplyReport = {
+          schema_version: 1,
+          generated_at_utc: clock(options),
+          status:
+            unknownCount > 0
+              ? 'completed_with_unknowns'
+              : successCount === actions.length
+                ? 'completed'
+                : 'completed_with_failures',
+          task_id: plan.task_id,
+          operation: plan.operation,
+          operation_id: plan.operation_id,
+          target_mode: plan.target_mode,
+          plan_sha256: plan.plan_sha256,
+          actor: { user_id: context.account.user_id, email: context.account.email },
+          summary: {
+            actions: actions.length,
+            success: successCount,
+            failed: failureCount,
+            unknown: unknownCount,
+            pending: actions.length - successCount - failureCount - unknownCount,
+            resumed_successes: resumedSuccesses,
+          },
+          actions,
+          artifacts: {
+            approval_record: approvalPath,
+            apply_progress: progressPath,
+            execution_log: executionLogPath,
+            inbound_reference_barrier: inboundBarrierPath,
+            commit_report: path.join(planDir, 'commit-report.json'),
+            attempt_report: attemptPath,
+          },
+          database_audit: {
+            rpc_transaction_log: 'public.command_audit_log',
+            source: 'tiangong-lca dataset maintenance apply',
+            correlation_fields: [
+              'plan_sha256',
+              'operation_id',
+              'action_id',
+              'reason_code',
+              'desired_sha256',
+            ],
+          },
         };
         writeImmutableJson(attemptPath, report);
         writeJsonArtifact(report.artifacts.commit_report, report);
@@ -1880,8 +2725,11 @@ export const __testInternals = {
   aliasExchangeProgressKey,
   appendAliasSuccessLogs,
   appendAliasProofProgress,
+  appendParallelDeleteExecutionEntry,
+  assertNoVisibleProcessInboundReferences,
   assertApplyPreconditions,
   assertAliasSupportSnapshots,
+  assertParallelDeletePlan,
   buildAliasBatchRequest,
   buildAliasPlanRequest,
   clock,
@@ -1889,14 +2737,20 @@ export const __testInternals = {
   executeDerivativeAdmission,
   executeAliasPlan,
   executeAction,
+  executeParallelDeletePlan,
   finalProjectedRows,
   loadDesiredPayload,
   nextAttemptPath,
+  nextParallelDeleteInboundBarrierPath,
+  normalizeMaintenanceMaxParallel,
+  parallelDeleteDesiredSha256,
   parseDerivativeSubmitProgress,
   validateDerivativeAdmissionAttempt,
   parseAliasBatchProgress,
   parseAliasPlanProgress,
   parseProgress,
+  parseParallelDeleteExecutionLog,
+  remoteAuditId,
   validateAliasRpcResult,
   validateAliasPlanRpcResult,
   validateApprovalRecord,

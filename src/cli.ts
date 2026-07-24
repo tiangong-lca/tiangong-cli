@@ -992,6 +992,7 @@ Options:
   --approve-plan <sha256> Exact SHA-256 recorded for the plan
   --confirm <email>      Current authenticated account email
   --timeout-ms <n>       Request timeout in milliseconds
+  --max-parallel <1-8>   Opt into bounded flow delete-only execution with durable dispatch ledger
   --json                 Print compact JSON
   -h, --help
 
@@ -4295,6 +4296,7 @@ function parseDatasetMaintenanceApplyFlags(args: string[]): {
   confirm: string;
   timeoutMs: number | undefined;
   dryRun: boolean;
+  maxParallel: number | undefined;
 } {
   let values: ReturnType<typeof parseArgs>['values'];
   try {
@@ -4311,10 +4313,28 @@ function parseDatasetMaintenanceApplyFlags(args: string[]): {
         confirm: { type: 'string' },
         'timeout-ms': { type: 'string' },
         'dry-run': { type: 'boolean' },
+        'max-parallel': { type: 'string' },
       },
     }));
   } catch (error) {
     throw new CliError(String(error), {
+      code: 'INVALID_ARGS',
+      exitCode: 2,
+    });
+  }
+
+  const maxParallelValue = values['max-parallel'];
+  const maxParallel =
+    typeof maxParallelValue === 'string' && /^\d+$/u.test(maxParallelValue)
+      ? Number.parseInt(maxParallelValue, 10)
+      : maxParallelValue === undefined
+        ? undefined
+        : Number.NaN;
+  if (
+    maxParallel !== undefined &&
+    (!Number.isInteger(maxParallel) || maxParallel < 1 || maxParallel > 8)
+  ) {
+    throw new CliError('--max-parallel must be an integer from 1 to 8.', {
       code: 'INVALID_ARGS',
       exitCode: 2,
     });
@@ -4329,6 +4349,7 @@ function parseDatasetMaintenanceApplyFlags(args: string[]): {
     confirm: typeof values.confirm === 'string' ? values.confirm : '',
     timeoutMs: parseDatasetMaintenancePositiveInteger(values['timeout-ms'], '--timeout-ms'),
     dryRun: Boolean(values['dry-run']),
+    maxParallel,
   };
 }
 
@@ -7950,11 +7971,14 @@ export async function executeCli(argv: string[], deps: CliDeps): Promise<CliResu
           approvePlan: datasetFlags.approvePlan,
           confirm: datasetFlags.confirm,
           timeoutMs: datasetFlags.timeoutMs,
+          maxParallel: datasetFlags.maxParallel,
           env: deps.env,
           fetchImpl: deps.fetchImpl,
         });
         return {
-          exitCode: report.status === 'completed_with_failures' ? 1 : 0,
+          exitCode: ['completed_with_failures', 'completed_with_unknowns'].includes(report.status)
+            ? 1
+            : 0,
           stdout: stringifyJson(report, datasetFlags.json),
           stderr: '',
         };

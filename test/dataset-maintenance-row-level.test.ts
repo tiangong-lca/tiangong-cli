@@ -47,6 +47,7 @@ import {
   deleteMaintenanceRow,
   fetchMaintenanceAccountRows,
   fetchMaintenanceExactRows,
+  fetchMaintenanceVisibleTableRows,
   normalizeMaintenancePageSize,
   normalizeMaintenanceTimeout,
   resolveMaintenanceRemoteContext,
@@ -261,6 +262,32 @@ function flowPayload(id: string, version = '01.00.000'): JsonObject {
   return {
     flowDataSet: {
       flowInformation: { dataSetInformation: { 'common:UUID': id } },
+      administrativeInformation: {
+        publicationAndOwnership: { 'common:dataSetVersion': version },
+      },
+    },
+  };
+}
+
+function processFlowReferencePayload(options: {
+  processId: string;
+  flowId: string;
+  version?: string;
+}): JsonObject {
+  const version = options.version ?? '01.00.000';
+  return {
+    processDataSet: {
+      processInformation: { dataSetInformation: { 'common:UUID': options.processId } },
+      exchanges: {
+        exchange: {
+          '@dataSetInternalID': '1',
+          referenceToFlowDataSet: {
+            '@refObjectId': options.flowId,
+            '@version': version,
+            '@type': 'flow data set',
+          },
+        },
+      },
       administrativeInformation: {
         publicationAndOwnership: { 'common:dataSetVersion': version },
       },
@@ -712,6 +739,10 @@ class FakeMaintenanceRemote {
   readonly rpcBodies: Record<string, unknown>[] = [];
   readonly aliasAuditKeys = new Set<string>();
   failDeleteOnce = false;
+  failDeleteAfterCommitOnce = false;
+  deleteDelayMs = 0;
+  activeDeletes = 0;
+  maxActiveDeletes = 0;
   failAliasResponseAfterCommitOnce = false;
   failAliasSecondDimensionOnce = false;
   aliasReadbackFailure: 'missing' | 'mismatch' | null = null;
@@ -916,8 +947,21 @@ class FakeMaintenanceRemote {
         (row) => row.id === body.p_id && row.version === body.p_version,
       );
       if (rpc === 'cmd_dataset_delete') {
-        if (rowIndex >= 0) {
-          tableRows.splice(rowIndex, 1);
+        this.activeDeletes += 1;
+        this.maxActiveDeletes = Math.max(this.maxActiveDeletes, this.activeDeletes);
+        if (this.deleteDelayMs > 0) {
+          await new Promise((resolve) => setTimeout(resolve, this.deleteDelayMs));
+        }
+        const deleteIndex = tableRows.findIndex(
+          (row) => row.id === body.p_id && row.version === body.p_version,
+        );
+        if (deleteIndex >= 0) {
+          tableRows.splice(deleteIndex, 1);
+        }
+        this.activeDeletes -= 1;
+        if (this.failDeleteAfterCommitOnce) {
+          this.failDeleteAfterCommitOnce = false;
+          return jsonResponse({ message: 'response lost after delete commit' }, 500);
         }
       } else if (rowIndex >= 0) {
         tableRows[rowIndex] = {
@@ -1142,6 +1186,59 @@ function buildScopeFiles(options: {
     }),
   );
   return { scopePath, desiredPath, outDir: path.join(options.root, 'maintenance') };
+}
+
+async function prepareParallelFlowDeleteScenario(options: {
+  root: string;
+  label: string;
+  count: number;
+}): Promise<{
+  remote: FakeMaintenanceRemote;
+  flowIds: string[];
+  plan: DatasetMaintenancePlan;
+  planPath: string;
+}> {
+  const scenarioRoot = path.join(options.root, options.label);
+  mkdirSync(scenarioRoot, { recursive: true });
+  const remote = new FakeMaintenanceRemote(options.label);
+  const flowIds = Array.from(
+    { length: options.count },
+    (_, index) => `70000000-0000-4000-8000-${String(index + 1).padStart(12, '0')}`,
+  );
+  for (const flowId of flowIds) remote.add('flows', flowId, flowPayload(flowId));
+  const scopePath = path.join(scenarioRoot, 'scope.json');
+  writeFileSync(
+    scopePath,
+    JSON.stringify({
+      schema_version: 1,
+      task_id: `parallel-delete-${options.label}`,
+      operation: 'delete',
+      account: { user_id: remote.userId, email: remote.email },
+      actions: flowIds.map((id, index) => ({
+        action_id: `delete-flow-${index + 1}`,
+        action: 'delete',
+        table: 'flows',
+        id,
+        version: '01.00.000',
+        expected_user_id: remote.userId,
+        expected_state_code: 0,
+        reason_code: 'OBSOLETE_FLOW_TOPOLOGY',
+        reason: 'Flow is outside the admitted candidate topology.',
+        evidence: ['topology/global-inbound-zero.json'],
+      })),
+    }),
+  );
+  const outDir = path.join(scenarioRoot, 'maintenance');
+  const plan = await runDatasetMaintenancePlan({
+    scopePath,
+    operation: 'delete',
+    outDir,
+    env: remote.env,
+    fetchImpl: remote.fetch,
+    now: new Date('2026-07-24T10:00:00.000Z'),
+  });
+  assert.equal(plan.status, 'ready');
+  return { remote, flowIds, plan, planPath: path.join(outDir, 'maintenance-plan.json') };
 }
 
 function seed(remote: FakeMaintenanceRemote): void {
@@ -1401,6 +1498,583 @@ test('row-level maintenance plans update-first closure, resumes failure, and ver
     assert.equal(verified.summary.protected_checks_passed, 1);
     assert.equal(verified.summary.dangling_deleted_target_references, 0);
     assert.equal(verified.snapshot_completeness.complete, true);
+  } finally {
+    rmSync(root, { recursive: true, force: true });
+  }
+});
+
+test('parallel flow delete apply is bounded, durable, globally fenced, and never replays success', async () => {
+  const root = mkdtempSync(path.join(os.tmpdir(), 'tg-maintenance-parallel-delete-'));
+  try {
+    const scenario = await prepareParallelFlowDeleteScenario({ root, label: 'success', count: 4 });
+    scenario.remote.add(
+      'processes',
+      '81000000-0000-4000-8000-000000000001',
+      processFlowReferencePayload({
+        processId: '81000000-0000-4000-8000-000000000001',
+        flowId: '81000000-0000-4000-8000-000000000099',
+      }),
+      { user_id: '99999999-9999-4999-8999-999999999999', state_code: 100 },
+    );
+    scenario.remote.add(
+      'processes',
+      '81000000-0000-4000-8000-000000000002',
+      processFlowReferencePayload({
+        processId: '81000000-0000-4000-8000-000000000002',
+        flowId: '81000000-0000-4000-8000-000000000098',
+      }),
+      { user_id: null, state_code: null },
+    );
+    scenario.remote.deleteDelayMs = 20;
+    const report = await runDatasetMaintenanceApply({
+      planPath: scenario.planPath,
+      commit: true,
+      approvePlan: scenario.plan.plan_sha256,
+      confirm: scenario.remote.email,
+      maxParallel: 4,
+      env: scenario.remote.env,
+      fetchImpl: scenario.remote.fetch,
+      now: new Date('2026-07-24T10:01:00.000Z'),
+    });
+    assert.equal(report.status, 'completed');
+    assert.equal(report.summary.success, 4);
+    assert.ok(scenario.remote.maxActiveDeletes > 1);
+    assert.equal(report.artifacts.execution_log?.endsWith('apply-execution-log.jsonl'), true);
+    const events = readJsonLinesIfPresent(report.artifacts.execution_log!);
+    for (const action of scenario.plan.actions) {
+      const actionEvents = events.filter(
+        (entry) => isJsonObject(entry) && entry.action_id === action.action_id,
+      );
+      assert.deepEqual(
+        actionEvents.map((entry) => (entry as JsonObject).status),
+        ['PREPARED', 'DISPATCHED', 'COMMITTED'],
+      );
+      assert.equal((actionEvents[0] as JsonObject).attempt_consumed, false);
+      assert.equal((actionEvents[1] as JsonObject).attempt_consumed, true);
+      assert.equal(
+        (actionEvents[1] as JsonObject).attempt_key,
+        `${action.action_id}@${(actionEvents[1] as JsonObject).desired_sha256}`,
+      );
+      assert.equal((actionEvents[2] as JsonObject).readback_sha256, sha256Json([]));
+    }
+    const barrier = readJsonFile(report.artifacts.inbound_reference_barrier!, 'barrier');
+    assert.ok(isJsonObject(barrier));
+    assert.equal(barrier.inbound_reference_count, 0);
+    assert.equal(barrier.target_count, 4);
+    assert.equal(barrier.process_rows, 2);
+    assert.equal(barrier.process_references, 2);
+
+    const rpcCount = scenario.remote.rpcOrder.length;
+    const resumed = await runDatasetMaintenanceApply({
+      planPath: scenario.planPath,
+      commit: true,
+      approvePlan: scenario.plan.plan_sha256,
+      confirm: scenario.remote.email,
+      maxParallel: 4,
+      env: scenario.remote.env,
+      fetchImpl: scenario.remote.fetch,
+      now: new Date('2026-07-24T10:02:00.000Z'),
+    });
+    assert.equal(resumed.status, 'completed');
+    assert.equal(resumed.summary.resumed_successes, 4);
+    assert.equal(scenario.remote.rpcOrder.length, rpcCount);
+    assert.equal(readJsonLinesIfPresent(report.artifacts.execution_log!).length, events.length);
+  } finally {
+    rmSync(root, { recursive: true, force: true });
+  }
+});
+
+test('parallel flow delete recovers committed ambiguity and continues after terminal UNKNOWN', async () => {
+  const root = mkdtempSync(path.join(os.tmpdir(), 'tg-maintenance-parallel-recovery-'));
+  try {
+    const recovered = await prepareParallelFlowDeleteScenario({
+      root,
+      label: 'recovered',
+      count: 2,
+    });
+    recovered.remote.failDeleteAfterCommitOnce = true;
+    const recoveredReport = await runDatasetMaintenanceApply({
+      planPath: recovered.planPath,
+      commit: true,
+      approvePlan: recovered.plan.plan_sha256,
+      confirm: recovered.remote.email,
+      maxParallel: 1,
+      env: recovered.remote.env,
+      fetchImpl: recovered.remote.fetch,
+    });
+    assert.equal(recoveredReport.status, 'completed');
+    const recoveredEvents = readJsonLinesIfPresent(recoveredReport.artifacts.execution_log!);
+    assert.equal(
+      recoveredEvents.some(
+        (entry) => isJsonObject(entry) && entry.status === 'COMMITTED' && entry.recovered === true,
+      ),
+      true,
+    );
+
+    const unknown = await prepareParallelFlowDeleteScenario({ root, label: 'unknown', count: 2 });
+    unknown.remote.failDeleteOnce = true;
+    const unknownReport = await runDatasetMaintenanceApply({
+      planPath: unknown.planPath,
+      commit: true,
+      approvePlan: unknown.plan.plan_sha256,
+      confirm: unknown.remote.email,
+      maxParallel: 1,
+      env: unknown.remote.env,
+      fetchImpl: unknown.remote.fetch,
+    });
+    assert.equal(unknownReport.status, 'completed_with_unknowns');
+    assert.equal(unknownReport.summary.unknown, 1);
+    assert.equal(unknownReport.summary.success, 1);
+    assert.deepEqual(
+      unknownReport.actions.map((action) => action.status),
+      ['unknown', 'success'],
+    );
+    assert.equal(unknown.remote.rpcOrder.length, 2);
+
+    const resumed = await runDatasetMaintenanceApply({
+      planPath: unknown.planPath,
+      commit: true,
+      approvePlan: unknown.plan.plan_sha256,
+      confirm: unknown.remote.email,
+      maxParallel: 1,
+      env: unknown.remote.env,
+      fetchImpl: unknown.remote.fetch,
+    });
+    assert.equal(resumed.status, 'completed_with_unknowns');
+    assert.equal(unknown.remote.rpcOrder.length, 2);
+    const firstActionEvents = readJsonLinesIfPresent(resumed.artifacts.execution_log!).filter(
+      (entry) => isJsonObject(entry) && entry.action_id === 'delete-flow-1',
+    );
+    assert.equal(
+      firstActionEvents.filter((entry) => isJsonObject(entry) && entry.status === 'DISPATCHED')
+        .length,
+      1,
+    );
+  } finally {
+    rmSync(root, { recursive: true, force: true });
+  }
+});
+
+test('parallel flow delete rejects non-delete plans and any globally visible process inbound edge', async () => {
+  const root = mkdtempSync(path.join(os.tmpdir(), 'tg-maintenance-parallel-barrier-'));
+  try {
+    const mixed = await prepareSeededScenario(root, 'mixed-plan');
+    await assert.rejects(
+      () =>
+        runDatasetMaintenanceApply({
+          planPath: path.join(mixed.files.outDir, 'maintenance-plan.json'),
+          commit: true,
+          approvePlan: mixed.plan.plan_sha256,
+          confirm: mixed.remote.email,
+          maxParallel: 2,
+          env: mixed.remote.env,
+          fetchImpl: mixed.remote.fetch,
+        }),
+      /flow delete-only plan/u,
+    );
+
+    const inbound = await prepareParallelFlowDeleteScenario({ root, label: 'inbound', count: 1 });
+    inbound.remote.add(
+      'processes',
+      '80000000-0000-4000-8000-000000000001',
+      processFlowReferencePayload({
+        processId: '80000000-0000-4000-8000-000000000001',
+        flowId: inbound.flowIds[0]!,
+      }),
+      { user_id: '99999999-9999-4999-8999-999999999999', state_code: 100 },
+    );
+    await assert.rejects(
+      () =>
+        runDatasetMaintenanceApply({
+          planPath: inbound.planPath,
+          commit: true,
+          approvePlan: inbound.plan.plan_sha256,
+          confirm: inbound.remote.email,
+          maxParallel: 8,
+          env: inbound.remote.env,
+          fetchImpl: inbound.remote.fetch,
+        }),
+      /visible process inbound references/u,
+    );
+    assert.equal(inbound.remote.rpcOrder.length, 0);
+
+    const context = await resolveMaintenanceRemoteContext({
+      env: inbound.remote.env,
+      fetchImpl: inbound.remote.fetch,
+    });
+    const visible = await fetchMaintenanceVisibleTableRows({
+      context,
+      table: 'processes',
+      pageSize: 1,
+    });
+    assert.equal(visible.rows.length, 1);
+    assert.equal(visible.completeness.complete, true);
+
+    await assert.rejects(
+      () =>
+        runDatasetMaintenanceApply({
+          planPath: inbound.planPath,
+          commit: true,
+          approvePlan: inbound.plan.plan_sha256,
+          confirm: inbound.remote.email,
+          maxParallel: 9,
+          env: inbound.remote.env,
+          fetchImpl: inbound.remote.fetch,
+        }),
+      /integer from 1 to 8/u,
+    );
+  } finally {
+    rmSync(root, { recursive: true, force: true });
+  }
+});
+
+test('parallel delete ledger recovers crash windows without a second dispatch', async () => {
+  const root = mkdtempSync(path.join(os.tmpdir(), 'tg-maintenance-parallel-crash-'));
+  try {
+    const committed = await prepareParallelFlowDeleteScenario({
+      root,
+      label: 'committed-ledger',
+      count: 1,
+    });
+    await runDatasetMaintenanceApply({
+      planPath: committed.planPath,
+      commit: true,
+      approvePlan: committed.plan.plan_sha256,
+      confirm: committed.remote.email,
+      maxParallel: 1,
+      env: committed.remote.env,
+      fetchImpl: committed.remote.fetch,
+    });
+    rmSync(path.join(path.dirname(committed.planPath), 'apply-progress.jsonl'));
+    const committedRpcCount = committed.remote.rpcOrder.length;
+    const recoveredCommitted = await runDatasetMaintenanceApply({
+      planPath: committed.planPath,
+      commit: true,
+      approvePlan: committed.plan.plan_sha256,
+      confirm: committed.remote.email,
+      maxParallel: 1,
+      env: committed.remote.env,
+      fetchImpl: committed.remote.fetch,
+    });
+    assert.equal(recoveredCommitted.status, 'completed');
+    assert.equal(committed.remote.rpcOrder.length, committedRpcCount);
+
+    const dispatched = await prepareParallelFlowDeleteScenario({
+      root,
+      label: 'dispatched-ledger',
+      count: 1,
+    });
+    await runDatasetMaintenanceApply({
+      planPath: dispatched.planPath,
+      commit: true,
+      approvePlan: dispatched.plan.plan_sha256,
+      confirm: dispatched.remote.email,
+      maxParallel: 1,
+      env: dispatched.remote.env,
+      fetchImpl: dispatched.remote.fetch,
+    });
+    const executionPath = path.join(path.dirname(dispatched.planPath), 'apply-execution-log.jsonl');
+    const firstTwo = readJsonLinesIfPresent(executionPath).slice(0, 2);
+    writeFileSync(executionPath, `${firstTwo.map((entry) => JSON.stringify(entry)).join('\n')}\n`);
+    rmSync(path.join(path.dirname(dispatched.planPath), 'apply-progress.jsonl'));
+    const dispatchedRpcCount = dispatched.remote.rpcOrder.length;
+    const recoveredDispatched = await runDatasetMaintenanceApply({
+      planPath: dispatched.planPath,
+      commit: true,
+      approvePlan: dispatched.plan.plan_sha256,
+      confirm: dispatched.remote.email,
+      maxParallel: 1,
+      env: dispatched.remote.env,
+      fetchImpl: dispatched.remote.fetch,
+    });
+    assert.equal(recoveredDispatched.status, 'completed');
+    assert.equal(dispatched.remote.rpcOrder.length, dispatchedRpcCount);
+    assert.deepEqual(
+      readJsonLinesIfPresent(executionPath).map((entry) => (entry as { status: string }).status),
+      ['PREPARED', 'DISPATCHED', 'COMMITTED'],
+    );
+  } finally {
+    rmSync(root, { recursive: true, force: true });
+  }
+});
+
+test('parallel delete recovery classifies exact-before, drift, and read failures as UNKNOWN', async () => {
+  const root = mkdtempSync(path.join(os.tmpdir(), 'tg-maintenance-parallel-unknown-'));
+  try {
+    for (const mode of ['exact-before', 'drift', 'read-failure'] as const) {
+      const scenario = await prepareParallelFlowDeleteScenario({ root, label: mode, count: 1 });
+      scenario.remote.failDeleteOnce = true;
+      await runDatasetMaintenanceApply({
+        planPath: scenario.planPath,
+        commit: true,
+        approvePlan: scenario.plan.plan_sha256,
+        confirm: scenario.remote.email,
+        maxParallel: 1,
+        env: scenario.remote.env,
+        fetchImpl: scenario.remote.fetch,
+      });
+      const planDir = path.dirname(scenario.planPath);
+      const executionPath = path.join(planDir, 'apply-execution-log.jsonl');
+      const dispatchedOnly = readJsonLinesIfPresent(executionPath).slice(0, 2);
+      writeFileSync(
+        executionPath,
+        `${dispatchedOnly.map((entry) => JSON.stringify(entry)).join('\n')}\n`,
+      );
+      rmSync(path.join(planDir, 'apply-progress.jsonl'));
+      if (mode === 'drift') {
+        scenario.remote.rows.get('flows')![0]!.json_ordered = flowPayload(
+          '82000000-0000-4000-8000-000000000099',
+        );
+      }
+      const fetchImpl: FetchLike =
+        mode === 'read-failure'
+          ? async (input, init) => {
+              const url = new URL(String(input));
+              return url.pathname.endsWith('/rest/v1/flows') && url.searchParams.has('id')
+                ? jsonResponse({ message: 'recovery lookup failed' }, 500)
+                : scenario.remote.fetch(input, init);
+            }
+          : scenario.remote.fetch;
+      const rpcCount = scenario.remote.rpcOrder.length;
+      const report = await runDatasetMaintenanceApply({
+        planPath: scenario.planPath,
+        commit: true,
+        approvePlan: scenario.plan.plan_sha256,
+        confirm: scenario.remote.email,
+        maxParallel: 1,
+        env: scenario.remote.env,
+        fetchImpl,
+      });
+      assert.equal(report.status, 'completed_with_unknowns');
+      assert.equal(scenario.remote.rpcOrder.length, rpcCount);
+      const latest = readJsonLinesIfPresent(executionPath).at(-1);
+      assert.ok(isJsonObject(latest));
+      assert.equal(latest.status, 'UNKNOWN');
+      assert.match(
+        String(latest.error),
+        mode === 'exact-before'
+          ? /exact-before/u
+          : mode === 'drift'
+            ? /drifted/u
+            : /Read-only recovery failed/u,
+      );
+    }
+  } finally {
+    rmSync(root, { recursive: true, force: true });
+  }
+});
+
+test('parallel delete continues pre-dispatch failures and records post-dispatch readback variants', async () => {
+  const root = mkdtempSync(path.join(os.tmpdir(), 'tg-maintenance-parallel-edges-'));
+  try {
+    const preflight = await prepareParallelFlowDeleteScenario({
+      root,
+      label: 'jit-duplicate',
+      count: 2,
+    });
+    preflight.remote.duplicateExactLookup = true;
+    const preflightReport = await runDatasetMaintenanceApply({
+      planPath: preflight.planPath,
+      commit: true,
+      approvePlan: preflight.plan.plan_sha256,
+      confirm: preflight.remote.email,
+      maxParallel: 2,
+      env: preflight.remote.env,
+      fetchImpl: preflight.remote.fetch,
+    });
+    assert.equal(preflightReport.status, 'completed_with_failures');
+    assert.equal(preflightReport.summary.failed, 2);
+    assert.equal(preflight.remote.rpcOrder.length, 0);
+
+    const retained = await prepareParallelFlowDeleteScenario({
+      root,
+      label: 'retained-readback',
+      count: 1,
+    });
+    const retainedReport = await runDatasetMaintenanceApply({
+      planPath: retained.planPath,
+      commit: true,
+      approvePlan: retained.plan.plan_sha256,
+      confirm: retained.remote.email,
+      maxParallel: 1,
+      env: retained.remote.env,
+      fetchImpl: async (input, init) =>
+        String(input).includes('/rpc/cmd_dataset_delete')
+          ? jsonResponse({ ok: true, audit_id: '123' })
+          : retained.remote.fetch(input, init),
+    });
+    assert.equal(retainedReport.status, 'completed_with_unknowns');
+    const retainedEvent = readJsonLinesIfPresent(retainedReport.artifacts.execution_log!).at(-1);
+    assert.ok(isJsonObject(retainedEvent));
+    assert.equal(retainedEvent.audit_id, '123');
+    assert.match(String(retainedEvent.error), /returned but exact absent/u);
+
+    const lostReadback = await prepareParallelFlowDeleteScenario({
+      root,
+      label: 'lost-readback',
+      count: 1,
+    });
+    let dispatched = false;
+    const lostReadbackReport = await runDatasetMaintenanceApply({
+      planPath: lostReadback.planPath,
+      commit: true,
+      approvePlan: lostReadback.plan.plan_sha256,
+      confirm: lostReadback.remote.email,
+      maxParallel: 1,
+      env: lostReadback.remote.env,
+      fetchImpl: async (input, init) => {
+        if (String(input).includes('/rpc/cmd_dataset_delete')) {
+          const response = await lostReadback.remote.fetch(input, init);
+          dispatched = true;
+          return response;
+        }
+        const url = new URL(String(input));
+        if (dispatched && url.pathname.endsWith('/rest/v1/flows') && url.searchParams.has('id')) {
+          return jsonResponse({ message: 'readback unavailable' }, 500);
+        }
+        return lostReadback.remote.fetch(input, init);
+      },
+    });
+    assert.equal(lostReadbackReport.status, 'completed_with_unknowns');
+    const lostEvent = readJsonLinesIfPresent(lostReadbackReport.artifacts.execution_log!).at(-1);
+    assert.ok(isJsonObject(lostEvent));
+    assert.equal(lostEvent.readback_sha256, null);
+    assert.match(String(lostEvent.error), /Readback failed after dispatch/u);
+  } finally {
+    rmSync(root, { recursive: true, force: true });
+  }
+});
+
+test('parallel delete internals reject duplicate targets, corrupt ledgers, and fatal ledger writes', async () => {
+  const root = mkdtempSync(path.join(os.tmpdir(), 'tg-maintenance-parallel-internals-'));
+  try {
+    const scenario = await prepareParallelFlowDeleteScenario({
+      root,
+      label: 'internals',
+      count: 2,
+    });
+    const duplicate = structuredClone(scenario.plan);
+    duplicate.actions[1] = {
+      ...duplicate.actions[1]!,
+      id: duplicate.actions[0]!.id,
+      version: duplicate.actions[0]!.version,
+    };
+    assert.throws(() => applyInternals.assertParallelDeletePlan(duplicate), /repeated/u);
+    const legacySummary = structuredClone(scenario.plan);
+    delete legacySummary.summary.update_json_ordered;
+    delete legacySummary.summary.rebuild_derivatives;
+    assert.doesNotThrow(() => applyInternals.assertParallelDeletePlan(legacySummary));
+    assert.equal(applyInternals.normalizeMaintenanceMaxParallel(undefined), 1);
+    assert.equal(applyInternals.normalizeMaintenanceMaxParallel(8), 8);
+    assert.throws(() => applyInternals.normalizeMaintenanceMaxParallel(0), /integer/u);
+    assert.equal(applyInternals.remoteAuditId({ audit_id: '7' }), '7');
+    assert.equal(applyInternals.remoteAuditId({ audit_id: 'bad' }), null);
+
+    const context = await resolveMaintenanceRemoteContext({
+      env: scenario.remote.env,
+      fetchImpl: scenario.remote.fetch,
+    });
+    const executionLogPath = path.join(path.dirname(scenario.planPath), 'manual-log.jsonl');
+    const execution = {
+      entries: [],
+      byAction: new Map(),
+      dispatched: new Set<string>(),
+      committed: new Set<string>(),
+    };
+    const action = scenario.plan.actions[0]!;
+    applyInternals.appendParallelDeleteExecutionEntry({
+      path: executionLogPath,
+      state: execution,
+      plan: scenario.plan,
+      action,
+      context,
+      status: 'PREPARED',
+      recordedAtUtc: '2026-07-24T10:00:00.000Z',
+    });
+    applyInternals.appendParallelDeleteExecutionEntry({
+      path: executionLogPath,
+      state: execution,
+      plan: scenario.plan,
+      action,
+      context,
+      status: 'DISPATCHED',
+      recordedAtUtc: '2026-07-24T10:00:01.000Z',
+    });
+    const validEntries = readJsonLinesIfPresent(executionLogPath);
+    const corruptions: unknown[] = [
+      null,
+      { ...(validEntries[0] as JsonObject), action_id: 'foreign-action' },
+      { ...(validEntries[0] as JsonObject), audit_id: 'bad' },
+      { ...(validEntries[0] as JsonObject), remote_result_sha256: 'bad' },
+      { ...(validEntries[0] as JsonObject), attempt_consumed: 'bad' },
+      { ...(validEntries[0] as JsonObject), recovered: 'bad' },
+      { ...(validEntries[0] as JsonObject), readback_sha256: 'bad' },
+      { ...(validEntries[0] as JsonObject), error: 1 },
+      { ...(validEntries[0] as JsonObject), status: 'COMMITTED' },
+      { ...(validEntries[0] as JsonObject), recorded_at_utc: 'bad' },
+    ];
+    for (const [index, corrupted] of corruptions.entries()) {
+      const corruptPath = path.join(root, `corrupt-${index}.jsonl`);
+      writeFileSync(corruptPath, `${JSON.stringify(corrupted)}\n`);
+      assert.throws(
+        () => applyInternals.parseParallelDeleteExecutionLog(scenario.plan, corruptPath),
+        /invalid or foreign/u,
+      );
+    }
+
+    const fatalLogPath = path.join(root, 'ledger-as-directory');
+    mkdirSync(fatalLogPath);
+    const progressPath = path.join(root, 'fatal-progress.jsonl');
+    await assert.rejects(
+      () =>
+        applyInternals.executeParallelDeletePlan({
+          plan: { ...scenario.plan, actions: [action] },
+          context,
+          progress: applyInternals.parseProgress(
+            { ...scenario.plan, actions: [action] },
+            progressPath,
+          ),
+          progressPath,
+          executionLogPath: fatalLogPath,
+          execution: {
+            entries: [],
+            byAction: new Map(),
+            dispatched: new Set(),
+            committed: new Set(),
+          },
+          maxParallel: 1,
+          now: () => '2026-07-24T10:00:00.000Z',
+        }),
+      /EISDIR|illegal operation on a directory/u,
+    );
+
+    const unversioned = processFlowReferencePayload({
+      processId: '83000000-0000-4000-8000-000000000001',
+      flowId: scenario.flowIds[0]!,
+    });
+    const reference = ((unversioned.processDataSet as JsonObject).exchanges as JsonObject)
+      .exchange as JsonObject;
+    delete (reference.referenceToFlowDataSet as JsonObject)['@version'];
+    assert.throws(
+      () =>
+        applyInternals.assertNoVisibleProcessInboundReferences({
+          plan: scenario.plan,
+          rows: [
+            {
+              table: 'processes',
+              id: '83000000-0000-4000-8000-000000000001',
+              version: '01.00.000',
+              user_id: null,
+              state_code: 100,
+              modified_at: null,
+              json_ordered: unversioned,
+              model_id: null,
+              rule_verification: null,
+            },
+          ],
+        }),
+      /visible process inbound/u,
+    );
   } finally {
     rmSync(root, { recursive: true, force: true });
   }
