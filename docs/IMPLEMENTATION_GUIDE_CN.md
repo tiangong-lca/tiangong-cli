@@ -58,6 +58,8 @@ Review note, 2026-07-23: Issue #198 发布 0.0.31 并将 SDK schema/entity 校�
 
 Review note, 2026-07-24: Issue #200 发布 0.0.32，为大规模 execution contract 增加显式 `--max-parallel 1..8`。调度器先找出所有 dependency 所引用 action 的最大序号，该序号及其之前的完整前缀严格串行并完成 exact readback；只有后续 table/id/version 唯一的 suffix 可以有界并发。每次 DML 前通过既有 session runtime 取得当前 token，并再次核对 user/email；续期成 foreign owner 时在 attempt=0 阻断。每行独立 protected transaction、ledger、UNKNOWN/成功不重放与全部写入禁止项不变。
 
+Review note, 2026-07-24: Issue #202 发布 0.0.33，为 BAFU flow 物理收敛增加显式 `maintenance apply --max-parallel 1..8`。该模式只接受 flow delete-only、目标唯一、current/projected impact 为零的计划；dispatch 前完成全部 RLS 可见 process 的 fresh SELECT-only 入边复核。`PREPARED/DISPATCHED/COMMITTED/UNKNOWN` 逐行留痕，exact absent 才成功，成功和 UNKNOWN 均不自动重放，独立行继续。
+
 ## 1. 目标
 
 `tiangong-lca-cli` 是 TianGong 的统一执行面。
@@ -342,6 +344,7 @@ tiangong-lca dataset maintenance apply \
   --commit \
   --approve-plan <sha256> \
   --confirm <current-account-email> \
+  [--max-parallel <1-8>] \
   [--timeout-ms <n>] \
   [--json]
 
@@ -403,6 +406,7 @@ tiangong-lca dataset maintenance verify \
 
 Scope 与保护规则：
 
+- `maintenance apply --max-parallel 1..8` 是显式 opt-in 的 flow delete-only 模式。它要求非空且目标唯一的纯 flow 删除计划、current/projected reference impact 均为零，并在 dispatch 前完整读取全部 RLS 可见 process 复核全局入边为零。每个 action 的 `PREPARED/DISPATCHED/COMMITTED/UNKNOWN` 写入 append-only execution log；只有 exact absent readback 才成功，UNKNOWN 和成功行都不会自动重放，其他独立 action 继续执行。
 - 普通维护的远端读写使用当前认证用户 session 与数据库 RLS，不接受 target user 覆盖；固定 BAFU profile 除显式确认 production project ref、toolchain evidence 与账号邮箱外，还在 CLI 内置 production project allowlist，Dev 或任意其他 project 即使三者自洽也不能 freeze 或 commit；远端准备只允许表级读和 `cmd_dataset_derivative_rebuild_snapshot`，不经过 Dev 数据回放；`seal-protected-approval` 完全离线；三个已废弃的历史 Step-2 plan identity 在 freeze、seal 与 commit-mode `run-protected` 三处都被拒绝，旧 approval 不能绕过新冻结/新审批；`run-protected` 的写入由服务器调度，但必须同时匹配认证 actor、精确 user_id/state_code=0、冻结目标集与 plan/closure 栅栏，公开入口和独立读回继续受 RLS 保护。
 - freeze 在请求人工 review 前先把唯一 canonical approval-authority `approved_at_utc` 写入 request JSON、request hash 与人类可见文本；seal 的 `--approved-at` 必须等于这个已被逐字批准的值，不能在批准后另换时间生成第二个 identity。seal report 另用 `generated_at_utc` 记录真实封存时间，不把 authority timestamp 冒充为 seal 时刻。artifact SHA 按原始文件字节计算，非法 UTF-8 直接拒绝；因此空格、末尾换行、编码字节或时间变化都不能绕过 `(actor, approval_identity)` 的 one-shot 唯一性。
 - 每条 scope row 必须给出表、exact `id`、exact `version`、expected owner、expected `state_code=0` 与 operator-authored intended action/reason；`--operation` 只接受 `delete`、`retire`、`redo-import`、`repair-references`、`merge-support-aliases`、`rebuild-derivatives`，且不允许只按 broad `state_code=0` 或其他宽过滤器清理。

@@ -53,6 +53,8 @@ related:
 
 2026-07-24 复核：Issue #200 的有界 scheduler 使用 Node 原生 Promise，并通过现有 `SupabaseDataRuntime.getAccessToken()` 续期同一 owner session；0.0.32 不新增、删除或升级任何直接依赖，本文件继续保持历史 TODO 记录用途。
 
+2026-07-24 复核：Issue #202 的 flow delete-only scheduler、visible-process scan 与 append-only ledger 全部使用现有 Node/CLI 模块；0.0.33 不新增、删除或升级任何直接依赖，本文件继续保持历史 TODO 记录用途。
+
 2026-07-17 复核：Issue #157 COMMON 的双 #29 readback、domain rejection、verify pending 收紧、DB one-wrapper rotating permit、create-only local claim 与 fresh exact recovery approval/read-only lookup 继续复用现有 TypeScript、Node `fs`/`crypto`、`@supabase/supabase-js` session/RPC 和 TIDAS SDK 校验，不新增或改变直接依赖。尚余 merge、Preview 与 DB/CLI 发布门禁；本文件继续保持历史 TODO 记录用途。
 
 2026-07-16 复核：Issue #157 的 flow-identity 工作流复用现有 `@supabase/supabase-js` 用户 session、authenticated RPC 和 `@tiangong-lca/tidas-sdk` ProcessSchema 校验，不新增或改变直接依赖；本文件继续保持历史 TODO 记录用途。

@@ -83,6 +83,8 @@ Review note, 2026-07-23: Issue #198 publishes 0.0.31 through the same merge-trig
 
 Review note, 2026-07-24: Issue #200 publishes 0.0.32 through the unchanged merge-triggered tag and npm Trusted Publishing workflows. Bounded execution-contract concurrency and owner-token renewal reuse the existing CLI session runtime and add no dependency, secret, environment variable, runner, Trusted Publisher setting, workflow filename, service-role credential, or alternate authentication surface.
 
+Review note, 2026-07-24: Issue #202 publishes 0.0.33 through the unchanged merge-triggered tag and npm Trusted Publishing workflows. Bounded flow delete-only maintenance reuses the existing user session, RLS REST reads, and protected delete RPC and adds no dependency, secret, environment variable, runner, Trusted Publisher setting, workflow filename, service-role credential, or alternate authentication surface.
+
 Review note, 2026-07-13: exact-count maintenance pagination requires no repository secret, Trusted Publisher, environment, workflow filename, or tag-semantics change.
 
 Important constraint:

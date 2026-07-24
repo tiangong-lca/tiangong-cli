@@ -43,6 +43,8 @@ Review note, 2026-07-23: Issue #198 发布 0.0.31；`dataset save-draft` 只在�
 
 Review note, 2026-07-24: Issue #200 发布 0.0.32；`dataset save-draft --execution-contract` 新增显式 `--max-parallel 1..8`，完整 dependency prefix 仍串行，只有 table/id/version 唯一的 suffix 可有界并发。每次 DML 前通过既有 session runtime 取得当前 token 并重新核对 exact user/email，foreign renewal 在 attempt=0 阻断。环境变量、每行独立事务、durable ledger、成功/UNKNOWN 不重放和 Trusted Publishing 路径均不变。
 
+Review note, 2026-07-24: Issue #202 发布 0.0.33；`dataset maintenance apply --max-parallel 1..8` 只接受 unique-target 的 flow delete-only plan，并在 dispatch 前以当前 owner session 完整扫描全部 RLS 可见 process，要求入边为零。每行在 protected delete RPC 前写 `PREPARED/DISPATCHED`，exact absent 才记 `COMMITTED`；成功或 UNKNOWN 不自动重放，其他无依赖行继续。无新 RPC/schema/env/依赖，也不新增 public/foreign/service-role 写面。
+
 Review note, 2026-06-07: release 0.0.14 keeps maintainer runtime and release guidance unchanged. `dataset classification apply --type location` now supports explicit missing location targets for Foundry saturation workflows, and still rejects ambiguous target paths.
 
 Review note, 2026-06-11: release 0.0.15 keeps maintainer runtime and release guidance unchanged. `dataset import-lca convert` now adapts to the tidas-tools 0.0.28 process-bundle flags (no bare `--process-bundles`, `--no-process-bundles` only when disabled) and reports bundle/mapping files from actual on-disk state.
@@ -294,6 +296,7 @@ npm exec tiangong-lca -- dataset references rewrite --input ./rows.jsonl --from 
 npm exec tiangong-lca -- dataset maintenance plan --scope ./maintenance-scope.json --operation repair-references --out-dir ./dataset-maintenance --json
 npm exec tiangong-lca -- dataset maintenance plan --scope ./derivative-rebuild-scope.json --operation rebuild-derivatives --out-dir ./derivative-rebuild --json
 npm exec tiangong-lca -- dataset maintenance apply --plan ./dataset-maintenance/maintenance-plan.json --commit --approve-plan <sha256> --confirm <current-account-email> --json
+npm exec tiangong-lca -- dataset maintenance apply --plan ./flow-delete-maintenance/maintenance-plan.json --commit --approve-plan <sha256> --confirm <current-account-email> --max-parallel 8 --json
 npm exec tiangong-lca -- dataset maintenance verify --plan ./dataset-maintenance/maintenance-plan.json --out-dir ./dataset-maintenance/verify --json
 npm exec tiangong-lca -- dataset maintenance freeze-protected --plan ./protected-step2/maintenance-plan.json --toolchain-evidence ./protected-step2/toolchain-evidence.json --expected-project-ref <production-ref> --confirm <current-account-email> --out-dir ./protected-step2/freeze --json
 npm exec tiangong-lca -- dataset maintenance seal-protected-approval --freeze ./protected-step2/freeze/protected-execution-freeze.json --approval-request ./protected-step2/freeze/protected-approval-request.json --human-approval ./protected-step2/human-approval.txt --approve-freeze-file <sha256> --approve-request <sha256> --approve-text <sha256> --confirm <current-account-email> --approved-at <approved-at-utc-from-request> --out-dir ./protected-step2/approval --json
@@ -331,6 +334,8 @@ npm exec tiangong-lca -- admin embedding-run --input ./jobs.json --dry-run
 ## process / review / publish / validation 边界
 
 `tiangong-lca dataset maintenance plan/apply/freeze-protected/seal-protected-approval/run-protected/verify` 是错误导入后 row-level 修复和受保护衍生重建的 CLI-owned 入口。`plan` 冻结当前用户 RLS 可见快照、保护行、引用影响、desired payload 和 canonical plan SHA-256；普通操作只允许精确 `id + version` 的当前账号 `state_code=0` draft 通过 `cmd_dataset_save_draft` / `cmd_dataset_delete` 执行。BAFU alias operation 还要求 scope/plan `target_mode=owner_draft`，冻结 source/target FP/UG、52 个 changed row、59 条 exchange、118 个 amount 字段和 309 条不变 exchange。固定 protected profile 先由 `freeze-protected` 直接读取生产 owner-draft 状态并输出未批准请求，再由完全离线的 `seal-protected-approval` 记录人类逐字节批准；只有随后独立的 production-only `run-protected` 可以执行或恢复，不得回退 Dev 或旧 alias RPC。`rebuild-derivatives` V1 仍只允许一个 `table=processes` action；protected Step 2 的终态则要求精确证明 23 个 flows 与 27 个 processes。所有执行路径都把 plan/action/mode correlation 写入数据库审计与本地 durable proof。Foundry/skills 只能调用已发布 CLI 并保留报告/产物，不得读取数据库 env、直调 RPC、重算 canonical hash，或实现私有 Edge/admin/queue/SQL/service-role/raw REST mutation fallback。
+
+显式给 `dataset maintenance apply` 传入 `--max-parallel 1..8` 时，CLI 进入 flow 物理收敛专用模式：只接受目标唯一、当前和投影入边均为零的纯 flow-delete plan，并在写前用 owner session 完整读取全部 RLS 可见 process 再做一次全局入边栅栏。每行在 protected RPC 前追加 `PREPARED`、`DISPATCHED`，精确 absent readback 后才记 `COMMITTED`；模糊行先只读恢复，不能证明成功时记 `UNKNOWN` 且不自动重放，无依赖行继续。未传该参数时保持原普通 apply 语义。
 
 `freeze-protected` 必须提供 canonical plan、已发布 DB/CLI/根仓集成 toolchain evidence、显式 production project ref、当前账号邮箱和私有输出目录。它在任何 server token 或写入之前完成完整 account census、六份 support snapshot、projected-reference closure 与稳定排序的 23-flow + 27-process derivative baseline；报告中的 preflight、gate、admission、execution、mutation 与 approval-artifact 计数必须全部为零。`seal-protected-approval` 完全离线，逐字节保存人类返回文本，并精确核对 freeze 文件字节 hash、request identity、文本 hash、账号与批准时间；它只生成 approval，不提交 execution。
 
