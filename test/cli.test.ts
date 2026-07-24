@@ -505,6 +505,8 @@ test('executeCli exposes dataset and lifecyclemodel friction-fix commands', asyn
   );
   assert.equal(datasetMaintenanceApplyHelp.exitCode, 0);
   assert.match(datasetMaintenanceApplyHelp.stdout, /--approve-plan <sha256>/u);
+  assert.match(datasetMaintenanceApplyHelp.stdout, /--global-inbound-proof <file>/u);
+  assert.match(datasetMaintenanceApplyHelp.stdout, /--approve-global-inbound-proof <sha256>/u);
   assert.match(datasetMaintenanceApplyHelp.stdout, /Commit-only/u);
   assert.match(datasetMaintenanceApplyHelp.stdout, /guarded admission is queued/u);
 
@@ -745,6 +747,7 @@ test('executeCli dispatches dataset maintenance plan, apply, and verify', async 
   });
 
   const approvePlan = 'a'.repeat(64);
+  const approveGlobalInboundProof = 'b'.repeat(64);
   let observedApplyOptions: unknown = null;
   const applyResult = await executeCli(
     [
@@ -762,6 +765,10 @@ test('executeCli dispatches dataset maintenance plan, apply, and verify', async 
       '15000',
       '--max-parallel',
       '8',
+      '--global-inbound-proof',
+      '/tmp/global-inbound-proof.json',
+      '--approve-global-inbound-proof',
+      approveGlobalInboundProof,
       '--json',
     ],
     {
@@ -781,6 +788,8 @@ test('executeCli dispatches dataset maintenance plan, apply, and verify', async 
     confirm: 'user@example.com',
     timeoutMs: 15000,
     maxParallel: 8,
+    globalInboundProofPath: '/tmp/global-inbound-proof.json',
+    approveGlobalInboundProof,
     env: deps.env,
     fetchImpl: deps.fetchImpl,
   });
@@ -804,6 +813,60 @@ test('executeCli dispatches dataset maintenance plan, apply, and verify', async 
     },
   );
   assert.equal(unknownApply.exitCode, 1);
+
+  const incompleteGlobalProof = await executeCli(
+    [
+      'dataset',
+      'maintenance',
+      'apply',
+      '--plan',
+      './maintenance-run/maintenance-plan.json',
+      '--commit',
+      '--approve-plan',
+      approvePlan,
+      '--confirm',
+      'user@example.com',
+      '--max-parallel',
+      '8',
+      '--global-inbound-proof',
+      '/tmp/global-inbound-proof.json',
+    ],
+    deps,
+  );
+  assert.equal(incompleteGlobalProof.exitCode, 2);
+  assert.match(incompleteGlobalProof.stderr, /must be provided together/u);
+
+  const globalProofWithoutParallel = await executeCli(
+    [
+      'dataset',
+      'maintenance',
+      'apply',
+      '--global-inbound-proof',
+      '/tmp/global-inbound-proof.json',
+      '--approve-global-inbound-proof',
+      approveGlobalInboundProof,
+    ],
+    deps,
+  );
+  assert.equal(globalProofWithoutParallel.exitCode, 2);
+  assert.match(globalProofWithoutParallel.stderr, /require --max-parallel/u);
+
+  const malformedGlobalProofApproval = await executeCli(
+    [
+      'dataset',
+      'maintenance',
+      'apply',
+      '--max-parallel',
+      '8',
+      '--global-inbound-proof',
+      '/tmp/global-inbound-proof.json',
+      '--approve-global-inbound-proof',
+      'BAD',
+    ],
+    deps,
+  );
+  assert.equal(malformedGlobalProofApproval.exitCode, 2);
+  assert.match(malformedGlobalProofApproval.stderr, /lowercase SHA-256/u);
 
   let observedVerifyOptions: unknown = null;
   const verifyResult = await executeCli(

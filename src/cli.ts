@@ -993,6 +993,8 @@ Options:
   --confirm <email>      Current authenticated account email
   --timeout-ms <n>       Request timeout in milliseconds
   --max-parallel <1-8>   Opt into bounded flow delete-only execution with durable dispatch ledger
+  --global-inbound-proof <file> Absolute path to a fresh all-process SELECT-only zero-inbound proof
+  --approve-global-inbound-proof <sha256> Exact SHA-256 of --global-inbound-proof; requires --max-parallel
   --json                 Print compact JSON
   -h, --help
 
@@ -4297,6 +4299,8 @@ function parseDatasetMaintenanceApplyFlags(args: string[]): {
   timeoutMs: number | undefined;
   dryRun: boolean;
   maxParallel: number | undefined;
+  globalInboundProofPath: string;
+  approveGlobalInboundProof: string;
 } {
   let values: ReturnType<typeof parseArgs>['values'];
   try {
@@ -4314,6 +4318,8 @@ function parseDatasetMaintenanceApplyFlags(args: string[]): {
         'timeout-ms': { type: 'string' },
         'dry-run': { type: 'boolean' },
         'max-parallel': { type: 'string' },
+        'global-inbound-proof': { type: 'string' },
+        'approve-global-inbound-proof': { type: 'string' },
       },
     }));
   } catch (error) {
@@ -4339,6 +4345,30 @@ function parseDatasetMaintenanceApplyFlags(args: string[]): {
       exitCode: 2,
     });
   }
+  const globalInboundProofPath =
+    typeof values['global-inbound-proof'] === 'string' ? values['global-inbound-proof'] : '';
+  const approveGlobalInboundProof =
+    typeof values['approve-global-inbound-proof'] === 'string'
+      ? values['approve-global-inbound-proof']
+      : '';
+  if (Boolean(globalInboundProofPath) !== Boolean(approveGlobalInboundProof)) {
+    throw new CliError(
+      '--global-inbound-proof and --approve-global-inbound-proof must be provided together.',
+      { code: 'INVALID_ARGS', exitCode: 2 },
+    );
+  }
+  if (globalInboundProofPath && maxParallel === undefined) {
+    throw new CliError('Global inbound proof flags require --max-parallel.', {
+      code: 'INVALID_ARGS',
+      exitCode: 2,
+    });
+  }
+  if (approveGlobalInboundProof && !/^[0-9a-f]{64}$/u.test(approveGlobalInboundProof)) {
+    throw new CliError('--approve-global-inbound-proof must be a lowercase SHA-256.', {
+      code: 'INVALID_ARGS',
+      exitCode: 2,
+    });
+  }
 
   return {
     help: Boolean(values.help),
@@ -4350,6 +4380,8 @@ function parseDatasetMaintenanceApplyFlags(args: string[]): {
     timeoutMs: parseDatasetMaintenancePositiveInteger(values['timeout-ms'], '--timeout-ms'),
     dryRun: Boolean(values['dry-run']),
     maxParallel,
+    globalInboundProofPath,
+    approveGlobalInboundProof,
   };
 }
 
@@ -7972,6 +8004,8 @@ export async function executeCli(argv: string[], deps: CliDeps): Promise<CliResu
           confirm: datasetFlags.confirm,
           timeoutMs: datasetFlags.timeoutMs,
           maxParallel: datasetFlags.maxParallel,
+          globalInboundProofPath: datasetFlags.globalInboundProofPath || undefined,
+          approveGlobalInboundProof: datasetFlags.approveGlobalInboundProof || undefined,
           env: deps.env,
           fetchImpl: deps.fetchImpl,
         });

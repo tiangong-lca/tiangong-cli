@@ -33,7 +33,7 @@ checkPaths:
   - scripts/docpact-gate.sh
   - scripts/install-git-hooks.sh
 lastReviewedAt: 2026-07-25
-lastReviewedCommit: 473ad5b54d099ae0584c4d188968446ca0c48409
+lastReviewedCommit: 0b0cd23104088ee477acb7c7be12bccdb5719331
 related:
   - .docpact/config.yaml
   - docs/agents/repo-validation.md
@@ -102,6 +102,8 @@ Review note, 2026-07-24: Issue #202 releases 0.0.33 and keeps high-volume physic
 Review note, 2026-07-24: Issue #204 bounds each page of the parallel-delete all-visible process inbound preflight at 250 rows so large process JSON cannot exhaust the production statement timeout. The scan still omits a `user_id` predicate, follows exact-count pagination to completion, and blocks every mutation after an incomplete scan or any visible inbound reference. Delete scope, authorization, attempt-before-dispatch, no-replay, RPC/schema, and all protected-row boundaries are unchanged.
 
 Review note, 2026-07-25: Issue #206 orders that complete RLS-visible process scan only by the globally unique `(id, version)` primary key. This preserves deterministic exact-count completeness and every visible-row safety check while avoiding a redundant full-result owner/state sort; filtering, delete scope, authorization, retry, mutation, RPC/schema, and protected-row boundaries remain unchanged.
+
+Review note, 2026-07-25: Issue #208 lets the same bounded flow-delete path admit a fresh external proof only when its exact bytes are SHA-approved and its project, actor, plan, complete target binding, contiguous chunks, SELECT-only provenance, zero inbound result, and 30-minute freshness all match. The proof must cover all process rows and is therefore stronger than the default RLS-visible scan; it is validated before approval or dispatch. The CLI does not execute raw SQL, the default scan remains available, and delete scope, owner/session DML, retry, RPC/schema, and protected-row boundaries are unchanged.
 
 ## Bootstrap Order
 

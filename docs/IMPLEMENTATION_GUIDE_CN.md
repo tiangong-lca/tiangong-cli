@@ -17,7 +17,7 @@ checkPaths:
   - src/**
   - test/**
 lastReviewedAt: 2026-07-25
-lastReviewedCommit: 473ad5b54d099ae0584c4d188968446ca0c48409
+lastReviewedCommit: 0b0cd23104088ee477acb7c7be12bccdb5719331
 related:
   - ../AGENTS.md
   - ../.docpact/config.yaml
@@ -63,6 +63,8 @@ Review note, 2026-07-24: Issue #202 发布 0.0.33，为 BAFU flow 物理收敛�
 Review note, 2026-07-24: Issue #204 将上述全可见 process 入边复核固定为每页 250 行，以避免大 JSON 页触发生产语句超时；查询仍不带 `user_id` 过滤，必须完成 exact-count 全量分页后才允许 dispatch。
 
 Review note, 2026-07-25: Issue #206 将该完整 RLS 可见 process 扫描的稳定顺序收敛为全局唯一主键 `(id, version)`，让数据库直接走既有索引，避免冗余 owner/state 全结果排序；无 `user_id` 过滤、exact-count 完整性和首写前全局入边阻断均不变。
+
+Review note, 2026-07-25: Issue #208 允许同一纯 flow-delete 模式显式接收 30 分钟内的全库 process SELECT-only 入边证明。文件字节必须以 SHA-256 精确审批，并绑定 project、actor、plan、完整有序目标集合和连续分片；任何入边、P0/P1、身份/哈希/时效/覆盖异常都在 approval 和 dispatch 前 fail-closed。CLI 不执行证明 SQL，未提供证明时保持原 RLS 全可见扫描。
 
 ## 1. 目标
 
@@ -410,7 +412,7 @@ tiangong-lca dataset maintenance verify \
 
 Scope 与保护规则：
 
-- `maintenance apply --max-parallel 1..8` 是显式 opt-in 的 flow delete-only 模式。它要求非空且目标唯一的纯 flow 删除计划、current/projected reference impact 均为零，并在 dispatch 前完整读取全部 RLS 可见 process 复核全局入边为零。每个 action 的 `PREPARED/DISPATCHED/COMMITTED/UNKNOWN` 写入 append-only execution log；只有 exact absent readback 才成功，UNKNOWN 和成功行都不会自动重放，其他独立 action 继续执行。
+- `maintenance apply --max-parallel 1..8` 是显式 opt-in 的 flow delete-only 模式。它要求非空且目标唯一的纯 flow 删除计划、current/projected reference impact 均为零，并在 dispatch 前完整读取全部 RLS 可见 process 复核全局入边为零。若治理层已生成覆盖所有 process 的 fresh SELECT-only 证明，可成对传入 `--global-inbound-proof <absolute-file>` 和 `--approve-global-inbound-proof <sha256>`；CLI 在跳过 live scan 前严格验证 project/actor/plan/目标集合/连续分片/时效与零入边，且自身不执行 raw SQL。每个 action 的 `PREPARED/DISPATCHED/COMMITTED/UNKNOWN` 写入 append-only execution log；只有 exact absent readback 才成功，UNKNOWN 和成功行都不会自动重放，其他独立 action 继续执行。
 - 普通维护的远端读写使用当前认证用户 session 与数据库 RLS，不接受 target user 覆盖；固定 BAFU profile 除显式确认 production project ref、toolchain evidence 与账号邮箱外，还在 CLI 内置 production project allowlist，Dev 或任意其他 project 即使三者自洽也不能 freeze 或 commit；远端准备只允许表级读和 `cmd_dataset_derivative_rebuild_snapshot`，不经过 Dev 数据回放；`seal-protected-approval` 完全离线；三个已废弃的历史 Step-2 plan identity 在 freeze、seal 与 commit-mode `run-protected` 三处都被拒绝，旧 approval 不能绕过新冻结/新审批；`run-protected` 的写入由服务器调度，但必须同时匹配认证 actor、精确 user_id/state_code=0、冻结目标集与 plan/closure 栅栏，公开入口和独立读回继续受 RLS 保护。
 - freeze 在请求人工 review 前先把唯一 canonical approval-authority `approved_at_utc` 写入 request JSON、request hash 与人类可见文本；seal 的 `--approved-at` 必须等于这个已被逐字批准的值，不能在批准后另换时间生成第二个 identity。seal report 另用 `generated_at_utc` 记录真实封存时间，不把 authority timestamp 冒充为 seal 时刻。artifact SHA 按原始文件字节计算，非法 UTF-8 直接拒绝；因此空格、末尾换行、编码字节或时间变化都不能绕过 `(actor, approval_identity)` 的 one-shot 唯一性。
 - 每条 scope row 必须给出表、exact `id`、exact `version`、expected owner、expected `state_code=0` 与 operator-authored intended action/reason；`--operation` 只接受 `delete`、`retire`、`redo-import`、`repair-references`、`merge-support-aliases`、`rebuild-derivatives`，且不允许只按 broad `state_code=0` 或其他宽过滤器清理。

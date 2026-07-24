@@ -19,7 +19,7 @@ checkPaths:
   - scripts/**
   - .github/workflows/**
 lastReviewedAt: 2026-07-25
-lastReviewedCommit: 473ad5b54d099ae0584c4d188968446ca0c48409
+lastReviewedCommit: 0b0cd23104088ee477acb7c7be12bccdb5719331
 related:
   - AGENTS.md
   - .docpact/config.yaml
@@ -44,6 +44,8 @@ Review note, 2026-07-23: Issue #198 发布 0.0.31；`dataset save-draft` 只在�
 Review note, 2026-07-24: Issue #200 发布 0.0.32；`dataset save-draft --execution-contract` 新增显式 `--max-parallel 1..8`，完整 dependency prefix 仍串行，只有 table/id/version 唯一的 suffix 可有界并发。每次 DML 前通过既有 session runtime 取得当前 token 并重新核对 exact user/email，foreign renewal 在 attempt=0 阻断。环境变量、每行独立事务、durable ledger、成功/UNKNOWN 不重放和 Trusted Publishing 路径均不变。
 
 Review note, 2026-07-24: Issue #202 发布 0.0.33；`dataset maintenance apply --max-parallel 1..8` 只接受 unique-target 的 flow delete-only plan，并在 dispatch 前以当前 owner session 完整扫描全部 RLS 可见 process，要求入边为零。每行在 protected delete RPC 前写 `PREPARED/DISPATCHED`，exact absent 才记 `COMMITTED`；成功或 UNKNOWN 不自动重放，其他无依赖行继续。无新 RPC/schema/env/依赖，也不新增 public/foreign/service-role 写面。
+
+Review note, 2026-07-25: Issue #208 为同一 delete-only 模式增加可选 `--global-inbound-proof` 与精确 SHA 审批。证明必须在 30 分钟内由 SELECT-only 全库 process 检查产生，并绑定 project、owner、plan、完整目标集合与连续分片；任何入边、P0/P1、缺口、篡改或身份不符都在 approval/dispatch 前阻断。CLI 本身不执行 raw SQL，未提供证明时仍使用原 RLS 全可见扫描，写面和 no-replay 语义不变。
 
 Review note, 2026-06-07: release 0.0.14 keeps maintainer runtime and release guidance unchanged. `dataset classification apply --type location` now supports explicit missing location targets for Foundry saturation workflows, and still rejects ambiguous target paths.
 

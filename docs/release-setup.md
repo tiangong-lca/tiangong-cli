@@ -20,7 +20,7 @@ checkPaths:
   - scripts/docpact-gate.sh
   - scripts/install-git-hooks.sh
 lastReviewedAt: 2026-07-25
-lastReviewedCommit: 473ad5b54d099ae0584c4d188968446ca0c48409
+lastReviewedCommit: 0b0cd23104088ee477acb7c7be12bccdb5719331
 related:
   - ../AGENTS.md
   - ../.docpact/config.yaml
@@ -88,6 +88,8 @@ Review note, 2026-07-24: Issue #202 publishes 0.0.33 through the unchanged merge
 Review note, 2026-07-24: Issue #204 changes only the main-commit all-visible preflight page size and requires no new secret, environment variable, runner, Trusted Publisher setting, workflow, tag rule, service-role credential, or alternate authentication surface.
 
 Review note, 2026-07-25: Issue #206 changes only that preflight's indexed ordering and requires no new secret, environment variable, runner, Trusted Publisher setting, workflow, tag rule, service-role credential, or alternate authentication surface.
+
+Review note, 2026-07-25: Issue #208 validates a user-supplied, explicitly SHA-approved SELECT-only proof file with existing local primitives. It adds no secret, environment variable, dependency, runner, Trusted Publisher setting, workflow, tag rule, service-role credential, or alternate authentication/mutation surface.
 
 Review note, 2026-07-13: exact-count maintenance pagination requires no repository secret, Trusted Publisher, environment, workflow filename, or tag-semantics change.
 

@@ -17,7 +17,7 @@ checkPaths:
   - src/lib/tidas-sdk-package-validator.ts
   - test/**
 lastReviewedAt: 2026-07-25
-lastReviewedCommit: 473ad5b54d099ae0584c4d188968446ca0c48409
+lastReviewedCommit: 0b0cd23104088ee477acb7c7be12bccdb5719331
 related:
   - ../AGENTS.md
   - ../.docpact/config.yaml
@@ -54,6 +54,8 @@ related:
 2026-07-24 复核：Issue #200 的有界 scheduler 使用 Node 原生 Promise，并通过现有 `SupabaseDataRuntime.getAccessToken()` 续期同一 owner session；0.0.32 不新增、删除或升级任何直接依赖，本文件继续保持历史 TODO 记录用途。
 
 2026-07-24 复核：Issue #202 的 flow delete-only scheduler、visible-process scan 与 append-only ledger 全部使用现有 Node/CLI 模块；0.0.33 不新增、删除或升级任何直接依赖，本文件继续保持历史 TODO 记录用途。
+
+2026-07-25 复核：Issue #208 的外部证明只使用现有文件、JSON 与 SHA 工具进行本地 admission 校验，不新增、删除或升级任何直接依赖。
 
 2026-07-17 复核：Issue #157 COMMON 的双 #29 readback、domain rejection、verify pending 收紧、DB one-wrapper rotating permit、create-only local claim 与 fresh exact recovery approval/read-only lookup 继续复用现有 TypeScript、Node `fs`/`crypto`、`@supabase/supabase-js` session/RPC 和 TIDAS SDK 校验，不新增或改变直接依赖。尚余 merge、Preview 与 DB/CLI 发布门禁；本文件继续保持历史 TODO 记录用途。
 

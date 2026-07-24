@@ -23,8 +23,9 @@ layout: repo
 # Review note, 2026-07-24: Issue #202 releases 0.0.33 and keeps bounded flow delete-only maintenance inside the existing dataset command/runtime, RLS remote-read, artifact, test, release, and integration domains. Current wildcards cover the visible-process inbound barrier, append-only dispatch ledger, tests, and governed docs; no ownership, route, dependency, environment, authentication, RPC/schema, tag, Trusted Publishing, or publication rule changes are required.
 # Review note, 2026-07-24: Issue #204 keeps the parallel-delete all-visible process fence inside the existing maintenance runtime and exact-count paginator. Bounding only that scan to 250 rows per request changes no ownership, route, dependency, authentication, mutation, RPC/schema, release, or publication boundary.
 # Review note, 2026-07-25: Issue #206 keeps that complete RLS-visible fence on the globally unique `(id, version)` primary-key order so Postgres can use the existing index instead of sorting redundant owner/state keys. Completeness, ownership, mutation, retry, RPC/schema, release, and publication boundaries are unchanged.
+# Review note, 2026-07-25: Issue #208 optionally replaces that expensive owner-session fence with a fresh, SHA-approved, plan/actor/project/target-bound SELECT-only proof over all process rows. The default RLS scan remains unchanged; the proof path is delete-only, adds no database write or raw-SQL execution to the CLI, and changes no ownership, route, dependency, authentication, RPC/schema, release, or publication boundary.
 lastReviewedAt: "2026-07-25"
-lastReviewedCommit: "473ad5b54d099ae0584c4d188968446ca0c48409"
+lastReviewedCommit: "0b0cd23104088ee477acb7c7be12bccdb5719331"
 
 catalog:
   repos:

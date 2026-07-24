@@ -23,7 +23,7 @@ checkPaths:
   - scripts/docpact-gate.sh
   - scripts/install-git-hooks.sh
 lastReviewedAt: 2026-07-25
-lastReviewedCommit: 473ad5b54d099ae0584c4d188968446ca0c48409
+lastReviewedCommit: 0b0cd23104088ee477acb7c7be12bccdb5719331
 related:
   - ../AGENTS.md
   - ../.docpact/config.yaml
@@ -74,6 +74,8 @@ Review note, 2026-07-24: Issue #202 is the 0.0.33 release for bounded delete-onl
 Review note, 2026-07-24: Issue #204 is a main-commit operational fix for the all-visible process preflight page size. The BAFU topology run binds the exact merged commit and built-file fingerprint; no package version, manual tag, local publish, or alternate release path is introduced by this fix.
 
 Review note, 2026-07-25: Issue #206 is a main-commit operational fix that changes only the stable order of the same all-visible preflight to `(id, version)`. The BAFU topology run must bind the exact merged commit and built-file fingerprint; no package version, tag, publish, credential, or alternate release path is introduced.
+
+Review note, 2026-07-25: Issue #208 is a main-commit operational fix that admits a separately captured, SHA-approved all-process SELECT-only proof before bounded flow deletion. Production use must bind the exact merged commit, built-file fingerprint, proof file SHA, capture time, project/actor/plan, and target binding. No package version, tag, publish, credential, raw-SQL CLI path, or alternate mutation path is introduced.
 
 Use this document for:
 
