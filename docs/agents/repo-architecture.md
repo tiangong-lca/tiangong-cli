@@ -26,8 +26,8 @@ checkPaths:
   - scripts/docpact
   - scripts/docpact-gate.sh
   - scripts/install-git-hooks.sh
-lastReviewedAt: 2026-07-24
-lastReviewedCommit: 0cbbf9cef373675ad39ae2b8103003d05b48ccb8
+lastReviewedAt: 2026-07-25
+lastReviewedCommit: 7c960cac3eab447a2a7d2b7c398ffd53c2de8fea
 related:
   - ../../AGENTS.md
   - ../../.docpact/config.yaml
@@ -91,6 +91,8 @@ Review note, 2026-07-23: Issue #198 changes the package version to 0.0.31 and co
 Review note, 2026-07-24: Issue #200 releases 0.0.32 and extends the existing execution-contract scheduler without adding a second write path. The scheduler derives one serial prefix ending at the highest action referenced by any dependency, verifies that the remaining suffix has unique table/id/version targets, and runs that suffix with explicit concurrency 1..8. Each action still owns its independent protected transaction and ledger file. The existing session runtime supplies a current token immediately before dispatch, and the runner rejects any renewed user/email mismatch before attempt consumption.
 
 Review note, 2026-07-24: Issue #202 releases 0.0.33 and extends only ordinary dataset-maintenance apply. Explicit bounded mode is restricted to flow delete-only plans, reuses owner-session RLS reads and `cmd_dataset_delete`, adds a complete all-visible-process inbound barrier, and records append-only action dispatch/outcome events beside the immutable plan. It adds no RPC, schema, dependency, service-role, direct-table, publication, or cross-owner architecture.
+
+Review note, 2026-07-24: Issue #204 keeps the same all-visible-process inbound barrier but requests it in exact-count pages of at most 250 rows. The query still has no `user_id` predicate, and an incomplete scan still prevents approval or dispatch; only the per-request payload size changes.
 
 ## Stable Path Map
 

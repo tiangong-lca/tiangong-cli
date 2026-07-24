@@ -16,8 +16,8 @@ checkPaths:
   - README.md
   - src/**
   - test/**
-lastReviewedAt: 2026-07-24
-lastReviewedCommit: 0cbbf9cef373675ad39ae2b8103003d05b48ccb8
+lastReviewedAt: 2026-07-25
+lastReviewedCommit: 7c960cac3eab447a2a7d2b7c398ffd53c2de8fea
 related:
   - ../AGENTS.md
   - ../.docpact/config.yaml
@@ -59,6 +59,8 @@ Review note, 2026-07-23: Issue #198 发布 0.0.31 并将 SDK schema/entity 校�
 Review note, 2026-07-24: Issue #200 发布 0.0.32，为大规模 execution contract 增加显式 `--max-parallel 1..8`。调度器先找出所有 dependency 所引用 action 的最大序号，该序号及其之前的完整前缀严格串行并完成 exact readback；只有后续 table/id/version 唯一的 suffix 可以有界并发。每次 DML 前通过既有 session runtime 取得当前 token，并再次核对 user/email；续期成 foreign owner 时在 attempt=0 阻断。每行独立 protected transaction、ledger、UNKNOWN/成功不重放与全部写入禁止项不变。
 
 Review note, 2026-07-24: Issue #202 发布 0.0.33，为 BAFU flow 物理收敛增加显式 `maintenance apply --max-parallel 1..8`。该模式只接受 flow delete-only、目标唯一、current/projected impact 为零的计划；dispatch 前完成全部 RLS 可见 process 的 fresh SELECT-only 入边复核。`PREPARED/DISPATCHED/COMMITTED/UNKNOWN` 逐行留痕，exact absent 才成功，成功和 UNKNOWN 均不自动重放，独立行继续。
+
+Review note, 2026-07-24: Issue #204 将上述全可见 process 入边复核固定为每页 250 行，以避免大 JSON 页触发生产语句超时；查询仍不带 `user_id` 过滤，必须完成 exact-count 全量分页后才允许 dispatch。
 
 ## 1. 目标
 
