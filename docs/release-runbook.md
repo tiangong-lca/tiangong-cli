@@ -22,8 +22,9 @@ checkPaths:
   - scripts/docpact
   - scripts/docpact-gate.sh
   - scripts/install-git-hooks.sh
-lastReviewedAt: 2026-07-25
-lastReviewedCommit: 0b0cd23104088ee477acb7c7be12bccdb5719331
+lastReviewedAt: 2026-07-27
+lastReviewedCommit: e35a3de9fb44ea2f3aa0ec83654a640c09348c39
+lastReviewedNote: 'Reviewed for Issue #210: npm packaging includes a Rust import smoke fixture but never a native tidas binary.'
 related:
   - ../AGENTS.md
   - ../.docpact/config.yaml
@@ -111,6 +112,8 @@ Release 0.0.13 note, 2026-06-06: prechecks are `node ./scripts/ci/release-versio
 Release 0.0.14 note, 2026-06-07: prechecks are `node ./scripts/ci/release-version.cjs assert-unpublished --version 0.0.14`, `npm run prepush:gate`, and `npm pack --dry-run`; this release lets `dataset classification apply --type location` create explicit missing location fields such as flow `locationOfSupply` while keeping ambiguous paths blocked.
 
 Release 0.0.15 note, 2026-06-11: prechecks are `node ./scripts/ci/release-version.cjs assert-unpublished --version 0.0.15`, `npm run prepush:gate`, and `npm pack --dry-run`; this release adapts `dataset import-lca convert` to the tidas-tools 0.0.28 process-bundle CLI surface (no bare `--process-bundles` flag, `--no-process-bundles` forwarded when disabled) and derives report bundle/mapping file fields from on-disk state.
+
+Issue #210 packaging note, 2026-07-27: feature PRs do not bump or publish the CLI package. Before the later release PR, verify `npm pack --dry-run` includes `assets/import-smoke/simapro.csv` and does not include a Python package, tidas-tools checkout, venv, or native executable. Run a clean installed-package smoke with Python unavailable and an explicit checksum-verified Rust `tidas` artifact. Native artifacts remain distributed by tidas-tools for Linux x86_64/ARM64, macOS Intel/Apple Silicon, and Windows x86_64; the CLI npm release must not invent a Windows ARM64 artifact.
 
 Useful commands:
 

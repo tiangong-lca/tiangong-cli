@@ -17,8 +17,9 @@ checkPaths:
   - package.json
   - src/**
   - test/**
-lastReviewedAt: 2026-07-25
-lastReviewedCommit: 0b0cd23104088ee477acb7c7be12bccdb5719331
+lastReviewedAt: 2026-07-27
+lastReviewedCommit: e35a3de9fb44ea2f3aa0ec83654a640c09348c39
+lastReviewedNote: 'Reviewed for Issue #210: the final Python LCA import exception is replaced by unified Rust tidas.'
 related:
   - ../AGENTS.md
   - ../.docpact/config.yaml
@@ -48,6 +49,7 @@ related:
 - 2026-06-06 复核：release 0.0.13 发布路径澄清为 PR merge 到 upstream `main` 后由 GitHub Actions / npm Trusted Publishing 执行，不重新引入 Python、POSIX shell、MCP runtime 或本地发布脚本前提
 - 2026-06-07 复核：release 0.0.14 的 `dataset classification apply --type location` 修复仍在 TypeScript CLI-native 路径内完成，不重新引入 Python、POSIX shell、MCP runtime 或本地发布脚本前提
 - 2026-06-11 复核：release 0.0.15 的 `dataset import-lca convert` 适配仍通过 TypeScript CLI 包装 tidas-tools Python CLI 完成，不重新引入 Python、POSIX shell、MCP runtime 或本地发布脚本前提
+- 2026-07-27 复核：Issue #210 已关闭上述最后一个 import 例外；`dataset import-lca convert` 只调用统一 Rust `tidas import`，删除 Python executable、checkout/venv 与 `src/tidas_tools` 发现面。skills 若调用该命令只能传递公开 Rust/CLI 参数并保存机器报告，不得复制 import domain logic。
 - 2026-07-14 复核：`dataset maintenance rebuild-derivatives` 继续作为 TypeScript / Node 原生命令通过既有用户 session 和受保护 RPC 执行，不新增 Python、POSIX shell、MCP runtime 或私有 skill runtime 前提
 - 2026-07-15 复核：`dataset maintenance run-protected` 继续由 TypeScript / Node 原生 CLI 负责 sealed request、一次 admission、本地 immutable evidence 与只读恢复；不新增 Python、POSIX shell、MCP runtime、私有 skill runtime 或新 npm 依赖，skills 仍只能薄编排 CLI。
 - 2026-07-15 复核：`dataset maintenance freeze-protected` 与 `seal-protected-approval` 继续由 TypeScript / Node 原生 CLI 分别负责生产只读冻结和完全离线的人类批准记录；不新增 Python、POSIX shell、MCP runtime、私有 skill runtime 或 npm 依赖。Foundry/skills 只能调用已发布 CLI 并保留其产物，不得读取数据库 env、直调 RPC、重算 canonical JSON/hash 或复制 freeze/seal 逻辑。

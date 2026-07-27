@@ -19,8 +19,9 @@ checkPaths:
   - scripts/docpact
   - scripts/docpact-gate.sh
   - scripts/install-git-hooks.sh
-lastReviewedAt: 2026-07-25
-lastReviewedCommit: 0b0cd23104088ee477acb7c7be12bccdb5719331
+lastReviewedAt: 2026-07-27
+lastReviewedCommit: e35a3de9fb44ea2f3aa0ec83654a640c09348c39
+lastReviewedNote: 'Reviewed for Issue #210: tidas remains an external verified runtime artifact, not an npm secret or bundled binary.'
 related:
   - ../AGENTS.md
   - ../.docpact/config.yaml
@@ -122,6 +123,8 @@ Release 0.0.13 note, 2026-06-06: package version and lockfile bump only; no repo
 Release 0.0.14 note, 2026-06-07: package version and lockfile bump only; no repository secret, Trusted Publisher, tag, workflow filename, or GitHub environment setup change is required. The release includes a deterministic location apply fix and uses the same PR merge to upstream `main`, tag, and npm Trusted Publishing path.
 
 Release 0.0.15 note, 2026-06-11: package version and lockfile bump only; no repository secret, Trusted Publisher, tag, workflow filename, or GitHub environment setup change is required. The release includes the `dataset import-lca convert` adaptation to tidas-tools 0.0.28 process-bundle flags and uses the same PR merge to upstream `main`, tag, and npm Trusted Publishing path.
+
+Issue #210 setup note, 2026-07-27: unified Rust import adds no npm secret, Trusted Publisher setting, tag rule, or release workflow. Operators install `tidas` separately from a checksum/provenance-verified release artifact or crates.io and select it with `--tidas-bin`, `TIDAS_BIN`, or PATH. The npm tarball intentionally contains the smoke fixture but no platform executable.
 
 The publish workflow file is fixed at:
 

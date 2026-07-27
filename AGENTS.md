@@ -32,8 +32,9 @@ checkPaths:
   - scripts/docpact
   - scripts/docpact-gate.sh
   - scripts/install-git-hooks.sh
-lastReviewedAt: 2026-07-25
-lastReviewedCommit: 0b0cd23104088ee477acb7c7be12bccdb5719331
+lastReviewedAt: 2026-07-27
+lastReviewedCommit: e35a3de9fb44ea2f3aa0ec83654a640c09348c39
+lastReviewedNote: 'Reviewed for Issue #210: dataset import-lca now delegates only to the contract-compatible Rust tidas 0.1.x binary.'
 related:
   - .docpact/config.yaml
   - docs/agents/repo-validation.md
@@ -56,6 +57,8 @@ Review note, 2026-06-05: release 0.0.12 only updates CLI package version metadat
 Review note, 2026-06-07: release 0.0.14 keeps the CLI-owned dataset classification command family and release workflow boundaries unchanged. `dataset classification apply --type location` may create an explicit missing location field such as `locationOfSupply`, but path ambiguity still blocks.
 
 Review note, 2026-06-11: release 0.0.15 keeps command nouns/verbs, repo ownership, and release workflow boundaries unchanged. `dataset import-lca convert` now matches the tidas-tools 0.0.28 import_lca CLI surface: the wrapper no longer passes a bare `--process-bundles` flag, forwards `--no-process-bundles` when bundles are disabled, and derives report bundle/mapping file fields from on-disk state.
+
+Review note, 2026-07-27: Issue #210 removes the remaining Python import runtime. `dataset import-lca convert` resolves an explicit or PATH-installed Rust `tidas`, requires `tidas.operation-report.v1` plus a stable `0.1.x` version handshake, forwards only native import controls, and preserves native exit classes and atomic publication. The CLI does not bundle a platform binary or copy import domain logic; the npm package carries only a small smoke fixture. Supported artifact targets are Linux x86_64/ARM64, macOS Intel/Apple Silicon, and Windows x86_64; Windows ARM64 fails closed.
 
 Review note, 2026-07-11: `dataset maintenance plan/apply/verify` is now the CLI-owned v1 row-level maintenance contract. It freezes exact current-user RLS scope and audit artifacts before any write, executes only approved `save_draft` / `delete` actions through platform command paths, and verifies the result with an independent readback.
 

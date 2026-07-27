@@ -23,7 +23,6 @@ import {
   __testInternals as curationInternals,
   runDatasetCurationQueueBuild,
 } from '../src/lib/dataset-curation-queue.js';
-import { runDatasetImportLcaConvert } from '../src/lib/dataset-import-lca.js';
 import {
   __testInternals as maintenanceInternals,
   runDatasetMaintenanceClearAccount,
@@ -131,16 +130,9 @@ test('prepush coverage covers CLI parser error and help branches', async () => {
     ['dataset', 'classification', 'bad-action'],
     ['dataset', 'curation-queue', 'next', '--bad-flag'],
     ['dataset', 'curation-queue', 'next', '--type', 'bad'],
-    ['dataset', 'import-lca', 'convert', '--validation-jobs', '-1'],
-    ['dataset', 'import-lca', 'convert', '--process-bundles', '--no-process-bundles'],
-    [
-      'dataset',
-      'import-lca',
-      'convert',
-      '--no-process-bundles',
-      '--process-bundles-dir',
-      'bundles',
-    ],
+    ['dataset', 'import-lca', 'convert', '--max-entry-mib', '0'],
+    ['dataset', 'import-lca', 'convert', '--memory-budget-mib', '-1'],
+    ['dataset', 'import-lca', 'convert', '--queue-capacity', 'invalid'],
     ['dataset', 'patch', 'apply', '--bad-flag'],
     ['dataset', 'verify-remote', '--state-code=bad'],
     ['dataset', 'maintenance', 'clear-account', '--bad-flag'],
@@ -294,59 +286,15 @@ test('prepush coverage covers CLI parser error and help branches', async () => {
       runDatasetImportLcaConvertImpl: async (options) => {
         assert.equal(options.processBundles, false);
         return {
-          schema_version: 1,
-          generated_at_utc: '2026-06-04T00:00:00.000Z',
-          status: 'completed',
-          input_path: options.inputPath,
-          output_dir: options.outputDir,
-          from_format: 'ecospold1',
-          target: 'tidas',
-          command: [],
-          exit_status: 0,
-          stdout: '',
-          stderr: '',
-          report: null,
-          files: { report: options.reportPath ?? null },
+          schema_version: 'tiangong-lca.dataset-import-lca-report.v2',
+          status: 'succeeded',
+          exit_class: 'success',
+          exit_code: 0,
         } as never;
       },
     },
   );
   assert.equal(importNoBundles.exitCode, 0);
-
-  const importBundles = await executeCli(
-    [
-      'dataset',
-      'import-lca',
-      'convert',
-      '--input',
-      'in.zip',
-      '--output-dir',
-      'out',
-      '--process-bundles',
-    ],
-    {
-      ...makeDeps(),
-      runDatasetImportLcaConvertImpl: async (options) => {
-        assert.equal(options.processBundles, true);
-        return {
-          schema_version: 1,
-          generated_at_utc: '2026-06-04T00:00:00.000Z',
-          status: 'completed',
-          input_path: options.inputPath,
-          output_dir: options.outputDir,
-          from_format: 'ecospold1',
-          target: 'tidas',
-          command: [],
-          exit_status: 0,
-          stdout: '',
-          stderr: '',
-          report: null,
-          files: { report: options.reportPath ?? null },
-        } as never;
-      },
-    },
-  );
-  assert.equal(importBundles.exitCode, 0);
 
   const classificationChildrenBlocked = await executeCli(
     [
@@ -1329,61 +1277,6 @@ test('prepush coverage covers save-draft and import-lca edge branches', async ()
       now: new Date('2026-06-04T00:00:00.000Z'),
     });
     assert.equal(preparedFailure.rows[0]?.operation, 'type_unknown');
-
-    const tidasToolsDir = path.join(dir, 'tidas-tools');
-    const cliPath = path.join(tidasToolsDir, 'src/tidas_tools/import_lca/cli.py');
-    mkdirSync(path.dirname(cliPath), { recursive: true });
-    writeFileSync(cliPath, '# cli\n', 'utf8');
-    const inputPath = path.join(dir, 'input.zip');
-    writeFileSync(inputPath, 'zip', 'utf8');
-    const reportPath = path.join(dir, 'report.json');
-    const observedArgs: string[][] = [];
-    await runDatasetImportLcaConvert({
-      inputPath,
-      outputDir: path.join(dir, 'out'),
-      reportPath,
-      processBundlesDir: path.join(dir, 'bundles'),
-      tidasToolsDir,
-      spawnImpl: ((_command: string, args?: readonly string[]) => {
-        observedArgs.push([...(args ?? [])]);
-        writeJson(reportPath, { ok: true });
-        return { status: 0, stdout: '', stderr: '' };
-      }) as never,
-    });
-    assert.ok(observedArgs[0]?.includes('--process-bundles-dir'));
-
-    observedArgs.length = 0;
-    await runDatasetImportLcaConvert({
-      inputPath,
-      outputDir: path.join(dir, 'detect-only'),
-      reportPath,
-      processBundles: true,
-      processBundlesDir: path.join(dir, 'bundles'),
-      detectOnly: true,
-      tidasToolsDir,
-      spawnImpl: ((_command: string, args?: readonly string[]) => {
-        observedArgs.push([...(args ?? [])]);
-        writeJson(reportPath, { ok: true });
-        return { status: 0, stdout: '', stderr: '' };
-      }) as never,
-    });
-    assert.equal(observedArgs[0]?.includes('--process-bundles'), false);
-
-    observedArgs.length = 0;
-    await runDatasetImportLcaConvert({
-      inputPath,
-      outputDir: path.join(dir, 'no-bundles'),
-      reportPath,
-      processBundles: false,
-      processBundlesDir: '',
-      tidasToolsDir,
-      spawnImpl: ((_command: string, args?: readonly string[]) => {
-        observedArgs.push([...(args ?? [])]);
-        writeJson(reportPath, { ok: true });
-        return { status: 0, stdout: '', stderr: '' };
-      }) as never,
-    });
-    assert.equal(observedArgs[0]?.includes('--process-bundles'), false);
 
     const contract = await runDatasetContract({
       type: 'contact',

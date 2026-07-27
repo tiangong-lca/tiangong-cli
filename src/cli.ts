@@ -787,7 +787,7 @@ Implemented Subcommands:
   curation-queue build Build entity-level AI curation queue artifacts for Foundry imports
   curation-queue next  Return the next runnable support/flow/process queue task
   curation-queue verify Verify queue task checkpoints for a scope
-  import-lca convert  Convert supported external LCA packages through tidas-tools
+  import-lca convert  Import supported external LCA packages through the unified Rust tidas binary
   author              Extract source evidence and prepare TIDAS context packs for AI authoring
   patch apply          Apply AI-authored structured dataset patches deterministically
   save-draft           Save contact/source/support or other canonical dataset rows through the platform dataset command path
@@ -1301,30 +1301,33 @@ function renderDatasetImportLcaHelp(): string {
 
 Options:
   --input <path>          Source file, directory, or package to import
-  --output-dir <dir>      Output directory for generated package and reports
+  --output-dir <dir>      Output directory atomically published by tidas
   --from-format <format>  auto, ecospold1, ecospold2, openlca-jsonld, openlca-process-xlsx, simapro-csv, ilcd
   --target <target>       tidas | ilcd | both (default: tidas)
-  --report <file>         Conversion report path (default: <output-dir>/conversion-report.json)
-  --mapping-dir <dir>     Optional custom mapping/reference data directory
-  --language <lang>       Default language for generated text (default: en)
-  --validation-jobs <n>   Parallel validation jobs passed to tidas-tools (default: 1)
-  --process-bundles       Write per-process dependency bundles (default: enabled by tidas-tools)
-  --process-bundles-dir <dir>
-                           Custom per-process bundle directory (default: <output-dir>/process-bundles)
+  --report <file>         Persist the native operation report atomically instead of using tidas stdout
+  --write-mapping         Write deterministic mapping.csv.gz
   --no-process-bundles    Disable per-process dependency bundle generation
-  --detect-only           Only detect the input format and write the report
   --fail-on-warning       Return non-zero when converter warnings are present
-  --python <bin>          Python executable (default: python3)
-  --tidas-tools-dir <dir> Explicit tidas-tools checkout path
+  --max-entry-mib <n>     Maximum source-entry size in MiB (tidas default: 128)
+  --memory-budget-mib <n> Maximum accounted in-flight memory in MiB (tidas default: 512)
+  --queue-capacity <n>    Maximum items in each bounded queue (tidas default: 256)
+  --tidas-bin <path>      Rust tidas executable (default: TIDAS_BIN, then tidas on PATH)
+  --tidas-config <path>   Explicit tidas config file (otherwise TIDAS_CONFIG is honored)
   --json                  Print compact JSON
   -h, --help
 
 Outputs written under --output-dir:
-  - conversion-report.json
-  - tidas/ when target includes TIDAS and not detect-only
-  - ilcd/ when target includes ILCD and not detect-only
-  - process-bundles/ when not detect-only and process bundles are enabled
-  - outputs/import-lca-report.json
+  - import-report.json and issues.jsonl
+  - tidas/ when target includes TIDAS
+  - ilcd/ when target includes ILCD
+  - process-bundles/ by default
+  - mapping.csv.gz when --write-mapping is used
+
+Runtime contract:
+  - Linux x86_64/ARM64, macOS Intel/Apple Silicon, and Windows x86_64 are supported.
+  - Windows ARM64 is unsupported.
+  - The binary must report tidas.operation-report.v1 and a stable 0.1.x version.
+  - Import publication, cancellation cleanup, and domain validation remain owned by Rust tidas.
 `.trim();
 }
 
@@ -3535,15 +3538,14 @@ function parseDatasetImportLcaConvertFlags(args: string[]): {
   fromFormat: string | undefined;
   target: string | undefined;
   reportPath: string | undefined;
-  mappingDir: string | undefined;
-  language: string | undefined;
-  validationJobs: number | undefined;
+  writeMapping: boolean;
   processBundles: boolean | undefined;
-  processBundlesDir: string | undefined;
-  detectOnly: boolean;
   failOnWarning: boolean;
-  pythonBin: string | undefined;
-  tidasToolsDir: string | undefined;
+  maxEntryMib: number | undefined;
+  memoryBudgetMib: number | undefined;
+  queueCapacity: number | undefined;
+  tidasBin: string | undefined;
+  tidasConfig: string | undefined;
 } {
   let values: ReturnType<typeof parseArgs>['values'];
   try {
@@ -3559,16 +3561,14 @@ function parseDatasetImportLcaConvertFlags(args: string[]): {
         'from-format': { type: 'string' },
         target: { type: 'string' },
         report: { type: 'string' },
-        'mapping-dir': { type: 'string' },
-        language: { type: 'string' },
-        'validation-jobs': { type: 'string' },
-        'process-bundles': { type: 'boolean' },
-        'process-bundles-dir': { type: 'string' },
+        'write-mapping': { type: 'boolean' },
         'no-process-bundles': { type: 'boolean' },
-        'detect-only': { type: 'boolean' },
         'fail-on-warning': { type: 'boolean' },
-        python: { type: 'string' },
-        'tidas-tools-dir': { type: 'string' },
+        'max-entry-mib': { type: 'string' },
+        'memory-budget-mib': { type: 'string' },
+        'queue-capacity': { type: 'string' },
+        'tidas-bin': { type: 'string' },
+        'tidas-config': { type: 'string' },
       },
     }));
   } catch (error) {
@@ -3578,26 +3578,12 @@ function parseDatasetImportLcaConvertFlags(args: string[]): {
     });
   }
 
-  const validationJobs =
-    typeof values['validation-jobs'] === 'string' ? Number(values['validation-jobs']) : undefined;
-  if (validationJobs !== undefined && (!Number.isInteger(validationJobs) || validationJobs < 0)) {
-    throw new CliError('--validation-jobs must be a non-negative integer.', {
-      code: 'DATASET_IMPORT_LCA_VALIDATION_JOBS_INVALID',
-      exitCode: 2,
-    });
-  }
-  if (values['process-bundles'] && values['no-process-bundles']) {
-    throw new CliError('--process-bundles and --no-process-bundles cannot both be set.', {
-      code: 'DATASET_IMPORT_LCA_PROCESS_BUNDLES_INVALID',
-      exitCode: 2,
-    });
-  }
-  if (values['no-process-bundles'] && typeof values['process-bundles-dir'] === 'string') {
-    throw new CliError('--process-bundles-dir cannot be used with --no-process-bundles.', {
-      code: 'DATASET_IMPORT_LCA_PROCESS_BUNDLES_INVALID',
-      exitCode: 2,
-    });
-  }
+  const maxEntryMib = parsePositiveIntegerFlag(values['max-entry-mib'], '--max-entry-mib');
+  const memoryBudgetMib = parsePositiveIntegerFlag(
+    values['memory-budget-mib'],
+    '--memory-budget-mib',
+  );
+  const queueCapacity = parsePositiveIntegerFlag(values['queue-capacity'], '--queue-capacity');
 
   return {
     help: Boolean(values.help),
@@ -3607,22 +3593,29 @@ function parseDatasetImportLcaConvertFlags(args: string[]): {
     fromFormat: typeof values['from-format'] === 'string' ? values['from-format'] : undefined,
     target: typeof values.target === 'string' ? values.target : undefined,
     reportPath: typeof values.report === 'string' ? values.report : undefined,
-    mappingDir: typeof values['mapping-dir'] === 'string' ? values['mapping-dir'] : undefined,
-    language: typeof values.language === 'string' ? values.language : undefined,
-    validationJobs,
-    processBundles: values['no-process-bundles']
-      ? false
-      : values['process-bundles']
-        ? true
-        : undefined,
-    processBundlesDir:
-      typeof values['process-bundles-dir'] === 'string' ? values['process-bundles-dir'] : undefined,
-    detectOnly: Boolean(values['detect-only']),
+    writeMapping: Boolean(values['write-mapping']),
+    processBundles: values['no-process-bundles'] ? false : undefined,
     failOnWarning: Boolean(values['fail-on-warning']),
-    pythonBin: typeof values.python === 'string' ? values.python : undefined,
-    tidasToolsDir:
-      typeof values['tidas-tools-dir'] === 'string' ? values['tidas-tools-dir'] : undefined,
+    maxEntryMib,
+    memoryBudgetMib,
+    queueCapacity,
+    tidasBin: typeof values['tidas-bin'] === 'string' ? values['tidas-bin'] : undefined,
+    tidasConfig: typeof values['tidas-config'] === 'string' ? values['tidas-config'] : undefined,
   };
+}
+
+function parsePositiveIntegerFlag(value: unknown, flag: string): number | undefined {
+  if (typeof value !== 'string') {
+    return undefined;
+  }
+  const parsed = Number(value);
+  if (!Number.isSafeInteger(parsed) || parsed <= 0) {
+    throw new CliError(`${flag} must be a positive integer.`, {
+      code: 'DATASET_IMPORT_LCA_RUNTIME_BOUND_INVALID',
+      exitCode: 2,
+    });
+  }
+  return parsed;
 }
 
 function parseDatasetAuthorFlags(args: string[]): {
@@ -7283,19 +7276,18 @@ export async function executeCli(argv: string[], deps: CliDeps): Promise<CliResu
         fromFormat: datasetFlags.fromFormat,
         target: datasetFlags.target,
         reportPath: datasetFlags.reportPath,
-        mappingDir: datasetFlags.mappingDir,
-        language: datasetFlags.language,
-        validationJobs: datasetFlags.validationJobs,
+        writeMapping: datasetFlags.writeMapping,
         processBundles: datasetFlags.processBundles,
-        processBundlesDir: datasetFlags.processBundlesDir,
-        detectOnly: datasetFlags.detectOnly,
         failOnWarning: datasetFlags.failOnWarning,
-        pythonBin: datasetFlags.pythonBin,
-        tidasToolsDir: datasetFlags.tidasToolsDir,
+        maxEntryMib: datasetFlags.maxEntryMib,
+        memoryBudgetMib: datasetFlags.memoryBudgetMib,
+        queueCapacity: datasetFlags.queueCapacity,
+        tidasBin: datasetFlags.tidasBin,
+        tidasConfig: datasetFlags.tidasConfig,
         env: deps.env,
       });
       return {
-        exitCode: report.status === 'completed' ? 0 : 1,
+        exitCode: report.exit_code,
         stdout: stringifyJson(report, datasetFlags.json),
         stderr: '',
       };
