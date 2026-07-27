@@ -19,8 +19,9 @@ checkPaths:
   - src/main.ts
   - src/lib/lca-release.ts
   - test/lca-release*.test.ts
-lastReviewedAt: 2026-07-23
-lastReviewedCommit: 5c90ddd60328748ab6d8d89717e59dcaeca8cde7
+lastReviewedAt: 2026-07-27
+lastReviewedCommit: e35a3de9fb44ea2f3aa0ec83654a640c09348c39
+lastReviewedNote: 'Reviewed for Issue #210: public LCA import guidance now uses unified Rust tidas 0.1.x only.'
 ---
 
 # TianGong LCA CLI
@@ -373,6 +374,7 @@ tiangong-lca dataset classification apply --type location --input ./rows/process
 tiangong-lca dataset curation-queue build --processes ./rows/processes.jsonl --flows ./rows/flows.jsonl --support ./rows/sources.jsonl --out-dir /abs/path/to/curation-queue --json
 tiangong-lca dataset curation-queue next --queue-dir /abs/path/to/curation-queue --type support --json
 tiangong-lca dataset curation-queue verify --queue-dir /abs/path/to/curation-queue --type process --json
+tiangong-lca dataset import-lca convert --input ./external/simapro.csv --output-dir /abs/path/to/imported --from-format simapro-csv --target both --write-mapping --json
 tiangong-lca dataset save-draft --input ./rows.jsonl --type auto --execution-contract ./execution-contract.json --max-parallel 8 --out-dir /abs/path/to/dataset-save-draft --commit --json
 tiangong-lca dataset evidence-search plan --query "中国2026年电力结构数据" --out-dir /abs/path/to/evidence-search --json
 tiangong-lca dataset evidence-search run --input ./evidence-search.request.json --results ./search-results.json --out-dir /abs/path/to/evidence-search --json
@@ -426,6 +428,8 @@ For `dataset evidence-search`, `plan` creates the field-level query matrix and s
 For `dataset validate`, `--type auto` supports mixed support scopes containing contact/source/unitgroup/flowproperty rows as well as flow/process/lifecyclemodel rows. For `dataset classification`, `children` and `path` navigate the bundled TIDAS category schemas copied from `tidas-tools`. `audit --type location` scans local rows for schema-derived location-code fields, plus TIDAS LCIA geography and lifecyclemodel connection location fields, whose values are not in `tidas_locations_category.json`; `apply --type location` applies structured decisions to a specific `target_path` when a row has multiple location fields. When `target_path` explicitly points at a schema-derived location field such as `flowDataSet.flowInformation.geography.locationOfSupply`, location apply may create the missing parent object and field; ambiguous or non-location paths still block.
 
 For `dataset curation-queue build/next/verify`, the CLI owns entity-level Foundry import queue state. `build` writes `outputs/curation-queue-manifest.json`, `outputs/curation-queue-tasks.jsonl`, `outputs/curation-queue-locks.json`, `outputs/curation-queue-blockers.jsonl`, and per-entity `input.jsonl`, `closure.json`, and `entity-run-plan.json`. `next` returns one runnable support/flow/process task based on checkpoint state. `verify` passes only when scoped checkpoints are complete and build blockers are absent. AI authoring must return structured patches or build plans, and remote writes remain gated by deterministic apply, schema/QA, prewrite verify, and readback.
+
+For `dataset import-lca convert`, the CLI delegates all format detection, conversion, validation, bounded spooling, cancellation, and atomic publication to unified Rust `tidas import`; it does not reproduce import logic in TypeScript. Binary selection is `--tidas-bin`, then `TIDAS_BIN`, then `tidas` on PATH. Optional `--tidas-config` maps to native `--config`. Every run first requires a successful `tidas version --format json --progress never` handshake with `tidas.operation-report.v1` and a stable `0.1.x` binary version, then validates the native `tidas.import-execution-report.v1` summary and exact exit-class/code mapping. Native controls include explicit or automatic source format, target, mapping output, process-bundle disablement, warning failure, maximum entry size, memory budget, and queue capacity. The supported release matrix is Linux x86_64/ARM64, macOS Intel/Apple Silicon, and Windows x86_64; Windows ARM64 is unsupported. The npm package includes `assets/import-smoke/simapro.csv` for clean-machine proof but does not bundle a platform binary or require Python.
 
 For `dataset references rewrite`, `--commit` executes the state-aware save-draft path for patched process and lifecyclemodel rows; without `--commit`, the command only writes local rewrite artifacts.
 

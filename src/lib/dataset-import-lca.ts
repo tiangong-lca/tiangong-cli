@@ -1,39 +1,98 @@
 import { existsSync, readFileSync } from 'node:fs';
 import path from 'node:path';
-import { fileURLToPath } from 'node:url';
 import { spawnSync, type SpawnSyncReturns } from 'node:child_process';
-import { writeJsonArtifact } from './artifacts.js';
 import { CliError } from './errors.js';
 
+const OPERATION_REPORT_SCHEMA = 'tidas.operation-report.v1';
+const INVOCATION_CONTEXT_SCHEMA = 'tidas.invocation-context.v1';
+const IMPORT_REPORT_SCHEMA = 'tidas.import-execution-report.v1';
+const SUPPORTED_TIDAS_VERSION = /^0\.1\.\d+$/u;
+
+const EXIT_CODES = {
+  success: 0,
+  'data-issues': 2,
+  usage: 64,
+  unavailable: 69,
+  internal: 70,
+  io: 74,
+  cancelled: 130,
+} as const;
+
+const OPERATION_STATUSES = ['succeeded', 'completed-with-issues', 'failed', 'cancelled'] as const;
+const COMPLETENESS_VALUES = ['complete', 'partial', 'not-started'] as const;
+const SOURCE_FORMATS = [
+  'ecospold1',
+  'ecospold2',
+  'simapro-csv',
+  'openlca-jsonld',
+  'openlca-process-xlsx',
+  'ilcd',
+] as const;
+
+type TidasExitClass = keyof typeof EXIT_CODES;
+type TidasOperationStatus = (typeof OPERATION_STATUSES)[number];
+type TidasCompleteness = (typeof COMPLETENESS_VALUES)[number];
 export type DatasetImportLcaTarget = 'tidas' | 'ilcd' | 'both';
+export type DatasetImportLcaSourceFormat = (typeof SOURCE_FORMATS)[number];
+
+type TidasOperationReport = {
+  schema_version: typeof OPERATION_REPORT_SCHEMA;
+  command: 'version' | 'import';
+  status: TidasOperationStatus;
+  exit_class: TidasExitClass;
+  completeness: TidasCompleteness;
+  invocation: {
+    schema_version: typeof INVOCATION_CONTEXT_SCHEMA;
+    input_policy: 'explicit-path-or-dash';
+    report_destination: 'stdout' | 'file';
+    diagnostic_destination: 'stderr';
+    [key: string]: unknown;
+  };
+  summary: Record<string, unknown>;
+  diagnostics: unknown[];
+  artifacts: unknown[];
+  next_actions: unknown[];
+};
 
 export type DatasetImportLcaReport = {
-  schema_version: 1;
-  status: 'completed' | 'blocked';
+  schema_version: 'tiangong-lca.dataset-import-lca-report.v2';
+  status: TidasOperationStatus;
+  exit_class: TidasExitClass;
+  exit_code: number;
   generated_at_utc: string;
   input_path: string;
   output_dir: string;
-  from_format: string;
+  from_format: DatasetImportLcaSourceFormat | 'auto';
   target: DatasetImportLcaTarget;
-  detect_only: boolean;
-  command: {
+  tidas: {
     executable: string;
+    version: string;
+    operation_report_schema: typeof OPERATION_REPORT_SCHEMA;
+    import_report_schema: typeof IMPORT_REPORT_SCHEMA;
+  };
+  command: {
     args: string[];
     cwd: string;
-    exit_code: number | null;
-    stdout: string;
     stderr: string;
   };
-  conversion_report: unknown | null;
+  operation_report: TidasOperationReport;
   files: {
-    report: string;
-    conversion_report: string;
+    report: string | null;
+    native_import_report: string;
+    issues: string;
     tidas_dir: string | null;
     ilcd_dir: string | null;
     mapping_csv: string | null;
     process_bundles_dir: string | null;
-    process_bundles_index: string | null;
   };
+};
+
+export type TidasProcessResult = {
+  status: number | null;
+  signal: NodeJS.Signals | null;
+  stdout: string;
+  stderr: string;
+  error?: Error | undefined;
 };
 
 export type RunDatasetImportLcaConvertOptions = {
@@ -41,130 +100,318 @@ export type RunDatasetImportLcaConvertOptions = {
   outputDir: string;
   fromFormat?: string | undefined;
   target?: string | undefined;
-  language?: string | undefined;
   reportPath?: string | undefined;
-  mappingDir?: string | undefined;
-  failOnWarning?: boolean | undefined;
-  validationJobs?: number | undefined;
+  writeMapping?: boolean | undefined;
   processBundles?: boolean | undefined;
-  processBundlesDir?: string | undefined;
-  detectOnly?: boolean | undefined;
-  pythonBin?: string | undefined;
-  tidasToolsDir?: string | undefined;
+  failOnWarning?: boolean | undefined;
+  maxEntryMib?: number | undefined;
+  memoryBudgetMib?: number | undefined;
+  queueCapacity?: number | undefined;
+  tidasBin?: string | undefined;
+  tidasConfig?: string | undefined;
   env?: NodeJS.ProcessEnv | undefined;
+  cwd?: string | undefined;
+  platform?: NodeJS.Platform | undefined;
+  arch?: string | undefined;
   now?: Date | undefined;
   spawnImpl?: typeof spawnSync | undefined;
 };
 
-export function runDatasetImportLcaConvert(
+export async function runDatasetImportLcaConvert(
   options: RunDatasetImportLcaConvertOptions,
-): DatasetImportLcaReport {
+): Promise<DatasetImportLcaReport> {
   const inputPath = requireInputPath(options.inputPath);
   const outputDir = requireOutputDir(options.outputDir);
+  const fromFormat = normalizeSourceFormat(options.fromFormat);
   const target = normalizeTarget(options.target);
-  const fromFormat = options.fromFormat?.trim() || 'auto';
-  const pythonBin = options.pythonBin?.trim() || 'python3';
-  const tidasToolsRoot = resolveTidasToolsRoot(options.tidasToolsDir, options.env ?? process.env);
-  const processBundlesDir = options.processBundlesDir
-    ? path.resolve(options.processBundlesDir)
-    : path.join(outputDir, 'process-bundles');
-  if (options.processBundles === false && options.processBundlesDir?.trim()) {
-    throw new CliError('--process-bundles-dir cannot be used with --no-process-bundles.', {
-      code: 'DATASET_IMPORT_LCA_PROCESS_BUNDLES_INVALID',
-      exitCode: 2,
-    });
-  }
-  const reportPath = path.resolve(
-    options.reportPath ?? path.join(outputDir, 'conversion-report.json'),
-  );
-  const commandArgs = [
-    '-m',
-    'tidas_tools.import_lca.cli',
-    '--input',
-    inputPath,
-    '--output-dir',
-    outputDir,
-    '--from-format',
-    fromFormat,
-    '--target',
-    target,
-    '--report',
-    reportPath,
-    '--language',
-    options.language?.trim() || 'en',
-    '--validation-jobs',
-    String(options.validationJobs ?? 1),
-  ];
-  if (options.mappingDir) {
-    commandArgs.push('--mapping-dir', path.resolve(options.mappingDir));
-  }
-  if (options.failOnWarning) {
-    commandArgs.push('--fail-on-warning');
-  }
-  // tidas-tools >= 0.0.28 enables process bundles by default and only accepts
-  // --no-process-bundles / --process-bundles-dir; a bare --process-bundles flag
-  // gets prefix-matched by argparse to --process-bundles-dir and aborts.
-  if (!options.detectOnly && options.processBundles === false) {
-    commandArgs.push('--no-process-bundles');
-  }
-  if (!options.detectOnly && options.processBundlesDir?.trim()) {
-    commandArgs.push('--process-bundles-dir', processBundlesDir);
-  }
-  if (options.detectOnly) {
-    commandArgs.push('--detect-only');
-  }
+  const env = options.env ?? process.env;
+  const executable = resolveTidasBinary(options.tidasBin, env);
+  const cwd = path.resolve(options.cwd ?? process.cwd());
+  const reportPath = options.reportPath?.trim() ? path.resolve(options.reportPath) : null;
+  const configPath = options.tidasConfig?.trim() ? path.resolve(options.tidasConfig) : null;
+  const spawnImpl = [spawnSync, options.spawnImpl].filter(Boolean).at(-1) as typeof spawnSync;
 
-  const run = (options.spawnImpl ?? spawnSync)(pythonBin, commandArgs, {
-    cwd: tidasToolsRoot,
-    env: {
-      ...(options.env ?? process.env),
-      PYTHONPATH: buildPythonPath(tidasToolsRoot, options.env ?? process.env),
-    },
-    encoding: 'utf8',
-  }) as SpawnSyncReturns<string>;
-  const conversionReport = readOptionalJson(reportPath);
-  // Mapping CSV is opt-in in tidas-tools >= 0.0.28 (mapping.csv.gz) and bundle
-  // output depends on converter defaults, so report what is actually on disk.
-  const mappingCsv = firstExistingPath([
-    path.join(outputDir, 'mapping.csv.gz'),
-    path.join(outputDir, 'mapping.csv'),
-  ]);
-  const processBundlesIndexPath = path.join(processBundlesDir, 'index.json');
-  const files = {
-    report: path.join(outputDir, 'outputs', 'import-lca-report.json'),
-    conversion_report: reportPath,
-    tidas_dir: options.detectOnly ? null : path.join(outputDir, 'tidas'),
-    ilcd_dir:
-      !options.detectOnly && (target === 'ilcd' || target === 'both')
-        ? path.join(outputDir, 'ilcd')
-        : null,
-    mapping_csv: mappingCsv,
-    process_bundles_dir: existsSync(processBundlesDir) ? processBundlesDir : null,
-    process_bundles_index: existsSync(processBundlesIndexPath) ? processBundlesIndexPath : null,
-  };
-  const report: DatasetImportLcaReport = {
-    schema_version: 1,
-    status: run.status === 0 ? 'completed' : 'blocked',
+  assertSupportedPlatform(options.platform ?? process.platform, options.arch ?? process.arch);
+  requirePositiveInteger('--max-entry-mib', options.maxEntryMib);
+  requirePositiveInteger('--memory-budget-mib', options.memoryBudgetMib);
+  requirePositiveInteger('--queue-capacity', options.queueCapacity);
+
+  const versionArgs = ['version', '--format', 'json', '--progress', 'never'];
+  const versionRun = runTidas(spawnImpl, executable, versionArgs, cwd, env);
+  const versionReport = parseOperationReport(readProcessReport(versionRun, null), 'version');
+  assertExitContract(versionRun, versionReport);
+  const version = readCompatibleVersion(versionReport);
+
+  const commandArgs = buildImportArgs({
+    inputPath,
+    outputDir,
+    fromFormat,
+    target,
+    reportPath,
+    configPath,
+    writeMapping: Boolean(options.writeMapping),
+    processBundles: options.processBundles !== false,
+    failOnWarning: Boolean(options.failOnWarning),
+    maxEntryMib: options.maxEntryMib,
+    memoryBudgetMib: options.memoryBudgetMib,
+    queueCapacity: options.queueCapacity,
+  });
+  const importRun = runTidas(spawnImpl, executable, commandArgs, cwd, env);
+  const operationReport = parseOperationReport(readProcessReport(importRun, reportPath), 'import');
+  assertExitContract(importRun, operationReport);
+  assertImportContract(operationReport);
+
+  return {
+    schema_version: 'tiangong-lca.dataset-import-lca-report.v2',
+    status: operationReport.status,
+    exit_class: operationReport.exit_class,
+    exit_code: EXIT_CODES[operationReport.exit_class],
     generated_at_utc: (options.now ?? new Date()).toISOString(),
     input_path: inputPath,
     output_dir: outputDir,
     from_format: fromFormat,
     target,
-    detect_only: Boolean(options.detectOnly),
-    command: {
-      executable: pythonBin,
-      args: commandArgs,
-      cwd: tidasToolsRoot,
-      exit_code: run.status,
-      stdout: run.stdout ?? '',
-      stderr: run.stderr ?? '',
+    tidas: {
+      executable,
+      version,
+      operation_report_schema: OPERATION_REPORT_SCHEMA,
+      import_report_schema: IMPORT_REPORT_SCHEMA,
     },
-    conversion_report: conversionReport,
-    files,
+    command: {
+      args: commandArgs,
+      cwd,
+      stderr: importRun.stderr,
+    },
+    operation_report: operationReport,
+    files: {
+      report: reportPath,
+      native_import_report: path.join(outputDir, 'import-report.json'),
+      issues: path.join(outputDir, 'issues.jsonl'),
+      tidas_dir:
+        operationReport.completeness === 'complete' && (target === 'tidas' || target === 'both')
+          ? path.join(outputDir, 'tidas')
+          : null,
+      ilcd_dir:
+        operationReport.completeness === 'complete' && (target === 'ilcd' || target === 'both')
+          ? path.join(outputDir, 'ilcd')
+          : null,
+      mapping_csv:
+        operationReport.completeness === 'complete' && options.writeMapping
+          ? path.join(outputDir, 'mapping.csv.gz')
+          : null,
+      process_bundles_dir:
+        operationReport.completeness === 'complete' && options.processBundles !== false
+          ? path.join(outputDir, 'process-bundles')
+          : null,
+    },
   };
+}
 
-  writeJsonArtifact(files.report, report);
-  return report;
+function buildImportArgs(options: {
+  inputPath: string;
+  outputDir: string;
+  fromFormat: DatasetImportLcaSourceFormat | 'auto';
+  target: DatasetImportLcaTarget;
+  reportPath: string | null;
+  configPath: string | null;
+  writeMapping: boolean;
+  processBundles: boolean;
+  failOnWarning: boolean;
+  maxEntryMib: number | undefined;
+  memoryBudgetMib: number | undefined;
+  queueCapacity: number | undefined;
+}): string[] {
+  const args = [
+    'import',
+    options.inputPath,
+    '--output',
+    options.outputDir,
+    '--target',
+    options.target,
+    '--format',
+    'json',
+    '--progress',
+    'never',
+  ];
+  if (options.fromFormat !== 'auto') {
+    args.push('--from-format', options.fromFormat);
+  }
+  if (options.reportPath) {
+    args.push('--report', options.reportPath);
+  }
+  if (options.configPath) {
+    args.push('--config', options.configPath);
+  }
+  if (options.writeMapping) {
+    args.push('--write-mapping');
+  }
+  if (!options.processBundles) {
+    args.push('--no-process-bundles');
+  }
+  if (options.failOnWarning) {
+    args.push('--fail-on-warning');
+  }
+  if (options.maxEntryMib !== undefined) {
+    args.push('--max-entry-mib', String(options.maxEntryMib));
+  }
+  if (options.memoryBudgetMib !== undefined) {
+    args.push('--memory-budget-mib', String(options.memoryBudgetMib));
+  }
+  if (options.queueCapacity !== undefined) {
+    args.push('--queue-capacity', String(options.queueCapacity));
+  }
+  return args;
+}
+
+function runTidas(
+  spawnImpl: typeof spawnSync,
+  executable: string,
+  args: string[],
+  cwd: string,
+  env: NodeJS.ProcessEnv,
+): TidasProcessResult {
+  const run = spawnImpl(executable, args, {
+    cwd,
+    env,
+    encoding: 'utf8',
+    windowsHide: true,
+  }) as SpawnSyncReturns<string>;
+  if (run.error) {
+    throw new CliError(`Could not execute the Rust tidas binary: ${run.error.message}`, {
+      code: 'DATASET_IMPORT_LCA_TIDAS_EXEC_FAILED',
+      exitCode: 69,
+      details: { executable },
+    });
+  }
+  return {
+    status: run.status,
+    signal: run.signal,
+    stdout: run.stdout ?? '',
+    stderr: run.stderr ?? '',
+  };
+}
+
+function readProcessReport(run: TidasProcessResult, reportPath: string | null): string {
+  const cancelled = run.status === 130 || run.signal === 'SIGINT';
+  if (reportPath) {
+    if (!existsSync(reportPath)) {
+      if (cancelled) {
+        throw new CliError(
+          'tidas import was cancelled before a complete machine report was available.',
+          {
+            code: 'DATASET_IMPORT_LCA_CANCELLED',
+            exitCode: 130,
+            details: { signal: run.signal, stderr: run.stderr },
+          },
+        );
+      }
+      throw new CliError(`tidas did not write the requested machine report: ${reportPath}`, {
+        code: 'DATASET_IMPORT_LCA_TIDAS_REPORT_MISSING',
+        exitCode: 70,
+      });
+    }
+    return readFileSync(reportPath, 'utf8');
+  }
+  if (!run.stdout.trim()) {
+    throw new CliError(
+      cancelled
+        ? 'tidas import was cancelled before a complete machine report was available.'
+        : 'tidas did not emit a machine-readable operation report.',
+      {
+        code: cancelled
+          ? 'DATASET_IMPORT_LCA_CANCELLED'
+          : 'DATASET_IMPORT_LCA_TIDAS_REPORT_MISSING',
+        exitCode: cancelled ? 130 : 70,
+        details: { signal: run.signal, stderr: run.stderr },
+      },
+    );
+  }
+  return run.stdout;
+}
+
+function parseOperationReport(text: string, command: 'version' | 'import'): TidasOperationReport {
+  let value: unknown;
+  try {
+    value = JSON.parse(text);
+  } catch (error) {
+    throw new CliError('tidas emitted invalid JSON instead of its machine operation report.', {
+      code: 'DATASET_IMPORT_LCA_TIDAS_REPORT_INVALID',
+      exitCode: 70,
+      details: String(error),
+    });
+  }
+  if (
+    !isRecord(value) ||
+    value.schema_version !== OPERATION_REPORT_SCHEMA ||
+    value.command !== command ||
+    !includesValue(OPERATION_STATUSES, value.status) ||
+    !isExitClass(value.exit_class) ||
+    !includesValue(COMPLETENESS_VALUES, value.completeness) ||
+    !isRecord(value.invocation) ||
+    value.invocation.schema_version !== INVOCATION_CONTEXT_SCHEMA ||
+    value.invocation.input_policy !== 'explicit-path-or-dash' ||
+    !['stdout', 'file'].includes(String(value.invocation.report_destination)) ||
+    value.invocation.diagnostic_destination !== 'stderr' ||
+    !isRecord(value.summary) ||
+    !Array.isArray(value.diagnostics) ||
+    !Array.isArray(value.artifacts) ||
+    !Array.isArray(value.next_actions)
+  ) {
+    throw new CliError(
+      `Incompatible tidas ${command} machine contract; expected ${OPERATION_REPORT_SCHEMA}.`,
+      {
+        code: 'DATASET_IMPORT_LCA_TIDAS_CONTRACT_INCOMPATIBLE',
+        exitCode: 69,
+      },
+    );
+  }
+  return value as TidasOperationReport;
+}
+
+function assertExitContract(run: TidasProcessResult, report: TidasOperationReport): void {
+  const expected = EXIT_CODES[report.exit_class];
+  if (run.status !== expected) {
+    throw new CliError(
+      `tidas exit status ${String(run.status)} disagrees with report exit class ${report.exit_class} (${expected}).`,
+      {
+        code: 'DATASET_IMPORT_LCA_TIDAS_EXIT_MISMATCH',
+        exitCode: 70,
+      },
+    );
+  }
+}
+
+function readCompatibleVersion(report: TidasOperationReport): string {
+  if (
+    report.status !== 'succeeded' ||
+    report.exit_class !== 'success' ||
+    report.completeness !== 'complete' ||
+    report.summary.operation_report_schema !== OPERATION_REPORT_SCHEMA ||
+    typeof report.summary.binary_version !== 'string' ||
+    !SUPPORTED_TIDAS_VERSION.test(report.summary.binary_version)
+  ) {
+    throw new CliError(
+      'Incompatible tidas binary: dataset import requires a stable contract-compatible 0.1.x release.',
+      {
+        code: 'DATASET_IMPORT_LCA_TIDAS_VERSION_INCOMPATIBLE',
+        exitCode: 69,
+        details: { binary_version: report.summary.binary_version ?? null },
+      },
+    );
+  }
+  return report.summary.binary_version;
+}
+
+function assertImportContract(report: TidasOperationReport): void {
+  if (report.status === 'succeeded' || report.status === 'completed-with-issues') {
+    const importSummary = report.summary.import;
+    if (!isRecord(importSummary) || importSummary.schema_version !== IMPORT_REPORT_SCHEMA) {
+      throw new CliError(`Incompatible tidas import summary; expected ${IMPORT_REPORT_SCHEMA}.`, {
+        code: 'DATASET_IMPORT_LCA_TIDAS_IMPORT_CONTRACT_INCOMPATIBLE',
+        exitCode: 69,
+      });
+    }
+  }
 }
 
 function requireInputPath(value: string): string {
@@ -194,6 +441,17 @@ function requireOutputDir(value: string): string {
   return path.resolve(value);
 }
 
+function normalizeSourceFormat(value: string | undefined): DatasetImportLcaSourceFormat | 'auto' {
+  const format = value?.trim() || 'auto';
+  if (format === 'auto' || includesValue(SOURCE_FORMATS, format)) {
+    return format;
+  }
+  throw new CliError(`--from-format must be auto or one of: ${SOURCE_FORMATS.join(', ')}.`, {
+    code: 'DATASET_IMPORT_LCA_SOURCE_FORMAT_INVALID',
+    exitCode: 2,
+  });
+}
+
 function normalizeTarget(value: string | undefined): DatasetImportLcaTarget {
   const target = value?.trim() || 'tidas';
   if (target === 'tidas' || target === 'ilcd' || target === 'both') {
@@ -205,76 +463,67 @@ function normalizeTarget(value: string | undefined): DatasetImportLcaTarget {
   });
 }
 
-function resolveTidasToolsRoot(
-  explicitValue: string | undefined,
-  env: NodeJS.ProcessEnv,
-  defaultCandidate?: string,
-): string {
-  const cliRepoRoot = resolveCliRepoRoot();
-  if (explicitValue?.trim()) {
-    const resolved = path.resolve(explicitValue);
-    if (existsSync(path.join(resolved, 'src/tidas_tools/import_lca/cli.py'))) {
-      return resolved;
+function resolveTidasBinary(explicitValue: string | undefined, env: NodeJS.ProcessEnv): string {
+  const candidate = explicitValue?.trim() || env.TIDAS_BIN?.trim() || 'tidas';
+  if (path.isAbsolute(candidate) || candidate.includes('/') || candidate.includes('\\')) {
+    const resolved = path.resolve(candidate);
+    if (!existsSync(resolved)) {
+      throw new CliError(`Rust tidas binary not found: ${resolved}`, {
+        code: 'DATASET_IMPORT_LCA_TIDAS_NOT_FOUND',
+        exitCode: 69,
+      });
     }
-    throw new CliError('Could not resolve a tidas-tools checkout for dataset import.', {
-      code: 'DATASET_IMPORT_LCA_TIDAS_TOOLS_NOT_FOUND',
-      exitCode: 2,
-      details: { candidates: [explicitValue] },
+    return resolved;
+  }
+  return candidate;
+}
+
+function assertSupportedPlatform(platform: NodeJS.Platform, arch: string): void {
+  const supported =
+    (platform === 'linux' && (arch === 'x64' || arch === 'arm64')) ||
+    (platform === 'darwin' && (arch === 'x64' || arch === 'arm64')) ||
+    (platform === 'win32' && arch === 'x64');
+  if (!supported) {
+    throw new CliError(`No supported Rust tidas artifact exists for ${platform}/${arch}.`, {
+      code: 'DATASET_IMPORT_LCA_PLATFORM_UNSUPPORTED',
+      exitCode: 69,
+      details: {
+        supported: ['linux/x64', 'linux/arm64', 'darwin/x64', 'darwin/arm64', 'win32/x64'],
+      },
     });
   }
+}
 
-  const candidates = [
-    env.TIDAS_TOOLS_DIR,
-    env.TIDAS_TOOLS_PATH,
-    defaultCandidate ?? path.resolve(cliRepoRoot, '../tidas-tools'),
-  ].filter((candidate): candidate is string => Boolean(candidate?.trim()));
-
-  for (const candidate of candidates) {
-    const resolved = path.resolve(candidate);
-    if (existsSync(path.join(resolved, 'src/tidas_tools/import_lca/cli.py'))) {
-      return resolved;
-    }
+function requirePositiveInteger(flag: string, value: number | undefined): void {
+  if (value !== undefined && (!Number.isSafeInteger(value) || value <= 0)) {
+    throw new CliError(`${flag} must be a positive integer.`, {
+      code: 'DATASET_IMPORT_LCA_RUNTIME_BOUND_INVALID',
+      exitCode: 2,
+    });
   }
-
-  throw new CliError('Could not resolve a tidas-tools checkout for dataset import.', {
-    code: 'DATASET_IMPORT_LCA_TIDAS_TOOLS_NOT_FOUND',
-    exitCode: 2,
-    details: { candidates },
-  });
 }
 
-function resolveCliRepoRoot(candidatesOverride?: string[]): string {
-  const moduleDir = path.dirname(fileURLToPath(import.meta.url));
-  const candidates = candidatesOverride ?? [
-    path.resolve(moduleDir, '../..'),
-    path.resolve(moduleDir, '../../..'),
-  ];
-  return (
-    candidates.find(
-      (candidate) =>
-        existsSync(path.join(candidate, 'package.json')) &&
-        existsSync(path.join(candidate, 'src/cli.ts')),
-    ) ?? candidates[0]
-  );
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return Boolean(value) && typeof value === 'object' && !Array.isArray(value);
 }
 
-function buildPythonPath(tidasToolsRoot: string, env: NodeJS.ProcessEnv): string {
-  return [path.join(tidasToolsRoot, 'src'), env.PYTHONPATH].filter(Boolean).join(path.delimiter);
+function includesValue<T extends readonly string[]>(values: T, value: unknown): value is T[number] {
+  return typeof value === 'string' && values.includes(value);
 }
 
-function firstExistingPath(candidates: string[]): string | null {
-  return candidates.find((candidate) => existsSync(candidate)) ?? null;
-}
-
-function readOptionalJson(filePath: string): unknown | null {
-  if (!existsSync(filePath)) {
-    return null;
-  }
-  return JSON.parse(readFileSync(filePath, 'utf8'));
+function isExitClass(value: unknown): value is TidasExitClass {
+  return typeof value === 'string' && Object.hasOwn(EXIT_CODES, value);
 }
 
 export const __testInternals = {
+  assertImportContract,
+  assertSupportedPlatform,
+  buildImportArgs,
+  normalizeSourceFormat,
   normalizeTarget,
-  resolveCliRepoRoot,
-  resolveTidasToolsRoot,
+  parseOperationReport,
+  readCompatibleVersion,
+  readProcessReport,
+  requirePositiveInteger,
+  resolveTidasBinary,
 };

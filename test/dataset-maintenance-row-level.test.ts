@@ -2421,7 +2421,7 @@ test('parallel delete internals reject duplicate targets, corrupt ledgers, and f
           maxParallel: 1,
           now: () => '2026-07-24T10:00:00.000Z',
         }),
-      /EISDIR|illegal operation on a directory/u,
+      /EISDIR|EPERM|illegal operation on a directory/u,
     );
 
     const unversioned = processFlowReferencePayload({

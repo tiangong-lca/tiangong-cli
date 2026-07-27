@@ -50,6 +50,7 @@ related:
 - 2026-07-23 复核：Issue #198 只隔离本地 payload 校验的内存副作用，不读取、复制或持久化 bearer，不改变 user API key、session cache、RLS、owner/project/state 校验、service-role 或跨账号边界；本历史设计结论不变。
 - 2026-07-24 复核：Issue #200 在每个 execution-contract DML 前调用既有 session runtime 获取当前 access token，并重新解码核对 exact user/email；token 仍不写入 action ledger/report，foreign renewal 在 attempt=0 拒绝，不新增认证 env、service-role、跨账号或 blind retry 路径。本历史设计结论不变。
 - 2026-07-24 复核：Issue #202 的 bounded maintenance delete 继续只使用当前用户 session 和 RLS，所有目标必须匹配计划 owner/state，且不接受 target-user、service-role、alternate bearer 或 blind retry。该变更不新增认证 env，也不改变本历史设计结论。
+- 2026-07-27 复核：Issue #210 的 `dataset import-lca` 仅发现并调用本地 Rust `tidas` binary，通过进程级 JSON contract 交换版本、报告与退出状态；`TIDAS_BIN` / `--tidas-bin` 是 executable location 配置，不是认证信息。该命令不读取用户 API key、session cache、bearer、service-role 或数据库凭据，本历史认证边界不变。
 
 ## 1. 已确认事实
 

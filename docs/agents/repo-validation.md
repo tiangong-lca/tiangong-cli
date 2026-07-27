@@ -27,8 +27,9 @@ checkPaths:
   - scripts/docpact
   - scripts/docpact-gate.sh
   - scripts/install-git-hooks.sh
-lastReviewedAt: 2026-07-25
-lastReviewedCommit: 0b0cd23104088ee477acb7c7be12bccdb5719331
+lastReviewedAt: 2026-07-27
+lastReviewedCommit: e35a3de9fb44ea2f3aa0ec83654a640c09348c39
+lastReviewedNote: 'Reviewed for Issue #210: Rust import proof includes machine-contract, package, platform, and Python-unavailable smoke gates.'
 related:
   - ../../AGENTS.md
   - ../../.docpact/config.yaml
@@ -71,6 +72,8 @@ Review note, 2026-06-06: release 0.0.13 keeps local validation separate from pub
 Review note, 2026-06-07: release 0.0.14 requires the same local proof plus focused dataset classification coverage for explicit missing location target creation. Publication remains PR merge to upstream `main`, tag workflow, and npm Trusted Publishing.
 
 Review note, 2026-06-11: release 0.0.15 requires the same local proof plus focused dataset import-lca coverage for the tidas-tools 0.0.28 bundle-flag adaptation and disk-derived report fields. Publication remains PR merge to upstream `main`, tag workflow, and npm Trusted Publishing.
+
+Review note, 2026-07-27: Issue #210 proof must cover binary-discovery precedence, the five supported release targets and Windows ARM64 rejection, compatible `0.1.x` patch versions, protocol/version/report/exit mismatch rejection, native runtime flag translation, cancellation exit 130, and absence of active Python/check-out discovery. Run the packaged SimaPro fixture through the checksum-verified v0.1.0 artifact with Python unavailable, inspect `npm pack --dry-run` for the fixture, then run the complete `npm run prepush:gate` and docpact gates.
 
 Review note, 2026-07-11: `dataset maintenance plan/apply/verify` adds focused proof for exact-row scope freezing, current-user RLS guards, immutable plan hashing, protected-row classification, full-plan drift preflight, approval-before-write, per-action logs, platform audit correlation, failure/resume behavior, and independent readback verification.
 

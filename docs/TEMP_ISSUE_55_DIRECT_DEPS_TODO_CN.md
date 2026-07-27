@@ -57,6 +57,8 @@ related:
 
 2026-07-25 复核：Issue #208 的外部证明只使用现有文件、JSON 与 SHA 工具进行本地 admission 校验，不新增、删除或升级任何直接依赖。
 
+2026-07-27 复核：Issue #210 使用 Node 原生进程/文件能力调用单独安装的 Rust `tidas` binary，并通过版本与 machine-contract 握手 fail closed；binary 不作为 npm dependency 或 package asset 捆绑，`package.json` / lockfile 无变化，本文件继续保持历史 TODO 记录用途。
+
 2026-07-17 复核：Issue #157 COMMON 的双 #29 readback、domain rejection、verify pending 收紧、DB one-wrapper rotating permit、create-only local claim 与 fresh exact recovery approval/read-only lookup 继续复用现有 TypeScript、Node `fs`/`crypto`、`@supabase/supabase-js` session/RPC 和 TIDAS SDK 校验，不新增或改变直接依赖。尚余 merge、Preview 与 DB/CLI 发布门禁；本文件继续保持历史 TODO 记录用途。
 
 2026-07-16 复核：Issue #157 的 flow-identity 工作流复用现有 `@supabase/supabase-js` 用户 session、authenticated RPC 和 `@tiangong-lca/tidas-sdk` ProcessSchema 校验，不新增或改变直接依赖；本文件继续保持历史 TODO 记录用途。

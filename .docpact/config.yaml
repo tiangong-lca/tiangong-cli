@@ -24,8 +24,9 @@ layout: repo
 # Review note, 2026-07-24: Issue #204 keeps the parallel-delete all-visible process fence inside the existing maintenance runtime and exact-count paginator. Bounding only that scan to 250 rows per request changes no ownership, route, dependency, authentication, mutation, RPC/schema, release, or publication boundary.
 # Review note, 2026-07-25: Issue #206 keeps that complete RLS-visible fence on the globally unique `(id, version)` primary-key order so Postgres can use the existing index instead of sorting redundant owner/state keys. Completeness, ownership, mutation, retry, RPC/schema, release, and publication boundaries are unchanged.
 # Review note, 2026-07-25: Issue #208 optionally replaces that expensive owner-session fence with a fresh, SHA-approved, plan/actor/project/target-bound SELECT-only proof over all process rows. The default RLS scan remains unchanged; the proof path is delete-only, adds no database write or raw-SQL execution to the CLI, and changes no ownership, route, dependency, authentication, RPC/schema, release, or publication boundary.
-lastReviewedAt: "2026-07-25"
-lastReviewedCommit: "0b0cd23104088ee477acb7c7be12bccdb5719331"
+# Review note, 2026-07-27: Issue #210 replaces the dataset import-lca Python/checkout discovery path with the external Rust `tidas import` machine contract. Existing dataset command, runtime, test, documentation, validation, and release routes cover binary discovery, the compatible 0.1.x/version-and-schema handshake, stable exit/report mapping, packaged smoke evidence, and supported-platform guidance; no ownership, npm dependency, authentication, tag, Trusted Publishing, or workspace-integration rule changes are required.
+lastReviewedAt: "2026-07-27"
+lastReviewedCommit: "e35a3de9fb44ea2f3aa0ec83654a640c09348c39"
 
 catalog:
   repos:

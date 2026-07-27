@@ -26,8 +26,9 @@ checkPaths:
   - scripts/docpact
   - scripts/docpact-gate.sh
   - scripts/install-git-hooks.sh
-lastReviewedAt: 2026-07-25
-lastReviewedCommit: 0b0cd23104088ee477acb7c7be12bccdb5719331
+lastReviewedAt: 2026-07-27
+lastReviewedCommit: e35a3de9fb44ea2f3aa0ec83654a640c09348c39
+lastReviewedNote: 'Reviewed for Issue #210: dataset-import-lca is now a thin Rust tidas process-contract adapter.'
 related:
   - ../../AGENTS.md
   - ../../.docpact/config.yaml
@@ -49,6 +50,8 @@ Review note, 2026-06-06: release 0.0.13 keeps the release architecture unchanged
 Review note, 2026-06-07: release 0.0.14 keeps the architecture in the existing TypeScript dataset classification command family. The location apply helper now creates only explicit schema-derived missing location targets and does not introduce a new orchestration layer or release path.
 
 Review note, 2026-06-11: release 0.0.15 keeps the import-lca wrapper inside the existing TypeScript dataset command family. Only the tidas-tools spawn argument construction and report file derivation changed to match tidas-tools 0.0.28; no new orchestration layer or release path.
+
+Review note, 2026-07-27: Issue #210 keeps `src/lib/dataset-import-lca.ts` as a thin process adapter but replaces the Python module/check-out boundary with unified Rust `tidas import`. The adapter owns only platform/binary/config discovery, `0.1.x` plus operation-report handshake, native flag translation, and exit/report validation. Rust owns format semantics, bounded runtime, cancellation, validation, spool artifacts, and atomic output publication. The npm package carries a cross-platform text fixture, not native executables.
 
 Review note, 2026-07-11: row-level dataset maintenance is implemented in the native CLI as `dataset maintenance plan/apply/verify`. The architecture keeps scope freezing, current-user RLS reads, protected-row classification, approved platform-command writes, append-only action logging, and independent verification in separate maintenance modules.
 

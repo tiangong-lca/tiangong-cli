@@ -18,8 +18,9 @@ checkPaths:
   - src/**
   - scripts/**
   - .github/workflows/**
-lastReviewedAt: 2026-07-25
-lastReviewedCommit: 0b0cd23104088ee477acb7c7be12bccdb5719331
+lastReviewedAt: 2026-07-27
+lastReviewedCommit: e35a3de9fb44ea2f3aa0ec83654a640c09348c39
+lastReviewedNote: 'Reviewed for Issue #210: LCA import runtime and maintainer setup now use unified Rust tidas 0.1.x only.'
 related:
   - AGENTS.md
   - .docpact/config.yaml
@@ -50,6 +51,8 @@ Review note, 2026-07-25: Issue #208 为同一 delete-only 模式增加可选 `--
 Review note, 2026-06-07: release 0.0.14 keeps maintainer runtime and release guidance unchanged. `dataset classification apply --type location` now supports explicit missing location targets for Foundry saturation workflows, and still rejects ambiguous target paths.
 
 Review note, 2026-06-11: release 0.0.15 keeps maintainer runtime and release guidance unchanged. `dataset import-lca convert` now adapts to the tidas-tools 0.0.28 process-bundle flags (no bare `--process-bundles`, `--no-process-bundles` only when disabled) and reports bundle/mapping files from actual on-disk state.
+
+Review note, 2026-07-27: Issue #210 已删除最后一个 active Python import 路径。`dataset import-lca convert` 只调用统一 Rust `tidas import`，按 `--tidas-bin`、`TIDAS_BIN`、PATH 的顺序定位 binary，并要求 `tidas.operation-report.v1` 与稳定 `0.1.x` 握手。npm 包不内置平台 binary，只包含可用于 clean-machine 验证的 SimaPro smoke fixture；binary 应来自带 checksum/provenance 的 tidas release 或 `cargo install tidas`。支持 Linux x86_64/ARM64、macOS Intel/Apple Silicon、Windows x86_64，不支持 Windows ARM64。
 
 Review note, 2026-07-11: `dataset maintenance plan/apply/verify` is now an implemented current-user RLS command family. It adds no environment variables or release-path changes; commit remains bound to an immutable plan hash, current account confirmation, append-only per-action logs, and independent readback verification.
 
