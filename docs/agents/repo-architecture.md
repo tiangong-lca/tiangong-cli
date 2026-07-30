@@ -26,9 +26,9 @@ checkPaths:
   - scripts/docpact
   - scripts/docpact-gate.sh
   - scripts/install-git-hooks.sh
-lastReviewedAt: 2026-07-27
-lastReviewedCommit: e35a3de9fb44ea2f3aa0ec83654a640c09348c39
-lastReviewedNote: 'Reviewed for Issue #210: dataset-import-lca is now a thin Rust tidas process-contract adapter.'
+lastReviewedAt: 2026-07-30
+lastReviewedCommit: ad19f88667864d5bae626557f06d2c9b2d738bc4
+lastReviewedNote: 'Reviewed for Issue #214: remote identity search uses one lexical weight and derivative proof is based on canonical Markdown/vector state.'
 related:
   - ../../AGENTS.md
   - ../../.docpact/config.yaml
@@ -52,6 +52,8 @@ Review note, 2026-06-07: release 0.0.14 keeps the architecture in the existing T
 Review note, 2026-06-11: release 0.0.15 keeps the import-lca wrapper inside the existing TypeScript dataset command family. Only the tidas-tools spawn argument construction and report file derivation changed to match tidas-tools 0.0.28; no new orchestration layer or release path.
 
 Review note, 2026-07-27: Issue #210 keeps `src/lib/dataset-import-lca.ts` as a thin process adapter but replaces the Python module/check-out boundary with unified Rust `tidas import`. The adapter owns only platform/binary/config discovery, `0.1.x` plus operation-report handshake, native flag translation, and exit/report validation. Rust owns format semantics, bounded runtime, cancellation, validation, spool artifacts, and atomic output publication. The npm package carries a cross-platform text fixture, not native executables.
+
+Review note, 2026-07-30: Issue #214 keeps identity search and derivative verification in their existing modules while narrowing their contracts. Remote identity requests expose one `lexical_weight`, and derivative snapshots/readback bind `extracted_md`, `embedding_ft`, and `embedding_ft_at`; no alternate adapter, write path, or artifact family is introduced.
 
 Review note, 2026-07-11: row-level dataset maintenance is implemented in the native CLI as `dataset maintenance plan/apply/verify`. The architecture keeps scope freezing, current-user RLS reads, protected-row classification, approved platform-command writes, append-only action logging, and independent verification in separate maintenance modules.
 

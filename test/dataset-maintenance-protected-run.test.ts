@@ -726,7 +726,6 @@ test('support and derivative baseline preflight checks compare exact owner-draft
         modified_at: '2026-07-15T00:00:00.000Z',
         json_sha256: HASH_A,
         json_ordered_sha256: HASH_A,
-        extracted_text_sha256: HASH_B,
         extracted_md_sha256: null,
         embedding_ft_sha256: null,
         embedding_ft_at: null,

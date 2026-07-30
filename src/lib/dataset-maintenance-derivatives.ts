@@ -173,10 +173,6 @@ export function parseDerivativeSnapshotResponse(
     modified_at: modifiedAt,
     json_sha256: jsonSha256,
     json_ordered_sha256: jsonOrderedSha256,
-    extracted_text_sha256: requiredSha256(
-      body.extracted_text_sha256,
-      'Derivative snapshot extracted_text_sha256',
-    ),
     extracted_md_sha256: nullableSha256(
       body.extracted_md_sha256,
       'Derivative snapshot extracted_md_sha256',

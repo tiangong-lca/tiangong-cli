@@ -51,7 +51,6 @@ export type DatasetMaintenanceDerivativeSnapshot = {
   modified_at: string;
   json_sha256: string;
   json_ordered_sha256: string;
-  extracted_text_sha256: string;
   extracted_md_sha256: string | null;
   embedding_ft_sha256: string | null;
   embedding_ft_at: string | null;
@@ -960,12 +959,7 @@ function validDerivativeSnapshot(
   action: DatasetMaintenancePlanAction,
 ): value is DatasetMaintenanceDerivativeSnapshot {
   if (!isJsonObject(value)) return false;
-  const requiredHashes = [
-    value.json_sha256,
-    value.json_ordered_sha256,
-    value.extracted_text_sha256,
-    value.snapshot_sha256,
-  ];
+  const requiredHashes = [value.json_sha256, value.json_ordered_sha256, value.snapshot_sha256];
   const nullableHashes = [value.extracted_md_sha256, value.embedding_ft_sha256];
   return Boolean(
     value.schema_version === 'dataset-derivative-snapshot.v1' &&

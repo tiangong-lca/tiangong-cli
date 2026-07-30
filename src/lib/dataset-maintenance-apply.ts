@@ -2416,8 +2416,7 @@ async function executeDerivativeAdmission(options: {
   if (
     preflight.modified_at !== plannedSnapshot.modified_at ||
     preflight.json_sha256 !== plannedSnapshot.json_sha256 ||
-    preflight.json_ordered_sha256 !== plannedSnapshot.json_ordered_sha256 ||
-    preflight.extracted_text_sha256 !== plannedSnapshot.extracted_text_sha256
+    preflight.json_ordered_sha256 !== plannedSnapshot.json_ordered_sha256
   ) {
     throw new CliError('Derivative action primary preconditions drifted after planning.', {
       code: 'DATASET_MAINTENANCE_DERIVATIVE_PRIMARY_DRIFT',

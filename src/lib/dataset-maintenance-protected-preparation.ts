@@ -497,7 +497,6 @@ function derivativeTargets(options: {
         'modified_at',
         'json_sha256',
         'json_ordered_sha256',
-        'extracted_text_sha256',
         'extracted_md_sha256',
         'embedding_ft_sha256',
         'embedding_ft_at',
@@ -514,7 +513,6 @@ function derivativeTargets(options: {
     if (jsonSha256 !== jsonOrderedSha256) {
       fail(`Derivative snapshot ${index} json and json_ordered hashes are inconsistent.`);
     }
-    hash(snapshot.extracted_text_sha256, `derivativeSnapshots[${index}].extracted_text_sha256`);
     if (snapshot.extracted_md_sha256 !== null) {
       hash(snapshot.extracted_md_sha256, `derivativeSnapshots[${index}].extracted_md_sha256`);
     }
