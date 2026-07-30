@@ -441,8 +441,7 @@ async function runDerivativeMaintenanceVerify(options: {
     currentSnapshot &&
     (currentSnapshot.modified_at !== baseline.modified_at ||
       currentSnapshot.json_sha256 !== baseline.json_sha256 ||
-      currentSnapshot.json_ordered_sha256 !== baseline.json_ordered_sha256 ||
-      currentSnapshot.extracted_text_sha256 !== baseline.extracted_text_sha256)
+      currentSnapshot.json_ordered_sha256 !== baseline.json_ordered_sha256)
   ) {
     problems.push(
       issue(

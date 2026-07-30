@@ -216,7 +216,6 @@ function snapshots(plan: DatasetMaintenancePlan): ProtectedDerivativeSnapshot[] 
         modified_at: '2026-07-15T00:00:00.000Z',
         json_sha256: jsonSha256,
         json_ordered_sha256: jsonSha256,
-        extracted_text_sha256: sha256Text(`text:${action.table}:${action.id}`),
         extracted_md_sha256: sha256Text(`md:${action.table}:${action.id}`),
         embedding_ft_sha256: sha256Text(`embedding:${action.table}:${action.id}`),
         embedding_ft_at: '2026-07-15T00:00:00.000Z',

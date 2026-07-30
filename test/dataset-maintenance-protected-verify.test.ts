@@ -37,7 +37,7 @@ const USER_ID = '22222222-2222-4222-8222-222222222222';
 const EMAIL = 'bafudata@126.com';
 const VERSION = '00.00.001';
 const MODIFIED_AT = '2026-07-15T00:00:00.000Z';
-const EMBEDDING_AT = '2026-07-15T00:02:00.000Z';
+const EMBEDDING_FT_AT = '2026-07-15T00:02:00.000Z';
 const PRE_SNAPSHOT_SHA256 = 'a'.repeat(64);
 const EXPECTED_SNAPSHOT_SHA256 = 'b'.repeat(64);
 const COMPLETED_SNAPSHOT_SHA256 = 'c'.repeat(64);
@@ -531,10 +531,9 @@ function liveRows(s: Scenario): DatasetMaintenanceDerivativeRemoteRow[] {
     state_code: 0,
     raw: {
       json_ordered: desiredPayloadByTarget(s, target.table, target.id),
-      extracted_text: 'primary text',
       extracted_md: 'rendered markdown',
       embedding_ft: [0.1, 0.2],
-      embedding_ft_at: EMBEDDING_AT,
+      embedding_ft_at: EMBEDDING_FT_AT,
     },
   }));
 }
@@ -554,10 +553,9 @@ function snapshots(s: Scenario): ProtectedDerivativeSnapshot[] {
       modified_at: MODIFIED_AT,
       json_sha256: payloadHash,
       json_ordered_sha256: payloadHash,
-      extracted_text_sha256: HASH_D,
       extracted_md_sha256: HASH_E,
       embedding_ft_sha256: HASH_F,
-      embedding_ft_at: EMBEDDING_AT,
+      embedding_ft_at: EMBEDDING_FT_AT,
       snapshot_sha256: COMPLETED_SNAPSHOT_SHA256,
     };
   });
@@ -599,10 +597,9 @@ test('inspectProtectedLiveDerivative accepts only complete owner-draft derivativ
       user_id: USER_ID,
       state_code: 0,
       json_ordered_sha256: sha256Json(valid.raw.json_ordered),
-      extracted_text_present: true,
       extracted_md_present: true,
       embedding_ft_present: true,
-      embedding_ft_at: EMBEDDING_AT,
+      embedding_ft_at: EMBEDDING_FT_AT,
     });
 
     const mutations: Array<(row: DatasetMaintenanceDerivativeRemoteRow) => void> = [
@@ -611,9 +608,6 @@ test('inspectProtectedLiveDerivative accepts only complete owner-draft derivativ
       },
       (row) => {
         row.raw.json_ordered = null;
-      },
-      (row) => {
-        row.raw.extracted_text = '  ';
       },
       (row) => {
         row.raw.extracted_md = '';
@@ -1167,10 +1161,9 @@ test('fetchProtectedDerivativeSnapshots reads all 50 exact actor-owned target sn
         modified_at: MODIFIED_AT,
         json_sha256: payloadHash,
         json_ordered_sha256: payloadHash,
-        extracted_text_sha256: HASH_D,
         extracted_md_sha256: HASH_E,
         embedding_ft_sha256: HASH_F,
-        embedding_ft_at: EMBEDDING_AT,
+        embedding_ft_at: EMBEDDING_FT_AT,
         snapshot_sha256: COMPLETED_SNAPSHOT_SHA256,
       }),
       { status: 200, headers: { 'content-type': 'application/json' } },

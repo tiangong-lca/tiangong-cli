@@ -556,8 +556,7 @@ test('process identity preflight can block duplicates from remote hybrid search'
         data_source: 'tg',
         limit: 1,
         match_threshold: 0.1,
-        full_text_weight: 0.55,
-        extracted_text_weight: 0.25,
+        lexical_weight: 0.8,
         semantic_weight: 0.2,
         rrf_k: 30,
       },
@@ -615,8 +614,7 @@ test('process identity preflight can block duplicates from remote hybrid search'
     page_size: 1,
     data_source: 'tg',
     match_threshold: 0.1,
-    full_text_weight: 0.55,
-    extracted_text_weight: 0.25,
+    lexical_weight: 0.8,
     semantic_weight: 0.2,
     rrf_k: 30,
   });
@@ -627,8 +625,7 @@ test('process identity preflight can block duplicates from remote hybrid search'
   assert.equal(observed.body?.match_count, 1);
   assert.equal(observed.body?.page_size, 1);
   assert.equal(observed.body?.match_threshold, 0.1);
-  assert.equal(observed.body?.full_text_weight, 0.55);
-  assert.equal(observed.body?.extracted_text_weight, 0.25);
+  assert.equal(observed.body?.lexical_weight, 0.8);
   assert.equal(observed.body?.semantic_weight, 0.2);
   assert.equal(observed.body?.rrf_k, 30);
 });
@@ -1632,8 +1629,7 @@ test('identity preflight internals normalize remote search inputs', () => {
     limit: null,
     dataSource: null,
     matchThreshold: null,
-    fullTextWeight: null,
-    extractedTextWeight: null,
+    lexicalWeight: null,
     semanticWeight: null,
     rrfK: null,
     pageSize: null,
@@ -1647,8 +1643,7 @@ test('identity preflight internals normalize remote search inputs', () => {
     limit: null,
     dataSource: null,
     matchThreshold: null,
-    fullTextWeight: null,
-    extractedTextWeight: null,
+    lexicalWeight: null,
     semanticWeight: null,
     rrfK: null,
     pageSize: null,
@@ -1662,8 +1657,7 @@ test('identity preflight internals normalize remote search inputs', () => {
       limit: '2',
       data_source: 'tg',
       match_threshold: '0.25',
-      full_text_weight: '0.5',
-      extracted_text_weight: '0.3',
+      lexical_weight: '0.8',
       semantic_weight: '0.2',
       rrf_k: '40',
       page_current: '2',
@@ -1676,8 +1670,7 @@ test('identity preflight internals normalize remote search inputs', () => {
       limit: 2,
       dataSource: 'tg',
       matchThreshold: 0.25,
-      fullTextWeight: 0.5,
-      extractedTextWeight: 0.3,
+      lexicalWeight: 0.8,
       semanticWeight: 0.2,
       rrfK: 40,
       pageSize: null,

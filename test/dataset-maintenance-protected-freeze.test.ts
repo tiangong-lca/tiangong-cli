@@ -86,7 +86,6 @@ function snapshots() {
     modified_at: '2026-07-15T11:00:00.000Z',
     json_sha256: HASH_A,
     json_ordered_sha256: HASH_A,
-    extracted_text_sha256: HASH_B,
     extracted_md_sha256: HASH_C,
     embedding_ft_sha256: HASH_C,
     embedding_ft_at: '2026-07-15T11:00:00.000Z',

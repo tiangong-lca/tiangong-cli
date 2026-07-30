@@ -106,7 +106,6 @@ test('protected derivative raw read is bounded, exact, and identity checked', as
         user_id: 'user-1',
         state_code: 0,
         json_ordered: {},
-        extracted_text: 'text',
         extracted_md: 'markdown',
         embedding_ft: [1],
         embedding_ft_at: '2026-07-15T00:00:00.000Z',

@@ -77,7 +77,6 @@ export type ProtectedDerivativeSnapshot = {
   modified_at: string;
   json_sha256: string;
   json_ordered_sha256: string;
-  extracted_text_sha256: string;
   extracted_md_sha256: string | null;
   embedding_ft_sha256: string | null;
   embedding_ft_at: string | null;
@@ -506,10 +505,6 @@ export function parseProtectedDerivativeSnapshot(
     modified_at: timestamp(value.modified_at, 'derivative_snapshot.modified_at'),
     json_sha256: hash(value.json_sha256, 'derivative_snapshot.json_sha256'),
     json_ordered_sha256: hash(value.json_ordered_sha256, 'derivative_snapshot.json_ordered_sha256'),
-    extracted_text_sha256: hash(
-      value.extracted_text_sha256,
-      'derivative_snapshot.extracted_text_sha256',
-    ),
     extracted_md_sha256: nullableHash(
       value.extracted_md_sha256,
       'derivative_snapshot.extracted_md_sha256',

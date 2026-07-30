@@ -41,7 +41,6 @@ export type ProtectedLiveDerivativeReadback = {
   user_id: string;
   state_code: 0;
   json_ordered_sha256: string;
-  extracted_text_present: true;
   extracted_md_present: true;
   embedding_ft_present: true;
   embedding_ft_at: string;
@@ -164,13 +163,11 @@ export function inspectProtectedLiveDerivative(
 ): ProtectedLiveDerivativeReadback | null {
   const raw = row.raw;
   const jsonOrdered = isJsonObject(raw.json_ordered) ? raw.json_ordered : null;
-  const extractedText = requiredString(raw.extracted_text);
   const extractedMd = requiredString(raw.extracted_md);
   const embeddingAt = requiredString(raw.embedding_ft_at);
   if (
     row.state_code !== 0 ||
     !jsonOrdered ||
-    !extractedText ||
     !extractedMd ||
     raw.embedding_ft === null ||
     raw.embedding_ft === undefined ||
@@ -186,7 +183,6 @@ export function inspectProtectedLiveDerivative(
     user_id: row.user_id,
     state_code: 0 as const,
     json_ordered_sha256: sha256Json(jsonOrdered),
-    extracted_text_present: true,
     extracted_md_present: true,
     embedding_ft_present: true,
     embedding_ft_at: embeddingAt,

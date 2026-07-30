@@ -169,8 +169,7 @@ type RemoteCandidateSearchConfig = {
   limit: number | null;
   dataSource: string | null;
   matchThreshold: number | null;
-  fullTextWeight: number | null;
-  extractedTextWeight: number | null;
+  lexicalWeight: number | null;
   semanticWeight: number | null;
   rrfK: number | null;
   pageSize: number | null;
@@ -294,8 +293,7 @@ function emptyRemoteCandidateSearchConfig(enabled = false): RemoteCandidateSearc
     limit: null,
     dataSource: null,
     matchThreshold: null,
-    fullTextWeight: null,
-    extractedTextWeight: null,
+    lexicalWeight: null,
     semanticWeight: null,
     rrfK: null,
     pageSize: null,
@@ -346,13 +344,9 @@ function normalizeRemoteCandidateSearch(value: unknown): RemoteCandidateSearchCo
     limit: normalizePositiveInteger(value.limit, 'remote_candidate_search.limit'),
     dataSource,
     matchThreshold: normalizeMatchThreshold(value.match_threshold ?? value.matchThreshold),
-    fullTextWeight: normalizeNonNegativeNumber(
-      value.full_text_weight ?? value.fullTextWeight,
-      'remote_candidate_search.full_text_weight',
-    ),
-    extractedTextWeight: normalizeNonNegativeNumber(
-      value.extracted_text_weight ?? value.extractedTextWeight,
-      'remote_candidate_search.extracted_text_weight',
+    lexicalWeight: normalizeNonNegativeNumber(
+      value.lexical_weight ?? value.lexicalWeight,
+      'remote_candidate_search.lexical_weight',
     ),
     semanticWeight: normalizeNonNegativeNumber(
       value.semantic_weight ?? value.semanticWeight,
@@ -508,8 +502,7 @@ function mergeRemoteCandidateSearchConfig(
     limit: options.remoteLimit ?? inputConfig.limit,
     dataSource,
     matchThreshold: inputConfig.matchThreshold,
-    fullTextWeight: inputConfig.fullTextWeight,
-    extractedTextWeight: inputConfig.extractedTextWeight,
+    lexicalWeight: inputConfig.lexicalWeight,
     semanticWeight: inputConfig.semanticWeight,
     rrfK: inputConfig.rrfK,
     pageSize: inputConfig.pageSize,
@@ -667,10 +660,7 @@ function remoteSearchFilter(
 function remoteSearchOptions(config: RemoteCandidateSearchConfig): JsonObject | null {
   const options: JsonObject = {
     ...(config.matchThreshold !== null ? { match_threshold: config.matchThreshold } : {}),
-    ...(config.fullTextWeight !== null ? { full_text_weight: config.fullTextWeight } : {}),
-    ...(config.extractedTextWeight !== null
-      ? { extracted_text_weight: config.extractedTextWeight }
-      : {}),
+    ...(config.lexicalWeight !== null ? { lexical_weight: config.lexicalWeight } : {}),
     ...(config.semanticWeight !== null ? { semantic_weight: config.semanticWeight } : {}),
     ...(config.rrfK !== null ? { rrf_k: config.rrfK } : {}),
     ...(config.pageSize !== null ? { page_size: config.pageSize } : {}),

@@ -593,7 +593,7 @@ export async function readMaintenanceAliasExecution(options: {
 
 function derivativeSelectForTable(table: 'flows' | 'processes'): string {
   void table;
-  return 'id,version,user_id,state_code,modified_at,json,json_ordered,extracted_text,extracted_md,embedding_ft,embedding_ft_at';
+  return 'id,version,user_id,state_code,modified_at,json,json_ordered,extracted_md,embedding_ft,embedding_ft_at';
 }
 
 export async function fetchMaintenanceDerivativeTargetRows(options: {

@@ -25,8 +25,9 @@ layout: repo
 # Review note, 2026-07-25: Issue #206 keeps that complete RLS-visible fence on the globally unique `(id, version)` primary-key order so Postgres can use the existing index instead of sorting redundant owner/state keys. Completeness, ownership, mutation, retry, RPC/schema, release, and publication boundaries are unchanged.
 # Review note, 2026-07-25: Issue #208 optionally replaces that expensive owner-session fence with a fresh, SHA-approved, plan/actor/project/target-bound SELECT-only proof over all process rows. The default RLS scan remains unchanged; the proof path is delete-only, adds no database write or raw-SQL execution to the CLI, and changes no ownership, route, dependency, authentication, RPC/schema, release, or publication boundary.
 # Review note, 2026-07-27: Issue #210 replaces the dataset import-lca Python/checkout discovery path with the external Rust `tidas import` machine contract. Existing dataset command, runtime, test, documentation, validation, and release routes cover binary discovery, the compatible 0.1.x/version-and-schema handshake, stable exit/report mapping, packaged smoke evidence, and supported-platform guidance; no ownership, npm dependency, authentication, tag, Trusted Publishing, or workspace-integration rule changes are required.
-lastReviewedAt: "2026-07-27"
-lastReviewedCommit: "e35a3de9fb44ea2f3aa0ec83654a640c09348c39"
+# Review note, 2026-07-30: Issue #214 keeps the lexical-weight and derivative-proof cleanup inside the existing identity-preflight, dataset-maintenance, test, and governed-doc routes. No ownership, dependency, authentication, release, or workspace-integration rule changes are required.
+lastReviewedAt: "2026-07-30"
+lastReviewedCommit: "ad19f88667864d5bae626557f06d2c9b2d738bc4"
 
 catalog:
   repos:

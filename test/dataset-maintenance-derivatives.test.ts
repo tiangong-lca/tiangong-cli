@@ -90,7 +90,7 @@ class DerivativeRemote {
     model_id: null,
     rule_verification: false,
   };
-  extractedTextSha = sha256Text('primary extracted text');
+  snapshotJsonSha: string | null = null;
   extractedMdSha: string | null = sha256Text('same deterministic markdown');
   embeddingSha: string | null = sha256Text('same deterministic embedding');
   embeddingAt: string | null = BASE_EMBEDDING_AT;
@@ -109,7 +109,7 @@ class DerivativeRemote {
   otherProcesses: JsonObject[] = [];
 
   snapshot(): JsonObject {
-    const jsonSha = sha256Json(this.primary.json_ordered);
+    const jsonSha = this.snapshotJsonSha ?? sha256Json(this.primary.json_ordered);
     const fields = {
       schema_version: 'dataset-derivative-snapshot.v1',
       table: 'processes',
@@ -120,7 +120,6 @@ class DerivativeRemote {
       modified_at: this.primary.modified_at,
       json_sha256: jsonSha,
       json_ordered_sha256: jsonSha,
-      extracted_text_sha256: this.extractedTextSha,
       extracted_md_sha256: this.extractedMdSha,
       embedding_ft_sha256: this.embeddingSha,
       embedding_ft_at: this.embeddingAt,
@@ -836,7 +835,7 @@ test('derivative apply rejects corrupt progress, primary drift, and replay ident
     const driftRemote = new DerivativeRemote();
     const driftRoot = path.join(root, 'primary-drift');
     const driftPlan = await makePlan(driftRoot, driftRemote);
-    driftRemote.extractedTextSha = sha256Text('changed extracted text');
+    driftRemote.snapshotJsonSha = sha256Text('changed primary payload');
     await assert.rejects(
       () => applyPlan(driftRoot, driftPlan, driftRemote),
       /primary preconditions/u,

@@ -32,9 +32,9 @@ checkPaths:
   - scripts/docpact
   - scripts/docpact-gate.sh
   - scripts/install-git-hooks.sh
-lastReviewedAt: 2026-07-27
-lastReviewedCommit: e35a3de9fb44ea2f3aa0ec83654a640c09348c39
-lastReviewedNote: 'Reviewed for Issue #210: dataset import-lca now delegates only to the contract-compatible Rust tidas 0.1.x binary.'
+lastReviewedAt: 2026-07-30
+lastReviewedCommit: ad19f88667864d5bae626557f06d2c9b2d738bc4
+lastReviewedNote: 'Reviewed for Issue #214: identity preflight now exposes one lexical_weight, while derivative proof uses only extracted_md, embedding_ft, and embedding_ft_at.'
 related:
   - .docpact/config.yaml
   - docs/agents/repo-validation.md
@@ -87,6 +87,8 @@ Review note, 2026-07-16: Issue #182 corrects only the terminal protected verifie
 Review note, 2026-07-16: Issue #184 is the dedicated 0.0.28 version-bump release for merged verifier fix #182. It adds no command, runtime, dependency, approval, database, or alternate publication path; automated tag creation, Trusted Publishing, provenance verification, and exact released-commit workspace integration remain mandatory before production status-only verification.
 
 Review note, 2026-07-16: Issue #186 adds the CLI-owned `release` transport for LCI/LCIA data releases. The standalone release control plane remains the workflow owner, Edge/Database remain the authorization and state-machine owners, and this repo owns file-first command parsing, user-session exchange, exact four-ZIP upload verification, stable reports, and hash-verified downloads. The CLI never receives a service-role key; private and mutating operations depend on a server-verified `data_product_manager` account.
+
+Review note, 2026-07-30: Issue #214 removes the retired lexical-column proof and dual-weight request shape. Identity preflight sends one `lexical_weight`; protected derivative reads and snapshots require canonical `extracted_md`, `embedding_ft`, and `embedding_ft_at` only. Command ownership, authorization, and release boundaries are unchanged.
 
 Review note, 2026-07-17: Issue #191 changes only LCI/LCIA release tests so the four-platform matrix asserts POSIX mode bits and chmod-based cleanup failures only where those semantics exist. Runtime behavior, command ownership, credentials, release automation, and workspace-integration requirements are unchanged.
 

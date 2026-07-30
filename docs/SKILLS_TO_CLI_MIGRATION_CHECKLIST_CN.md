@@ -17,9 +17,9 @@ checkPaths:
   - package.json
   - src/**
   - test/**
-lastReviewedAt: 2026-07-27
-lastReviewedCommit: e35a3de9fb44ea2f3aa0ec83654a640c09348c39
-lastReviewedNote: 'Reviewed for Issue #210: the final Python LCA import exception is replaced by unified Rust tidas.'
+lastReviewedAt: 2026-07-30
+lastReviewedCommit: ad19f88667864d5bae626557f06d2c9b2d738bc4
+lastReviewedNote: 'Reviewed for Issue #214: the remote identity and derivative contract cleanup adds no skill-owned compatibility surface.'
 related:
   - ../AGENTS.md
   - ../.docpact/config.yaml

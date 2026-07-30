@@ -18,9 +18,9 @@ checkPaths:
   - src/**
   - scripts/**
   - .github/workflows/**
-lastReviewedAt: 2026-07-27
-lastReviewedCommit: e35a3de9fb44ea2f3aa0ec83654a640c09348c39
-lastReviewedNote: 'Reviewed for Issue #210: LCA import runtime and maintainer setup now use unified Rust tidas 0.1.x only.'
+lastReviewedAt: 2026-07-30
+lastReviewedCommit: ad19f88667864d5bae626557f06d2c9b2d738bc4
+lastReviewedNote: 'Reviewed for Issue #214: the remote identity and derivative contract cleanup changes no maintainer setup or Rust tidas runtime requirements.'
 related:
   - AGENTS.md
   - .docpact/config.yaml
