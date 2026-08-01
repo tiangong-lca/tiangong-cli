@@ -1,3 +1,4 @@
+// data-api-relations: processes
 import { CliError } from './errors.js';
 import type { FetchLike } from './http.js';
 import { getJson, postJson, requireRemoteOkPayload } from './http.js';
@@ -8,6 +9,11 @@ import {
   requireSupabaseRestRuntime,
   runSupabaseArrayQuery,
 } from './supabase-client.js';
+import {
+  applyDataApiProfileHeaders,
+  buildDataApiUrl,
+  resolveDataApiCapability,
+} from './supabase-data-api-contract.js';
 import { createSupabaseDataRuntime } from './supabase-session.js';
 import {
   syncSupabaseJsonOrderedRecord,
@@ -243,14 +249,22 @@ async function saveDraft(options: {
   audit?: JsonObject;
   modelId?: string | null;
 }): Promise<ProcessSaveDraftRpcResult> {
-  const url = `${options.restBaseUrl.replace(/\/+$/u, '')}/rpc/cmd_dataset_save_draft`;
+  const capability = resolveDataApiCapability({
+    kind: 'rpc',
+    name: 'cmd_dataset_save_draft',
+  });
+  const url = buildDataApiUrl(options.restBaseUrl, capability);
   const payload = requireRemoteOkPayload(
     await postJson({
       url,
-      headers: {
-        ...buildSupabaseAuthHeaders(options.publishableKey, options.accessToken),
-        'Content-Type': 'application/json',
-      },
+      headers: applyDataApiProfileHeaders(
+        {
+          ...buildSupabaseAuthHeaders(options.publishableKey, options.accessToken),
+          'Content-Type': 'application/json',
+        },
+        capability,
+        'POST',
+      ),
       body: {
         p_table: 'processes',
         p_id: options.id,

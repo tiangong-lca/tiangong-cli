@@ -1,3 +1,4 @@
+// data-api-relations: contacts, flows, lifecyclemodels, processes, sources
 import path from 'node:path';
 import { writeJsonArtifact } from './artifacts.js';
 import {
@@ -16,8 +17,13 @@ import {
 import {
   buildSupabaseAuthHeaders,
   deriveSupabaseProjectBaseUrl,
+  deriveSupabaseRestBaseUrl,
   requireSupabaseRestRuntime,
 } from './supabase-client.js';
+import {
+  applyDataApiProfileHeaders,
+  resolveDataApiCapability,
+} from './supabase-data-api-contract.js';
 import { resolveSupabaseUserSession } from './supabase-session.js';
 
 type JsonObject = Record<string, unknown>;
@@ -318,6 +324,10 @@ async function fetchTableRows(options: {
     requestedPageSize: options.pageSize,
     rowIdentity: (row: DatasetMaintenanceClearAccountRow) => `${row.id!}\u0000${row.version!}`,
     fetchPage: async (offset) => {
+      const capability = resolveDataApiCapability({
+        kind: 'relation',
+        name: options.table,
+      });
       const url = buildTableFilterUrl(options);
       url.searchParams.set('order', 'id.asc,version.asc');
       url.searchParams.set('limit', String(options.pageSize));
@@ -328,10 +338,13 @@ async function fetchTableRows(options: {
         url: sourceUrl,
         init: {
           method: 'GET',
-          headers: {
-            ...buildSupabaseAuthHeaders(options.publishableKey, options.accessToken),
-            Prefer: 'count=exact',
-          },
+          headers: applyDataApiProfileHeaders(
+            {
+              ...buildSupabaseAuthHeaders(options.publishableKey, options.accessToken),
+              Prefer: 'count=exact',
+            },
+            capability,
+          ),
         },
         fetchImpl: options.fetchImpl,
         timeoutMs: options.timeoutMs,
@@ -487,7 +500,7 @@ export async function runDatasetMaintenanceClearAccount(
   const outDir = path.resolve(options.outDir ?? 'dataset-maintenance/clear-account');
   const runtime = requireSupabaseRestRuntime(options.env);
   const projectBaseUrl = deriveSupabaseProjectBaseUrl(runtime.apiBaseUrl);
-  const restBaseUrl = `${projectBaseUrl}/rest/v1`;
+  const restBaseUrl = deriveSupabaseRestBaseUrl(projectBaseUrl);
   const functionsBaseUrl = deriveSupabaseFunctionsBaseUrl(runtime.apiBaseUrl);
   const session = await resolveSupabaseUserSession({
     runtime,

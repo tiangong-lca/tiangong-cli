@@ -27,9 +27,9 @@ checkPaths:
   - scripts/docpact
   - scripts/docpact-gate.sh
   - scripts/install-git-hooks.sh
-lastReviewedAt: 2026-07-30
-lastReviewedCommit: ad19f88667864d5bae626557f06d2c9b2d738bc4
-lastReviewedNote: 'Reviewed for Issue #214: proof covers the single lexical-weight payload and canonical Markdown/vector derivative snapshots.'
+lastReviewedAt: 2026-08-01
+lastReviewedCommit: 65b408db7649583c10005b30ea2b3874dadfeb8d
+lastReviewedNote: 'Reviewed for Issue #216: proof covers exact contract pinning, role/profile routing, consumer-zero, retry, pagination, error, idempotency, and audit invariants.'
 related:
   - ../../AGENTS.md
   - ../../.docpact/config.yaml
@@ -76,6 +76,8 @@ Review note, 2026-06-11: release 0.0.15 requires the same local proof plus focus
 Review note, 2026-07-27: Issue #210 proof must cover binary-discovery precedence, the five supported release targets and Windows ARM64 rejection, compatible `0.1.x` patch versions, protocol/version/report/exit mismatch rejection, native runtime flag translation, cancellation exit 130, and absence of active Python/check-out discovery. Run the packaged SimaPro fixture through the checksum-verified v0.1.0 artifact with Python unavailable, inspect `npm pack --dry-run` for the fixture, then run the complete `npm run prepush:gate` and docpact gates.
 
 Review note, 2026-07-30: Issue #214 proof must assert that identity preflight emits only `lexical_weight` plus `semantic_weight`, and that protected derivative reads/snapshots no longer require the retired lexical column. Focused identity-preflight and dataset-maintenance suites plus the exact-coverage pre-push gate remain mandatory.
+
+Review note, 2026-08-01: Issue #216 proof must run `npm run lint:data-api-consumers` and assert the exact artifact merge/catalog schema input/inventory SHA provenance, nine-table public allowlist, zero view consumers, complete 17-RPC inventory, explicit GET/HEAD versus mutation profile headers, authenticated-only CLI role boundary, invalid/unmanifested/blocked errors, GET/HEAD and manifest-read-RPC auth-refresh replay, relation-write/mutation-RPC/unknown-RPC no-replay behavior, exact-count pagination, and existing RPC idempotency/audit regressions. Hosted old/new parity remains blocked until database-engine#354/#355/#358 publish the corresponding Expand signatures and schema state.
 
 Review note, 2026-07-11: `dataset maintenance plan/apply/verify` adds focused proof for exact-row scope freezing, current-user RLS guards, immutable plan hashing, protected-row classification, full-plan drift preflight, approval-before-write, per-action logs, platform audit correlation, failure/resume behavior, and independent readback verification.
 

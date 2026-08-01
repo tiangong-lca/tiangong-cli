@@ -1,3 +1,4 @@
+// data-api-relations: lifecyclemodels
 import { CliError } from './errors.js';
 import type { FetchLike } from './http.js';
 import {

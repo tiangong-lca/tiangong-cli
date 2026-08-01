@@ -1,0 +1,71 @@
+import assert from 'node:assert/strict';
+import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs';
+import os from 'node:os';
+import path from 'node:path';
+import test from 'node:test';
+import { fileURLToPath } from 'node:url';
+import { scanDataApiConsumers } from '../scripts/scan-data-api-consumers.js';
+
+const repoRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
+
+function scanFixture(
+  source: string,
+  relationConsumers: Record<string, readonly string[]> = {},
+  rpcTargets: Record<string, unknown> = {},
+) {
+  const root = mkdtempSync(path.join(os.tmpdir(), 'data-api-scan-'));
+  try {
+    mkdirSync(path.join(root, 'src'), { recursive: true });
+    writeFileSync(path.join(root, 'src', 'fixture.ts'), source, 'utf8');
+    return scanDataApiConsumers(root, { relationConsumers, rpcTargets });
+  } finally {
+    rmSync(root, { recursive: true, force: true });
+  }
+}
+
+test('consumer-zero scan inventories every active relation and RPC without implicit public routes', () => {
+  const report = scanDataApiConsumers(repoRoot);
+  assert.equal(report.consumer_zero, true);
+  assert.deepEqual(report.findings, []);
+  assert.deepEqual(report.inventory.view_names, []);
+  assert.deepEqual(report.inventory.core_relation_names, [
+    'contacts',
+    'flowproperties',
+    'flows',
+    'lciamethods',
+    'lifecyclemodels',
+    'processes',
+    'sources',
+    'unitgroups',
+  ]);
+  assert.equal(report.inventory.rpc_names.length, 17);
+  assert.equal(report.contract.contractReady, false);
+});
+
+test('scan rejects a static non-core relation', () => {
+  const report = scanFixture("client.from('private_table').select('*');\n");
+  assert.ok(report.findings.some((finding) => finding.code === 'UNMANIFESTED_RELATION'));
+});
+
+test('scan rejects an RPC literal missing from the manifest', () => {
+  const report = scanFixture("client.rpc('unknown_rpc', {});\n");
+  assert.ok(report.findings.some((finding) => finding.code === 'UNMANIFESTED_RPC'));
+});
+
+test('scan rejects dynamic relation and RPC identifiers without an explicit helper annotation', () => {
+  const report = scanFixture('client.from(table).select();\nclient.rpc(rpcName, {});\n');
+  assert.ok(report.findings.some((finding) => finding.code === 'DYNAMIC_RELATION_IDENTIFIER'));
+  assert.ok(report.findings.some((finding) => finding.code === 'DYNAMIC_RPC_IDENTIFIER'));
+});
+
+test('scan rejects a manifest that omits an observed relation consumer', () => {
+  const report = scanFixture("client.from('processes').select('*');\n", { processes: [] });
+  assert.ok(report.findings.some((finding) => finding.code === 'RELATION_CONSUMER_UNDECLARED'));
+});
+
+test('scan rejects a manifest consumer that is not observed in that file', () => {
+  const report = scanFixture('export const value = 1;\n', {
+    processes: ['src/fixture.ts'],
+  });
+  assert.ok(report.findings.some((finding) => finding.code === 'MANIFEST_CONSUMER_NOT_OBSERVED'));
+});

@@ -1,3 +1,5 @@
+// data-api-relations: contacts, flowproperties, flows, processes, sources, unitgroups
+// data-api-dynamic-relation-expression: options.table
 import { closeSync, chmodSync, fsyncSync, mkdirSync, openSync, writeFileSync } from 'node:fs';
 import path from 'node:path';
 import * as tidasSdk from '@tiangong-lca/tidas-sdk';

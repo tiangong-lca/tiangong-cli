@@ -1,3 +1,5 @@
+// data-api-relations: contacts, flowproperties, flows, lciamethods, lifecyclemodels, processes, sources, unitgroups
+// data-api-dynamic-relation-expression: options.request.table
 import crypto from 'node:crypto';
 import path from 'node:path';
 import { writeJsonArtifact, writeJsonLinesArtifact } from './artifacts.js';

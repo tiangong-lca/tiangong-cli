@@ -274,7 +274,7 @@ test('createSupabaseFetch refreshes and retries once after an auth failure', asy
     runtime,
   );
 
-  const response = await supabaseFetch('https://example.supabase.co/rest/v1/flows', {
+  const response = await supabaseFetch(new URL('https://example.supabase.co/rest/v1/flows'), {
     headers: {
       'x-test': '1',
     },
@@ -282,6 +282,107 @@ test('createSupabaseFetch refreshes and retries once after an auth failure', asy
   assert.equal(fetchCount, 2);
   assert.deepEqual(observedAuthHeaders, ['Bearer stale-access-token', 'Bearer fresh-access-token']);
   assert.equal(await response.text(), '{"ok":true}');
+});
+
+test('createSupabaseFetch never refreshes or replays mutations after an auth failure', async () => {
+  let fetchCount = 0;
+  let refreshCount = 0;
+  const supabaseFetch = createSupabaseFetch(
+    (async () => {
+      fetchCount += 1;
+      return {
+        ok: false,
+        status: 401,
+        headers: { get: () => 'application/json' },
+        text: async () => '{"message":"expired"}',
+      };
+    }) as FetchLike,
+    25,
+    {
+      apiBaseUrl: 'https://example.supabase.co/functions/v1',
+      publishableKey: 'sb-publishable-key',
+      getAccessToken: async () => 'stale-access-token',
+      refreshAccessToken: async () => {
+        refreshCount += 1;
+        return 'fresh-access-token';
+      },
+    },
+  );
+
+  const response = await supabaseFetch(
+    new Request('https://example.supabase.co/rest/v1/processes', { method: 'POST' }),
+  );
+  assert.equal(response.status, 401);
+  assert.equal(fetchCount, 1);
+  assert.equal(refreshCount, 0);
+});
+
+test('createSupabaseFetch refreshes and replays an explicitly classified read RPC once', async () => {
+  let fetchCount = 0;
+  let refreshCount = 0;
+  const supabaseFetch = createSupabaseFetch(
+    (async () => {
+      fetchCount += 1;
+      return {
+        ok: fetchCount === 2,
+        status: fetchCount === 1 ? 401 : 200,
+        headers: { get: () => 'application/json' },
+        text: async () => (fetchCount === 1 ? '{"message":"expired"}' : '{"ok":true}'),
+      };
+    }) as FetchLike,
+    25,
+    {
+      apiBaseUrl: 'https://example.supabase.co/functions/v1',
+      publishableKey: 'sb-publishable-key',
+      getAccessToken: async () => 'stale-access-token',
+      refreshAccessToken: async () => {
+        refreshCount += 1;
+        return 'fresh-access-token';
+      },
+    },
+  );
+
+  const response = await supabaseFetch(
+    'https://example.supabase.co/rest/v1/rpc/cmd_dataset_derivative_rebuild_read',
+    { method: 'POST' },
+  );
+  assert.equal(response.status, 200);
+  assert.equal(fetchCount, 2);
+  assert.equal(refreshCount, 1);
+});
+
+test('createSupabaseFetch never refreshes or replays a mutation RPC', async () => {
+  let fetchCount = 0;
+  let refreshCount = 0;
+  const supabaseFetch = createSupabaseFetch(
+    (async () => {
+      fetchCount += 1;
+      return {
+        ok: false,
+        status: 403,
+        headers: { get: () => 'application/json' },
+        text: async () => '{"message":"expired"}',
+      };
+    }) as FetchLike,
+    25,
+    {
+      apiBaseUrl: 'https://example.supabase.co/functions/v1',
+      publishableKey: 'sb-publishable-key',
+      getAccessToken: async () => 'stale-access-token',
+      refreshAccessToken: async () => {
+        refreshCount += 1;
+        return 'fresh-access-token';
+      },
+    },
+  );
+
+  const response = await supabaseFetch(
+    'https://example.supabase.co/rest/v1/rpc/cmd_dataset_save_draft',
+    { method: 'POST' },
+  );
+  assert.equal(response.status, 403);
+  assert.equal(fetchCount, 1);
+  assert.equal(refreshCount, 0);
 });
 
 test('runSupabaseQuery and runSupabaseArrayQuery cover success, null arrays, and wrapped failures', async () => {

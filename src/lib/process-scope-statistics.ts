@@ -1,3 +1,4 @@
+// data-api-relations: processes
 import path from 'node:path';
 import {
   readJsonArtifact,
@@ -8,7 +9,16 @@ import {
 } from './artifacts.js';
 import { CliError } from './errors.js';
 import type { FetchLike, ResponseLike } from './http.js';
-import { deriveSupabaseProjectBaseUrl, requireSupabaseRestRuntime } from './supabase-client.js';
+import {
+  deriveSupabaseProjectBaseUrl,
+  deriveSupabaseRestBaseUrl,
+  requireSupabaseRestRuntime,
+} from './supabase-client.js';
+import {
+  applyDataApiProfileHeaders,
+  buildDataApiUrl,
+  resolveDataApiCapability,
+} from './supabase-data-api-contract.js';
 import { resolveSupabaseUserSession } from './supabase-session.js';
 import { redactEmail, requireUserApiKeyCredentials } from './user-api-key.js';
 
@@ -358,6 +368,11 @@ async function fetchProcessRows(options: {
     timeoutMs: options.timeoutMs,
   });
   const projectBaseUrl = deriveSupabaseProjectBaseUrl(runtime.apiBaseUrl);
+  const processCapability = resolveDataApiCapability({
+    kind: 'relation',
+    name: 'processes',
+    env: options.env,
+  });
   const rows: SnapshotRow[] = [];
   let total = 0;
 
@@ -366,7 +381,9 @@ async function fetchProcessRows(options: {
     let cursorId = '';
 
     while (true) {
-      const url = new URL(`${projectBaseUrl}/rest/v1/processes`);
+      const url = new URL(
+        buildDataApiUrl(deriveSupabaseRestBaseUrl(projectBaseUrl), processCapability),
+      );
       url.searchParams.set('select', 'id,version,state_code,user_id,modified_at,model_id,json');
       url.searchParams.set('state_code', `eq.${stateCode}`);
       if (options.scope === 'current-user') {
@@ -382,12 +399,15 @@ async function fetchProcessRows(options: {
         url: url.toString(),
         init: {
           method: 'GET',
-          headers: {
-            apikey: runtime.publishableKey,
-            Authorization: `Bearer ${session.accessToken}`,
-            Accept: 'application/json',
-            ...(stateTotal === null ? { Prefer: 'count=exact' } : {}),
-          },
+          headers: applyDataApiProfileHeaders(
+            {
+              apikey: runtime.publishableKey,
+              Authorization: `Bearer ${session.accessToken}`,
+              Accept: 'application/json',
+              ...(stateTotal === null ? { Prefer: 'count=exact' } : {}),
+            },
+            processCapability,
+          ),
         },
         label: `process scope statistics page fetch (state_code=${stateCode})`,
         fetchImpl: options.fetchImpl,
