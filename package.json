@@ -35,6 +35,7 @@
     "lint:deprecated": "node ./scripts/lint-deprecated.cjs src test scripts",
     "lint:coverage-guards": "node ./scripts/assert-no-coverage-ignore.cjs",
     "lint:data-api-consumers": "tsx ./scripts/scan-data-api-consumers.ts",
+    "generate:data-api-consumers": "tsx ./scripts/scan-data-api-consumers.ts --generate HEAD",
     "lint:js": "eslint --cache --ext .js,.jsx,.ts,.tsx,.cjs,.mjs --format=stylish ./src ./test ./scripts ./bin && npm run lint:deprecated",
     "lint:prettier": "prettier --check \"{src,test,docs,scripts,bin}/**/*.{js,cjs,mjs,jsx,tsx,ts,md,json}\" \"*.{js,cjs,mjs,jsx,tsx,ts,md,json}\"",
     "prettier": "prettier --write \"{src,test,docs,scripts,bin}/**/*.{js,cjs,mjs,jsx,tsx,ts,md,json}\" \"*.{js,cjs,mjs,jsx,tsx,ts,md,json}\"",

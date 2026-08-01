@@ -27,8 +27,8 @@ layout: repo
 # Review note, 2026-07-27: Issue #210 replaces the dataset import-lca Python/checkout discovery path with the external Rust `tidas import` machine contract. Existing dataset command, runtime, test, documentation, validation, and release routes cover binary discovery, the compatible 0.1.x/version-and-schema handshake, stable exit/report mapping, packaged smoke evidence, and supported-platform guidance; no ownership, npm dependency, authentication, tag, Trusted Publishing, or workspace-integration rule changes are required.
 # Review note, 2026-07-30: Issue #214 keeps the lexical-weight and derivative-proof cleanup inside the existing identity-preflight, dataset-maintenance, test, and governed-doc routes. No ownership, dependency, authentication, release, or workspace-integration rule changes are required.
 # Review note, 2026-08-01: Issue #216 adds one schema-aware Data API manifest/adapter plus a consumer-zero scanner inside the existing remote-session, command-family, and validation domains. The explicit adapter path below and existing caller/test/script routes cover the change; no ownership or domain change is required.
-lastReviewedAt: "2026-08-01"
-lastReviewedCommit: "65b408db7649583c10005b30ea2b3874dadfeb8d"
+lastReviewedAt: '2026-08-01'
+lastReviewedCommit: '65b408db7649583c10005b30ea2b3874dadfeb8d'
 
 catalog:
   repos:
@@ -520,6 +520,12 @@ rules:
         kind: validation-or-release-script
       - path: .github/workflows/quality-gate.yml
         kind: ci
+      - path: .github/workflows/supabase-consumer-closure.yml
+        kind: ci
+      - path: contracts/supabase-consumer-manifest.v3.json
+        kind: evidence-contract
+      - path: contracts/supabase-consumer-manifest.v3.schema.json
+        kind: evidence-schema
       - path: .github/workflows/publish.yml
         kind: ci
       - path: .github/workflows/tag-release-from-merge.yml

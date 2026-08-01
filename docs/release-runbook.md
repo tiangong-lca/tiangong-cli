@@ -253,3 +253,5 @@ For the CLI repo, that helper defaults to:
 ## Local Docpact Push Gate
 
 The repository now includes a local pre-push gate that runs `scripts/docpact-gate.sh` and then `npm run prepush:gate`. It is the ordinary local validation path; release workflows still run their own release gates before creating tags or publishing.
+
+Review note, 2026-08-02: Issue #216 adds a pull-request-only Supabase consumer-closure workflow and a manifest-generation npm script. It does not change package versioning, tagging, publication, deployment, or the requirement that release work begins with a separate version-bump PR merged to upstream `main`.

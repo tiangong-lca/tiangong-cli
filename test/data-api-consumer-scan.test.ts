@@ -1,71 +1,99 @@
 import assert from 'node:assert/strict';
-import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs';
-import os from 'node:os';
 import path from 'node:path';
 import test from 'node:test';
 import { fileURLToPath } from 'node:url';
-import { scanDataApiConsumers } from '../scripts/scan-data-api-consumers.js';
+import {
+  assertExactOccurrenceSet,
+  deriveManifest,
+  deriveOccurrences,
+  MANIFEST_SCHEMA,
+  verifyManifest,
+} from '../scripts/scan-data-api-consumers.js';
 
 const repoRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 
-function scanFixture(
-  source: string,
-  relationConsumers: Record<string, readonly string[]> = {},
-  rpcTargets: Record<string, unknown> = {},
-) {
-  const root = mkdtempSync(path.join(os.tmpdir(), 'data-api-scan-'));
-  try {
-    mkdirSync(path.join(root, 'src'), { recursive: true });
-    writeFileSync(path.join(root, 'src', 'fixture.ts'), source, 'utf8');
-    return scanDataApiConsumers(root, { relationConsumers, rpcTargets });
-  } finally {
-    rmSync(root, { recursive: true, force: true });
-  }
-}
-
-test('consumer-zero scan inventories every active relation and RPC without implicit public routes', () => {
-  const report = scanDataApiConsumers(repoRoot);
-  assert.equal(report.consumer_zero, true);
-  assert.deepEqual(report.findings, []);
-  assert.deepEqual(report.inventory.view_names, []);
-  assert.deepEqual(report.inventory.core_relation_names, [
-    'contacts',
-    'flowproperties',
-    'flows',
-    'lciamethods',
-    'lifecyclemodels',
-    'processes',
-    'sources',
-    'unitgroups',
-  ]);
-  assert.equal(report.inventory.rpc_names.length, 17);
-  assert.equal(report.contract.contractReady, false);
+test('AST derivation covers static, bracket, dynamic-union, auth, and raw-route consumers exactly once', () => {
+  const source = `
+// data-api-relations: flows, processes
+// data-api-dynamic-relation-expression: options.table
+client.from('flows').select('*');
+client['from'](options.table).upsert(row);
+auth.auth.signInWithPassword({ email, password });
+const url = \`\${base}/auth/v1/user\`;
+`;
+  const occurrences = deriveOccurrences('src/fixture.ts', source);
+  assert.deepEqual(
+    occurrences.map((item) => [item.operation, item.object]),
+    [
+      ['postgrest.relation', 'flows'],
+      ['postgrest.relation', 'flows'],
+      ['postgrest.relation', 'processes'],
+      ['auth.signInWithPassword', 'signInWithPassword'],
+      ['auth.route', '`${base}/auth/v1/user`'],
+    ],
+  );
+  assert.equal(new Set(occurrences.map((item) => item.id)).size, occurrences.length);
+  assert.ok(occurrences.every((item) => item.span.sha256.length === 64));
 });
 
-test('scan rejects a static non-core relation', () => {
-  const report = scanFixture("client.from('private_table').select('*');\n");
-  assert.ok(report.findings.some((finding) => finding.code === 'UNMANIFESTED_RELATION'));
+test('AST derivation rejects unresolved dynamic targets', () => {
+  assert.throws(
+    () => deriveOccurrences('src/fixture.ts', 'client.from(tableName).select();'),
+    /unresolved dynamic \.from/u,
+  );
 });
 
-test('scan rejects an RPC literal missing from the manifest', () => {
-  const report = scanFixture("client.rpc('unknown_rpc', {});\n");
-  assert.ok(report.findings.some((finding) => finding.code === 'UNMANIFESTED_RPC'));
+test('AST derivation rejects direct PostgreSQL, PGMQ, and Cron bypass surfaces', () => {
+  assert.throws(
+    () =>
+      deriveOccurrences(
+        'src/fixture.ts',
+        "const db = new Pool({ connectionString: 'postgresql://host/db' });",
+      ),
+    /direct PostgreSQL/u,
+  );
 });
 
-test('scan rejects dynamic relation and RPC identifiers without an explicit helper annotation', () => {
-  const report = scanFixture('client.from(table).select();\nclient.rpc(rpcName, {});\n');
-  assert.ok(report.findings.some((finding) => finding.code === 'DYNAMIC_RELATION_IDENTIFIER'));
-  assert.ok(report.findings.some((finding) => finding.code === 'DYNAMIC_RPC_IDENTIFIER'));
+test('exact-set proof rejects duplicate, missing, and span-tampered occurrence rows', () => {
+  const derived = deriveOccurrences('src/fixture.ts', "client.from('flows').select('*');");
+  assert.throws(() => assertExactOccurrenceSet([...derived, derived[0]!], derived), /duplicate/u);
+  assert.throws(() => assertExactOccurrenceSet([], derived), /bidirectionally exact/u);
+  const tampered = structuredClone(derived);
+  tampered[0]!.span.sha256 = '0'.repeat(64);
+  assert.throws(() => assertExactOccurrenceSet(tampered, derived), /bidirectionally exact/u);
 });
 
-test('scan rejects a manifest that omits an observed relation consumer', () => {
-  const report = scanFixture("client.from('processes').select('*');\n", { processes: [] });
-  assert.ok(report.findings.some((finding) => finding.code === 'RELATION_CONSUMER_UNDECLARED'));
+test('AST derivation fails closed for destructured aliases and Supabase subprocess bypasses', () => {
+  assert.throws(
+    () => deriveOccurrences('src/fixture.ts', 'const { from } = client; from(table);'),
+    /destructured Supabase/u,
+  );
+  assert.throws(
+    () =>
+      deriveOccurrences('src/fixture.ts', "spawn('curl', [SUPABASE_URL + '/rest/v1/processes']);"),
+    /subprocess Supabase/u,
+  );
 });
 
-test('scan rejects a manifest consumer that is not observed in that file', () => {
-  const report = scanFixture('export const value = 1;\n', {
-    processes: ['src/fixture.ts'],
+test('repository manifest is candidate-only, globally unique, and exact for the immutable source tree', () => {
+  const manifest = deriveManifest(repoRoot, '5cb359f1d0860df560c7571fa7547b2822b37c71');
+  assert.equal(manifest.schema, MANIFEST_SCHEMA);
+  assert.deepEqual(manifest.authority, {
+    status: 'candidate',
+    authorizesDatabaseFreeze: false,
+    authorizesHostedMutation: false,
   });
-  assert.ok(report.findings.some((finding) => finding.code === 'MANIFEST_CONSUMER_NOT_OBSERVED'));
+  assert.equal(
+    new Set(manifest.occurrences.map((item) => item.id)).size,
+    manifest.occurrences.length,
+  );
+  assert.deepEqual(manifest.publicResidue.views, []);
+  assert.ok(manifest.absenceProofs.every((item) => item.result === 'absent'));
+});
+
+test('checked-in candidate manifest has exact bidirectional AST closure and immutable delivery guard', () => {
+  const result = verifyManifest(repoRoot);
+  assert.equal(result.sourceTreeCommit, '5cb359f1d0860df560c7571fa7547b2822b37c71');
+  assert.ok(result.occurrenceCount > 0);
+  assert.equal(result.sourceTreeDigest.length, 64);
 });

@@ -163,3 +163,5 @@ Leave the environment name unset unless the workflow is explicitly updated to us
 ## Local Docpact Push Gate
 
 The repository now includes a local pre-push gate that runs `scripts/docpact-gate.sh` and then `npm run prepush:gate`. It is the ordinary local validation path; release workflows still run release gates before tag creation or npm publishing.
+
+Review note, 2026-08-02: Issue #216's Supabase consumer-closure workflow needs only read-only repository contents and the existing locked Node toolchain. It adds no npm publisher, secret, environment, hosted Supabase credential, deployment authority, or Trusted Publishing configuration.

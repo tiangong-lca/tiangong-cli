@@ -1,0 +1,319 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://github.com/tiangong-lca/tiangong-cli/contracts/supabase-consumer-manifest.v3.schema.json",
+  "title": "TianGong CLI Supabase consumer candidate manifest v3",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schema",
+    "version",
+    "repository",
+    "baseCommit",
+    "headCommit",
+    "authority",
+    "source",
+    "occurrences",
+    "publicResidue",
+    "pending",
+    "absenceProofs"
+  ],
+  "properties": {
+    "schema": {
+      "const": "tiangong.supabase-consumer-manifest.v3"
+    },
+    "version": {
+      "const": 3
+    },
+    "repository": {
+      "const": "tiangong-lca/tiangong-cli"
+    },
+    "baseCommit": {
+      "$ref": "#/$defs/sha"
+    },
+    "headCommit": {
+      "$ref": "#/$defs/sha"
+    },
+    "authority": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "status",
+        "authorizesDatabaseFreeze",
+        "authorizesHostedMutation"
+      ],
+      "properties": {
+        "status": {
+          "const": "candidate"
+        },
+        "authorizesDatabaseFreeze": {
+          "const": false
+        },
+        "authorizesHostedMutation": {
+          "const": false
+        }
+      }
+    },
+    "source": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "derivation",
+        "governedPatterns",
+        "exactExemptions",
+        "treeDigestAlgorithm",
+        "treeDigest",
+        "fileCount"
+      ],
+      "properties": {
+        "derivation": {
+          "const": "typescript-compiler-ast-v1"
+        },
+        "governedPatterns": {
+          "const": [
+            "src/**/*.ts",
+            "scripts/**/*.ts",
+            "bin/**/*.js"
+          ]
+        },
+        "exactExemptions": {
+          "const": [
+            "scripts/scan-data-api-consumers.ts"
+          ]
+        },
+        "treeDigestAlgorithm": {
+          "const": "sha256(mode\\0path\\0blobOid\\0)"
+        },
+        "treeDigest": {
+          "$ref": "#/$defs/sha256"
+        },
+        "fileCount": {
+          "type": "integer",
+          "minimum": 1
+        }
+      }
+    },
+    "occurrences": {
+      "type": "array",
+      "items": {
+        "$ref": "#/$defs/occurrence"
+      }
+    },
+    "publicResidue": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "relations",
+        "rpcs",
+        "views"
+      ],
+      "properties": {
+        "relations": {
+          "$ref": "#/$defs/stringSet"
+        },
+        "rpcs": {
+          "$ref": "#/$defs/stringSet"
+        },
+        "views": {
+          "$ref": "#/$defs/stringSet"
+        }
+      }
+    },
+    "pending": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "capability",
+          "reason",
+          "upstream"
+        ],
+        "properties": {
+          "capability": {
+            "type": "string",
+            "minLength": 1
+          },
+          "reason": {
+            "type": "string",
+            "minLength": 1
+          },
+          "upstream": {
+            "$ref": "#/$defs/stringSet"
+          }
+        }
+      }
+    },
+    "absenceProofs": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "surface",
+          "result",
+          "evidence"
+        ],
+        "properties": {
+          "surface": {
+            "type": "string",
+            "minLength": 1
+          },
+          "result": {
+            "const": "absent"
+          },
+          "evidence": {
+            "type": "string",
+            "minLength": 1
+          }
+        }
+      }
+    }
+  },
+  "$defs": {
+    "sha": {
+      "type": "string",
+      "pattern": "^[0-9a-f]{40}$"
+    },
+    "sha256": {
+      "type": "string",
+      "pattern": "^[0-9a-f]{64}$"
+    },
+    "stringSet": {
+      "type": "array",
+      "uniqueItems": true,
+      "items": {
+        "type": "string",
+        "minLength": 1
+      }
+    },
+    "span": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "startOffset",
+        "endOffset",
+        "startLine",
+        "startColumn",
+        "endLine",
+        "endColumn",
+        "sha256"
+      ],
+      "properties": {
+        "startOffset": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "endOffset": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "startLine": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "startColumn": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "endLine": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "endColumn": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "sha256": {
+          "$ref": "#/$defs/sha256"
+        }
+      }
+    },
+    "occurrence": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "id",
+        "file",
+        "line",
+        "span",
+        "operation",
+        "transport",
+        "credential",
+        "schema",
+        "object",
+        "signature",
+        "acl",
+        "semantics",
+        "upstream",
+        "sourceClass"
+      ],
+      "properties": {
+        "id": {
+          "type": "string",
+          "pattern": "^cli-[0-9a-f]{24}$"
+        },
+        "file": {
+          "type": "string",
+          "pattern": "^(src|scripts|bin)/"
+        },
+        "line": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "span": {
+          "$ref": "#/$defs/span"
+        },
+        "operation": {
+          "type": "string",
+          "minLength": 1
+        },
+        "transport": {
+          "enum": [
+            "postgrest",
+            "auth",
+            "edge-function",
+            "storage",
+            "realtime",
+            "postgres"
+          ]
+        },
+        "credential": {
+          "enum": [
+            "authenticated-user-session",
+            "publishable-key",
+            "unknown"
+          ]
+        },
+        "schema": {
+          "type": "string",
+          "minLength": 1
+        },
+        "object": {
+          "type": "string",
+          "minLength": 1
+        },
+        "signature": {
+          "type": "string",
+          "minLength": 1
+        },
+        "acl": {
+          "type": "string",
+          "minLength": 1
+        },
+        "semantics": {
+          "type": "string",
+          "minLength": 1
+        },
+        "upstream": {
+          "$ref": "#/$defs/stringSet"
+        },
+        "sourceClass": {
+          "enum": [
+            "typescript-ast",
+            "javascript-ast"
+          ]
+        }
+      }
+    }
+  }
+}
