@@ -1,3 +1,4 @@
+// data-api-relations: contacts, flowproperties, flows, lciamethods, processes, sources, unitgroups
 import { appendFileSync, existsSync, mkdirSync, readFileSync } from 'node:fs';
 import path from 'node:path';
 import { writeJsonArtifact, writeJsonLinesArtifact, writeTextArtifact } from './artifacts.js';
@@ -12,7 +13,16 @@ import {
   validateProcessPayload,
   type ProcessPayloadValidationResult,
 } from './process-payload-validation.js';
-import { deriveSupabaseProjectBaseUrl, requireSupabaseRestRuntime } from './supabase-client.js';
+import {
+  deriveSupabaseProjectBaseUrl,
+  deriveSupabaseRestBaseUrl,
+  requireSupabaseRestRuntime,
+} from './supabase-client.js';
+import {
+  applyDataApiProfileHeaders,
+  buildDataApiUrl,
+  resolveDataApiCapability,
+} from './supabase-data-api-contract.js';
 import { resolveSupabaseUserSession } from './supabase-session.js';
 import { redactEmail, requireUserApiKeyCredentials } from './user-api-key.js';
 
@@ -689,11 +699,14 @@ async function snapshotProcesses(options: {
   timeoutMs: number;
   maxRetries: number;
 }): Promise<ProcessManifestRow[]> {
+  const capability = resolveDataApiCapability({ kind: 'relation', name: 'processes' });
   const rows: ProcessManifestRow[] = [];
   let total: number | null = null;
 
   for (let offset = 0; total === null || offset < total; offset += options.pageSize) {
-    const url = new URL(`${options.projectBaseUrl}/rest/v1/processes`);
+    const url = new URL(
+      buildDataApiUrl(deriveSupabaseRestBaseUrl(options.projectBaseUrl), capability),
+    );
     url.searchParams.set('select', 'id,version,modified_at,state_code,model_id');
     url.searchParams.set('user_id', `eq.${options.userId}`);
     url.searchParams.set('order', 'modified_at.desc,id.asc');
@@ -704,12 +717,15 @@ async function snapshotProcesses(options: {
       url: url.toString(),
       init: {
         method: 'GET',
-        headers: {
-          apikey: options.publishableKey,
-          Authorization: `Bearer ${options.accessToken}`,
-          Accept: 'application/json',
-          Prefer: 'count=exact',
-        },
+        headers: applyDataApiProfileHeaders(
+          {
+            apikey: options.publishableKey,
+            Authorization: `Bearer ${options.accessToken}`,
+            Accept: 'application/json',
+            Prefer: 'count=exact',
+          },
+          capability,
+        ),
       },
       label: `process refresh snapshot page fetch (offset=${offset})`,
       fetchImpl: options.fetchImpl,
@@ -780,7 +796,10 @@ async function fetchProcessDetail(options: {
   timeoutMs: number;
   maxRetries: number;
 }): Promise<ProcessDetailRow> {
-  const url = new URL(`${options.projectBaseUrl}/rest/v1/processes`);
+  const capability = resolveDataApiCapability({ kind: 'relation', name: 'processes' });
+  const url = new URL(
+    buildDataApiUrl(deriveSupabaseRestBaseUrl(options.projectBaseUrl), capability),
+  );
   url.searchParams.set('select', 'id,version,json,modified_at,state_code,model_id,user_id');
   url.searchParams.set('id', `eq.${options.row.id}`);
   url.searchParams.set('version', `eq.${options.row.version}`);
@@ -790,11 +809,14 @@ async function fetchProcessDetail(options: {
     url: url.toString(),
     init: {
       method: 'GET',
-      headers: {
-        apikey: options.publishableKey,
-        Authorization: `Bearer ${options.accessToken}`,
-        Accept: 'application/json',
-      },
+      headers: applyDataApiProfileHeaders(
+        {
+          apikey: options.publishableKey,
+          Authorization: `Bearer ${options.accessToken}`,
+          Accept: 'application/json',
+        },
+        capability,
+      ),
     },
     label: `process refresh detail fetch (${recordKey(options.row)})`,
     fetchImpl: options.fetchImpl,
@@ -887,9 +909,12 @@ async function fetchLatestRefs(options: {
 
   for (const [table, idSet] of missingByTable.entries()) {
     const ids = Array.from(idSet);
+    const capability = resolveDataApiCapability({ kind: 'relation', name: table });
     for (let offset = 0; offset < ids.length; offset += 50) {
       const chunk = ids.slice(offset, offset + 50);
-      const url = new URL(`${options.projectBaseUrl}/rest/v1/${table}`);
+      const url = new URL(
+        buildDataApiUrl(deriveSupabaseRestBaseUrl(options.projectBaseUrl), capability),
+      );
       url.searchParams.set('select', 'id,version,json,modified_at,state_code,user_id,team_id');
       url.searchParams.set('id', `in.(${chunk.join(',')})`);
       url.searchParams.set('order', 'version.desc');
@@ -899,11 +924,14 @@ async function fetchLatestRefs(options: {
           url: url.toString(),
           init: {
             method: 'GET',
-            headers: {
-              apikey: options.publishableKey,
-              Authorization: `Bearer ${options.accessToken}`,
-              Accept: 'application/json',
-            },
+            headers: applyDataApiProfileHeaders(
+              {
+                apikey: options.publishableKey,
+                Authorization: `Bearer ${options.accessToken}`,
+                Accept: 'application/json',
+              },
+              capability,
+            ),
           },
           label: `reference refresh ${table} lookup`,
           fetchImpl: options.fetchImpl,

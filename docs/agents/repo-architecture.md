@@ -26,9 +26,9 @@ checkPaths:
   - scripts/docpact
   - scripts/docpact-gate.sh
   - scripts/install-git-hooks.sh
-lastReviewedAt: 2026-07-30
-lastReviewedCommit: ad19f88667864d5bae626557f06d2c9b2d738bc4
-lastReviewedNote: 'Reviewed for Issue #214: remote identity search uses one lexical weight and derivative proof is based on canonical Markdown/vector state.'
+lastReviewedAt: 2026-08-01
+lastReviewedCommit: 65b408db7649583c10005b30ea2b3874dadfeb8d
+lastReviewedNote: 'Reviewed for Issue #216: one exact-contract Data API manifest owns explicit public/api profile selection and consumer-zero enforcement.'
 related:
   - ../../AGENTS.md
   - ../../.docpact/config.yaml
@@ -54,6 +54,8 @@ Review note, 2026-06-11: release 0.0.15 keeps the import-lca wrapper inside the 
 Review note, 2026-07-27: Issue #210 keeps `src/lib/dataset-import-lca.ts` as a thin process adapter but replaces the Python module/check-out boundary with unified Rust `tidas import`. The adapter owns only platform/binary/config discovery, `0.1.x` plus operation-report handshake, native flag translation, and exit/report validation. Rust owns format semantics, bounded runtime, cancellation, validation, spool artifacts, and atomic output publication. The npm package carries a cross-platform text fixture, not native executables.
 
 Review note, 2026-07-30: Issue #214 keeps identity search and derivative verification in their existing modules while narrowing their contracts. Remote identity requests expose one `lexical_weight`, and derivative snapshots/readback bind `extracted_md`, `embedding_ft`, and `embedding_ft_at`; no alternate adapter, write path, or artifact family is introduced.
+
+Review note, 2026-08-01: Issue #216 adds `src/lib/supabase-data-api-contract.ts` as the only schema/profile and RPC replay-classification manifest. Core relation clients explicitly select `public`; raw relation and RPC requests use method-appropriate `Accept-Profile` / `Content-Profile`; `scripts/scan-data-api-consumers.ts` rejects raw RPC routes, hard-coded public profile headers, and unmanifested consumers. GET/HEAD and only explicitly classified read RPCs may refresh/replay once after 401/403; relation writes, mutation RPCs, and unknown RPCs never replay. The preview `api-contract-v1` profile is usable for the 16 RPCs whose pinned target is `api`, while `cmd_dataset_alias_plan_guarded` is blocked because its pinned target is `private` and no authenticated replacement signature is final.
 
 Review note, 2026-07-11: row-level dataset maintenance is implemented in the native CLI as `dataset maintenance plan/apply/verify`. The architecture keeps scope freezing, current-user RLS reads, protected-row classification, approved platform-command writes, append-only action logging, and independent verification in separate maintenance modules.
 
@@ -137,6 +139,7 @@ The CLI talks to remote services directly through helper modules such as:
 - `src/lib/supabase-session.ts`
 - `src/lib/supabase-client.ts`
 - `src/lib/supabase-rest.ts`
+- `src/lib/supabase-data-api-contract.ts`
 - `src/lib/remote.ts`
 - `src/lib/http.ts`
 

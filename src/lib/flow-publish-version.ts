@@ -1,3 +1,4 @@
+// data-api-relations: flows
 import { existsSync } from 'node:fs';
 import path from 'node:path';
 import { writeJsonArtifact, writeJsonLinesArtifact } from './artifacts.js';

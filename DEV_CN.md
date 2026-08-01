@@ -222,6 +222,8 @@ TIANGONG_LCA_UNSTRUCTURED_RETURN_TXT=true
 
 当前也不需要额外配置通用的 `SUPABASE_URL`、`SUPABASE_KEY` 或 `TIANGONG_LCA_TIDAS_SDK_DIR`。CLI 会从 `TIANGONG_LCA_API_BASE_URL` 派生原生 `@supabase/supabase-js` client，用 `TIANGONG_LCA_API_KEY + TIANGONG_LCA_SUPABASE_PUBLISHABLE_KEY` 换取用户 session，并直接从 `package.json` 依赖加载 `@tiangong-lca/tidas-sdk`。
 
+Data API schema 不再依赖 PostgREST 的默认 `public`。默认的版本化兼容配置为 `TIANGONG_LCA_DATA_API_PROFILE=legacy-public-v1`（省略时仍解析为这个明确的 checked-in profile）；数据库 Expand 可用后可显式选择 `api-contract-v1`。九张核心实体表在两个 profile 下都固定走 `public`，RPC 则由冻结 manifest 选择 `public` 或 `api`。当前 pin 已刷新到 database-engine#353 的 immutable pre-Contract provenance：artifact merge `94bfefe159c949da1b1cc1d25718961050baaa1a`、catalog replay input `databaseSchemaSha=20f56228c21e8e677154c3e77fbf0e243dde677d`、artifact SHA-256 `d7353b0b3d2dcd3bcc64ffaf41ff2015729142789e0b3a39818acc12ebf35c16`。`cmd_dataset_alias_plan_guarded` 的数据库目标是不可暴露的 `private`，因此 `api-contract-v1` 会在发送前失败关闭，直到 database-engine#358 固定新的 authenticated `api` capability。CLI 不接受 anon 或 service-role Data API 身份；GET/HEAD 与 manifest 明确分类为 read 的 RPC 仅在 401/403 后最多 refresh/replay 一次，relation write、mutation/unknown RPC 均不自动重放。
+
 不再兼容旧变量名，也不再把 KB、TianGong unstructured service、MCP 相关 env 混写成当前公开命令面的必需配置。
 
 原因很直接：

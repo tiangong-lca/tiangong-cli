@@ -1,10 +1,20 @@
+// data-api-relations: lifecyclemodels, processes
 import path from 'node:path';
 import { writeJsonArtifact } from './artifacts.js';
 import { CliError } from './errors.js';
 import type { FetchLike, ResponseLike } from './http.js';
 import { readJsonInput } from './io.js';
 import { getRuntimeRuleset, resolveRuntimeRuleId } from './runtime-rulesets.js';
-import { deriveSupabaseProjectBaseUrl, requireSupabaseRestRuntime } from './supabase-client.js';
+import {
+  deriveSupabaseProjectBaseUrl,
+  deriveSupabaseRestBaseUrl,
+  requireSupabaseRestRuntime,
+} from './supabase-client.js';
+import {
+  applyDataApiProfileHeaders,
+  buildDataApiUrl,
+  resolveDataApiCapability,
+} from './supabase-data-api-contract.js';
 import { resolveSupabaseUserSession } from './supabase-session.js';
 
 type JsonRecord = Record<string, unknown>;
@@ -636,7 +646,10 @@ async function fetchRemoteMetadata(options: {
     return {};
   }
 
-  const url = new URL(`${options.auth.projectBaseUrl}/rest/v1/processes`);
+  const capability = resolveDataApiCapability({ kind: 'relation', name: 'processes' });
+  const url = new URL(
+    buildDataApiUrl(deriveSupabaseRestBaseUrl(options.auth.projectBaseUrl), capability),
+  );
   url.searchParams.set(
     'select',
     'id,version,state_code,created_at,modified_at,user_id,team_id,model_id,json',
@@ -648,11 +661,14 @@ async function fetchRemoteMetadata(options: {
     url: url.toString(),
     init: {
       method: 'GET',
-      headers: {
-        apikey: options.auth.publishableKey,
-        Authorization: `Bearer ${options.auth.accessToken}`,
-        Accept: 'application/json',
-      },
+      headers: applyDataApiProfileHeaders(
+        {
+          apikey: options.auth.publishableKey,
+          Authorization: `Bearer ${options.auth.accessToken}`,
+          Accept: 'application/json',
+        },
+        capability,
+      ),
     },
     label: 'process dedup remote metadata fetch',
     fetchImpl: options.fetchImpl,
@@ -714,7 +730,13 @@ async function fetchCurrentUserRows(options: {
   let total: number | null = null;
 
   while (total === null || offset < total) {
-    const url = new URL(`${options.auth.projectBaseUrl}/rest/v1/${options.tableName}`);
+    const capability = resolveDataApiCapability({
+      kind: 'relation',
+      name: options.tableName,
+    });
+    const url = new URL(
+      buildDataApiUrl(deriveSupabaseRestBaseUrl(options.auth.projectBaseUrl), capability),
+    );
     url.searchParams.set('select', options.select);
     url.searchParams.set('user_id', `eq.${options.userId}`);
     url.searchParams.set('order', 'id.asc');
@@ -725,12 +747,15 @@ async function fetchCurrentUserRows(options: {
       url: url.toString(),
       init: {
         method: 'GET',
-        headers: {
-          apikey: options.auth.publishableKey,
-          Authorization: `Bearer ${options.auth.accessToken}`,
-          Accept: 'application/json',
-          Prefer: total === null ? 'count=exact' : 'count=planned',
-        },
+        headers: applyDataApiProfileHeaders(
+          {
+            apikey: options.auth.publishableKey,
+            Authorization: `Bearer ${options.auth.accessToken}`,
+            Accept: 'application/json',
+            Prefer: total === null ? 'count=exact' : 'count=planned',
+          },
+          capability,
+        ),
       },
       label: `${options.tableName} current-user reference scan`,
       fetchImpl: options.fetchImpl,

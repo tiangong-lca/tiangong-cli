@@ -93,6 +93,8 @@ MCP 替代策略也固定为两条：
 - 策略 1：对业务 API 直接调用 `tiangong-lca-edge-functions`（Edge Functions / REST）
 - 策略 2：对 Supabase 直接访问时不再经过 MCP；CLI 直接依赖官方 `@supabase/supabase-js`，并在此基础上保持 deterministic 的读写语义、URL 形状和报告契约
 
+Issue #216 将策略 2 进一步固定为 `src/lib/supabase-data-api-contract.ts` 的单一 manifest/adapter：九张 core relation 明确固定在 `public`，所有 RPC 必须出现在 exact-signature inventory 中，并通过 `legacy-public-v1` 或 `api-contract-v1` 发送显式 profile header。`scripts/scan-data-api-consumers.ts` 是静态 consumer-zero gate；任何 raw RPC route、硬编码 public profile 或未登记 relation/RPC 都会失败。当前精确冻结源是 database-engine#353 生成的 immutable pre-Contract provenance：artifact merge `94bfefe159c949da1b1cc1d25718961050baaa1a`、catalog replay input `databaseSchemaSha=20f56228c21e8e677154c3e77fbf0e243dde677d`、artifact SHA-256 `d7353b0b3d2dcd3bcc64ffaf41ff2015729142789e0b3a39818acc12ebf35c16`，且 `contractReady=false`。GET/HEAD 与 manifest 中显式标为 read 的 RPC 仅可在 401/403 后 refresh/replay 一次；relation write、mutation/unknown RPC 不自动重放。未定的新签名不得在 CLI 猜测。
+
 这两条是并行可选策略，不再引入新的 MCP 中间层。
 
 ## 2. 当前落地范围

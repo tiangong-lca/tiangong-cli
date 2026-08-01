@@ -1,3 +1,4 @@
+// data-api-relations: flowproperties, flows, unitgroups
 import path from 'node:path';
 import { existsSync } from 'node:fs';
 import {

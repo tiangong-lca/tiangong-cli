@@ -1,6 +1,7 @@
 import { createClient, type PostgrestError } from '@supabase/supabase-js';
 import { CliError } from './errors.js';
 import type { FetchLike, ResponseLike } from './http.js';
+import { isDataApiAuthRefreshReplaySafe } from './supabase-data-api-replay.js';
 
 export type SupabaseRestRuntime = {
   apiBaseUrl: string;
@@ -214,6 +215,13 @@ export function createSupabaseFetch(
     }
 
     const accessToken = await runtime.getAccessToken();
+    const method = (
+      init?.method ?? (input instanceof Request ? input.method : 'GET')
+    ).toUpperCase();
+    const replaySafe = isDataApiAuthRefreshReplaySafe({
+      url: typeof input === 'string' ? input : input instanceof URL ? input.toString() : input.url,
+      method,
+    });
     let responseLike = await performFetch(
       input,
       {
@@ -225,6 +233,7 @@ export function createSupabaseFetch(
     );
 
     if (
+      replaySafe &&
       [401, 403].includes(responseLike.status) &&
       typeof runtime.refreshAccessToken === 'function'
     ) {
@@ -391,6 +400,11 @@ export function createSupabaseDataClient(
 
   return {
     client: createClient(projectBaseUrl, runtime.publishableKey, {
+      db: {
+        // Core entity access is deliberately pinned to public. Never rely on
+        // supabase-js/PostgREST's implicit default schema.
+        schema: 'public',
+      },
       auth: {
         autoRefreshToken: false,
         persistSession: false,

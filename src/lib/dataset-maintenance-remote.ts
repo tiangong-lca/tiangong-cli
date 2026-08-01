@@ -1,3 +1,4 @@
+// data-api-relations: contacts, flowproperties, flows, lciamethods, lifecyclemodels, processes, sources, unitgroups
 import { CliError } from './errors.js';
 import type { FetchLike, ResponseLike } from './http.js';
 import {
@@ -9,8 +10,16 @@ import {
 import {
   buildSupabaseAuthHeaders,
   deriveSupabaseProjectBaseUrl,
+  deriveSupabaseRestBaseUrl,
   requireSupabaseRestRuntime,
 } from './supabase-client.js';
+import {
+  applyDataApiProfileHeaders,
+  buildDataApiUrl,
+  isDataApiUrl,
+  resolveDataApiCapabilityFromUrl,
+  type DataApiRpc,
+} from './supabase-data-api-contract.js';
 import { resolveSupabaseUserSession } from './supabase-session.js';
 import {
   isJsonObject,
@@ -99,12 +108,21 @@ async function fetchJsonResponse(options: {
   label: string;
   redactResponseDetails?: boolean;
 }): Promise<{ body: unknown; headers: ResponseLike['headers'] }> {
+  const method = options.init?.method ?? 'GET';
+  const authHeaders = {
+    ...buildSupabaseAuthHeaders(options.context.publishable_key, options.context.access_token),
+    ...(options.init?.headers ?? {}),
+  };
+  const isDataApiRequest = isDataApiUrl(options.url);
   const response = await options.context.fetch_impl(options.url, {
     ...options.init,
-    headers: {
-      ...buildSupabaseAuthHeaders(options.context.publishable_key, options.context.access_token),
-      ...(options.init?.headers ?? {}),
-    },
+    headers: isDataApiRequest
+      ? applyDataApiProfileHeaders(
+          authHeaders,
+          resolveDataApiCapabilityFromUrl({ url: options.url, method }),
+          method,
+        )
+      : authHeaders,
     signal: AbortSignal.timeout(options.context.timeout_ms),
   });
   const text = await response.text();
@@ -245,7 +263,7 @@ export async function resolveMaintenanceRemoteContext(options: {
   }
   return {
     project_ref: projectRef,
-    rest_base_url: `${projectBaseUrl}/rest/v1`,
+    rest_base_url: deriveSupabaseRestBaseUrl(projectBaseUrl),
     publishable_key: runtime.publishableKey,
     access_token: session.accessToken,
     account: {
@@ -454,29 +472,15 @@ export async function fetchMaintenanceVisibleTableRows(options: {
 
 async function invokeMaintenanceRpc(options: {
   context: DatasetMaintenanceRemoteContext;
-  rpc:
-    | 'cmd_dataset_save_draft'
-    | 'cmd_dataset_delete'
-    | 'cmd_dataset_alias_plan_guarded'
-    | 'cmd_dataset_alias_execution_preflight_guarded'
-    | 'cmd_dataset_alias_execution_gate_guarded'
-    | 'cmd_dataset_alias_execution_admit_guarded'
-    | 'cmd_dataset_alias_execution_read'
-    | 'cmd_dataset_derivative_rebuild_snapshot'
-    | 'cmd_dataset_derivative_rebuild_plan_guarded'
-    | 'cmd_dataset_derivative_rebuild_read'
-    | 'cmd_dataset_flow_identity_capture_attest_guarded'
-    | 'cmd_dataset_flow_identity_scope_preflight_guarded'
-    | 'cmd_dataset_flow_identity_scope_lookup'
-    | 'cmd_dataset_flow_identity_scope_recover_guarded'
-    | 'cmd_dataset_flow_identity_process_rewrite_guarded'
-    | 'cmd_dataset_flow_identity_scope_read'
-    | 'cmd_dataset_flow_identity_scope_finalize_guarded';
+  rpc: DataApiRpc;
   body: JsonObject;
   minimumTimeoutMs?: number;
   allowDomainFailure?: boolean;
 }): Promise<JsonObject> {
-  const url = `${options.context.rest_base_url}/rpc/${options.rpc}`;
+  const url = buildDataApiUrl(options.context.rest_base_url, {
+    kind: 'rpc',
+    name: options.rpc,
+  });
   const redactResponseDetails = options.rpc.startsWith('cmd_dataset_flow_identity_');
   const body = await fetchJson({
     context: {

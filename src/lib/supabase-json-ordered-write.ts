@@ -1,3 +1,5 @@
+// data-api-relations: lifecyclemodels, processes, sources
+// data-api-dynamic-relation-expression: options.table
 import { CliError } from './errors.js';
 import {
   buildDatasetCommandTransport,
