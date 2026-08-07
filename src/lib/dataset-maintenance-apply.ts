@@ -50,7 +50,6 @@ import {
 import { maintenanceProjectedReferenceFingerprint } from './dataset-maintenance-plan.js';
 import { isSnapshotCompletenessCompatible } from './dataset-maintenance-pagination.js';
 import {
-  applyMaintenanceAliasPlan,
   applyMaintenanceDerivativeRebuild,
   deleteMaintenanceRow,
   fetchMaintenanceAccountRows,
@@ -347,6 +346,11 @@ type AliasPlanRpcResult = {
   summary_audit_id: string;
   batches: Map<DatasetMaintenanceAliasBatchPlan['dimension'], AliasRpcResult>;
   raw: JsonObject;
+};
+
+type RetiredAliasExecutionProof = {
+  rpc: AliasPlanRpcResult;
+  after_by_action: Map<string, string>;
 };
 
 const POSITIVE_INTEGER_TEXT = /^[1-9]\d*$/u;
@@ -1559,49 +1563,6 @@ function validateAliasPlanRpcResult(
   };
 }
 
-async function executeAliasPlan(options: {
-  plan: DatasetMaintenancePlan;
-  planDir: string;
-  context: DatasetMaintenanceRemoteContext;
-}): Promise<{
-  rpc: AliasPlanRpcResult;
-  after_by_action: Map<string, string>;
-}> {
-  const request = buildAliasPlanRequest(options);
-  const remoteResult = await applyMaintenanceAliasPlan({
-    context: options.context,
-    plan: request,
-  });
-  const rpc = validateAliasPlanRpcResult(remoteResult, options.plan);
-  const afterByAction = new Map<string, string>();
-  for (const action of options.plan.actions) {
-    const exact = await fetchMaintenanceExactRows({
-      context: options.context,
-      table: action.table,
-      id: action.id,
-      version: action.version,
-    });
-    const row = exact.rows.length === 1 ? exact.rows[0] : null;
-    const snapshot = row ? snapshotRemoteRow(row) : null;
-    if (
-      !row ||
-      row.user_id !== action.expected_user_id ||
-      row.state_code !== 0 ||
-      snapshot?.payload_sha256 !== action.desired_payload?.sha256 ||
-      row.model_id !== action.before?.model_id ||
-      row.rule_verification !== action.before?.rule_verification
-    ) {
-      throw new CliError(`Alias plan readback failed for action ${action.action_id}.`, {
-        code: 'DATASET_MAINTENANCE_ALIAS_READBACK_FAILED',
-        exitCode: 1,
-      });
-    }
-    afterByAction.set(action.action_id, snapshot!.row_sha256);
-  }
-  await assertAliasSupportSnapshots({ plan: options.plan, context: options.context });
-  return { rpc, after_by_action: afterByAction };
-}
-
 function aliasExchangeProgressKey(value: {
   batch_id: string;
   action_id: string;
@@ -1614,7 +1575,7 @@ function aliasExchangeProgressKey(value: {
 function appendAliasSuccessLogs(options: {
   plan: DatasetMaintenancePlan;
   batch: DatasetMaintenanceAliasBatchPlan;
-  execution: Awaited<ReturnType<typeof executeAliasPlan>>;
+  execution: RetiredAliasExecutionProof;
   progress: ProgressState;
   progressPath: string;
   exchangeProgressPath: string;
@@ -1802,7 +1763,7 @@ function appendAliasSuccessLogs(options: {
 
 function appendAliasProofProgress(options: {
   plan: DatasetMaintenancePlan;
-  execution: Awaited<ReturnType<typeof executeAliasPlan>>;
+  execution: RetiredAliasExecutionProof;
   planProgress: AliasPlanProgressState;
   batchProgress: AliasBatchProgressState;
   planProgressPath: string;
@@ -3018,7 +2979,6 @@ export const __testInternals = {
   clock,
   errorMessage,
   executeDerivativeAdmission,
-  executeAliasPlan,
   executeAction,
   executeParallelDeletePlan,
   finalProjectedRows,

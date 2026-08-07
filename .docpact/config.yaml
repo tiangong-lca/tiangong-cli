@@ -26,9 +26,9 @@ layout: repo
 # Review note, 2026-07-25: Issue #208 optionally replaces that expensive owner-session fence with a fresh, SHA-approved, plan/actor/project/target-bound SELECT-only proof over all process rows. The default RLS scan remains unchanged; the proof path is delete-only, adds no database write or raw-SQL execution to the CLI, and changes no ownership, route, dependency, authentication, RPC/schema, release, or publication boundary.
 # Review note, 2026-07-27: Issue #210 replaces the dataset import-lca Python/checkout discovery path with the external Rust `tidas import` machine contract. Existing dataset command, runtime, test, documentation, validation, and release routes cover binary discovery, the compatible 0.1.x/version-and-schema handshake, stable exit/report mapping, packaged smoke evidence, and supported-platform guidance; no ownership, npm dependency, authentication, tag, Trusted Publishing, or workspace-integration rule changes are required.
 # Review note, 2026-07-30: Issue #214 keeps the lexical-weight and derivative-proof cleanup inside the existing identity-preflight, dataset-maintenance, test, and governed-doc routes. No ownership, dependency, authentication, release, or workspace-integration rule changes are required.
-# Review note, 2026-08-01: Issue #216 adds one schema-aware Data API manifest/adapter plus a consumer-zero scanner inside the existing remote-session, command-family, and validation domains. The explicit adapter path below and existing caller/test/script routes cover the change; no ownership or domain change is required.
-lastReviewedAt: "2026-08-01"
-lastReviewedCommit: "65b408db7649583c10005b30ea2b3874dadfeb8d"
+# Review note, 2026-08-07: database-engine Issue #422 switches the existing Data API adapter to the frozen api-only contract, retires the private alias whole-plan transport, and keeps the change inside existing remote-session, command-family, test, and governed-doc routes.
+lastReviewedAt: "2026-08-07"
+lastReviewedCommit: "5cb359f1d0860df560c7571fa7547b2822b37c71"
 
 catalog:
   repos:

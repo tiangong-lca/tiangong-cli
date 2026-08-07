@@ -6,7 +6,7 @@ export {
 } from './supabase-data-api-replay.js';
 
 export const DATA_API_PROFILE_ENV = 'TIANGONG_LCA_DATA_API_PROFILE';
-export const DATA_API_PROFILES = ['legacy-public-v1', 'api-contract-v1'] as const;
+export const DATA_API_PROFILES = ['api-contract-v1'] as const;
 export type DataApiProfile = (typeof DATA_API_PROFILES)[number];
 export type DataApiRole = 'anon' | 'authenticated' | 'service_role';
 
@@ -95,84 +95,80 @@ export const DATA_API_RELATION_CONSUMERS = {
 } as const satisfies Record<CorePublicRelation, readonly string[]>;
 
 type RpcTarget = {
-  targetSchema: 'api' | 'private';
+  targetSchema: 'api';
   signature: string;
 };
 
 export const DATA_API_RPC_TARGETS = {
   cmd_dataset_alias_execution_admit_guarded: {
     targetSchema: 'api',
-    signature: 'public.cmd_dataset_alias_execution_admit_guarded(p_request jsonb)',
+    signature: 'api.cmd_dataset_alias_execution_admit_guarded(p_request jsonb)',
   },
   cmd_dataset_alias_execution_gate_guarded: {
     targetSchema: 'api',
     signature:
-      'public.cmd_dataset_alias_execution_gate_guarded(p_request_id uuid, p_preflight_token text, p_gate_name text)',
+      'api.cmd_dataset_alias_execution_gate_guarded(p_request_id uuid, p_preflight_token text, p_gate_name text)',
   },
   cmd_dataset_alias_execution_preflight_guarded: {
     targetSchema: 'api',
-    signature: 'public.cmd_dataset_alias_execution_preflight_guarded(p_request jsonb)',
+    signature: 'api.cmd_dataset_alias_execution_preflight_guarded(p_request jsonb)',
   },
   cmd_dataset_alias_execution_read: {
     targetSchema: 'api',
-    signature: 'public.cmd_dataset_alias_execution_read(p_request_id uuid)',
-  },
-  cmd_dataset_alias_plan_guarded: {
-    targetSchema: 'private',
-    signature: 'public.cmd_dataset_alias_plan_guarded(p_plan jsonb)',
+    signature: 'api.cmd_dataset_alias_execution_read(p_request_id uuid)',
   },
   cmd_dataset_delete: {
     targetSchema: 'api',
-    signature: 'public.cmd_dataset_delete(p_table text, p_id uuid, p_version text, p_audit jsonb)',
+    signature: 'api.cmd_dataset_delete(p_table text, p_id uuid, p_version text, p_audit jsonb)',
   },
   cmd_dataset_derivative_rebuild_plan_guarded: {
     targetSchema: 'api',
-    signature: 'public.cmd_dataset_derivative_rebuild_plan_guarded(p_plan jsonb)',
+    signature: 'api.cmd_dataset_derivative_rebuild_plan_guarded(p_plan jsonb)',
   },
   cmd_dataset_derivative_rebuild_read: {
     targetSchema: 'api',
-    signature: 'public.cmd_dataset_derivative_rebuild_read(p_request_id uuid)',
+    signature: 'api.cmd_dataset_derivative_rebuild_read(p_request_id uuid)',
   },
   cmd_dataset_derivative_rebuild_snapshot: {
     targetSchema: 'api',
     signature:
-      'public.cmd_dataset_derivative_rebuild_snapshot(p_table text, p_id uuid, p_version text)',
+      'api.cmd_dataset_derivative_rebuild_snapshot(p_table text, p_id uuid, p_version text)',
   },
   cmd_dataset_flow_identity_capture_attest_guarded: {
     targetSchema: 'api',
-    signature: 'public.cmd_dataset_flow_identity_capture_attest_guarded(p_request jsonb)',
+    signature: 'api.cmd_dataset_flow_identity_capture_attest_guarded(p_request jsonb)',
   },
   cmd_dataset_flow_identity_process_rewrite_guarded: {
     targetSchema: 'api',
     signature:
-      'public.cmd_dataset_flow_identity_process_rewrite_guarded(p_scope_id uuid, p_request jsonb, p_authorization jsonb)',
+      'api.cmd_dataset_flow_identity_process_rewrite_guarded(p_scope_id uuid, p_request jsonb, p_authorization jsonb)',
   },
   cmd_dataset_flow_identity_scope_finalize_guarded: {
     targetSchema: 'api',
     signature:
-      'public.cmd_dataset_flow_identity_scope_finalize_guarded(p_scope_id uuid, p_request jsonb, p_authorization jsonb)',
+      'api.cmd_dataset_flow_identity_scope_finalize_guarded(p_scope_id uuid, p_request jsonb, p_authorization jsonb)',
   },
   cmd_dataset_flow_identity_scope_lookup: {
     targetSchema: 'api',
-    signature: 'public.cmd_dataset_flow_identity_scope_lookup(p_request jsonb)',
+    signature: 'api.cmd_dataset_flow_identity_scope_lookup(p_request jsonb)',
   },
   cmd_dataset_flow_identity_scope_preflight_guarded: {
     targetSchema: 'api',
-    signature: 'public.cmd_dataset_flow_identity_scope_preflight_guarded(p_request jsonb)',
+    signature: 'api.cmd_dataset_flow_identity_scope_preflight_guarded(p_request jsonb)',
   },
   cmd_dataset_flow_identity_scope_read: {
     targetSchema: 'api',
-    signature: 'public.cmd_dataset_flow_identity_scope_read(p_scope_id uuid)',
+    signature: 'api.cmd_dataset_flow_identity_scope_read(p_scope_id uuid)',
   },
   cmd_dataset_flow_identity_scope_recover_guarded: {
     targetSchema: 'api',
     signature:
-      'public.cmd_dataset_flow_identity_scope_recover_guarded(p_scope_id uuid, p_request jsonb)',
+      'api.cmd_dataset_flow_identity_scope_recover_guarded(p_scope_id uuid, p_request jsonb)',
   },
   cmd_dataset_save_draft: {
     targetSchema: 'api',
     signature:
-      'public.cmd_dataset_save_draft(p_table text, p_id uuid, p_version text, p_json_ordered jsonb, p_model_id uuid, p_rule_verification boolean, p_audit jsonb)',
+      'api.cmd_dataset_save_draft(p_table text, p_id uuid, p_version text, p_json_ordered jsonb, p_model_id uuid, p_rule_verification boolean, p_audit jsonb)',
   },
 } as const satisfies Record<string, RpcTarget>;
 
@@ -182,37 +178,33 @@ export const DATA_API_CONTRACT = {
   schemaVersion: 'tiangong-lca-cli.data-api-contract.v1',
   databaseContract: {
     repository: 'tiangong-lca/database-engine',
-    artifactCommit: '94bfefe159c949da1b1cc1d25718961050baaa1a',
-    artifactSource: {
-      baseline: 'tiangong-lca/workspace#533',
-      databaseBaseSha: '157ef7bb4e844edb26525dfb89f4fde188ee0cef',
-      databaseInventorySha: '86203c9190b11f12109a7fdd3f310ff47a47c9e5',
-      databaseMergeBaseSha: '907f7b6a47b98c401d98184a8b7452aaaa429bbf',
-      databaseSchemaSha: '20f56228c21e8e677154c3e77fbf0e243dde677d',
-      previousArtifactSha256: '248d1f86addc332d0f5486b2edb8875e87a95929d06c9f59ef51968f90685c1b',
-      workspaceBaselineSha: '520b7af67240beb0f08419ab432a018d93542170',
-      workspacePinnedDatabaseSha: '1516ad7bb3f74734095756e741f00f60e93b79b3',
+    databaseCommit: '0a97cc761f8127ca379ab7d4df4395dab255707a',
+    migrationHead: '20260807103000',
+    migrationSetGitTreeSha: '116c1f08b5490eec630f997403b07c3fcb830a69',
+    contractMigrations: {
+      fullSchemaCutover: {
+        path: 'supabase/migrations/20260805130000_full_schema_cutover.sql',
+        sha256: 'd409022fb25d9313d17b0f76216ca6e4abbfce7d6c5b6e74c869314d1c7e5afb',
+      },
+      apiContractClosure: {
+        path: 'supabase/migrations/20260806160000_api_contract_closure.sql',
+        sha256: 'e0e7aec8e03d70c60ee0d5c2b332ce73fa7b4b229725c9a9fcb0e1a1d7e8c511',
+      },
+      migrationHead: {
+        path: 'supabase/migrations/20260807103000_data_product_consumer_facades.sql',
+        sha256: 'd7fe990d487a75a8aecced5af580d27f176e74ac00f18e7fa6e6d88733152646',
+      },
     },
-    inventoryPath: 'supabase/tests/contracts/public_object_inventory.json',
-    inventorySchemaVersion: 'database.public-object-inventory-closure.v1',
-    inventorySha256: 'd7353b0b3d2dcd3bcc64ffaf41ff2015729142789e0b3a39818acc12ebf35c16',
-    previousInventorySha256: '248d1f86addc332d0f5486b2edb8875e87a95929d06c9f59ef51968f90685c1b',
-    objectCount: 393,
-    dependencyEdgeCount: 1119,
-    contractReady: false,
-    snapshotRole: 'immutable-pre-contract-provenance',
-    provenanceIssue: 'tiangong-lca/database-engine#353',
-    refreshRequiredAfter: null,
+    contractReady: true,
+    snapshotRole: 'frozen-post-cutover-api-contract',
+    provenanceIssue: 'tiangong-lca/database-engine#422',
+    publicCoreTableCount: 9,
+    publicRoutineCount: 0,
   },
   profiles: {
-    'legacy-public-v1': {
-      phase: 'expand',
-      description: 'Explicit compatibility profile for the current public Data API contract.',
-    },
     'api-contract-v1': {
-      phase: 'contract-preview',
-      description:
-        'Versioned api profile. It fails closed for capabilities whose public replacement is not frozen.',
+      phase: 'contract',
+      description: 'Frozen api RPC profile for database-engine migration head 20260807103000.',
     },
   },
   corePublicRelations: CORE_PUBLIC_RELATIONS,
@@ -231,14 +223,15 @@ export const DATA_API_CONTRACT = {
     mutations:
       'no automatic transport retry; recovery must use the capability idempotency/read path',
   },
-  blockers: [
+  retiredCapabilities: [
     {
       capability: 'rpc:cmd_dataset_alias_plan_guarded',
       targetSchema: 'private',
       reason:
-        'database-engine inventory moves the existing signature to private; database-engine#358 has not frozen an authenticated api replacement',
+        'The whole-plan executor is private. Authenticated CLI execution uses the frozen alias execution preflight/gate/admit/read api capabilities.',
     },
   ],
+  blockers: [],
 } as const;
 
 export type ResolvedDataApiCapability = {
@@ -259,7 +252,7 @@ function isDataApiRpc(value: string): value is DataApiRpc {
 }
 
 export function resolveDataApiProfile(env: NodeJS.ProcessEnv = process.env): DataApiProfile {
-  const value = env[DATA_API_PROFILE_ENV]?.trim() || 'legacy-public-v1';
+  const value = env[DATA_API_PROFILE_ENV]?.trim() || 'api-contract-v1';
   if ((DATA_API_PROFILES as readonly string[]).includes(value)) {
     return value as DataApiProfile;
   }
@@ -317,25 +310,10 @@ export function resolveDataApiCapability(options: {
     });
   }
   const target = DATA_API_RPC_TARGETS[options.name];
-  if (profile === 'api-contract-v1' && target.targetSchema !== 'api') {
-    throw new CliError(
-      `RPC ${options.name} has no frozen authenticated api capability in the pinned database contract.`,
-      {
-        code: 'DATA_API_CAPABILITY_BLOCKED',
-        exitCode: 2,
-        details: {
-          rpc: options.name,
-          current_signature: target.signature,
-          target_schema: target.targetSchema,
-          dependency: 'tiangong-lca/database-engine#358',
-        },
-      },
-    );
-  }
   return {
     kind: 'rpc',
     name: options.name,
-    schema: profile === 'api-contract-v1' ? 'api' : 'public',
+    schema: 'api',
     profile,
     role,
     signature: target.signature,

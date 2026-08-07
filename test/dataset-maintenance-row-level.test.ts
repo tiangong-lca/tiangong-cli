@@ -1051,11 +1051,7 @@ async function executeLegacyAliasFixtureForVerification(
   const progress = applyInternals.parseProgress(scenario.plan, progressPath);
   const planProgress = applyInternals.parseAliasPlanProgress(scenario.plan, planProgressPath);
   const batchProgress = applyInternals.parseAliasBatchProgress(scenario.plan, batchProgressPath);
-  const execution = await applyInternals.executeAliasPlan({
-    plan: scenario.plan,
-    planDir: scenario.outDir,
-    context: scenario.context,
-  });
+  const execution = await executeRetiredAliasFixture(scenario);
   const timestamp = '2026-07-11T09:30:00.000Z';
   for (const batch of scenario.plan.alias_batches!) {
     applyInternals.appendAliasSuccessLogs({
@@ -1081,6 +1077,53 @@ async function executeLegacyAliasFixtureForVerification(
     startedAt: timestamp,
     endedAt: timestamp,
   });
+}
+
+async function executeRetiredAliasFixture(
+  scenario: Awaited<ReturnType<typeof prepareAliasScenario>>,
+) {
+  const request = applyInternals.buildAliasPlanRequest({
+    plan: scenario.plan,
+    planDir: scenario.outDir,
+  });
+  const response = await scenario.remote.fetch(
+    'https://retired-fixture.invalid/rest/v1/rpc/cmd_dataset_alias_plan_guarded',
+    {
+      method: 'POST',
+      body: JSON.stringify({ p_plan: request }),
+    },
+  );
+  const payload = JSON.parse(await response.text()) as JsonObject;
+  if (!response.ok) {
+    throw new CliError('Retired alias fixture transport failed.', {
+      code: 'RETIRED_ALIAS_FIXTURE_FAILED',
+      exitCode: 1,
+      details: payload,
+    });
+  }
+  const rpc = applyInternals.validateAliasPlanRpcResult(payload, scenario.plan);
+  const afterByAction = new Map<string, string>();
+  for (const action of scenario.plan.actions) {
+    const row = (scenario.remote.rows.get(action.table) ?? []).find(
+      (entry) => entry.id === action.id && entry.version === action.version,
+    );
+    const snapshot = row ? snapshotRemoteRow({ ...row, table: action.table }) : null;
+    if (
+      !row ||
+      row.user_id !== action.expected_user_id ||
+      row.state_code !== 0 ||
+      snapshot?.payload_sha256 !== action.desired_payload?.sha256 ||
+      row.model_id !== action.before?.model_id ||
+      row.rule_verification !== action.before?.rule_verification
+    ) {
+      throw new CliError(`Alias plan readback failed for action ${action.action_id}.`, {
+        code: 'DATASET_MAINTENANCE_ALIAS_READBACK_FAILED',
+        exitCode: 1,
+      });
+    }
+    afterByAction.set(action.action_id, snapshot!.row_sha256);
+  }
+  return { rpc, after_by_action: afterByAction };
 }
 
 function writeLegacyAliasCommitReport(
@@ -3772,30 +3815,55 @@ test('alias apply rejects invalid RPC/readback proofs and repairs only exact dur
     return { status: 'completed' as const };
   };
   try {
+    const supportSuccess = await prepareAliasScenario(root, 'support-success');
+    await applyInternals.assertAliasSupportSnapshots({
+      plan: supportSuccess.plan,
+      context: supportSuccess.context,
+    });
+
+    const supportDrift = await prepareAliasScenario(root, 'support-drift');
+    const supportSnapshot = supportDrift.plan.alias_batches![0]!.target_snapshots.unitgroup!;
+    const supportRow = (supportDrift.remote.rows.get(supportSnapshot.table) ?? []).find(
+      (row) => row.id === supportSnapshot.id && row.version === supportSnapshot.version,
+    )!;
+    supportRow.json_ordered = { drifted: true };
+    await assert.rejects(
+      applyInternals.assertAliasSupportSnapshots({
+        plan: supportDrift.plan,
+        context: supportDrift.context,
+      }),
+      /support row drifted/u,
+    );
+    await applyInternals.assertAliasSupportSnapshots({
+      plan: { ...supportDrift.plan, alias_batches: [] },
+      context: supportDrift.context,
+    });
+
+    const supportOwnerDrift = await prepareAliasScenario(root, 'support-owner-drift');
+    const supportOwnerSnapshot =
+      supportOwnerDrift.plan.alias_batches![0]!.target_snapshots.unitgroup!;
+    const supportOwnerRow = (
+      supportOwnerDrift.remote.rows.get(supportOwnerSnapshot.table) ?? []
+    ).find(
+      (row) => row.id === supportOwnerSnapshot.id && row.version === supportOwnerSnapshot.version,
+    )!;
+    supportOwnerRow.user_id = '00000000-0000-4000-8000-000000000099';
+    await assert.rejects(
+      applyInternals.assertAliasSupportSnapshots({
+        plan: supportOwnerDrift.plan,
+        context: supportOwnerDrift.context,
+      }),
+      /support row drifted/u,
+    );
+
     const invalidProof = await prepareAliasScenario(root, 'invalid-proof');
     invalidProof.remote.invalidAliasProof = true;
-    await assert.rejects(
-      () =>
-        applyInternals.executeAliasPlan({
-          plan: invalidProof.plan,
-          planDir: invalidProof.outDir,
-          context: invalidProof.context,
-        }),
-      /whole-plan proof/u,
-    );
+    await assert.rejects(() => executeRetiredAliasFixture(invalidProof), /whole-plan proof/u);
 
     for (const failure of ['missing', 'mismatch'] as const) {
       const readback = await prepareAliasScenario(root, `readback-${failure}`);
       readback.remote.aliasReadbackFailure = failure;
-      await assert.rejects(
-        () =>
-          applyInternals.executeAliasPlan({
-            plan: readback.plan,
-            planDir: readback.outDir,
-            context: readback.context,
-          }),
-        /readback failed/u,
-      );
+      await assert.rejects(() => executeRetiredAliasFixture(readback), /readback failed/u);
     }
 
     const partial = await prepareAliasScenario(root, 'partial-log');

@@ -18,29 +18,36 @@ import {
 test('data api manifest freezes the exact database contract and complete CLI inventory', () => {
   assert.equal(DATA_API_CONTRACT.schemaVersion, 'tiangong-lca-cli.data-api-contract.v1');
   assert.equal(
-    DATA_API_CONTRACT.databaseContract.artifactCommit,
-    '94bfefe159c949da1b1cc1d25718961050baaa1a',
+    DATA_API_CONTRACT.databaseContract.databaseCommit,
+    '0a97cc761f8127ca379ab7d4df4395dab255707a',
   );
+  assert.equal(DATA_API_CONTRACT.databaseContract.migrationHead, '20260807103000');
+  assert.equal(DATA_API_CONTRACT.databaseContract.contractReady, true);
   assert.equal(
-    DATA_API_CONTRACT.databaseContract.inventorySha256,
-    'd7353b0b3d2dcd3bcc64ffaf41ff2015729142789e0b3a39818acc12ebf35c16',
+    DATA_API_CONTRACT.databaseContract.migrationSetGitTreeSha,
+    '116c1f08b5490eec630f997403b07c3fcb830a69',
   );
-  assert.equal(DATA_API_CONTRACT.databaseContract.contractReady, false);
-  assert.deepEqual(DATA_API_CONTRACT.databaseContract.artifactSource, {
-    baseline: 'tiangong-lca/workspace#533',
-    databaseBaseSha: '157ef7bb4e844edb26525dfb89f4fde188ee0cef',
-    databaseInventorySha: '86203c9190b11f12109a7fdd3f310ff47a47c9e5',
-    databaseMergeBaseSha: '907f7b6a47b98c401d98184a8b7452aaaa429bbf',
-    databaseSchemaSha: '20f56228c21e8e677154c3e77fbf0e243dde677d',
-    previousArtifactSha256: '248d1f86addc332d0f5486b2edb8875e87a95929d06c9f59ef51968f90685c1b',
-    workspaceBaselineSha: '520b7af67240beb0f08419ab432a018d93542170',
-    workspacePinnedDatabaseSha: '1516ad7bb3f74734095756e741f00f60e93b79b3',
+  assert.deepEqual(DATA_API_CONTRACT.databaseContract.contractMigrations, {
+    fullSchemaCutover: {
+      path: 'supabase/migrations/20260805130000_full_schema_cutover.sql',
+      sha256: 'd409022fb25d9313d17b0f76216ca6e4abbfce7d6c5b6e74c869314d1c7e5afb',
+    },
+    apiContractClosure: {
+      path: 'supabase/migrations/20260806160000_api_contract_closure.sql',
+      sha256: 'e0e7aec8e03d70c60ee0d5c2b332ce73fa7b4b229725c9a9fcb0e1a1d7e8c511',
+    },
+    migrationHead: {
+      path: 'supabase/migrations/20260807103000_data_product_consumer_facades.sql',
+      sha256: 'd7fe990d487a75a8aecced5af580d27f176e74ac00f18e7fa6e6d88733152646',
+    },
   });
+  assert.equal(DATA_API_CONTRACT.databaseContract.snapshotRole, 'frozen-post-cutover-api-contract');
   assert.equal(
-    DATA_API_CONTRACT.databaseContract.snapshotRole,
-    'immutable-pre-contract-provenance',
+    DATA_API_CONTRACT.databaseContract.provenanceIssue,
+    'tiangong-lca/database-engine#422',
   );
-  assert.equal(DATA_API_CONTRACT.databaseContract.refreshRequiredAfter, null);
+  assert.equal(DATA_API_CONTRACT.databaseContract.publicCoreTableCount, 9);
+  assert.equal(DATA_API_CONTRACT.databaseContract.publicRoutineCount, 0);
   assert.deepEqual(CORE_PUBLIC_RELATIONS, [
     'contacts',
     'flowproperties',
@@ -52,15 +59,25 @@ test('data api manifest freezes the exact database contract and complete CLI inv
     'sources',
     'unitgroups',
   ]);
-  assert.equal(Object.keys(DATA_API_RPC_TARGETS).length, 17);
-  assert.equal(Object.keys(DATA_API_RPC_REPLAY_CLASSIFICATION).length, 17);
+  assert.equal(Object.keys(DATA_API_RPC_TARGETS).length, 16);
+  assert.equal(Object.keys(DATA_API_RPC_REPLAY_CLASSIFICATION).length, 16);
   assert.deepEqual(
     Object.keys(DATA_API_RPC_REPLAY_CLASSIFICATION).sort(),
     Object.keys(DATA_API_RPC_TARGETS).sort(),
   );
   assert.deepEqual(DATA_API_CONTRACT.views, []);
   assert.equal(DATA_API_CONTRACT.retryPolicy.mutations.startsWith('no automatic'), true);
-  assert.equal(DATA_API_CONTRACT.blockers[0].capability, 'rpc:cmd_dataset_alias_plan_guarded');
+  assert.deepEqual(DATA_API_CONTRACT.blockers, []);
+  assert.equal(
+    DATA_API_CONTRACT.retiredCapabilities[0].capability,
+    'rpc:cmd_dataset_alias_plan_guarded',
+  );
+  assert.equal(
+    Object.values(DATA_API_RPC_TARGETS).every(
+      (target) => target.targetSchema === 'api' && target.signature.startsWith('api.'),
+    ),
+    true,
+  );
 });
 
 test('auth refresh replay classification is method- and capability-aware', () => {
@@ -90,14 +107,14 @@ test('auth refresh replay classification is method- and capability-aware', () =>
   );
 });
 
-test('profile parsing defaults to an explicit version and rejects unknown values', () => {
-  assert.equal(resolveDataApiProfile({}), 'legacy-public-v1');
+test('profile parsing defaults to the frozen api contract and rejects retired public profiles', () => {
+  assert.equal(resolveDataApiProfile({}), 'api-contract-v1');
   assert.equal(
     resolveDataApiProfile({ [DATA_API_PROFILE_ENV]: ' api-contract-v1 ' }),
     'api-contract-v1',
   );
   assert.throws(
-    () => resolveDataApiProfile({ [DATA_API_PROFILE_ENV]: 'public' }),
+    () => resolveDataApiProfile({ [DATA_API_PROFILE_ENV]: 'legacy-public-v1' }),
     (error: unknown) =>
       typeof error === 'object' &&
       error !== null &&
@@ -106,17 +123,14 @@ test('profile parsing defaults to an explicit version and rejects unknown values
   );
 });
 
-test('core relations stay explicitly public for both versioned profiles', () => {
-  for (const profile of ['legacy-public-v1', 'api-contract-v1'] as const) {
-    const capability = resolveDataApiCapability({
-      kind: 'relation',
-      name: 'processes',
-      profile,
-    });
-    assert.equal(capability.schema, 'public');
-    assert.equal(capability.profile, profile);
-    assert.equal(capability.signature, null);
-  }
+test('core relations stay explicitly public under the frozen api profile', () => {
+  const capability = resolveDataApiCapability({
+    kind: 'relation',
+    name: 'processes',
+  });
+  assert.equal(capability.schema, 'public');
+  assert.equal(capability.profile, 'api-contract-v1');
+  assert.equal(capability.signature, null);
   assert.throws(
     () => resolveDataApiCapability({ kind: 'relation', name: 'process_build_runs' }),
     (error: unknown) =>
@@ -127,34 +141,21 @@ test('core relations stay explicitly public for both versioned profiles', () => 
   );
 });
 
-test('rpc resolution supports old public and new api without inventing private replacements', () => {
-  const legacy = resolveDataApiCapability({
-    kind: 'rpc',
-    name: 'cmd_dataset_delete',
-    profile: 'legacy-public-v1',
-  });
-  assert.equal(legacy.schema, 'public');
-  assert.match(legacy.signature ?? '', /p_audit jsonb/u);
-
+test('rpc resolution uses only frozen api signatures and rejects retired private executors', () => {
   const current = resolveDataApiCapability({
     kind: 'rpc',
     name: 'cmd_dataset_delete',
-    profile: 'api-contract-v1',
   });
   assert.equal(current.schema, 'api');
+  assert.match(current.signature ?? '', /^api\.cmd_dataset_delete\(.+p_audit jsonb\)$/u);
 
   assert.throws(
-    () =>
-      resolveDataApiCapability({
-        kind: 'rpc',
-        name: 'cmd_dataset_alias_plan_guarded',
-        profile: 'api-contract-v1',
-      }),
+    () => resolveDataApiCapability({ kind: 'rpc', name: 'cmd_dataset_alias_plan_guarded' }),
     (error: unknown) =>
       typeof error === 'object' &&
       error !== null &&
       'code' in error &&
-      error.code === 'DATA_API_CAPABILITY_BLOCKED',
+      error.code === 'DATA_API_CAPABILITY_UNMANIFESTED',
   );
   assert.throws(
     () => resolveDataApiCapability({ kind: 'rpc', name: 'guessed_future_rpc' }),

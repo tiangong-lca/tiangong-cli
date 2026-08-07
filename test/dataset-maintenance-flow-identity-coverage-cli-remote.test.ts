@@ -394,7 +394,7 @@ test('flow-identity RPC errors never expose bearer permits in structured details
   );
 });
 
-test('non-flow maintenance errors retain legacy diagnostic details', async () => {
+test('non-flow maintenance errors retain diagnostics and retire the private alias executor', async () => {
   await assert.rejects(
     fetchMaintenanceAccountTableRows({
       context: remoteContext(
@@ -419,15 +419,22 @@ test('non-flow maintenance errors retain legacy diagnostic details', async () =>
     },
   );
 
-  const unexpectedBody = { ok: 'unexpected', diagnostic: 'legacy RPC detail' };
   await assert.rejects(
     applyMaintenanceAliasPlan({
-      context: remoteContext(async () => response(unexpectedBody)),
+      context: remoteContext(async () => response({ ok: true })),
       plan: { plan_sha256: 'legacy-plan' },
     }),
     (error) => {
       assert.equal(error instanceof CliError, true);
-      assert.deepEqual((error as CliError).details, unexpectedBody);
+      assert.equal((error as CliError).code, 'DATASET_MAINTENANCE_PROTECTED_RUN_REQUIRED');
+      assert.deepEqual((error as CliError).details, {
+        replacement_capabilities: [
+          'cmd_dataset_alias_execution_preflight_guarded',
+          'cmd_dataset_alias_execution_gate_guarded',
+          'cmd_dataset_alias_execution_admit_guarded',
+          'cmd_dataset_alias_execution_read',
+        ],
+      });
       return true;
     },
   );
