@@ -27,9 +27,9 @@ checkPaths:
   - scripts/docpact
   - scripts/docpact-gate.sh
   - scripts/install-git-hooks.sh
-lastReviewedAt: 2026-08-01
-lastReviewedCommit: 65b408db7649583c10005b30ea2b3874dadfeb8d
-lastReviewedNote: 'Reviewed for Issue #216: proof covers exact contract pinning, role/profile routing, consumer-zero, retry, pagination, error, idempotency, and audit invariants.'
+lastReviewedAt: 2026-08-07
+lastReviewedCommit: 5cb359f1d0860df560c7571fa7547b2822b37c71
+lastReviewedNote: 'Reviewed for database-engine Issue #422: proof covers the frozen api contract, old-public consumer zero, protected alias routing, replay, pagination, error, RLS, idempotency, and audit invariants.'
 related:
   - ../../AGENTS.md
   - ../../.docpact/config.yaml
@@ -77,7 +77,7 @@ Review note, 2026-07-27: Issue #210 proof must cover binary-discovery precedence
 
 Review note, 2026-07-30: Issue #214 proof must assert that identity preflight emits only `lexical_weight` plus `semantic_weight`, and that protected derivative reads/snapshots no longer require the retired lexical column. Focused identity-preflight and dataset-maintenance suites plus the exact-coverage pre-push gate remain mandatory.
 
-Review note, 2026-08-01: Issue #216 proof must run `npm run lint:data-api-consumers` and assert the exact artifact merge/catalog schema input/inventory SHA provenance, nine-table public allowlist, zero view consumers, complete 17-RPC inventory, explicit GET/HEAD versus mutation profile headers, authenticated-only CLI role boundary, invalid/unmanifested/blocked errors, GET/HEAD and manifest-read-RPC auth-refresh replay, relation-write/mutation-RPC/unknown-RPC no-replay behavior, exact-count pagination, and existing RPC idempotency/audit regressions. Hosted old/new parity remains blocked until database-engine#354/#355/#358 publish the corresponding Expand signatures and schema state.
+Review note, 2026-08-07: database-engine Issue #422 proof must run `npm run lint:data-api-consumers` and assert database commit `0a97cc761f8127ca379ab7d4df4395dab255707a`, migration head `20260807103000`, exact migration-tree/file hashes, the nine-table public allowlist, zero view consumers, the complete 16-RPC `api` inventory, and zero retired `public`/private-alias consumers. Tests must retain explicit relation/RPC profile headers, authenticated-only role and RLS boundaries, structured invalid/unmanifested/retired errors, GET/HEAD and manifest-read-RPC auth-refresh replay, mutation/unknown no-replay behavior, exact-count pagination, and existing protected-execution idempotency/audit regressions.
 
 Review note, 2026-07-11: `dataset maintenance plan/apply/verify` adds focused proof for exact-row scope freezing, current-user RLS guards, immutable plan hashing, protected-row classification, full-plan drift preflight, approval-before-write, per-action logs, platform audit correlation, failure/resume behavior, and independent readback verification.
 

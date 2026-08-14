@@ -14,7 +14,6 @@ export const DATA_API_RPC_REPLAY_CLASSIFICATION = {
     operation: 'read',
     authRefreshReplay: 'once-after-401-403',
   },
-  cmd_dataset_alias_plan_guarded: { operation: 'mutation', authRefreshReplay: 'never' },
   cmd_dataset_delete: { operation: 'mutation', authRefreshReplay: 'never' },
   cmd_dataset_derivative_rebuild_plan_guarded: {
     operation: 'mutation',

@@ -26,9 +26,9 @@ checkPaths:
   - scripts/docpact
   - scripts/docpact-gate.sh
   - scripts/install-git-hooks.sh
-lastReviewedAt: 2026-08-01
-lastReviewedCommit: 65b408db7649583c10005b30ea2b3874dadfeb8d
-lastReviewedNote: 'Reviewed for Issue #216: one exact-contract Data API manifest owns explicit public/api profile selection and consumer-zero enforcement.'
+lastReviewedAt: 2026-08-07
+lastReviewedCommit: 5cb359f1d0860df560c7571fa7547b2822b37c71
+lastReviewedNote: 'Reviewed for database-engine Issue #422: one exact-contract adapter owns public core relations, api RPC selection, and retired private-executor rejection.'
 related:
   - ../../AGENTS.md
   - ../../.docpact/config.yaml
@@ -55,7 +55,7 @@ Review note, 2026-07-27: Issue #210 keeps `src/lib/dataset-import-lca.ts` as a t
 
 Review note, 2026-07-30: Issue #214 keeps identity search and derivative verification in their existing modules while narrowing their contracts. Remote identity requests expose one `lexical_weight`, and derivative snapshots/readback bind `extracted_md`, `embedding_ft`, and `embedding_ft_at`; no alternate adapter, write path, or artifact family is introduced.
 
-Review note, 2026-08-01: Issue #216 adds `src/lib/supabase-data-api-contract.ts` as the only schema/profile and RPC replay-classification manifest. Core relation clients explicitly select `public`; raw relation and RPC requests use method-appropriate `Accept-Profile` / `Content-Profile`; `scripts/scan-data-api-consumers.ts` rejects raw RPC routes, hard-coded public profile headers, and unmanifested consumers. GET/HEAD and only explicitly classified read RPCs may refresh/replay once after 401/403; relation writes, mutation RPCs, and unknown RPCs never replay. The preview `api-contract-v1` profile is usable for the 16 RPCs whose pinned target is `api`, while `cmd_dataset_alias_plan_guarded` is blocked because its pinned target is `private` and no authenticated replacement signature is final.
+Review note, 2026-08-07: database-engine Issue #422 makes `api-contract-v1` the default and only supported Data API profile at database commit `0a97cc761f8127ca379ab7d4df4395dab255707a` / migration head `20260807103000`. Core relation clients still explicitly select `public`; all 16 authenticated RPCs use exact `api` signatures and method-appropriate profile headers. The retired private whole-plan alias executor is absent from the transport manifest and fails locally; `run-protected` remains the only production alias path through the frozen preflight/gate/admit/read façades. Consumer-zero scanning, role boundaries, and replay classification remain centralized here.
 
 Review note, 2026-07-11: row-level dataset maintenance is implemented in the native CLI as `dataset maintenance plan/apply/verify`. The architecture keeps scope freezing, current-user RLS reads, protected-row classification, approved platform-command writes, append-only action logging, and independent verification in separate maintenance modules.
 

@@ -23,7 +23,7 @@ function scanFixture(
   }
 }
 
-test('consumer-zero scan inventories every active relation and RPC without implicit public routes', () => {
+test('consumer-zero scan inventories every active relation and api RPC without retired public routes', () => {
   const report = scanDataApiConsumers(repoRoot);
   assert.equal(report.consumer_zero, true);
   assert.deepEqual(report.findings, []);
@@ -38,8 +38,11 @@ test('consumer-zero scan inventories every active relation and RPC without impli
     'sources',
     'unitgroups',
   ]);
-  assert.equal(report.inventory.rpc_names.length, 17);
-  assert.equal(report.contract.contractReady, false);
+  assert.equal(report.inventory.rpc_names.length, 16);
+  assert.equal(report.inventory.rpc_names.includes('cmd_dataset_alias_plan_guarded'), false);
+  assert.equal(report.contract.contractReady, true);
+  assert.equal(report.contract.databaseCommit, '0a97cc761f8127ca379ab7d4df4395dab255707a');
+  assert.equal(report.contract.migrationHead, '20260807103000');
 });
 
 test('scan rejects a static non-core relation', () => {

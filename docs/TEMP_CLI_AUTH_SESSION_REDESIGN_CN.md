@@ -15,8 +15,8 @@ checkPaths:
   - src/lib/user-api-key.ts
   - src/lib/supabase-session.ts
   - src/lib/supabase-client.ts
-lastReviewedAt: 2026-08-01
-lastReviewedCommit: 65b408db7649583c10005b30ea2b3874dadfeb8d
+lastReviewedAt: 2026-08-07
+lastReviewedCommit: 5cb359f1d0860df560c7571fa7547b2822b37c71
 lastReviewedNote: 'Reviewed for Issue #214: search request and derivative proof field cleanup does not alter CLI auth-session ownership.'
 related:
   - ../AGENTS.md

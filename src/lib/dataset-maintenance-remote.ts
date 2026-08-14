@@ -716,11 +716,22 @@ export async function applyMaintenanceAliasPlan(options: {
   context: DatasetMaintenanceRemoteContext;
   plan: JsonObject;
 }): Promise<JsonObject> {
-  return invokeMaintenanceRpc({
-    context: options.context,
-    rpc: 'cmd_dataset_alias_plan_guarded',
-    body: { p_plan: options.plan },
-  });
+  void options;
+  throw new CliError(
+    'The legacy whole-plan alias RPC is private; use dataset maintenance run-protected.',
+    {
+      code: 'DATASET_MAINTENANCE_PROTECTED_RUN_REQUIRED',
+      exitCode: 1,
+      details: {
+        replacement_capabilities: [
+          'cmd_dataset_alias_execution_preflight_guarded',
+          'cmd_dataset_alias_execution_gate_guarded',
+          'cmd_dataset_alias_execution_admit_guarded',
+          'cmd_dataset_alias_execution_read',
+        ],
+      },
+    },
+  );
 }
 
 export async function preflightMaintenanceFlowIdentityScope(options: {

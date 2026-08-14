@@ -16,8 +16,8 @@ checkPaths:
   - src/lib/supabase-client.ts
   - src/lib/tidas-sdk-package-validator.ts
   - test/**
-lastReviewedAt: 2026-08-01
-lastReviewedCommit: 65b408db7649583c10005b30ea2b3874dadfeb8d
+lastReviewedAt: 2026-08-07
+lastReviewedCommit: 5cb359f1d0860df560c7571fa7547b2822b37c71
 lastReviewedNote: 'Reviewed for Issue #214: no direct dependency or package-boundary change is introduced.'
 related:
   - ../AGENTS.md
