@@ -21,7 +21,7 @@ checkPaths:
   - test/lca-release*.test.ts
 lastReviewedAt: 2026-07-27
 lastReviewedCommit: e35a3de9fb44ea2f3aa0ec83654a640c09348c39
-lastReviewedNote: 'Reviewed for Issue #210: public LCA import guidance now uses unified Rust tidas 0.1.x only.'
+lastReviewedNote: 'Reviewed for Issue #222: public LCA import guidance now requires the unified Rust tidas 0.2.x contract line.'
 ---
 
 # TianGong LCA CLI
@@ -429,7 +429,7 @@ For `dataset validate`, `--type auto` supports mixed support scopes containing c
 
 For `dataset curation-queue build/next/verify`, the CLI owns entity-level Foundry import queue state. `build` writes `outputs/curation-queue-manifest.json`, `outputs/curation-queue-tasks.jsonl`, `outputs/curation-queue-locks.json`, `outputs/curation-queue-blockers.jsonl`, and per-entity `input.jsonl`, `closure.json`, and `entity-run-plan.json`. `next` returns one runnable support/flow/process task based on checkpoint state. `verify` passes only when scoped checkpoints are complete and build blockers are absent. AI authoring must return structured patches or build plans, and remote writes remain gated by deterministic apply, schema/QA, prewrite verify, and readback.
 
-For `dataset import-lca convert`, the CLI delegates all format detection, conversion, validation, bounded spooling, cancellation, and atomic publication to unified Rust `tidas import`; it does not reproduce import logic in TypeScript. Binary selection is `--tidas-bin`, then `TIDAS_BIN`, then `tidas` on PATH. Optional `--tidas-config` maps to native `--config`. Every run first requires a successful `tidas version --format json --progress never` handshake with `tidas.operation-report.v1` and a stable `0.1.x` binary version, then validates the native `tidas.import-execution-report.v1` summary and exact exit-class/code mapping. Native controls include explicit or automatic source format, target, mapping output, process-bundle disablement, warning failure, maximum entry size, memory budget, and queue capacity. The supported release matrix is Linux x86_64/ARM64, macOS Intel/Apple Silicon, and Windows x86_64; Windows ARM64 is unsupported. The npm package includes `assets/import-smoke/simapro.csv` for clean-machine proof but does not bundle a platform binary or require Python.
+For `dataset import-lca convert`, the CLI delegates all format detection, conversion, validation, bounded spooling, cancellation, and atomic publication to unified Rust `tidas import`; it does not reproduce import logic in TypeScript. Binary selection is `--tidas-bin`, then `TIDAS_BIN`, then `tidas` on PATH. Optional `--tidas-config` maps to native `--config`. Every run first requires a successful `tidas version --format json --progress never` handshake with `tidas.operation-report.v1` and a stable `0.2.x` binary version, then validates the native `tidas.import-execution-report.v1` summary and exact exit-class/code mapping. Native controls include explicit or automatic source format, target, mapping output, process-bundle disablement, warning failure, maximum entry size, memory budget, and queue capacity. The supported release matrix is Linux x86_64/ARM64, macOS Intel/Apple Silicon, and Windows x86_64; Windows ARM64 is unsupported. The npm package includes `assets/import-smoke/simapro.csv` for clean-machine proof but does not bundle a platform binary or require Python.
 
 For `dataset references rewrite`, `--commit` executes the state-aware save-draft path for patched process and lifecyclemodel rows; without `--commit`, the command only writes local rewrite artifacts.
 

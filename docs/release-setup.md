@@ -19,8 +19,8 @@ checkPaths:
   - scripts/docpact
   - scripts/docpact-gate.sh
   - scripts/install-git-hooks.sh
-lastReviewedAt: 2026-08-07
-lastReviewedCommit: 5cb359f1d0860df560c7571fa7547b2822b37c71
+lastReviewedAt: 2026-08-20
+lastReviewedCommit: 0b0518fb2b35446ebdeab72ca6de634677ae72b8
 lastReviewedNote: 'Reviewed for Issue #214: the remote request/derivative Contract cleanup changes no release credential or package setup.'
 related:
   - ../AGENTS.md
