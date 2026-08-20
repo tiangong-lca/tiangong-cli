@@ -41,7 +41,7 @@ function operationReport(
       options.summary ??
       (command === 'version'
         ? {
-            binary_version: '0.1.0',
+            binary_version: '0.2.0',
             operation_report_schema: 'tidas.operation-report.v1',
           }
         : {
@@ -126,7 +126,7 @@ test('dataset import-lca invokes the Rust binary with native defaults and stable
     assert.equal(report.exit_code, 0);
     assert.equal(report.generated_at_utc, '2026-07-27T00:00:00.000Z');
     assert.equal(report.from_format, 'auto');
-    assert.equal(report.tidas.version, '0.1.0');
+    assert.equal(report.tidas.version, '0.2.0');
     assert.equal(report.files.tidas_dir, path.join(fixture.output, 'tidas'));
     assert.equal(report.files.ilcd_dir, null);
     assert.equal(report.files.mapping_csv, null);
@@ -152,7 +152,7 @@ test('dataset import-lca forwards every supported native control and reads file 
       return spawnResult(
         operationReport('version', {
           summary: {
-            binary_version: '0.1.91',
+            binary_version: '0.2.91',
             operation_report_schema: 'tidas.operation-report.v1',
           },
         }),
@@ -184,7 +184,7 @@ test('dataset import-lca forwards every supported native control and reads file 
     });
 
     assert.equal(report.tidas.executable, tidasBin);
-    assert.equal(report.tidas.version, '0.1.91');
+    assert.equal(report.tidas.version, '0.2.91');
     assert.equal(report.files.report, nativeReport);
     assert.equal(report.files.tidas_dir, path.join(fixture.output, 'tidas'));
     assert.equal(report.files.ilcd_dir, path.join(fixture.output, 'ilcd'));
@@ -415,23 +415,23 @@ test('version and import handshakes accept compatible patches and reject drift',
     JSON.stringify(operationReport('version')),
     'version',
   );
-  assert.equal(__testInternals.readCompatibleVersion(validVersion), '0.1.0');
+  assert.equal(__testInternals.readCompatibleVersion(validVersion), '0.2.0');
 
   for (const mutation of [
     { status: 'failed' },
     { exit_class: 'data-issues' },
     { completeness: 'partial' },
-    { summary: { binary_version: '0.1.0', operation_report_schema: 'v2' } },
+    { summary: { binary_version: '0.2.0', operation_report_schema: 'v2' } },
     {
       summary: {
-        binary_version: '0.2.0',
+        binary_version: '0.1.0',
         operation_report_schema: 'tidas.operation-report.v1',
       },
     },
     { summary: { operation_report_schema: 'tidas.operation-report.v1' } },
   ]) {
     const report = { ...validVersion, ...mutation } as never;
-    assert.throws(() => __testInternals.readCompatibleVersion(report), /0\.1\.x/u);
+    assert.throws(() => __testInternals.readCompatibleVersion(report), /0\.2\.x/u);
   }
 
   const successfulImport = __testInternals.parseOperationReport(

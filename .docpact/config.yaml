@@ -27,8 +27,8 @@ layout: repo
 # Review note, 2026-07-27: Issue #210 replaces the dataset import-lca Python/checkout discovery path with the external Rust `tidas import` machine contract. Existing dataset command, runtime, test, documentation, validation, and release routes cover binary discovery, the compatible 0.1.x/version-and-schema handshake, stable exit/report mapping, packaged smoke evidence, and supported-platform guidance; no ownership, npm dependency, authentication, tag, Trusted Publishing, or workspace-integration rule changes are required.
 # Review note, 2026-07-30: Issue #214 keeps the lexical-weight and derivative-proof cleanup inside the existing identity-preflight, dataset-maintenance, test, and governed-doc routes. No ownership, dependency, authentication, release, or workspace-integration rule changes are required.
 # Review note, 2026-08-07: database-engine Issue #422 switches the existing Data API adapter to the frozen api-only contract, retires the private alias whole-plan transport, and keeps the change inside existing remote-session, command-family, test, and governed-doc routes.
-lastReviewedAt: "2026-08-07"
-lastReviewedCommit: "5cb359f1d0860df560c7571fa7547b2822b37c71"
+lastReviewedAt: "2026-08-20"
+lastReviewedCommit: "0b0518fb2b35446ebdeab72ca6de634677ae72b8"
 
 catalog:
   repos:

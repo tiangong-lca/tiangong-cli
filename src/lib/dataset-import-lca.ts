@@ -6,7 +6,7 @@ import { CliError } from './errors.js';
 const OPERATION_REPORT_SCHEMA = 'tidas.operation-report.v1';
 const INVOCATION_CONTEXT_SCHEMA = 'tidas.invocation-context.v1';
 const IMPORT_REPORT_SCHEMA = 'tidas.import-execution-report.v1';
-const SUPPORTED_TIDAS_VERSION = /^0\.1\.\d+$/u;
+const SUPPORTED_TIDAS_VERSION = /^0\.2\.\d+$/u;
 
 const EXIT_CODES = {
   success: 0,
@@ -391,7 +391,7 @@ function readCompatibleVersion(report: TidasOperationReport): string {
     !SUPPORTED_TIDAS_VERSION.test(report.summary.binary_version)
   ) {
     throw new CliError(
-      'Incompatible tidas binary: dataset import requires a stable contract-compatible 0.1.x release.',
+      'Incompatible tidas binary: dataset import requires a stable contract-compatible 0.2.x release.',
       {
         code: 'DATASET_IMPORT_LCA_TIDAS_VERSION_INCOMPATIBLE',
         exitCode: 69,
