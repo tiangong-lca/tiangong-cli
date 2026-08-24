@@ -19,11 +19,14 @@ checkPaths:
   - bin/**
   - src/cli.ts
   - src/main.ts
+  - src/lib/auth-identity-receipt.ts
   - src/lib/lca-release.ts
+  - scripts/run-auth-identity-production-case.ts
+  - test/auth-identity*.test.ts
   - test/lca-release*.test.ts
 lastReviewedAt: 2026-08-25
-lastReviewedCommit: 9078fe123e5909b680f27af1af1d2018bcd02826
-lastReviewedNote: 'Reviewed for Issue #226: the public package guide identifies the 0.1.0 pnpm/TypeScript 7 compatibility release while the tarball remains package-manager neutral.'
+lastReviewedCommit: 08eed5bccf8bc0ba936c37e39c15a8fc7c82782b
+lastReviewedNote: 'Reviewed for Issue #228: documents the secret-free, read-only auth receipt and intent-bound local production case.'
 ---
 
 # TianGong LCA CLI
@@ -35,6 +38,8 @@ Repository development is single-track on pnpm `11.23.0` and TypeScript `7.0.2`.
 Review note, 2026-08-25: Issue #224 migrates repository development and release automation to the sole root `pnpm-workspace.yaml` / `pnpm-lock.yaml`, TypeScript 7.0.2, and type-aware Oxlint on Node 24. The feature change deliberately keeps version 0.0.33. A separate release-only PR should prepare 0.1.0 after the toolchain change merges and its full package/coverage/release gates pass.
 
 Review note, 2026-08-25: Issue #226 publishes that 0.1.0 compatibility boundary after merged PR #225. Version metadata and public release evidence advance to 0.1.0; the runtime JavaScript/assets surface, command behavior, Node 24 runtime, pnpm/TypeScript 7 development baseline, native pnpm Trusted Publishing/provenance, and exact released-commit workspace handoff remain unchanged from the reviewed feature delivery.
+
+Review note, 2026-08-25: Issue #228 implements `auth identity-receipt` as a bounded read-only current-user proof. It checks expected project intent before session work, verifies the live user through `/auth/v1/user`, allows one auth-refresh replay after 401/403, and emits an exact-key canonical receipt without API keys, tokens, full email addresses, session paths, or credential-derived fingerprints. Production callers must pass both expected assertions and accept only `assertions.mode="intent-bound"`.
 
 Review note, 2026-07-12: `dataset maintenance plan/apply/verify` provides current-user RLS-scoped exact-row maintenance with immutable plans, explicit approval, per-action logs, platform audit correlation, and independent readback. `merge-support-aliases` now runs only in `target_mode=owner_draft`: source/target support and all changed rows stay private `state_code=0`; publication is a separate future workflow.
 
@@ -111,6 +116,31 @@ TIANGONG_LCA_SESSION_FILE=
 TIANGONG_LCA_DISABLE_SESSION_CACHE=false
 TIANGONG_LCA_FORCE_REAUTH=false
 ```
+
+## Auth Identity Receipt
+
+Use the identity receipt before a production-backed case or any later owner-draft write gate:
+
+```text
+tiangong-lca auth identity-receipt --expected-project-ref <project-ref> --expected-user-id <user-id> --json
+```
+
+The command performs no dataset write. It exchanges the normal user API key for a session, checks the canonical Supabase project, and makes a bounded live `GET /auth/v1/user`. A cached token that receives `401` or `403` may be refreshed and retried exactly once; all other transport or response failures are terminal. A valid production guard requires:
+
+- `schema` exactly `tiangong-lca.auth-identity-receipt.v1`;
+- `status: "passed"`, `operation: "current-user-read"`, and `remote_write_mode: "read-only"`;
+- exact expected project/user values with `assertions.mode: "intent-bound"` and `requested_count: 2`;
+- a fresh capture time and a valid recomputed `receipt_scope_sha256`.
+
+Calling without expectations is allowed for discovery but produces `assertions.mode: "observed"`; it is not an authorization guard. The safe display email is masked and must not be used as the account key. The receipt deliberately excludes credentials, full email, session-file details, raw response metadata, and all credential/token/path-derived fingerprints.
+
+For the explicitly authorized local production read case from a validated repository checkout, invoke the narrow TypeScript runner with a new private output directory:
+
+```text
+pnpm case:auth-identity:production -- --env-file <data-foundry-ignored-.env> --expected-project-ref <project-ref> --expected-user-id <user-id> --out-dir <new-private-case-directory>
+```
+
+The runner reads only `TIANGONG_LCA_API_BASE_URL`, `TIANGONG_LCA_SUPABASE_PUBLISHABLE_KEY`, and `TIANGONG_LCA_TEST_API_KEY`; the last is mapped to the child process's standard API-key variable. It does not accept an alternate CLI path. The pnpm command first performs a clean TS7 build without the production env. Its plain-Node runner then single-reads source/config/lock and the freshly generated `dist/src/**/*.js`, hashes the source tree, runner, runtime, exact entrypoint, and pnpm lock, and copies those exact built buffers into a private snapshot before exposing the key. It forces reauthentication with session cache disabled, runs only the built snapshot from an exclusively created clean directory with an argv array and `shell:false`, cleans the snapshot before publishing success artifacts, and persists only the parsed receipt and case manifest. POSIX creates the case directory as `0700` and files as `0600`; Windows inherits ACLs from the caller-selected parent, so use a user-restricted parent because mode bits are not an ACL guarantee. The runner never stores raw child stdout/stderr and is intentionally not wired to CI secrets. This receipt is locally hash-verifiable, not server-signed attestation.
 
 ## LCI/LCIA Data Release
 

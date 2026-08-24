@@ -25,8 +25,8 @@ checkPaths:
   - scripts/docpact-gate.sh
   - scripts/install-git-hooks.sh
 lastReviewedAt: 2026-08-25
-lastReviewedCommit: 9078fe123e5909b680f27af1af1d2018bcd02826
-lastReviewedNote: 'Reviewed for Issue #226: the dedicated 0.1.0 release uses the unchanged pnpm-only tag, Trusted Publishing, provenance, public-consumer, and workspace handoff sequence.'
+lastReviewedCommit: 08eed5bccf8bc0ba936c37e39c15a8fc7c82782b
+lastReviewedNote: 'Reviewed for Issue #228: the local identity-case script changes no package tag, Trusted Publishing, provenance, or workspace handoff step.'
 related:
   - ../AGENTS.md
   - ../.docpact/config.yaml
@@ -41,6 +41,8 @@ This document is the operator runbook for each `@tiangong-lca/cli` release.
 Review note, 2026-08-25: Issue #224 keeps the feature branch at 0.0.33 while replacing the repository toolchain with Node 24, pnpm 11.23.0, TypeScript 7.0.2, and Oxlint. Because that migration changes maintainer and release compatibility, prepare 0.1.0 in a separate release-only PR after the feature PR merges and `test:package`, exact 100% coverage, package inspection, Docpact, and release automation all pass. Historical npm-era notes below are retained only as dated evidence and are not current commands.
 
 Review note, 2026-08-25: Issue #226 is that dedicated 0.1.0 release-only delivery for merged Issue #224 / PR #225. It updates package version metadata and the four live CLI-version fixtures, and adds test-only proof for ESM/CJS hosts importing the existing explicit bin launcher subpath, while keeping runtime files, package-root exports, dependencies, and `pnpm-lock.yaml` unchanged. Before merge it must prove npm/tag absence, package/prepush/audit/Docpact and the exact four-platform matrix; after merge it must prove `cli-v0.1.0` identity, native pnpm Trusted Publishing/provenance, the public-registry consumer, and exact released-commit workspace integration.
+
+Review note, 2026-08-25: Issue #228 adds a feature command and a local-only production read-case script without changing package version, tag creation, Trusted Publishing, provenance, or workspace follow-up mechanics. The ignored production test credential remains local and must never enter GitHub Actions or npm release configuration. After the feature merges, any public package delivery still uses a separate version-only release PR and every existing post-merge registry/provenance/integration check below.
 
 Review note, 2026-07-14: Issue #165 adds the guarded `dataset maintenance rebuild-derivatives` command profile but does not change the release procedure. Its command, contract, remote-adapter, asynchronous verification, and no-fallback tests must pass the existing pre-push/docpact gate before a later version-bump PR; the feature PR itself must not publish locally or alter package version metadata.
 

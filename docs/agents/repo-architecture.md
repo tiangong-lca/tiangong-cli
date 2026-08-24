@@ -31,8 +31,8 @@ checkPaths:
   - scripts/docpact-gate.sh
   - scripts/install-git-hooks.sh
 lastReviewedAt: 2026-08-25
-lastReviewedCommit: 9078fe123e5909b680f27af1af1d2018bcd02826
-lastReviewedNote: 'Reviewed for Issue #226: the 0.1.0 release retains the runtime/package architecture and extends only explicit bin-launcher consumer proof.'
+lastReviewedCommit: 08eed5bccf8bc0ba936c37e39c15a8fc7c82782b
+lastReviewedNote: 'Reviewed for Issue #228: the auth receipt remains a narrow read-only session adapter with a secret-free DTO and local production-case harness.'
 related:
   - ../../AGENTS.md
   - ../../.docpact/config.yaml
@@ -50,6 +50,8 @@ Review note, 2026-08-25: Issue #224 makes the toolchain architecture explicit: t
 Review note, 2026-08-25: the SDK 0.2 cutover makes build-plan taxonomy an explicit input rather than fabricated output. Plan-only materialization accepts canonical locked taxonomy objects only, selects product/process `common:classification` versus elementary `common:elementaryFlowCategorization` by flow type, and fails before artifact publication when classification is absent or malformed.
 
 Review note, 2026-08-25: Issue #226 advances the package compatibility boundary to 0.1.0 without changing runtime files, dependencies, package-root exports, command families, or release workflows. The validation architecture extends `test:package` only: a clean tarball must work through `.bin`, an ESM host importing the existing explicit bin launcher subpath, and a CJS host dynamically importing that same ESM subpath; package-root module imports remain intentionally unsupported.
+
+Review note, 2026-08-25: Issue #228 adds `src/lib/auth-identity-receipt.ts` as a narrow read-only identity adapter. It reuses the existing API-key/session cache chain but never serializes that session object: exact project intent is safely checked before credential/session work, a redirect-disabled and incrementally bounded `/auth/v1/user` response supplies a canonical live user UUID, one 401/403 may force refresh and replay the read, timeout values stay within Node's supported timer range, and an exact-key parser hashes only a public safe projection. The pnpm case command itself owns the single clean TS7 build before starting a plain-Node parent; that runner single-reads/hash-binds source/config/lock and freshly generated runtime/runner bytes, privately snapshots the exact built buffers, cleans the snapshot before evidence publication, and only then exposes passed/failed artifacts. This is local evidence, not a server-signed attestation or a dataset mutation runtime.
 
 Review note, 2026-06-04: Foundry entity queue state now stays in the native CLI command family as `dataset curation-queue build/next/verify`; no secondary orchestration runtime was introduced.
 
@@ -147,6 +149,7 @@ The CLI talks to remote services directly through helper modules such as:
 - `src/lib/dotenv.ts`
 - `src/lib/user-api-key.ts`
 - `src/lib/supabase-session.ts`
+- `src/lib/auth-identity-receipt.ts`
 - `src/lib/supabase-client.ts`
 - `src/lib/supabase-rest.ts`
 - `src/lib/supabase-data-api-contract.ts`

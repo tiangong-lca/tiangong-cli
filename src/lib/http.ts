@@ -5,6 +5,7 @@ type JsonObject = Record<string, unknown>;
 export type ResponseLike = {
   ok: boolean;
   status: number;
+  body?: ReadableStream<Uint8Array> | null;
   headers: {
     get(name: string): string | null;
   };

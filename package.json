@@ -46,6 +46,7 @@
     "test:package": "node --test test/toolchain-contract.test.mjs",
     "test:coverage": "pnpm build && node ./scripts/run-test-coverage.cjs",
     "test:coverage:assert-full": "node ./dist/scripts/assert-full-coverage.js",
+    "case:auth-identity:production": "pnpm build && node ./dist/scripts/run-auth-identity-production-case.js",
     "prepush:gate": "pnpm lint && pnpm test:package && pnpm test:coverage && pnpm test:coverage:assert-full",
     "release:check-tag": "node ./scripts/ci/check-release-tag.cjs cli",
     "release:assert-unpublished": "node ./scripts/ci/release-version.cjs assert-unpublished",

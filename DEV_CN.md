@@ -22,8 +22,8 @@ checkPaths:
   - scripts/**
   - .github/workflows/**
 lastReviewedAt: 2026-08-25
-lastReviewedCommit: c6a48e82d6a56e1f810cddf12d1d64666d9503ce
-lastReviewedNote: 'Reviewed for Issue #224: 维护基线固定为 Node 24、pnpm 11.23.0、TypeScript 7.0.2 与 Oxlint，发布包保持 package-manager neutral。'
+lastReviewedCommit: 08eed5bccf8bc0ba936c37e39c15a8fc7c82782b
+lastReviewedNote: 'Reviewed for Issue #228: 增加只读、无秘密、生产需 intent-bound 的身份回执及窄环境本地 case runner。'
 related:
   - AGENTS.md
   - .docpact/config.yaml
@@ -38,6 +38,8 @@ related:
 本项目是 TianGong 的统一 CLI 仓库，运行时基线固定为 Node 24，开发工具链固定为 pnpm 11.23.0、TypeScript 7.0.2 与 type-aware Oxlint，但运行时只执行 `dist/` 下的构建产物。
 
 Review note, 2026-08-25: Issue #224 把仓库收敛为单一 Node 工具链：根 `pnpm-workspace.yaml` 与唯一根 `pnpm-lock.yaml` 管理依赖；`test:package` 拒绝其他 lockfile、旧 TypeScript/ESLint bridge、active npm 包管理命令和发布包中的开发工具泄漏；Oxlint 完全替代 ESLint 与 TypeScript Compiler API lint 路径。feature 仍保持 0.0.33；合并且全部质量门通过后，应另开只含 release metadata 的 0.1.0 PR，明确 maintainer/release compatibility 边界。
+
+Review note, 2026-08-25: Issue #228 新增 `auth identity-receipt`。命令先在 credential decode/session/network 之前安全核对 expected canonical project，再对 redirect-disabled `/auth/v1/user` 做增量 byte cap 只读校验并要求 canonical user UUID；401/403 最多强制刷新并重读一次。公开回执只含 project、user id、脱敏展示邮箱、session/cache mode、安全请求/响应 hash 和 canonical receipt hash，严禁 credential/token/full-email/session-path 及其 fingerprint。生产 guard 必须同时带 expected project/user，并要求 `assertions.mode=intent-bound`。pnpm production case 命令先 clean-build TS7，再由 plain-Node runner 单次读取/hash source/config/lock 与 generated runtime/runner，把 exact built buffers 私有 snapshot 后才暴露 key；它不接受 alternate CLI path，只从 Foundry ignored `.env` 读取三个白名单变量，禁用 cache、使用独占创建的干净 cwd 与 argv 数组，不保存原始 stdout/stderr，也不做 dataset mutation。
 
 Review note, 2026-06-04: `dataset curation-queue next/verify` extends the existing CLI-native dataset command family and does not change maintainer runtime, env, or release guidance.
 
@@ -100,6 +102,7 @@ Review note, 2026-07-17: Issue #157 COMMON 收紧要求两个 Issue #29 derivati
 当前已落地的命令：
 
 - `tiangong-lca doctor`
+- `tiangong-lca auth identity-receipt`
 - `tiangong-lca search flow`
 - `tiangong-lca search process`
 - `tiangong-lca search lifecyclemodel`
@@ -249,6 +252,7 @@ Data API schema 不依赖 PostgREST 的默认 `public`。默认且唯一支持�
 | 命令组 | 必需 env |
 | --- | --- |
 | `doctor` | 无 |
+| `auth identity-receipt` | `TIANGONG_LCA_API_BASE_URL`、`TIANGONG_LCA_API_KEY`、`TIANGONG_LCA_SUPABASE_PUBLISHABLE_KEY`；生产 guard 必须从 argv 同时给出 expected project/user，不能把 `observed` 回执当授权证明 |
 | `search flow \| process \| lifecyclemodel` | `TIANGONG_LCA_API_BASE_URL`、`TIANGONG_LCA_API_KEY`、`TIANGONG_LCA_SUPABASE_PUBLISHABLE_KEY`（`TIANGONG_LCA_REGION` 可选） |
 | `admin embedding-run` | `TIANGONG_LCA_API_BASE_URL`、`TIANGONG_LCA_API_KEY`、`TIANGONG_LCA_SUPABASE_PUBLISHABLE_KEY`（`TIANGONG_LCA_REGION` 可选） |
 | `process get \| list` | `TIANGONG_LCA_API_BASE_URL`、`TIANGONG_LCA_API_KEY`、`TIANGONG_LCA_SUPABASE_PUBLISHABLE_KEY` |
@@ -294,10 +298,19 @@ Data API schema 不依赖 PostgREST 的默认 `public`。默认且唯一支持�
 
 `pnpm start -- ...` 仍可用于本地开发时的“先构建再执行”，但它不是 skills / 文档的 canonical 公共入口。
 
+显式授权的生产身份只读 case 使用窄环境 runner；`--env-file` 必须指向 ignored Foundry `.env`，`--out-dir` 必须是尚不存在的私有目录。命令先 clean-build TS7；plain-Node runner 不接受 `--cli-bin`，它单次读取/hash 当前 source/config/lock 与 freshly generated runtime/runner，把 exact built buffers 私有 snapshot 后再只读取三项白名单变量，将 `TIANGONG_LCA_TEST_API_KEY` 映射给 snapshot child，并强制 `TIANGONG_LCA_DISABLE_SESSION_CACHE=true`、`TIANGONG_LCA_FORCE_REAUTH=true`：
+
+```text
+pnpm case:auth-identity:production -- --env-file <foundry-ignored-.env> --expected-project-ref <project-ref> --expected-user-id <user-id> --out-dir <new-private-case-directory>
+```
+
+该 runner 不进入 CI，不保存 raw stdout/stderr，不接受 argv key，不做任何 dataset 写入；它还必须在发布 passed artifacts 前清理 runtime snapshot。POSIX 下目录/文件固定为 `0700`/`0600`；Windows mode bits 不是 ACL 证明，调用方必须选择只允许当前用户访问的父目录并继承其 ACL。回执是本地 canonical hash 证明，不是服务器签名 attestation。
+
 ```bash
 node ./bin/tiangong-lca.js --help
 node ./bin/tiangong-lca.js doctor
 node ./bin/tiangong-lca.js doctor --json
+node ./bin/tiangong-lca.js auth identity-receipt --expected-project-ref <project-ref> --expected-user-id <user-id> --json
 node ./bin/tiangong-lca.js search flow --input ./request.json --dry-run
 node ./bin/tiangong-lca.js process get --id <process-id> --version <version> --json
 node ./bin/tiangong-lca.js process list --state-code 100 --limit 20 --json
