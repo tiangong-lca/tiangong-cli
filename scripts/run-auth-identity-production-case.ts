@@ -55,11 +55,11 @@ export type ProductionIdentityCaseOptions = {
 };
 
 export type ProductionIdentityRuntimeEvidence = {
-  nodeImport: string;
   entrypoint: string;
   entrypointSha256: string;
-  tsxLoaderSha256: string;
+  sourceTreeSha256: string;
   runtimeTreeSha256: string;
+  pnpmLockSha256: string;
   cleanup: () => void;
 };
 
@@ -91,8 +91,9 @@ export type ProductionIdentityCaseManifest = {
   cli_argv: string[];
   cli_argv_sha256: string;
   runtime_entrypoint_sha256: string;
-  tsx_loader_sha256: string;
+  source_tree_sha256: string;
   runtime_tree_sha256: string;
+  pnpm_lock_sha256: string;
   project_ref: string;
   user_id: string;
   receipt_scope_sha256: string;
@@ -196,67 +197,127 @@ function collectRuntimeSourceFiles(root: string): string[] {
   return collected.sort();
 }
 
+type BufferedRuntimeFile = { relativePath: string; bytes: Buffer };
+
+function hashBufferedFiles(files: BufferedRuntimeFile[]): string {
+  const hash = createHash('sha256');
+  for (const file of files) {
+    hash.update(file.relativePath).update('\0').update(file.bytes).update('\0');
+  }
+  return hash.digest('hex');
+}
+
+function collectGeneratedRuntimeFiles(snapshotRoot: string): string[] {
+  const files: string[] = [];
+  const visit = (directory: string): void => {
+    for (const entry of readdirSync(directory, { withFileTypes: true })) {
+      const entryPath = path.join(directory, entry.name);
+      if (entry.isDirectory()) {
+        visit(entryPath);
+      } else if (entry.isFile() && entry.name.endsWith('.js')) {
+        files.push(entryPath);
+      }
+    }
+  };
+  visit(path.join(snapshotRoot, 'dist', 'src'));
+  return files.sort();
+}
+
 function prepareRuntimeSnapshot(): ProductionIdentityRuntimeEvidence {
   const root = repositoryRoot();
-  const sourceEntrypoint = path.join(root, 'src', 'main.ts');
-  const entrypointBytes = readTrustedFile(sourceEntrypoint);
-  const nodeImport = import.meta.resolve('tsx');
-  if (!nodeImport.startsWith('file:')) {
+  const sourceFiles = collectRuntimeSourceFiles(root).map((filePath) => ({
+    relativePath: path.relative(root, filePath).replaceAll('\\', '/'),
+    bytes: readTrustedFile(filePath),
+  }));
+  const pnpmLock = sourceFiles.find((file) => file.relativePath === 'pnpm-lock.yaml');
+  if (!pnpmLock) {
     return fail(
-      'The production identity case requires a local trusted tsx loader.',
+      'The production identity case runtime evidence is missing pnpm-lock.yaml.',
       'AUTH_IDENTITY_CASE_RUNTIME_INVALID',
       2,
     );
   }
-  const tsxLoaderBytes = readTrustedFile(fileURLToPath(nodeImport));
-  const treeHash = createHash('sha256');
-  const runtimeFiles = collectRuntimeSourceFiles(root);
-  for (const filePath of runtimeFiles) {
-    const relativePath = path.relative(root, filePath).replaceAll('\\', '/');
-    treeHash.update(relativePath).update('\0').update(readTrustedFile(filePath)).update('\0');
-  }
-  treeHash.update('@tsx-loader').update('\0').update(tsxLoaderBytes).update('\0');
   const snapshotParent = path.join(root, 'node_modules', '.cache', 'tiangong-lca-auth-case');
   mkdirSync(snapshotParent, { recursive: true, mode: 0o700 });
   if (process.platform !== 'win32') {
     chmodSync(snapshotParent, 0o700);
   }
   const snapshotRoot = mkdtempSync(path.join(snapshotParent, 'runtime-'));
-  if (process.platform !== 'win32') {
-    chmodSync(snapshotRoot, 0o700);
-  }
-  for (const sourcePath of runtimeFiles.filter(
-    (filePath) =>
-      filePath.startsWith(`${path.join(root, 'src')}${path.sep}`) ||
-      filePath === path.join(root, 'package.json'),
-  )) {
-    const relativePath = path.relative(root, sourcePath);
-    const targetPath = path.join(snapshotRoot, relativePath);
-    mkdirSync(path.dirname(targetPath), { recursive: true, mode: 0o700 });
-    writeFileSync(targetPath, readTrustedFile(sourcePath), { flag: 'wx', mode: 0o600 });
+  try {
     if (process.platform !== 'win32') {
-      chmodSync(targetPath, 0o600);
+      chmodSync(snapshotRoot, 0o700);
     }
+    for (const sourceFile of sourceFiles) {
+      const targetPath = path.join(snapshotRoot, sourceFile.relativePath);
+      mkdirSync(path.dirname(targetPath), { recursive: true, mode: 0o700 });
+      writeFileSync(targetPath, sourceFile.bytes, { flag: 'wx', mode: 0o600 });
+      if (process.platform !== 'win32') {
+        chmodSync(targetPath, 0o600);
+      }
+    }
+
+    const compilerPath = realpathSync(path.join(root, 'node_modules', 'typescript', 'bin', 'tsc'));
+    readTrustedFile(compilerPath);
+    const compiler = spawnSync(
+      process.execPath,
+      [compilerPath, '-p', path.join(snapshotRoot, 'tsconfig.build.json')],
+      {
+        cwd: snapshotRoot,
+        env: Object.fromEntries(
+          SYSTEM_ENV_ALLOWLIST.flatMap((key) =>
+            typeof process.env[key] === 'string' ? [[key, process.env[key] as string]] : [],
+          ),
+        ),
+        shell: false,
+        encoding: 'utf8',
+        maxBuffer: MAX_CHILD_OUTPUT_BYTES,
+        windowsHide: true,
+      },
+    );
+    if (compiler.status !== 0 || compiler.signal !== null) {
+      return fail(
+        'The production identity case could not compile its private runtime snapshot.',
+        'AUTH_IDENTITY_CASE_RUNTIME_INVALID',
+        2,
+      );
+    }
+
+    const generatedFiles = collectGeneratedRuntimeFiles(snapshotRoot).map((filePath) => ({
+      relativePath: path.relative(snapshotRoot, filePath).replaceAll('\\', '/'),
+      bytes: readTrustedFile(filePath),
+    }));
+    const entrypoint = path.join(snapshotRoot, 'dist', 'src', 'main.js');
+    const entrypointFile = generatedFiles.find((file) => file.relativePath === 'dist/src/main.js');
+    if (!entrypointFile) {
+      return fail(
+        'The production identity case compiled snapshot is missing its entrypoint.',
+        'AUTH_IDENTITY_CASE_RUNTIME_INVALID',
+        2,
+      );
+    }
+    return {
+      entrypoint,
+      entrypointSha256: createHash('sha256').update(entrypointFile.bytes).digest('hex'),
+      sourceTreeSha256: hashBufferedFiles(sourceFiles),
+      runtimeTreeSha256: hashBufferedFiles(generatedFiles),
+      pnpmLockSha256: createHash('sha256').update(pnpmLock.bytes).digest('hex'),
+      cleanup: () => rmSync(snapshotRoot, { recursive: true, force: true }),
+    };
+  } catch (error) {
+    rmSync(snapshotRoot, { recursive: true, force: true });
+    throw error;
   }
-  return {
-    nodeImport,
-    entrypoint: path.join(snapshotRoot, 'src', 'main.ts'),
-    entrypointSha256: createHash('sha256').update(entrypointBytes).digest('hex'),
-    tsxLoaderSha256: createHash('sha256').update(tsxLoaderBytes).digest('hex'),
-    runtimeTreeSha256: treeHash.digest('hex'),
-    cleanup: () => rmSync(snapshotRoot, { recursive: true, force: true }),
-  };
 }
 
 function validateRuntimeEvidence(
   evidence: ProductionIdentityRuntimeEvidence,
 ): ProductionIdentityRuntimeEvidence {
   if (
-    !evidence.nodeImport.startsWith('file:') ||
     !path.isAbsolute(evidence.entrypoint) ||
     !SHA256_PATTERN.test(evidence.entrypointSha256) ||
-    !SHA256_PATTERN.test(evidence.tsxLoaderSha256) ||
+    !SHA256_PATTERN.test(evidence.sourceTreeSha256) ||
     !SHA256_PATTERN.test(evidence.runtimeTreeSha256) ||
+    !SHA256_PATTERN.test(evidence.pnpmLockSha256) ||
     typeof evidence.cleanup !== 'function'
   ) {
     return fail(
@@ -547,7 +608,7 @@ export async function runProductionIdentityCase(
       options.expectedUserId,
       '--json',
     ];
-    const args = ['--import', runtimeEvidence.nodeImport, runtimeEvidence.entrypoint, ...cliArgv];
+    const args = [runtimeEvidence.entrypoint, ...cliArgv];
     const spawnOptions: ProductionIdentityCaseSpawn['options'] = {
       cwd: options.outDir,
       env: buildChildEnv(deps.processEnv ?? process.env, caseEnv),
@@ -625,8 +686,9 @@ export async function runProductionIdentityCase(
       cli_argv: cliArgv,
       cli_argv_sha256: sha256Text(JSON.stringify(cliArgv)),
       runtime_entrypoint_sha256: runtimeEvidence.entrypointSha256,
-      tsx_loader_sha256: runtimeEvidence.tsxLoaderSha256,
+      source_tree_sha256: runtimeEvidence.sourceTreeSha256,
       runtime_tree_sha256: runtimeEvidence.runtimeTreeSha256,
+      pnpm_lock_sha256: runtimeEvidence.pnpmLockSha256,
       project_ref: receipt.project.project_ref,
       user_id: receipt.identity.user_id,
       receipt_scope_sha256: receipt.receipt_scope_sha256,
@@ -648,8 +710,8 @@ function renderHelp(): string {
   pnpm case:auth-identity:production -- --env-file <foundry-ignored-.env> --expected-project-ref <project-ref> --expected-user-id <uuid> --out-dir <new-private-directory>
 
 The runner reads only TIANGONG_LCA_API_BASE_URL, TIANGONG_LCA_SUPABASE_PUBLISHABLE_KEY,
-and TIANGONG_LCA_TEST_API_KEY from the env file. It executes the repository's hashed TypeScript
-source entrypoint with a pinned local tsx loader and performs no dataset mutation.
+and TIANGONG_LCA_TEST_API_KEY from the env file. Before reading the key it compiles a private
+single-read TypeScript source snapshot, hashes the generated runtime, and performs no dataset mutation.
 `.trim();
 }
 
