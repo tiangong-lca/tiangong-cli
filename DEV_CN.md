@@ -22,7 +22,7 @@ checkPaths:
   - scripts/**
   - .github/workflows/**
 lastReviewedAt: 2026-08-25
-lastReviewedCommit: 23bc8b9d348e2595903dafbc767c8c2be75a27c6
+lastReviewedCommit: 4f5ad953237c4f881893e9edcdc68e362431145f
 lastReviewedNote: 'Reviewed for Issue #228: 增加只读、无秘密、生产需 intent-bound 的身份回执及窄环境本地 case runner。'
 related:
   - AGENTS.md

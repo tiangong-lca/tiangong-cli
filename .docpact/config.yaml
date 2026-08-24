@@ -31,7 +31,7 @@ layout: repo
 # Review note, 2026-08-25: Issue #226 is the dedicated 0.1.0 compatibility-boundary release for merged Issue #224 / PR #225. Its runtime delta is limited to package version metadata and four live CLI-version fixtures; its test-only delta extends the clean package consumer contract to explicit ESM/CJS launcher-subpath hosts, with governed/public release evidence updated alongside it. The pnpm lock/dependency graph, ownership, routing, command behavior, package-root exports, tag automation, native pnpm Trusted Publishing, provenance, and workspace-integration rules remain unchanged.
 # Review note, 2026-08-25: Issue #228 adds the read-only `auth identity-receipt` command and a narrow local production-case runner. `src/lib/auth-identity-receipt.ts` belongs to the existing remote-session/auth domain; it verifies `/auth/v1/user`, emits only a strict secret-free projection, retries one 401/403 through the existing session refresh path, and adds no dependency or mutation surface. The case runner stays in existing scripts/test ownership and passes only three allowlisted env values to a cache-disabled child.
 lastReviewedAt: '2026-08-25'
-lastReviewedCommit: '23bc8b9d348e2595903dafbc767c8c2be75a27c6'
+lastReviewedCommit: '4f5ad953237c4f881893e9edcdc68e362431145f'
 
 catalog:
   repos:
