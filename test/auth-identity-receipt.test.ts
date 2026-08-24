@@ -117,6 +117,8 @@ test('identity receipt binds a server-verified account/project without exposing 
   assert.match(receipt.bindings.request_sha256, /^[0-9a-f]{64}$/u);
   assert.match(receipt.bindings.response_sha256, /^[0-9a-f]{64}$/u);
   assert.deepEqual(receipt.assertions, {
+    mode: 'intent-bound',
+    requested_count: 2,
     expected_project_ref: 'project-ref',
     expected_user_id: '11111111-1111-4111-8111-111111111111',
     project_ref_passed: true,
@@ -194,13 +196,33 @@ test('identity receipt records cache modes without exposing a session path', asy
   assert.equal(platformDefault.session.expires_at_utc, null);
 });
 
+test('identity receipt labels observation-only and partial assertions without implying intent binding', async () => {
+  const observed = await successfulReceipt({
+    expectedProjectRef: undefined,
+    expectedUserId: undefined,
+  });
+  assert.deepEqual(observed.assertions, {
+    mode: 'observed',
+    requested_count: 0,
+    expected_project_ref: null,
+    expected_user_id: null,
+    project_ref_passed: null,
+    user_id_passed: null,
+    passed: true,
+  });
+
+  const partial = await successfulReceipt({ expectedUserId: undefined });
+  assert.equal(partial.assertions.mode, 'partial');
+  assert.equal(partial.assertions.requested_count, 1);
+  assert.equal(partial.assertions.project_ref_passed, true);
+  assert.equal(partial.assertions.user_id_passed, null);
+});
+
 test('identity receipt fails closed on expected project or user mismatch before returning a receipt', async () => {
   await assert.rejects(
     successfulReceipt({ expectedProjectRef: 'foreign-project' }),
     (error: unknown) =>
-      error instanceof Error &&
-      'code' in error &&
-      error.code === 'AUTH_IDENTITY_PROJECT_MISMATCH',
+      error instanceof Error && 'code' in error && error.code === 'AUTH_IDENTITY_PROJECT_MISMATCH',
   );
   await assert.rejects(
     successfulReceipt({ expectedUserId: '22222222-2222-4222-8222-222222222222' }),
@@ -221,15 +243,26 @@ test('identity receipt rejects stale or foreign cached identity bindings', async
 
 test('identity receipt rejects nonzero, malformed, ok:false, oversized, and incomplete responses', async () => {
   const cases: Array<[string, ResponseLike, string]> = [
-    ['nonzero', response(503, { secret: USER_API_KEY_SECRET }), 'AUTH_IDENTITY_REMOTE_REQUEST_FAILED'],
+    [
+      'nonzero',
+      response(503, { secret: USER_API_KEY_SECRET }),
+      'AUTH_IDENTITY_REMOTE_REQUEST_FAILED',
+    ],
     ['invalid-json', response(200, '{broken'), 'AUTH_IDENTITY_REMOTE_INVALID_JSON'],
-    ['ok-false', response(200, { ok: false, token: ACCESS_TOKEN_SECRET }), 'AUTH_IDENTITY_REMOTE_REJECTED'],
+    [
+      'ok-false',
+      response(200, { ok: false, token: ACCESS_TOKEN_SECRET }),
+      'AUTH_IDENTITY_REMOTE_REJECTED',
+    ],
     ['array', response(200, []), 'AUTH_IDENTITY_RESPONSE_INVALID'],
     ['missing-id', response(200, { email: 'user@example.com' }), 'AUTH_IDENTITY_RESPONSE_INVALID'],
     ['missing-email', response(200, { id: 'user-id' }), 'AUTH_IDENTITY_RESPONSE_INVALID'],
     [
       'oversized',
-      response(200, JSON.stringify({ id: 'user-id', email: 'user@example.com', pad: 'x'.repeat(70_000) })),
+      response(
+        200,
+        JSON.stringify({ id: 'user-id', email: 'user@example.com', pad: 'x'.repeat(70_000) }),
+      ),
       'AUTH_IDENTITY_RESPONSE_TOO_LARGE',
     ],
   ];
@@ -293,12 +326,16 @@ test('identity receipt validates runtime options and current-user email consiste
   await assert.rejects(
     successfulReceipt({ expectedProjectRef: '   ' }),
     (error: unknown) =>
-      error instanceof Error && 'code' in error && error.code === 'AUTH_IDENTITY_EXPECTATION_INVALID',
+      error instanceof Error &&
+      'code' in error &&
+      error.code === 'AUTH_IDENTITY_EXPECTATION_INVALID',
   );
   await assert.rejects(
     successfulReceipt({ expectedUserId: '   ' }),
     (error: unknown) =>
-      error instanceof Error && 'code' in error && error.code === 'AUTH_IDENTITY_EXPECTATION_INVALID',
+      error instanceof Error &&
+      'code' in error &&
+      error.code === 'AUTH_IDENTITY_EXPECTATION_INVALID',
   );
   await assert.rejects(
     successfulReceipt({

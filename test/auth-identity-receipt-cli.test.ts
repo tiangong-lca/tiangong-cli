@@ -30,7 +30,7 @@ function makeDeps(overrides: Partial<CliDeps> = {}): CliDeps {
 test('auth identity-receipt is an implemented, discoverable command', async () => {
   const mainHelp = await executeCli([], makeDeps());
   assert.match(mainHelp.stdout, /auth\s+identity-receipt/u);
-  assert.doesNotMatch(mainHelp.stdout, /auth\s+whoami \| doctor-auth/u);
+  assert.match(mainHelp.stdout, /auth\s+whoami \| doctor-auth/u);
 
   const namespaceHelp = await executeCli(['auth'], makeDeps());
   assert.equal(namespaceHelp.exitCode, 0);
@@ -45,10 +45,10 @@ test('auth identity-receipt is an implemented, discoverable command', async () =
 });
 
 test('auth identity-receipt dispatches authoritative argv expectations and renders JSON', async () => {
-  let captured: RunAuthIdentityReceiptOptions | null = null;
+  const captured: RunAuthIdentityReceiptOptions[] = [];
   const deps = makeDeps({
     runAuthIdentityReceiptImpl: async (options) => {
-      captured = options;
+      captured.push(options);
       return {
         schema: 'tiangong-lca.auth-identity-receipt.v1',
         status: 'passed',
@@ -78,12 +78,14 @@ test('auth identity-receipt dispatches authoritative argv expectations and rende
     status: 'passed',
     receipt_scope_sha256: 'a'.repeat(64),
   });
-  assert.equal(captured?.expectedProjectRef, 'project-ref');
-  assert.equal(captured?.expectedUserId, '11111111-1111-4111-8111-111111111111');
-  assert.equal(captured?.timeoutMs, 1234);
-  assert.equal(captured?.env, deps.env);
-  assert.equal(captured?.fetchImpl, deps.fetchImpl);
-  assert.match(captured?.cliVersion ?? '', /^\d+\.\d+\.\d+/u);
+  assert.equal(captured.length, 1);
+  const options = captured[0] as RunAuthIdentityReceiptOptions;
+  assert.equal(options.expectedProjectRef, 'project-ref');
+  assert.equal(options.expectedUserId, '11111111-1111-4111-8111-111111111111');
+  assert.equal(options.timeoutMs, 1234);
+  assert.equal(options.env, deps.env);
+  assert.equal(options.fetchImpl, deps.fetchImpl);
+  assert.match(options.cliVersion, /^\d+\.\d+\.\d+/u);
 });
 
 test('auth identity-receipt pretty-prints by default and keeps legacy auth placeholders explicit', async () => {

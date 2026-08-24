@@ -6,6 +6,12 @@ import type { FetchLike } from './lib/http.js';
 import { stringifyJson } from './lib/io.js';
 import { loadCliPackageVersion } from './lib/package-version.js';
 import {
+  AUTH_IDENTITY_RECEIPT_SCHEMA,
+  runAuthIdentityReceipt,
+  type AuthIdentityReceipt,
+  type RunAuthIdentityReceiptOptions,
+} from './lib/auth-identity-receipt.js';
+import {
   runLifecyclemodelAutoBuild,
   type LifecyclemodelAutoBuildReport,
   type RunLifecyclemodelAutoBuildOptions,
@@ -314,6 +320,9 @@ export type CliDeps = {
   env: NodeJS.ProcessEnv;
   dotEnvStatus: DotEnvLoadResult;
   fetchImpl: FetchLike;
+  runAuthIdentityReceiptImpl?: (
+    options: RunAuthIdentityReceiptOptions,
+  ) => Promise<AuthIdentityReceipt>;
   runPublishImpl?: (options: RunPublishOptions) => Promise<PublishReport>;
   runValidationImpl?: (options: RunValidationOptions) => Promise<ValidationRunReport>;
   runLcaReleaseImpl?: (options: RunLcaReleaseOptions) => Promise<LcaReleaseReport>;
@@ -531,6 +540,7 @@ Usage:
 Commands:
 Implemented Commands:
   doctor     show environment diagnostics
+  auth       identity-receipt
   search     flow | process | lifecyclemodel
   process    get | list | identity-preflight | build-plan | scope-statistics | dedup-review | auto-build | resume-build | publish-build | complete-required-fields | save-draft | batch-build | refresh-references | verify-rows
   dataset    contract get | context-pack | classification children/path/audit/apply | curation-queue build/next/verify | import-lca convert | author | patch apply | save-draft | source upload-attachments | validate | verify-remote | bilingual extract/apply/validate | evidence-search plan/run | references rewrite/refresh-remote | maintenance clear-account/plan/apply/verify/flow-identity
@@ -550,6 +560,7 @@ Planned commands currently print an explicit "not implemented yet" message and e
 
 Examples:
   tiangong-lca doctor
+  tiangong-lca auth identity-receipt --expected-project-ref <project-ref> --expected-user-id <user-id> --json
   tiangong-lca search flow --input ./request.json
   tiangong-lca search process --input ./request.json --dry-run
   tiangong-lca process get --id <process-id>
@@ -623,6 +634,51 @@ Examples:
 
 Environment:
   .env loaded: ${dotEnvStatus.loaded ? `yes (${dotEnvStatus.path}, ${dotEnvStatus.count} keys)` : 'no'}
+`.trim();
+}
+
+function renderAuthHelp(): string {
+  return `Usage:
+  tiangong-lca auth identity-receipt [options]
+
+Implemented Subcommands:
+  identity-receipt  Live, read-only proof of the authenticated account and Supabase project
+
+Planned Subcommands:
+  whoami | doctor-auth
+
+Use "tiangong-lca auth identity-receipt --help" for the machine-receipt contract.
+`.trim();
+}
+
+function renderAuthIdentityReceiptHelp(): string {
+  return `Usage:
+  tiangong-lca auth identity-receipt [options]
+
+Options:
+  --expected-project-ref <ref>  Assert the exact Supabase project before session/network access
+  --expected-user-id <id>       Assert the exact server-verified authenticated user
+  --timeout-ms <n>              Positive request timeout in milliseconds (default: 10000)
+  --json                        Print compact JSON; default output is pretty JSON
+  -h, --help
+
+Receipt schema:
+  ${AUTH_IDENTITY_RECEIPT_SCHEMA}
+
+Safety:
+  This is a read-only command that performs one live read of /auth/v1/user. It never emits API keys, bearer/session
+  tokens, full email addresses, session paths, or credential-derived fingerprints. Production guards
+  must pass both expected assertions and require assertions.mode="intent-bound".
+
+Required env:
+  TIANGONG_LCA_API_BASE_URL
+  TIANGONG_LCA_API_KEY
+  TIANGONG_LCA_SUPABASE_PUBLISHABLE_KEY
+
+Optional session env:
+  TIANGONG_LCA_SESSION_FILE
+  TIANGONG_LCA_DISABLE_SESSION_CACHE
+  TIANGONG_LCA_FORCE_REAUTH
 `.trim();
 }
 
@@ -2808,6 +2864,73 @@ function parseDoctorFlags(args: string[]): {
   return {
     help: Boolean(values.help),
     json: Boolean(values.json),
+  };
+}
+
+function parseAuthIdentityReceiptFlags(args: string[]): {
+  help: boolean;
+  json: boolean;
+  expectedProjectRef: string | null;
+  expectedUserId: string | null;
+  timeoutMs: number;
+} {
+  let parsed: ReturnType<typeof parseArgs>;
+  try {
+    parsed = parseArgs({
+      args,
+      allowPositionals: false,
+      strict: true,
+      tokens: true,
+      options: {
+        help: { type: 'boolean', short: 'h' },
+        json: { type: 'boolean' },
+        'expected-project-ref': { type: 'string' },
+        'expected-user-id': { type: 'string' },
+        'timeout-ms': { type: 'string' },
+      },
+    });
+  } catch (error) {
+    throw new CliError(String(error), {
+      code: 'INVALID_ARGS',
+      exitCode: 2,
+    });
+  }
+
+  const tokens = parsed.tokens ?? [];
+  for (const optionName of ['expected-project-ref', 'expected-user-id', 'timeout-ms'] as const) {
+    const occurrences = tokens.filter(
+      (entry) => entry.kind === 'option' && entry.name === optionName,
+    ).length;
+    if (occurrences > 1) {
+      throw new CliError(`Option --${optionName} may be provided only once.`, {
+        code: 'INVALID_ARGS',
+        exitCode: 2,
+      });
+    }
+  }
+
+  const timeoutText =
+    typeof parsed.values['timeout-ms'] === 'string' ? parsed.values['timeout-ms'] : undefined;
+  const timeoutMs = timeoutText === undefined ? 10_000 : Number(timeoutText);
+  if (!Number.isInteger(timeoutMs) || timeoutMs <= 0) {
+    throw new CliError('Expected --timeout-ms to be a positive integer.', {
+      code: 'INVALID_TIMEOUT',
+      exitCode: 2,
+    });
+  }
+
+  return {
+    help: Boolean(parsed.values.help),
+    json: Boolean(parsed.values.json),
+    expectedProjectRef:
+      typeof parsed.values['expected-project-ref'] === 'string'
+        ? parsed.values['expected-project-ref']
+        : null,
+    expectedUserId:
+      typeof parsed.values['expected-user-id'] === 'string'
+        ? parsed.values['expected-user-id']
+        : null,
+    timeoutMs,
   };
 }
 
@@ -6881,6 +7004,7 @@ function applyRemoteOverrides(
 export async function executeCli(argv: string[], deps: CliDeps): Promise<CliResult> {
   try {
     const { flags, command, subcommand, commandArgs } = parseCommandLine(argv);
+    const authIdentityReceiptImpl = deps.runAuthIdentityReceiptImpl ?? runAuthIdentityReceipt;
     const publishImpl = deps.runPublishImpl ?? runPublish;
     const validationImpl = deps.runValidationImpl ?? runValidation;
     const lcaReleaseImpl = deps.runLcaReleaseImpl ?? runLcaRelease;
@@ -7022,6 +7146,30 @@ export async function executeCli(argv: string[], deps: CliDeps): Promise<CliResu
       return {
         exitCode: report.ok ? 0 : 1,
         stdout: doctorFlags.json ? `${JSON.stringify(report)}\n` : renderDoctorText(report),
+        stderr: '',
+      };
+    }
+
+    if (command === 'auth' && !subcommand) {
+      return { exitCode: 0, stdout: `${renderAuthHelp()}\n`, stderr: '' };
+    }
+
+    if (command === 'auth' && subcommand === 'identity-receipt') {
+      const authFlags = parseAuthIdentityReceiptFlags(commandArgs);
+      if (authFlags.help) {
+        return { exitCode: 0, stdout: `${renderAuthIdentityReceiptHelp()}\n`, stderr: '' };
+      }
+      const receipt = await authIdentityReceiptImpl({
+        env: deps.env,
+        fetchImpl: deps.fetchImpl,
+        cliVersion: loadCliPackageVersion(import.meta.url),
+        expectedProjectRef: authFlags.expectedProjectRef,
+        expectedUserId: authFlags.expectedUserId,
+        timeoutMs: authFlags.timeoutMs,
+      });
+      return {
+        exitCode: 0,
+        stdout: stringifyJson(receipt, authFlags.json),
         stderr: '',
       };
     }
