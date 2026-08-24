@@ -25,7 +25,7 @@ checkPaths:
   - test/auth-identity*.test.ts
   - test/lca-release*.test.ts
 lastReviewedAt: 2026-08-25
-lastReviewedCommit: c5907fb5002464242d0fefff9274c952ce821e4f
+lastReviewedCommit: 23bc8b9d348e2595903dafbc767c8c2be75a27c6
 lastReviewedNote: 'Reviewed for Issue #228: documents the secret-free, read-only auth receipt and intent-bound local production case.'
 ---
 

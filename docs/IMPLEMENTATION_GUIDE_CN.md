@@ -21,7 +21,7 @@ checkPaths:
   - src/**
   - test/**
 lastReviewedAt: 2026-08-25
-lastReviewedCommit: c5907fb5002464242d0fefff9274c952ce821e4f
+lastReviewedCommit: 23bc8b9d348e2595903dafbc767c8c2be75a27c6
 lastReviewedNote: 'Reviewed for Issue #228: auth identity receipt 使用既有 session、live current-user read、严格安全 DTO 与本地窄环境生产 case。'
 related:
   - ../AGENTS.md
