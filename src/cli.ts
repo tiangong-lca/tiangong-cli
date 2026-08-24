@@ -6,6 +6,7 @@ import type { FetchLike } from './lib/http.js';
 import { stringifyJson } from './lib/io.js';
 import { loadCliPackageVersion } from './lib/package-version.js';
 import {
+  AUTH_IDENTITY_MAX_TIMEOUT_MS,
   AUTH_IDENTITY_RECEIPT_SCHEMA,
   runAuthIdentityReceipt,
   type AuthIdentityReceipt,
@@ -658,7 +659,7 @@ function renderAuthIdentityReceiptHelp(): string {
 Options:
   --expected-project-ref <ref>  Assert the exact Supabase project before session/network access
   --expected-user-id <id>       Assert the exact server-verified authenticated user
-  --timeout-ms <n>              Positive request timeout in milliseconds (default: 10000)
+  --timeout-ms <n>              Request timeout 1..${AUTH_IDENTITY_MAX_TIMEOUT_MS} ms (default: 10000)
   --json                        Print compact JSON; default output is pretty JSON
   -h, --help
 
@@ -2913,11 +2914,14 @@ function parseAuthIdentityReceiptFlags(args: string[]): {
   const timeoutText =
     typeof parsed.values['timeout-ms'] === 'string' ? parsed.values['timeout-ms'] : undefined;
   const timeoutMs = timeoutText === undefined ? 10_000 : Number(timeoutText);
-  if (!Number.isInteger(timeoutMs) || timeoutMs <= 0) {
-    throw new CliError('Expected --timeout-ms to be a positive integer.', {
-      code: 'INVALID_TIMEOUT',
-      exitCode: 2,
-    });
+  if (!Number.isInteger(timeoutMs) || timeoutMs <= 0 || timeoutMs > AUTH_IDENTITY_MAX_TIMEOUT_MS) {
+    throw new CliError(
+      `Expected --timeout-ms to be an integer between 1 and ${AUTH_IDENTITY_MAX_TIMEOUT_MS}.`,
+      {
+        code: 'INVALID_TIMEOUT',
+        exitCode: 2,
+      },
+    );
   }
 
   return {

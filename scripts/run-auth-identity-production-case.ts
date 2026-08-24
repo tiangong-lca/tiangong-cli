@@ -558,6 +558,31 @@ export async function runProductionIdentityCase(
   const runtimeEvidence = validateRuntimeEvidence(
     (deps.prepareRuntimeSnapshot ?? prepareRuntimeSnapshot)(),
   );
+  let runtimeCleanupAttempted = false;
+  const cleanupRuntime = (): void => {
+    if (runtimeCleanupAttempted) {
+      return;
+    }
+    runtimeCleanupAttempted = true;
+    try {
+      runtimeEvidence.cleanup();
+    } catch {
+      if (
+        existsSync(options.outDir) &&
+        !existsSync(path.join(options.outDir, 'case-failure.json'))
+      ) {
+        writeFailure(options.outDir, {
+          stage: 'runtime-cleanup',
+          exitCode: null,
+          errorCode: 'AUTH_IDENTITY_CASE_RUNTIME_CLEANUP_FAILED',
+        });
+      }
+      return fail(
+        'The production identity case could not clean up its private runtime snapshot.',
+        'AUTH_IDENTITY_CASE_RUNTIME_CLEANUP_FAILED',
+      );
+    }
+  };
   try {
     const caseEnv = readCaseEnv(options.envFile);
     const observedProjectRef = projectRefFromApiBaseUrl(caseEnv.TIANGONG_LCA_API_BASE_URL);
@@ -614,6 +639,7 @@ export async function runProductionIdentityCase(
         ((command, childArgs, childOptions) => spawnSync(command, childArgs, childOptions))
       )(process.execPath, args, spawnOptions);
     } catch {
+      cleanupRuntime();
       writeFailure(options.outDir, {
         stage: 'spawn',
         exitCode: null,
@@ -624,6 +650,8 @@ export async function runProductionIdentityCase(
         'AUTH_IDENTITY_CASE_CHILD_SPAWN_FAILED',
       );
     }
+
+    cleanupRuntime();
 
     if (child.status !== 0 || child.signal !== null || child.stderr !== '') {
       const errorCode = safeChildErrorCode(child.stderr);
@@ -692,7 +720,7 @@ export async function runProductionIdentityCase(
     );
     return manifest;
   } finally {
-    runtimeEvidence.cleanup();
+    cleanupRuntime();
   }
 }
 

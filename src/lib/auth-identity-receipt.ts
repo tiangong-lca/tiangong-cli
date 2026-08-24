@@ -15,6 +15,7 @@ import {
 import { redactEmail, requireUserApiKeyCredentials } from './user-api-key.js';
 
 export const AUTH_IDENTITY_RECEIPT_SCHEMA = 'tiangong-lca.auth-identity-receipt.v1' as const;
+export const AUTH_IDENTITY_MAX_TIMEOUT_MS = 2_147_483_647;
 
 const CLI_PACKAGE_NAME = '@tiangong-lca/cli' as const;
 const CURRENT_USER_PATH = '/auth/v1/user' as const;
@@ -192,9 +193,13 @@ function normalizeExpectedUserId(value: string | null | undefined): string | nul
 
 function normalizeTimeoutMs(value: number | undefined): number {
   const normalized = value ?? DEFAULT_TIMEOUT_MS;
-  if (!Number.isInteger(normalized) || normalized <= 0) {
+  if (
+    !Number.isInteger(normalized) ||
+    normalized <= 0 ||
+    normalized > AUTH_IDENTITY_MAX_TIMEOUT_MS
+  ) {
     return identityError(
-      'Auth identity timeout must be a positive integer.',
+      `Auth identity timeout must be an integer between 1 and ${AUTH_IDENTITY_MAX_TIMEOUT_MS}.`,
       'AUTH_IDENTITY_TIMEOUT_INVALID',
       { exitCode: 2 },
     );
