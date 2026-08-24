@@ -3,6 +3,7 @@ import test from 'node:test';
 import type { ResponseLike } from '../src/lib/http.js';
 import {
   AUTH_IDENTITY_RECEIPT_SCHEMA,
+  __testInternals as receiptInternals,
   parseAuthIdentityReceipt,
   runAuthIdentityReceipt,
   type AuthIdentityReceipt,
@@ -152,6 +153,12 @@ test('identity receipt binds a server-verified account/project without exposing 
 });
 
 test('identity receipt canonicalization is deterministic and binds bounded request/response facts', async () => {
+  assert.deepEqual(
+    Object.keys(
+      receiptInternals.stableJsonValue({ a_: 1, 'a-': 2, a: 3, A: 4 }) as Record<string, unknown>,
+    ),
+    ['A', 'a', 'a-', 'a_'],
+  );
   const first = await successfulReceipt();
   const second = await successfulReceipt({
     fetchImpl: async () =>
