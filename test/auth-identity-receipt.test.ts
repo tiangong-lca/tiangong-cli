@@ -84,6 +84,14 @@ async function successfulReceipt(
   });
 }
 
+function rehashReceipt(value: AuthIdentityReceipt): AuthIdentityReceipt {
+  const { receipt_scope_sha256: _receiptScopeSha256, ...scope } = value;
+  return {
+    ...value,
+    receipt_scope_sha256: receiptInternals.sha256Json(scope),
+  };
+}
+
 test('identity receipt binds a server-verified account/project without exposing credentials', async () => {
   let capturedUrl = '';
   let capturedInit: RequestInit | undefined;
@@ -473,6 +481,11 @@ test('identity receipt rejects nonzero, malformed, ok:false, oversized, and inco
     ['missing-id', response(200, { email: 'user@example.com' }), 'AUTH_IDENTITY_RESPONSE_INVALID'],
     ['missing-email', response(200, { id: 'user-id' }), 'AUTH_IDENTITY_RESPONSE_INVALID'],
     [
+      'invalid-user-id',
+      response(200, { id: 'not-a-uuid', email: 'user@example.com' }),
+      'AUTH_IDENTITY_RESPONSE_INVALID',
+    ],
+    [
       'oversized',
       response(
         200,
@@ -511,6 +524,65 @@ test('identity receipt rejects nonzero, malformed, ok:false, oversized, and inco
       return true;
     },
   );
+});
+
+test('identity receipt enforces the response byte limit before unbounded buffering', async () => {
+  let contentLengthPulls = 0;
+  const contentLengthBody = new ReadableStream<Uint8Array>({
+    pull(controller) {
+      contentLengthPulls += 1;
+      controller.enqueue(new Uint8Array(70_000));
+      controller.close();
+    },
+  });
+  await assert.rejects(
+    successfulReceipt({
+      fetchImpl: async () =>
+        new Response(contentLengthBody, {
+          status: 200,
+          headers: {
+            'content-type': 'application/json',
+            'content-length': '70000',
+          },
+        }),
+    }),
+    (error: unknown) =>
+      error instanceof Error &&
+      'code' in error &&
+      error.code === 'AUTH_IDENTITY_RESPONSE_TOO_LARGE',
+  );
+  assert.equal(contentLengthPulls, 0);
+
+  let streamingPulls = 0;
+  let streamingCancelled = false;
+  const streamingBody = new ReadableStream<Uint8Array>({
+    pull(controller) {
+      streamingPulls += 1;
+      if (streamingPulls <= 10) {
+        controller.enqueue(new Uint8Array(16 * 1024));
+      } else {
+        controller.close();
+      }
+    },
+    cancel() {
+      streamingCancelled = true;
+    },
+  });
+  await assert.rejects(
+    successfulReceipt({
+      fetchImpl: async () =>
+        new Response(streamingBody, {
+          status: 200,
+          headers: { 'content-type': 'application/json' },
+        }),
+    }),
+    (error: unknown) =>
+      error instanceof Error &&
+      'code' in error &&
+      error.code === 'AUTH_IDENTITY_RESPONSE_TOO_LARGE',
+  );
+  assert.ok(streamingPulls <= 5, `stream pulls must stop at the byte limit, got ${streamingPulls}`);
+  assert.equal(streamingCancelled, true);
 });
 
 test('identity receipt sanitizes transport and session-resolution failures', async () => {
@@ -647,6 +719,33 @@ test('identity receipt validates runtime options and current-user email consiste
       error.code === 'AUTH_IDENTITY_EXPECTATION_INVALID',
   );
   await assert.rejects(
+    successfulReceipt({ expectedUserId: 'not-a-uuid' }),
+    (error: unknown) =>
+      error instanceof Error &&
+      'code' in error &&
+      error.code === 'AUTH_IDENTITY_EXPECTATION_INVALID',
+  );
+  let unsafeUrlSessionCalls = 0;
+  await assert.rejects(
+    successfulReceipt({
+      env: runtimeEnv({
+        TIANGONG_LCA_API_BASE_URL:
+          'https://project-ref.supabase.co/functions/v1/unsafe?token=URL_SECRET_SENTINEL',
+      }),
+      resolveSessionImpl: async () => {
+        unsafeUrlSessionCalls += 1;
+        return resolvedSession();
+      },
+    }),
+    (error: unknown) => {
+      assert.ok(error instanceof Error);
+      assert.equal('code' in error ? error.code : null, 'AUTH_IDENTITY_PROJECT_INVALID');
+      assert.doesNotMatch(JSON.stringify(error), /URL_SECRET_SENTINEL/u);
+      return true;
+    },
+  );
+  assert.equal(unsafeUrlSessionCalls, 0);
+  await assert.rejects(
     successfulReceipt({
       fetchImpl: async () => response(200, { id: 'user-id', email: 'other@example.com' }),
       expectedUserId: undefined,
@@ -672,6 +771,10 @@ test('identity receipt parser rejects schema drift and canonical hash tampering'
     { ...receipt, project: { ...receipt.project, project_base_url: ' ' } },
     { ...receipt, project: { ...receipt.project, project_base_url: 'not-a-url' } },
     { ...receipt, identity: { ...receipt.identity, user_id: '' } },
+    rehashReceipt({
+      ...receipt,
+      identity: { ...receipt.identity, user_id: 'not-a-uuid' },
+    }),
     { ...receipt, session: { ...receipt.session, source: 'unknown' } },
     { ...receipt, bindings: { ...receipt.bindings, request_sha256: 'bad' } },
     { ...receipt, assertions: { ...receipt.assertions, passed: false } },

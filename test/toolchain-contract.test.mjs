@@ -599,6 +599,7 @@ function assertRootBinBehavior(binPath, cwd, expectedVersion) {
   const authHelp = runBin(binPath, ['auth', 'identity-receipt', '--help'], cwd);
   assert.equal(authHelp.status, 0);
   assert.match(authHelp.stdout, /read-only/u);
+  assert.equal(authHelp.stderr, '');
   assert.equal(explicitHelp.stderr, '');
 
   const version = runBin(binPath, ['--version'], cwd);

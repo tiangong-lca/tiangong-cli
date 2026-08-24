@@ -80,15 +80,12 @@ test('production identity case parser requires explicit intent-bound argv', () =
     USER_ID,
     '--out-dir',
     '/private/cases/identity',
-    '--cli-bin',
-    '/private/cli/bin/tiangong-lca.js',
   ]);
   assert.deepEqual(parsed, {
     envFile: path.resolve('/private/foundry/.env'),
     expectedProjectRef: PROJECT_REF,
     expectedUserId: USER_ID,
     outDir: path.resolve('/private/cases/identity'),
-    cliBin: path.resolve('/private/cli/bin/tiangong-lca.js'),
   });
 
   const invalidArgv = [
@@ -107,6 +104,7 @@ test('production identity case parser requires explicit intent-bound argv', () =
       'duplicate',
     ],
     ['--api-key', 'argv-secret'],
+    ['--cli-bin', '/untrusted/cli.js'],
   ];
   for (const argv of invalidArgv) {
     assert.throws(() => parseProductionCaseArgs(argv), /production identity case|Unknown option/u);
@@ -117,7 +115,7 @@ test('production identity case runs with a narrow child env and persists only va
   const root = mkdtempSync(path.join(os.tmpdir(), 'tg-auth-production-case-'));
   const envFile = path.join(root, 'foundry.env');
   const outDir = path.join(root, 'case-output');
-  const cliBin = path.join(root, 'cli', 'tiangong-lca.js');
+  const cliBin = path.join(root, 'trusted-cli', 'tiangong-lca.js');
   writeFileSync(envFile, envFileText(), 'utf8');
   const receiptStdout = await receiptJson();
   const spawns: ProductionIdentityCaseSpawn[] = [];
@@ -129,7 +127,6 @@ test('production identity case runs with a narrow child env and persists only va
         expectedProjectRef: PROJECT_REF,
         expectedUserId: USER_ID,
         outDir,
-        cliBin,
       },
       {
         processEnv: {
@@ -137,6 +134,11 @@ test('production identity case runs with a narrow child env and persists only va
           UNRELATED_AMBIENT_SECRET: 'must-never-reach-child',
         },
         now: () => new Date('2026-08-25T12:35:00.000Z'),
+        resolveRuntimeEvidence: () => ({
+          cliBin: path.resolve(cliBin),
+          cliBinSha256: 'b'.repeat(64),
+          runtimeTreeSha256: 'c'.repeat(64),
+        }),
         spawnImpl: (command, args, options) => {
           spawns.push({ command, args, options });
           return {
@@ -179,6 +181,8 @@ test('production identity case runs with a narrow child env and persists only va
     assert.equal(spawn.options.env.TIANGONG_LCA_SESSION_FILE, undefined);
 
     assert.equal(manifest.status, 'passed');
+    assert.equal(manifest.cli_bin_sha256, 'b'.repeat(64));
+    assert.equal(manifest.runtime_tree_sha256, 'c'.repeat(64));
     assert.equal(
       manifest.receipt_scope_sha256,
       parseAuthIdentityReceipt(JSON.parse(receiptStdout)).receipt_scope_sha256,
@@ -224,9 +228,13 @@ test('production identity case rejects missing env and sanitizes child failures'
           expectedProjectRef: PROJECT_REF,
           expectedUserId: USER_ID,
           outDir: missingOut,
-          cliBin: '/missing/cli.js',
         },
         {
+          resolveRuntimeEvidence: () => ({
+            cliBin: '/trusted/cli.js',
+            cliBinSha256: 'b'.repeat(64),
+            runtimeTreeSha256: 'c'.repeat(64),
+          }),
           spawnImpl: () => {
             spawns += 1;
             throw new Error('must not spawn');
@@ -244,9 +252,13 @@ test('production identity case rejects missing env and sanitizes child failures'
           expectedProjectRef: PROJECT_REF,
           expectedUserId: USER_ID,
           outDir: failingOut,
-          cliBin: '/missing/cli.js',
         },
         {
+          resolveRuntimeEvidence: () => ({
+            cliBin: '/trusted/cli.js',
+            cliBinSha256: 'b'.repeat(64),
+            runtimeTreeSha256: 'c'.repeat(64),
+          }),
           spawnImpl: () => {
             spawns += 1;
             return {
@@ -290,9 +302,13 @@ test('production identity case rejects ambiguous stdout and existing output dire
           expectedProjectRef: PROJECT_REF,
           expectedUserId: USER_ID,
           outDir,
-          cliBin: '/missing/cli.js',
         },
         {
+          resolveRuntimeEvidence: () => ({
+            cliBin: '/trusted/cli.js',
+            cliBinSha256: 'b'.repeat(64),
+            runtimeTreeSha256: 'c'.repeat(64),
+          }),
           spawnImpl: () => ({
             status: 0,
             signal: null,

@@ -42,6 +42,19 @@ test('auth identity-receipt is an implemented, discoverable command', async () =
   assert.match(commandHelp.stdout, /--expected-user-id/u);
   assert.match(commandHelp.stdout, /read-only/u);
   assert.equal(commandHelp.stderr, '');
+
+  const explicitNamespaceHelp = await executeCli(['auth', '--help'], makeDeps());
+  assert.equal(explicitNamespaceHelp.exitCode, 0);
+  for (const argv of [
+    ['auth', '--json'],
+    ['auth', '--unknown'],
+    ['auth', '--help', '--unknown'],
+  ]) {
+    const invalid = await executeCli(argv, makeDeps());
+    assert.equal(invalid.exitCode, 2, argv.join(' '));
+    assert.equal(invalid.stdout, '', argv.join(' '));
+    assert.match(invalid.stderr, /INVALID_ARGS/u, argv.join(' '));
+  }
 });
 
 test('auth identity-receipt dispatches authoritative argv expectations and renders JSON', async () => {
