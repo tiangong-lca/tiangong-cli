@@ -14,13 +14,16 @@ checkPaths:
   - DEV_CN.md
   - README.md
   - package.json
+  - pnpm-workspace.yaml
+  - pnpm-lock.yaml
+  - .oxlintrc.json
   - .nvmrc
   - src/**
   - scripts/**
   - .github/workflows/**
-lastReviewedAt: 2026-07-30
-lastReviewedCommit: ad19f88667864d5bae626557f06d2c9b2d738bc4
-lastReviewedNote: 'Reviewed for Issue #214: the remote identity and derivative contract cleanup changes no maintainer setup or Rust tidas runtime requirements.'
+lastReviewedAt: 2026-08-25
+lastReviewedCommit: c6a48e82d6a56e1f810cddf12d1d64666d9503ce
+lastReviewedNote: 'Reviewed for Issue #224: 维护基线固定为 Node 24、pnpm 11.23.0、TypeScript 7.0.2 与 Oxlint，发布包保持 package-manager neutral。'
 related:
   - AGENTS.md
   - .docpact/config.yaml
@@ -32,7 +35,9 @@ related:
 
 # 项目配置
 
-本项目是 TianGong 的统一 CLI 仓库，运行时基线固定为 Node 24，源码使用 TypeScript，但运行时执行 `dist/` 下的构建产物。
+本项目是 TianGong 的统一 CLI 仓库，运行时基线固定为 Node 24，开发工具链固定为 pnpm 11.23.0、TypeScript 7.0.2 与 type-aware Oxlint，但运行时只执行 `dist/` 下的构建产物。
+
+Review note, 2026-08-25: Issue #224 把仓库收敛为单一 Node 工具链：根 `pnpm-workspace.yaml` 与唯一根 `pnpm-lock.yaml` 管理依赖；`test:package` 拒绝其他 lockfile、旧 TypeScript/ESLint bridge、active npm 包管理命令和发布包中的开发工具泄漏；Oxlint 完全替代 ESLint 与 TypeScript Compiler API lint 路径。feature 仍保持 0.0.33；合并且全部质量门通过后，应另开只含 release metadata 的 0.1.0 PR，明确 maintainer/release compatibility 边界。
 
 Review note, 2026-06-04: `dataset curation-queue next/verify` extends the existing CLI-native dataset command family and does not change maintainer runtime, env, or release guidance.
 
@@ -143,16 +148,19 @@ review / dedup / publish 的规则 gate 元数据由 `src/lib/runtime-rulesets.t
 
 ## 安装依赖
 
-只需要一个可用的 Node.js `24.x` 运行时。本仓库不要求 `bash`、`nvm` 或其他 Unix-only 初始化工具。你可以使用自己平台上最稳定的安装方式，例如：
+需要 Node.js `24.x` 和 package metadata 指定的 pnpm `11.23.0`。本仓库不要求 `bash`、`nvm` 或其他 Unix-only 初始化工具。你可以使用自己平台上最稳定的 Node 安装方式，例如：
 
 - Windows: 官方 Node.js `24.x` 安装器
 - macOS: 官方安装器、`fnm` 或 `nvm`
 - Linux: 你自己的 Node 24 安装方式
 
 ```bash
-npm ci
-npm run build
+pnpm --version
+pnpm install --frozen-lockfile
+pnpm build
 ```
+
+`pnpm --version` 必须输出 `11.23.0`。依赖解析只认根 `pnpm-workspace.yaml` 与 `pnpm-lock.yaml`，不能增加其他 package manager 或嵌套 lockfile。
 
 ## 发布流程
 
@@ -161,11 +169,11 @@ npm run build
 日常 release 采用 tag 驱动的 GitHub Actions 流程：
 
 - 从 `main` 开一个 release-prep PR
-- release-prep PR 修改 CLI 包自己的 `package.json` 和 `package-lock.json` 版本号
+- release-prep PR 只修改 CLI 包自己的 `package.json` 版本；依赖图不变时，唯一根 `pnpm-lock.yaml` 必须保持存在、frozen 且不变
 - PR 合并后，`.github/workflows/tag-release-from-merge.yml` 自动创建 `cli-vX.Y.Z`
 - `.github/workflows/publish.yml` 再从这个不可变 tag 通过 npm Trusted Publishing 发布
 
-正式发布不要在本机执行 `npm publish`。本机只负责版本 bump、验证和 PR；合并到 upstream `main` 之后，由 GitHub Actions 创建 tag 并完成 npm 发布。本机 npm 登录状态或个人 npm 权限不属于 release 契约。
+正式发布不能从本机发起。本机只负责版本 bump、验证和 PR；合并到 upstream `main` 之后，由 GitHub Actions 使用固定的 `pnpm/setup` v2.0.2、原生 pnpm OIDC 与 provenance 创建 tag 并完成 npm 发布。本机 npm 登录状态或个人 npm 权限不属于 release 契约。
 
 值班发布步骤见 [docs/release-runbook.md](./docs/release-runbook.md)。
 
@@ -174,8 +182,10 @@ npm run build
 发布到 npm 之后，可直接安装：
 
 ```bash
-npm install --global @tiangong-lca/cli
+pnpm add --global @tiangong-lca/cli
 ```
+
+对外 tarball 是 package-manager-neutral 的 runtime artifact，不携带 pnpm lock/workspace、TypeScript、Oxlint、测试或源码工具链；仓库自身仍只允许 pnpm。
 
 ## 配置文件
 
@@ -278,64 +288,64 @@ Data API schema 不依赖 PostgREST 的默认 `public`。默认且唯一支持�
 
 公开推荐的跨平台执行入口按优先级是：
 
-- `npm exec tiangong-lca -- ...`
+- `node ./bin/tiangong-lca.js ...`
 - `node ./bin/tiangong-lca.js ...`
 - `node ./dist/src/main.js ...`
 
-`npm start -- ...` 仍可用于本地开发时的“先构建再执行”，但它不是 skills / 文档的 canonical 公共入口。
+`pnpm start -- ...` 仍可用于本地开发时的“先构建再执行”，但它不是 skills / 文档的 canonical 公共入口。
 
 ```bash
-npm exec tiangong-lca -- --help
-npm exec tiangong-lca -- doctor
-npm exec tiangong-lca -- doctor --json
-npm exec tiangong-lca -- search flow --input ./request.json --dry-run
-npm exec tiangong-lca -- process get --id <process-id> --version <version> --json
-npm exec tiangong-lca -- process list --state-code 100 --limit 20 --json
-npm exec tiangong-lca -- process identity-preflight --input ./process-identity-preflight.json --out-dir ./process-identity-preflight --json
-npm exec tiangong-lca -- process auto-build --input ./examples/process-auto-build.request.json --out-dir /abs/path/to/process-run --json
-npm exec tiangong-lca -- process resume-build --run-dir /abs/path/to/process-run --json
-npm exec tiangong-lca -- process publish-build --run-dir /abs/path/to/process-run --json
-npm exec tiangong-lca -- process batch-build --input ./examples/process-batch-build.request.json --out-dir /abs/path/to/process-batch --json
-npm exec tiangong-lca -- dataset validate --input ./rows.jsonl --type auto --out-dir ./dataset-validate --json
-npm exec tiangong-lca -- dataset classification audit --type location --input ./rows/rows.jsonl --out-dir ./location-audit --json
-npm exec tiangong-lca -- dataset curation-queue build --processes ./rows/processes.jsonl --flows ./rows/flows.jsonl --support ./rows/sources.jsonl --out-dir ./curation-queue --json
-npm exec tiangong-lca -- dataset references rewrite --input ./rows.jsonl --from flow:<old-id>@<old-version> --to flow:<new-id>@<new-version> --out-dir ./dataset-rewrite --json
-npm exec tiangong-lca -- dataset maintenance plan --scope ./maintenance-scope.json --operation repair-references --out-dir ./dataset-maintenance --json
-npm exec tiangong-lca -- dataset maintenance plan --scope ./derivative-rebuild-scope.json --operation rebuild-derivatives --out-dir ./derivative-rebuild --json
-npm exec tiangong-lca -- dataset maintenance apply --plan ./dataset-maintenance/maintenance-plan.json --commit --approve-plan <sha256> --confirm <current-account-email> --json
-npm exec tiangong-lca -- dataset maintenance apply --plan ./flow-delete-maintenance/maintenance-plan.json --commit --approve-plan <sha256> --confirm <current-account-email> --max-parallel 8 --json
-npm exec tiangong-lca -- dataset maintenance verify --plan ./dataset-maintenance/maintenance-plan.json --out-dir ./dataset-maintenance/verify --json
-npm exec tiangong-lca -- dataset maintenance freeze-protected --plan ./protected-step2/maintenance-plan.json --toolchain-evidence ./protected-step2/toolchain-evidence.json --expected-project-ref <production-ref> --confirm <current-account-email> --out-dir ./protected-step2/freeze --json
-npm exec tiangong-lca -- dataset maintenance seal-protected-approval --freeze ./protected-step2/freeze/protected-execution-freeze.json --approval-request ./protected-step2/freeze/protected-approval-request.json --human-approval ./protected-step2/human-approval.txt --approve-freeze-file <sha256> --approve-request <sha256> --approve-text <sha256> --confirm <current-account-email> --approved-at <approved-at-utc-from-request> --out-dir ./protected-step2/approval --json
-npm exec tiangong-lca -- dataset maintenance run-protected --plan ./protected-step2/maintenance-plan.json --freeze ./protected-step2/freeze/protected-execution-freeze.json --approval ./protected-step2/approval/protected-approval.json --out-dir ./protected-step2/run --status-only --json
-npm exec tiangong-lca -- lifecyclemodel auto-build --input ./examples/lifecyclemodel-auto-build.request.json --out-dir /abs/path/to/lifecyclemodel-run --json
-npm exec tiangong-lca -- lifecyclemodel validate-build --run-dir /abs/path/to/lifecyclemodel-run --json
-npm exec tiangong-lca -- lifecyclemodel publish-build --run-dir /abs/path/to/lifecyclemodel-run --json
-npm exec tiangong-lca -- lifecyclemodel save-draft --input ./lifecyclemodels.jsonl --out-dir ./lifecyclemodel-save-draft --dry-run --json
-npm exec tiangong-lca -- dataset save-draft --input ./rows.jsonl --type auto --execution-contract ./execution-contract.json --max-parallel 8 --out-dir ./dataset-save-draft --commit --json
-npm exec tiangong-lca -- lifecyclemodel graph --input ./lifecyclemodels.jsonl --out-dir ./lifecyclemodel-graph --format all --json
-npm exec tiangong-lca -- lifecyclemodel orchestrate plan --input ./lifecyclemodel-orchestrate.request.json --out-dir /abs/path/to/lifecyclemodel-recursive-run --json
-npm exec tiangong-lca -- lifecyclemodel build-resulting-process --input ./request.json --json
-npm exec tiangong-lca -- lifecyclemodel publish-resulting-process --run-dir ./runs/example --publish-processes --publish-relations --json
-npm exec tiangong-lca -- review process --rows-file ./process-list-report.json --out-dir ./review --json
-npm exec tiangong-lca -- review process --run-root /abs/path/to/process-run --run-id <run_id> --out-dir ./review --json
-npm exec tiangong-lca -- review flow --rows-file ./flows.json --out-dir ./flow-review --json
-npm exec tiangong-lca -- review lifecyclemodel --run-dir /abs/path/to/lifecyclemodel-run --out-dir ./lifecyclemodel-review --json
-npm exec tiangong-lca -- flow get --id <flow-id> --version <version> --json
-npm exec tiangong-lca -- flow list --id <flow-id> --state-code 100 --limit 20 --json
-npm exec tiangong-lca -- flow identity-preflight --input ./flow-identity-preflight.json --out-dir ./flow-identity-preflight --json
-npm exec tiangong-lca -- flow remediate --input-file ./invalid-flows.jsonl --out-dir ./flow-remediation --json
-npm exec tiangong-lca -- flow publish-version --input-file ./ready-flows.jsonl --out-dir ./flow-publish --dry-run --json
-npm exec tiangong-lca -- flow publish-reviewed-data --flow-rows-file ./reviewed-flows.jsonl --original-flow-rows-file ./original-flows.jsonl --out-dir ./flow-publish-reviewed --dry-run --json
-npm exec tiangong-lca -- flow build-alias-map --old-flow-file ./old-flows.jsonl --new-flow-file ./new-flows.jsonl --out-dir ./flow-alias-map --json
-npm exec tiangong-lca -- flow scan-process-flow-refs --processes-file ./processes.jsonl --scope-flow-file ./flows.jsonl --out-dir ./flow-scan --json
-npm exec tiangong-lca -- flow plan-process-flow-repairs --processes-file ./processes.jsonl --scope-flow-file ./flows.jsonl --scan-findings ./flow-scan/scan-findings.json --out-dir ./flow-repair-plan --json
-npm exec tiangong-lca -- flow apply-process-flow-repairs --processes-file ./processes.jsonl --scope-flow-file ./flows.jsonl --scan-findings ./flow-scan/scan-findings.json --out-dir ./flow-repair-apply --json
-npm exec tiangong-lca -- flow regen-product --processes-file ./processes.jsonl --scope-flow-file ./flows.jsonl --out-dir ./flow-regen --apply --json
-npm exec tiangong-lca -- flow validate-processes --original-processes-file ./before.jsonl --patched-processes-file ./after.jsonl --scope-flow-file ./flows.jsonl --out-dir ./flow-validate --json
-npm exec tiangong-lca -- publish run --input ./examples/publish-run.request.json --dry-run
-npm exec tiangong-lca -- validation run --input-dir ./tidas-package --engine auto
-npm exec tiangong-lca -- admin embedding-run --input ./jobs.json --dry-run
+node ./bin/tiangong-lca.js --help
+node ./bin/tiangong-lca.js doctor
+node ./bin/tiangong-lca.js doctor --json
+node ./bin/tiangong-lca.js search flow --input ./request.json --dry-run
+node ./bin/tiangong-lca.js process get --id <process-id> --version <version> --json
+node ./bin/tiangong-lca.js process list --state-code 100 --limit 20 --json
+node ./bin/tiangong-lca.js process identity-preflight --input ./process-identity-preflight.json --out-dir ./process-identity-preflight --json
+node ./bin/tiangong-lca.js process auto-build --input ./examples/process-auto-build.request.json --out-dir /abs/path/to/process-run --json
+node ./bin/tiangong-lca.js process resume-build --run-dir /abs/path/to/process-run --json
+node ./bin/tiangong-lca.js process publish-build --run-dir /abs/path/to/process-run --json
+node ./bin/tiangong-lca.js process batch-build --input ./examples/process-batch-build.request.json --out-dir /abs/path/to/process-batch --json
+node ./bin/tiangong-lca.js dataset validate --input ./rows.jsonl --type auto --out-dir ./dataset-validate --json
+node ./bin/tiangong-lca.js dataset classification audit --type location --input ./rows/rows.jsonl --out-dir ./location-audit --json
+node ./bin/tiangong-lca.js dataset curation-queue build --processes ./rows/processes.jsonl --flows ./rows/flows.jsonl --support ./rows/sources.jsonl --out-dir ./curation-queue --json
+node ./bin/tiangong-lca.js dataset references rewrite --input ./rows.jsonl --from flow:<old-id>@<old-version> --to flow:<new-id>@<new-version> --out-dir ./dataset-rewrite --json
+node ./bin/tiangong-lca.js dataset maintenance plan --scope ./maintenance-scope.json --operation repair-references --out-dir ./dataset-maintenance --json
+node ./bin/tiangong-lca.js dataset maintenance plan --scope ./derivative-rebuild-scope.json --operation rebuild-derivatives --out-dir ./derivative-rebuild --json
+node ./bin/tiangong-lca.js dataset maintenance apply --plan ./dataset-maintenance/maintenance-plan.json --commit --approve-plan <sha256> --confirm <current-account-email> --json
+node ./bin/tiangong-lca.js dataset maintenance apply --plan ./flow-delete-maintenance/maintenance-plan.json --commit --approve-plan <sha256> --confirm <current-account-email> --max-parallel 8 --json
+node ./bin/tiangong-lca.js dataset maintenance verify --plan ./dataset-maintenance/maintenance-plan.json --out-dir ./dataset-maintenance/verify --json
+node ./bin/tiangong-lca.js dataset maintenance freeze-protected --plan ./protected-step2/maintenance-plan.json --toolchain-evidence ./protected-step2/toolchain-evidence.json --expected-project-ref <production-ref> --confirm <current-account-email> --out-dir ./protected-step2/freeze --json
+node ./bin/tiangong-lca.js dataset maintenance seal-protected-approval --freeze ./protected-step2/freeze/protected-execution-freeze.json --approval-request ./protected-step2/freeze/protected-approval-request.json --human-approval ./protected-step2/human-approval.txt --approve-freeze-file <sha256> --approve-request <sha256> --approve-text <sha256> --confirm <current-account-email> --approved-at <approved-at-utc-from-request> --out-dir ./protected-step2/approval --json
+node ./bin/tiangong-lca.js dataset maintenance run-protected --plan ./protected-step2/maintenance-plan.json --freeze ./protected-step2/freeze/protected-execution-freeze.json --approval ./protected-step2/approval/protected-approval.json --out-dir ./protected-step2/run --status-only --json
+node ./bin/tiangong-lca.js lifecyclemodel auto-build --input ./examples/lifecyclemodel-auto-build.request.json --out-dir /abs/path/to/lifecyclemodel-run --json
+node ./bin/tiangong-lca.js lifecyclemodel validate-build --run-dir /abs/path/to/lifecyclemodel-run --json
+node ./bin/tiangong-lca.js lifecyclemodel publish-build --run-dir /abs/path/to/lifecyclemodel-run --json
+node ./bin/tiangong-lca.js lifecyclemodel save-draft --input ./lifecyclemodels.jsonl --out-dir ./lifecyclemodel-save-draft --dry-run --json
+node ./bin/tiangong-lca.js dataset save-draft --input ./rows.jsonl --type auto --execution-contract ./execution-contract.json --max-parallel 8 --out-dir ./dataset-save-draft --commit --json
+node ./bin/tiangong-lca.js lifecyclemodel graph --input ./lifecyclemodels.jsonl --out-dir ./lifecyclemodel-graph --format all --json
+node ./bin/tiangong-lca.js lifecyclemodel orchestrate plan --input ./lifecyclemodel-orchestrate.request.json --out-dir /abs/path/to/lifecyclemodel-recursive-run --json
+node ./bin/tiangong-lca.js lifecyclemodel build-resulting-process --input ./request.json --json
+node ./bin/tiangong-lca.js lifecyclemodel publish-resulting-process --run-dir ./runs/example --publish-processes --publish-relations --json
+node ./bin/tiangong-lca.js review process --rows-file ./process-list-report.json --out-dir ./review --json
+node ./bin/tiangong-lca.js review process --run-root /abs/path/to/process-run --run-id <run_id> --out-dir ./review --json
+node ./bin/tiangong-lca.js review flow --rows-file ./flows.json --out-dir ./flow-review --json
+node ./bin/tiangong-lca.js review lifecyclemodel --run-dir /abs/path/to/lifecyclemodel-run --out-dir ./lifecyclemodel-review --json
+node ./bin/tiangong-lca.js flow get --id <flow-id> --version <version> --json
+node ./bin/tiangong-lca.js flow list --id <flow-id> --state-code 100 --limit 20 --json
+node ./bin/tiangong-lca.js flow identity-preflight --input ./flow-identity-preflight.json --out-dir ./flow-identity-preflight --json
+node ./bin/tiangong-lca.js flow remediate --input-file ./invalid-flows.jsonl --out-dir ./flow-remediation --json
+node ./bin/tiangong-lca.js flow publish-version --input-file ./ready-flows.jsonl --out-dir ./flow-publish --dry-run --json
+node ./bin/tiangong-lca.js flow publish-reviewed-data --flow-rows-file ./reviewed-flows.jsonl --original-flow-rows-file ./original-flows.jsonl --out-dir ./flow-publish-reviewed --dry-run --json
+node ./bin/tiangong-lca.js flow build-alias-map --old-flow-file ./old-flows.jsonl --new-flow-file ./new-flows.jsonl --out-dir ./flow-alias-map --json
+node ./bin/tiangong-lca.js flow scan-process-flow-refs --processes-file ./processes.jsonl --scope-flow-file ./flows.jsonl --out-dir ./flow-scan --json
+node ./bin/tiangong-lca.js flow plan-process-flow-repairs --processes-file ./processes.jsonl --scope-flow-file ./flows.jsonl --scan-findings ./flow-scan/scan-findings.json --out-dir ./flow-repair-plan --json
+node ./bin/tiangong-lca.js flow apply-process-flow-repairs --processes-file ./processes.jsonl --scope-flow-file ./flows.jsonl --scan-findings ./flow-scan/scan-findings.json --out-dir ./flow-repair-apply --json
+node ./bin/tiangong-lca.js flow regen-product --processes-file ./processes.jsonl --scope-flow-file ./flows.jsonl --out-dir ./flow-regen --apply --json
+node ./bin/tiangong-lca.js flow validate-processes --original-processes-file ./before.jsonl --patched-processes-file ./after.jsonl --scope-flow-file ./flows.jsonl --out-dir ./flow-validate --json
+node ./bin/tiangong-lca.js publish run --input ./examples/publish-run.request.json --dry-run
+node ./bin/tiangong-lca.js validation run --input-dir ./tidas-package --engine auto
+node ./bin/tiangong-lca.js admin embedding-run --input ./jobs.json --dry-run
 ```
 
 ## process / review / publish / validation 边界
@@ -728,32 +738,34 @@ Derivative rebuild 的 apply 成功只表示 guarded RPC 已返回 `accepted`/`q
 ## 开发模式
 
 ```bash
-npm run dev -- --help
+pnpm dev -- --help
 ```
 
 说明：
 
-- `npm run dev` 仍可使用 `tsx` 做开发期直接运行
+- `pnpm dev` 仍可使用 `tsx` 做开发期直接运行
 - 正式运行入口不再依赖 `tsx`，而是执行构建后的 `dist/` 产物
 
 ## 检查与测试
 
 ```bash
-npm run lint
-npm run prettier
-npm test
-npm run test:coverage
-npm run test:coverage:assert-full
-npm run prepush:gate
+pnpm lint
+pnpm prettier
+pnpm test
+pnpm test:package
+pnpm test:coverage
+pnpm test:coverage:assert-full
+pnpm prepush:gate
 ```
 
 说明：
 
-- `npm run lint` 会执行 `eslint`、deprecated API 检查、coverage-ignore 守卫、`prettier --check` 和 `tsc`
-- `npm run prettier` 用于实际改写格式
-- `npm test` 包含普通单元测试和 `bin` / 入口 smoke test
-- `npm run test:coverage` 对 `src/**/*.ts` 执行 100% 覆盖率门
-- `npm run prepush:gate` 是提交前的完整质量门
+- `pnpm lint` 会执行 type-aware Oxlint、`prettier --check`、coverage-ignore 守卫、Data API consumer 扫描与 TypeScript 7 typecheck；ESLint 和 Compiler API lint 路径已经移除
+- `pnpm prettier` 用于实际改写格式
+- `pnpm test` 包含普通单元测试和 `bin` / 入口 smoke test
+- `pnpm test:package` 检查 pnpm/TS7/Oxlint 单轨契约、CI/release 命令、干净 tarball 与 package-manager-neutral consumer
+- `pnpm test:coverage` 对 `src/**/*.ts` 执行 100% statements / branches / functions / lines 覆盖率门
+- `pnpm prepush:gate` 是提交前的完整质量门，包含 lint、package contract、coverage 与 coverage assertion
 - 不允许通过 `c8 ignore` / `istanbul ignore` / `v8 ignore` 这类 pragma 规避覆盖率；边缘情况必须在测试里覆盖
 
 ## 构建项目
@@ -761,23 +773,23 @@ npm run prepush:gate
 当前 `build` 会把 CLI 源码编译到 `dist/`：
 
 ```bash
-npm run build
+pnpm build
 ```
 
 ## 可执行入口
 
 仓库内当前统一推荐三个稳定入口：
 
-- `npm exec tiangong-lca -- ...`
+- `ppnpm start -- ...`
 - `node ./bin/tiangong-lca.js ...`
 - `node ./dist/src/main.js ...`
 
 其中：
 
-- `npm exec tiangong-lca -- ...` 直接走 `package.json` 里的 `bin["tiangong-lca"]`
+- `ppnpm start -- ...` 先构建，再走 `package.json` 里的 `bin["tiangong-lca"]`
 - `node ./bin/tiangong-lca.js ...` 会加载 `dist/src/main.js`
 - `node ./dist/src/main.js ...` 适合调试编译后的真实 runtime
-- `npm start -- ...` 仍然可用，但本质是“先构建再运行”的开发便利脚本
+- `ppnpm start -- ...` 是“先构建再运行”的开发便利脚本
 
 ## 与 skills 的联动约定
 

@@ -14,6 +14,8 @@ checkPaths:
   - docs/release-runbook.md
   - docs/release-setup.md
   - package.json
+  - pnpm-workspace.yaml
+  - pnpm-lock.yaml
   - scripts/ci/**
   - .github/workflows/publish.yml
   - .github/workflows/tag-release-from-merge.yml
@@ -22,9 +24,9 @@ checkPaths:
   - scripts/docpact
   - scripts/docpact-gate.sh
   - scripts/install-git-hooks.sh
-lastReviewedAt: 2026-08-20
-lastReviewedCommit: 0b0518fb2b35446ebdeab72ca6de634677ae72b8
-lastReviewedNote: 'Reviewed for Issue #214: the Contract cleanup requires the normal full-coverage release gate and no packaging exception.'
+lastReviewedAt: 2026-08-25
+lastReviewedCommit: c6a48e82d6a56e1f810cddf12d1d64666d9503ce
+lastReviewedNote: 'Reviewed for Issue #224: current release operations use pnpm 11.23.0, package-contract proof, a clean package-neutral tarball, and native pnpm provenance.'
 related:
   - ../AGENTS.md
   - ../.docpact/config.yaml
@@ -35,6 +37,8 @@ related:
 # CLI Release Runbook
 
 This document is the operator runbook for each `@tiangong-lca/cli` release.
+
+Review note, 2026-08-25: Issue #224 keeps the feature branch at 0.0.33 while replacing the repository toolchain with Node 24, pnpm 11.23.0, TypeScript 7.0.2, and Oxlint. Because that migration changes maintainer and release compatibility, prepare 0.1.0 in a separate release-only PR after the feature PR merges and `test:package`, exact 100% coverage, package inspection, Docpact, and release automation all pass. Historical npm-era notes below are retained only as dated evidence and are not current commands.
 
 Review note, 2026-07-14: Issue #165 adds the guarded `dataset maintenance rebuild-derivatives` command profile but does not change the release procedure. Its command, contract, remote-adapter, asynchronous verification, and no-fallback tests must pass the existing pre-push/docpact gate before a later version-bump PR; the feature PR itself must not publish locally or alter package version metadata.
 
@@ -94,8 +98,8 @@ Before starting a release:
 - work from the latest `main`
 - keep the release-prep change scoped to CLI package version metadata
 - confirm npm has not already published the target version
-- confirm any command-surface feature PRs that will be included in the release have passed the local pre-push gate, including `npm run prepush:gate` and docpact, before preparing the version bump
-- do not run local `npm publish` for routine releases; the canonical release path is a version-bump PR merged to upstream `main`, followed by tag creation and npm Trusted Publishing in GitHub Actions
+- confirm any command-surface feature PRs that will be included in the release have passed the local pre-push gate, including `pnpm prepush:gate` and docpact, before preparing the version bump
+- do not publish routinely from a local workstation; the canonical release path is a version-bump PR merged to upstream `main`, followed by tag creation and npm Trusted Publishing in GitHub Actions
 
 Review note, 2026-06-02: dataset curation queue command additions follow the existing feature-then-release flow; release prep still remains a separate package metadata bump.
 
@@ -103,17 +107,17 @@ Review note, 2026-06-04: `dataset curation-queue next/verify` follows the same f
 
 Review note, 2026-07-13: exact-count maintenance pagination follows the same feature-then-release flow. It changes runtime completeness checks and artifacts but does not change version-bump, tag, npm Trusted Publishing, or workspace follow-up semantics.
 
-Release 0.0.11 note, 2026-06-02: prechecks are `node ./scripts/ci/release-version.cjs assert-unpublished --version 0.0.11`, `npm run prepush:gate`, and `npm pack --dry-run`.
+Historical npm-era release 0.0.11 note (retired; do not use as current instructions), 2026-06-02: prechecks were `node ./scripts/ci/release-version.cjs assert-unpublished --version 0.0.11`, `npm run prepush:gate`, and `npm pack --dry-run`.
 
-Release 0.0.12 note, 2026-06-05: prechecks are `node ./scripts/ci/release-version.cjs assert-unpublished --version 0.0.12`, `npm run prepush:gate`, and `npm pack --dry-run`; no tag or publish workflow semantics changed.
+Historical npm-era release 0.0.12 note (retired; do not use as current instructions), 2026-06-05: prechecks were `node ./scripts/ci/release-version.cjs assert-unpublished --version 0.0.12`, `npm run prepush:gate`, and `npm pack --dry-run`; no tag or publish workflow semantics changed.
 
-Release 0.0.13 note, 2026-06-06: prechecks are `node ./scripts/ci/release-version.cjs assert-unpublished --version 0.0.13`, `npm run prepush:gate`, and `npm pack --dry-run`; this release adds `process save-draft --target-user-id` account/write guard support for batch import handoff.
+Historical npm-era release 0.0.13 note (retired; do not use as current instructions), 2026-06-06: prechecks were `node ./scripts/ci/release-version.cjs assert-unpublished --version 0.0.13`, `npm run prepush:gate`, and `npm pack --dry-run`; this release added `process save-draft --target-user-id` account/write guard support for batch import handoff.
 
-Release 0.0.14 note, 2026-06-07: prechecks are `node ./scripts/ci/release-version.cjs assert-unpublished --version 0.0.14`, `npm run prepush:gate`, and `npm pack --dry-run`; this release lets `dataset classification apply --type location` create explicit missing location fields such as flow `locationOfSupply` while keeping ambiguous paths blocked.
+Historical npm-era release 0.0.14 note (retired; do not use as current instructions), 2026-06-07: prechecks were `node ./scripts/ci/release-version.cjs assert-unpublished --version 0.0.14`, `npm run prepush:gate`, and `npm pack --dry-run`; this release let `dataset classification apply --type location` create explicit missing location fields such as flow `locationOfSupply` while keeping ambiguous paths blocked.
 
-Release 0.0.15 note, 2026-06-11: prechecks are `node ./scripts/ci/release-version.cjs assert-unpublished --version 0.0.15`, `npm run prepush:gate`, and `npm pack --dry-run`; this release adapts `dataset import-lca convert` to the tidas-tools 0.0.28 process-bundle CLI surface (no bare `--process-bundles` flag, `--no-process-bundles` forwarded when disabled) and derives report bundle/mapping file fields from on-disk state.
+Historical npm-era release 0.0.15 note (retired; do not use as current instructions), 2026-06-11: prechecks were `node ./scripts/ci/release-version.cjs assert-unpublished --version 0.0.15`, `npm run prepush:gate`, and `npm pack --dry-run`; this release adapted `dataset import-lca convert` to the tidas-tools 0.0.28 process-bundle CLI surface (no bare `--process-bundles` flag, `--no-process-bundles` forwarded when disabled) and derived report bundle/mapping file fields from on-disk state.
 
-Issue #210 packaging note, 2026-07-27: feature PRs do not bump or publish the CLI package. Before the later release PR, verify `npm pack --dry-run` includes `assets/import-smoke/simapro.csv` and does not include a Python package, tidas-tools checkout, venv, or native executable. Run a clean installed-package smoke with Python unavailable and an explicit checksum-verified Rust `tidas` artifact. Native artifacts remain distributed by tidas-tools for Linux x86_64/ARM64, macOS Intel/Apple Silicon, and Windows x86_64; the CLI npm release must not invent a Windows ARM64 artifact.
+Historical npm-era Issue #210 packaging note (retired; do not use as current instructions), 2026-07-27: feature PRs did not bump or publish the CLI package. The later release PR used `npm pack --dry-run` to prove `assets/import-smoke/simapro.csv` was included and Python packages, tidas-tools checkouts, venvs, and native executables were absent. The current pnpm package gate preserves that artifact contract.
 
 Useful commands:
 
@@ -122,26 +126,27 @@ git fetch origin
 git checkout main
 git merge --ff-only origin/main
 
-npm ci
-npm run prepush:gate
+pnpm install --frozen-lockfile
+pnpm test:package
+pnpm prepush:gate
 node ./scripts/ci/release-version.cjs next-version --part patch
 node ./scripts/ci/release-version.cjs assert-unpublished --version <x.y.z>
-npm pack --dry-run >/dev/null
+pnpm --filter @tiangong-lca/cli --fail-if-no-match pack --dry-run >/dev/null
 ```
 
-`next-version` is only a helper for choosing the next version. The actual release version is whatever you put into `package.json`.
+`next-version` is only a helper for choosing the next version. The generic example above shows a patch bump; the separate post-Issue-#224 compatibility release should use `--part minor` to propose 0.1.0. The actual release version is whatever the tracked release decision puts into `package.json`.
 
 ## Release-Prep PR
 
 1. Create a dedicated branch from `main`.
 2. Update the CLI package version metadata:
    - `package.json`
-   - `package-lock.json`
+   - keep the sole root `pnpm-lock.yaml` present and unchanged because a version-only bump does not change the dependency graph
 3. Keep the PR focused on the release bump.
 4. Open a normal PR with local pre-push gate evidence. Use the manual `quality-gate` workflow only when remote reproduction is needed.
 5. Merge the PR into `main`.
 
-Release automation starts only after the version bump PR is merged into upstream `main`. A local workstation may run `npm pack --dry-run` for package validation, but it must not publish the package; local npm authentication and personal registry permissions are intentionally outside the release contract.
+Release automation starts only after the version bump PR is merged into upstream `main`. A local workstation may run `pnpm --filter @tiangong-lca/cli --fail-if-no-match pack --dry-run` for package validation, but it must not publish the package; local npm authentication and personal registry permissions are intentionally outside the release contract. `pnpm test:package` must also prove the tarball is clean and its consumer does not depend on pnpm-specific workspace behavior.
 
 ## Post-Merge Checks
 
@@ -163,7 +168,7 @@ gh api repos/tiangong-lca/tiangong-cli/git/ref/tags/cli-v<x.y.z>
 Expected result:
 
 - the workflow finishes successfully
-- `npm run prepush:gate` runs inside the tag workflow before tag creation when a CLI version change is detected
+- `pnpm prepush:gate` runs inside the tag workflow before tag creation when a CLI version change is detected
 - tag `cli-v<x.y.z>` exists
 
 ### 2. Publish workflow
@@ -183,19 +188,21 @@ Expected result:
 
 - `Publish Package` finishes successfully
 
-If the tag exists but the publish workflow needs to be re-run with the current workflow definition, use the manual dispatch input:
+If a pnpm-era tag exists but the publish workflow needs to be re-run with the current workflow definition, use the manual dispatch input:
 
 ```bash
 gh workflow run publish.yml --repo tiangong-lca/tiangong-cli --field tag_name=cli-v<x.y.z>
 ```
+
+Manual replay supports only tags whose tagged commit contains the root `pnpm-lock.yaml`. A pre-pnpm `cli-v*` tag is rejected before install/build/publish; the workflow intentionally has no npm fallback. Recover a historical release from its original immutable workflow evidence instead of replaying it through the current pnpm workflow.
 
 ### 3. npm registry
 
 Confirm npm has the expected version:
 
 ```bash
-npm view @tiangong-lca/cli version
-npm view @tiangong-lca/cli dist-tags --json
+pnpm view @tiangong-lca/cli version
+pnpm view @tiangong-lca/cli dist-tags --json
 ```
 
 Expected result:
@@ -237,19 +244,22 @@ For the CLI repo, that helper defaults to:
 - If the version bump PR is not merged, no release should happen.
 - If tag creation fails, fix the workflow or repository secret/config first. Do not manually continue the workspace bump.
 - If publish fails, inspect the failed GitHub Actions run and npm/Trusted Publisher configuration before retrying the release flow.
-- If the tag exists and points to the intended merge commit but publish did not run, re-run `publish.yml` with `tag_name=cli-v<x.y.z>`.
+- If a pnpm-era tag exists and points to the intended merge commit but publish did not run, re-run `publish.yml` with `tag_name=cli-v<x.y.z>`.
+- If manual dispatch reports that the tagged commit has no root `pnpm-lock.yaml`, stop: the tag predates the pnpm contract and is not replayable through the current workflow.
 - If npm does not show the expected version yet, wait for registry propagation before treating the release as failed.
 
 ## Operator Checklist
 
-- `package.json` and `package-lock.json` both bumped
+- only the intended `package.json` version changed; the root `pnpm-lock.yaml` is present and unchanged unless a separately reviewed dependency change requires regeneration
 - release-prep PR merged into `main`
 - `Tag Release From Merge` succeeded
 - `cli-v<x.y.z>` exists
 - `Publish Package` succeeded
-- `npm view @tiangong-lca/cli version` equals `<x.y.z>`
+- `pnpm view @tiangong-lca/cli version` equals `<x.y.z>`
+- published provenance and `gitHead` resolve to the immutable release merge commit
+- the released tarball matches the clean package-manager-neutral artifact inspected by `test:package`
 - workspace pointer updated only after all checks above passed
 
 ## Local Docpact Push Gate
 
-The repository now includes a local pre-push gate that runs `scripts/docpact-gate.sh` and then `npm run prepush:gate`. It is the ordinary local validation path; release workflows still run their own release gates before creating tags or publishing.
+The repository now includes a local pre-push gate that runs `scripts/docpact-gate.sh` and then `pnpm prepush:gate`. It is the ordinary local validation path; release workflows still run their own release gates before creating tags or publishing.

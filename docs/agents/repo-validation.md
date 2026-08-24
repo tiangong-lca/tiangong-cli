@@ -17,7 +17,11 @@ whenToUpdate:
 checkPaths:
   - docs/agents/repo-validation.md
   - .docpact/config.yaml
+  - .gitignore
   - package.json
+  - pnpm-workspace.yaml
+  - pnpm-lock.yaml
+  - .oxlintrc.json
   - bin/**
   - src/**
   - test/**
@@ -27,9 +31,9 @@ checkPaths:
   - scripts/docpact
   - scripts/docpact-gate.sh
   - scripts/install-git-hooks.sh
-lastReviewedAt: 2026-08-07
-lastReviewedCommit: 5cb359f1d0860df560c7571fa7547b2822b37c71
-lastReviewedNote: 'Reviewed for database-engine Issue #422: proof covers the frozen api contract, old-public consumer zero, protected alias routing, replay, pagination, error, RLS, idempotency, and audit invariants.'
+lastReviewedAt: 2026-08-25
+lastReviewedCommit: c6a48e82d6a56e1f810cddf12d1d64666d9503ce
+lastReviewedNote: 'Reviewed for Issue #224: validation proves the exact pnpm/TS7/Oxlint toolchain, clean package-neutral tarball, and unchanged 100% source coverage.'
 related:
   - ../../AGENTS.md
   - ../../.docpact/config.yaml
@@ -45,16 +49,22 @@ related:
 Unless the change is doc-only, the minimum local baseline is:
 
 ```bash
-npm run lint
-npm test
-npm run build
+pnpm install --frozen-lockfile
+pnpm lint
+pnpm test
+pnpm test:package
+pnpm build
 ```
 
 For protected-branch parity, the authoritative full gate is:
 
 ```bash
-npm run prepush:gate
+pnpm prepush:gate
 ```
+
+Review note, 2026-08-25: Issue #224 fixes local and CI proof to Node 24, pnpm 11.23.0, TypeScript 7.0.2, and type-aware Oxlint. `pnpm test:package` is mandatory: it rejects alternate or nested lockfiles, legacy TypeScript/ESLint bridges, active npm package-management commands, unpinned pnpm CI bootstrap, and development-tool leakage into the tarball; it also installs and executes the packed artifact through a package-manager-neutral consumer. The feature version remains 0.0.33, while a separate 0.1.0 release PR is recommended after merge and all gates pass.
+
+Review note, 2026-08-25: SDK 0.2 build-plan proof covers exact canonical product/process/elementary taxonomy objects and the correct elementary output shape. Missing, empty, string-only, non-array, non-contiguous-level, missing-field, and arbitrary UUID/label classifications must fail; no test may bypass the production materializer with an injected passing schema.
 
 When command-surface, release-gate, or governed docs change, also run the repo-local documentation governance gate:
 
@@ -65,19 +75,19 @@ scripts/docpact lint --root . --base <base> --head <head> --mode enforce
 
 Review note, 2026-06-04: dataset curation queue state changes are covered by focused `dataset-curation-queue` tests plus the unchanged TypeScript/build gate.
 
-Review note, 2026-06-05: release 0.0.12 uses the existing release proof contract: unpublished-version check, `npm run prepush:gate`, and `npm pack --dry-run`.
+Historical npm-era review note (retired; do not use as current instructions), 2026-06-05: release 0.0.12 used the then-current proof contract: unpublished-version check, `npm run prepush:gate`, and `npm pack --dry-run`.
 
-Review note, 2026-06-06: release 0.0.13 keeps local validation separate from publication. Local proof is unpublished-version check, `npm run prepush:gate`, `npm pack --dry-run`, and docpact; npm publication must happen only after the version-bump PR merges to upstream `main` and GitHub Actions runs the tag and publish workflows.
+Historical npm-era review note (retired; do not use as current instructions), 2026-06-06: release 0.0.13 kept local validation separate from publication. Local proof was unpublished-version check, `npm run prepush:gate`, `npm pack --dry-run`, and docpact; publication happened only after the version-bump PR merged to upstream `main` and GitHub Actions ran the tag and publish workflows.
 
 Review note, 2026-06-07: release 0.0.14 requires the same local proof plus focused dataset classification coverage for explicit missing location target creation. Publication remains PR merge to upstream `main`, tag workflow, and npm Trusted Publishing.
 
 Review note, 2026-06-11: release 0.0.15 requires the same local proof plus focused dataset import-lca coverage for the tidas-tools 0.0.28 bundle-flag adaptation and disk-derived report fields. Publication remains PR merge to upstream `main`, tag workflow, and npm Trusted Publishing.
 
-Review note, 2026-08-20: Issue #222 proof must cover binary-discovery precedence, the five supported release targets and Windows ARM64 rejection, compatible `0.2.x` patch versions, protocol/version/report/exit mismatch rejection, native runtime flag translation, cancellation exit 130, and absence of active Python/check-out discovery. Run the packaged SimaPro fixture through the checksum-verified v0.2.0 artifact with Python unavailable, inspect `npm pack --dry-run` for the fixture, then run the complete `npm run prepush:gate` and docpact gates.
+Review note, 2026-08-20: Issue #222 proof must cover binary-discovery precedence, the five supported release targets and Windows ARM64 rejection, compatible `0.2.x` patch versions, protocol/version/report/exit mismatch rejection, native runtime flag translation, cancellation exit 130, and absence of active Python/check-out discovery. Run the packaged SimaPro fixture through the checksum-verified v0.2.0 artifact with Python unavailable, inspect `pnpm --filter @tiangong-lca/cli --fail-if-no-match pack --dry-run` for the fixture, then run the complete `pnpm prepush:gate` and docpact gates.
 
 Review note, 2026-07-30: Issue #214 proof must assert that identity preflight emits only `lexical_weight` plus `semantic_weight`, and that protected derivative reads/snapshots no longer require the retired lexical column. Focused identity-preflight and dataset-maintenance suites plus the exact-coverage pre-push gate remain mandatory.
 
-Review note, 2026-08-07: database-engine Issue #422 proof must run `npm run lint:data-api-consumers` and assert database commit `0a97cc761f8127ca379ab7d4df4395dab255707a`, migration head `20260807103000`, exact migration-tree/file hashes, the nine-table public allowlist, zero view consumers, the complete 16-RPC `api` inventory, and zero retired `public`/private-alias consumers. Tests must retain explicit relation/RPC profile headers, authenticated-only role and RLS boundaries, structured invalid/unmanifested/retired errors, GET/HEAD and manifest-read-RPC auth-refresh replay, mutation/unknown no-replay behavior, exact-count pagination, and existing protected-execution idempotency/audit regressions.
+Review note, 2026-08-07: database-engine Issue #422 proof must run `pnpm lint:data-api-consumers` and assert database commit `0a97cc761f8127ca379ab7d4df4395dab255707a`, migration head `20260807103000`, exact migration-tree/file hashes, the nine-table public allowlist, zero view consumers, the complete 16-RPC `api` inventory, and zero retired `public`/private-alias consumers. Tests must retain explicit relation/RPC profile headers, authenticated-only role and RLS boundaries, structured invalid/unmanifested/retired errors, GET/HEAD and manifest-read-RPC auth-refresh replay, mutation/unknown no-replay behavior, exact-count pagination, and existing protected-execution idempotency/audit regressions.
 
 Review note, 2026-07-11: `dataset maintenance plan/apply/verify` adds focused proof for exact-row scope freezing, current-user RLS guards, immutable plan hashing, protected-row classification, full-plan drift preflight, approval-before-write, per-action logs, platform audit correlation, failure/resume behavior, and independent readback verification.
 
@@ -131,23 +141,27 @@ Review note, 2026-07-25: Issue #208 adds positive proof that a fresh exact-SHA a
 
 | Change type | Minimum local proof | Additional proof when risk is higher | Notes |
 | --- | --- | --- | --- |
-| `bin/**`, `src/main.ts`, or `src/cli.ts` | `npm run lint`; `npm test`; `npm run build` | run the relevant `tiangong-lca --help` or subcommand help path after build | Launcher and dispatch changes affect the public command surface directly. |
-| session, auth, env, or remote adapter helpers under `src/lib/{dotenv,env,user-api-key,supabase-*,remote,http}*`, plus command-local remote adapters such as explicit identity-preflight hybrid search | `npm run lint`; `npm test`; `npm run build` | run focused tests for the touched helper plus one command that exercises the changed path | Record any required live env assumptions in the PR note. |
-| flow, process, dataset, lifecyclemodel, review, publish, release, or run command families | `npm run lint`; `npm test`; `npm run build` | run focused tests for the touched command family; run `npm run test:coverage:assert-full` if the change touched uncovered branches; prefer `npm run prepush:gate` when the change adds new command paths | Preserve the low-entropy command contract and structured artifact outputs, including BuildPlan, review/dedup ruleset, publish schema, and verification gate reports when authoring or publish commands are involved. LCI/LCIA release proof must preserve manager-only mutation boundaries, exact four-ZIP upload identity/integrity, masked credentials, manifest-path selection, and byte/hash-verified atomic downloads. Dataset maintenance proof must also cover exact-count account pagination under server caps, plan immutability, current-user RLS/protected-row guards, drift rejection, approval-before-write, append-only action logs, stop/resume behavior, and fresh readback. Atomic alias work additionally requires exact closure, arbitrary-precision amounts, one RPC for the complete two-batch plan, and plan/batch/row/exchange proof-chain tests. Protected preparation additionally requires production-read-only freeze, offline byte-exact seal, canonical released-toolchain evidence, exact 23/27 derivative capture, and zero-write/zero-network separation. Derivative rebuild additionally requires single-action/component allowlists, action-scoped snapshots, guarded-RPC admission/replay, unchanged primary fields, and asynchronous terminal verification tests. |
-| artifact, IO, or state-lock behavior | `npm run lint`; `npm test`; `npm run build` | run one representative command path that writes the changed artifact layout, if safe | Path and file layout regressions matter for downstream automation. |
-| `test/**` or coverage gate scripts | `npm run lint`; `npm test`; `npm run test:coverage`; `npm run test:coverage:assert-full` | run `npm run prepush:gate` when the change affects the protected-branch gate directly | Coverage for `src/**/*.ts` is expected to remain at `100%`. |
-| `package.json`, `.nvmrc`, `scripts/ci/**`, or `.github/workflows/**` | `npm run lint`; `npm test`; `npm run build` | run `npm run prepush:gate`; run `docpact lint` when the change affects release or documentation gates | Release-tag checks, workflow guards, and dependency baselines change the repo contract. |
+| `bin/**`, `src/main.ts`, or `src/cli.ts` | `pnpm lint`; `pnpm test`; `pnpm build` | run the relevant `tiangong-lca --help` or subcommand help path after build | Launcher and dispatch changes affect the public command surface directly. |
+| session, auth, env, or remote adapter helpers under `src/lib/{dotenv,env,user-api-key,supabase-*,remote,http}*`, plus command-local remote adapters such as explicit identity-preflight hybrid search | `pnpm lint`; `pnpm test`; `pnpm build` | run focused tests for the touched helper plus one command that exercises the changed path | Record any required live env assumptions in the PR note. |
+| flow, process, dataset, lifecyclemodel, review, publish, release, or run command families | `pnpm lint`; `pnpm test`; `pnpm build` | run focused tests for the touched command family; run `pnpm test:coverage:assert-full` if the change touched uncovered branches; prefer `pnpm prepush:gate` when the change adds new command paths | Preserve the low-entropy command contract and structured artifact outputs, including BuildPlan, review/dedup ruleset, publish schema, and verification gate reports when authoring or publish commands are involved. LCI/LCIA release proof must preserve manager-only mutation boundaries, exact four-ZIP upload identity/integrity, masked credentials, manifest-path selection, and byte/hash-verified atomic downloads. Dataset maintenance proof must also cover exact-count account pagination under server caps, plan immutability, current-user RLS/protected-row guards, drift rejection, approval-before-write, append-only action logs, stop/resume behavior, and fresh readback. Atomic alias work additionally requires exact closure, arbitrary-precision amounts, one RPC for the complete two-batch plan, and plan/batch/row/exchange proof-chain tests. Protected preparation additionally requires production-read-only freeze, offline byte-exact seal, canonical released-toolchain evidence, exact 23/27 derivative capture, and zero-write/zero-network separation. Derivative rebuild additionally requires single-action/component allowlists, action-scoped snapshots, guarded-RPC admission/replay, unchanged primary fields, and asynchronous terminal verification tests. |
+| artifact, IO, or state-lock behavior | `pnpm lint`; `pnpm test`; `pnpm build` | run one representative command path that writes the changed artifact layout, if safe | Path and file layout regressions matter for downstream automation. |
+| `test/**` or coverage gate scripts | `pnpm lint`; `pnpm test`; `pnpm test:coverage`; `pnpm test:coverage:assert-full` | run `pnpm prepush:gate` when the change affects the protected-branch gate directly | Coverage for `src/**/*.ts` is expected to remain at `100%`. |
+| `.gitignore`, `package.json`, `pnpm-workspace.yaml`, `pnpm-lock.yaml`, `.nvmrc`, `.oxlintrc.json`, `scripts/ci/**`, or `.github/workflows/**` | `pnpm install --frozen-lockfile`; `pnpm lint`; `pnpm test:package`; `pnpm test`; `pnpm build` | run `pnpm prepush:gate`; run `docpact lint` when the change affects release or documentation gates | Package-manager, TS7/Oxlint, release-tag, workflow, and dependency baselines change the repo contract. |
 | governed docs only | `scripts/docpact validate-config --root . --strict`; `scripts/docpact lint --root . --staged --mode enforce` | run one focused route check, such as `command-surface`, `remote-session`, or `validation-release`, when the change touches routing or release docs | Refresh review metadata even when prose-only docs change. |
 
 ## Coverage Notes
 
 Facts that matter:
 
-- `npm run test:coverage` is the full coverage proof
-- `npm run test:coverage:assert-full` verifies the latest coverage artifact without rerunning coverage
-- `npm run prepush:gate` is the exact local test gate
-- the local `pre-push` hook runs docpact first and then `npm run prepush:gate`
+- `pnpm --version` must be exactly `11.23.0`; `pnpm-workspace.yaml` and the sole root `pnpm-lock.yaml` are the only dependency-resolution authorities
+- Node must be `24.x`, TypeScript must resolve only to `7.0.2`, and type-aware Oxlint is the only lint engine; ESLint and TypeScript Compiler API lint paths are forbidden
+- `pnpm test:package` verifies package-manager/TS7/Oxlint/CI contracts, inspects a clean tarball, and exercises a package-manager-neutral consumer
+- `pnpm test:coverage` is the full coverage proof
+- `pnpm test:coverage:assert-full` verifies the latest coverage artifact without rerunning coverage
+- `pnpm prepush:gate` is the exact local test gate
+- the local `pre-push` hook runs docpact first and then `pnpm prepush:gate`
 - `.github/workflows/quality-gate.yml` is manual-dispatch only for remote reproduction, not an ordinary push-triggered test runner
+- every Node workflow bootstraps through pinned `pnpm/setup` v2.0.2 with Node 24 and installs with `pnpm install --frozen-lockfile`; publishing uses native pnpm OIDC/provenance
 - `process save-draft`, `lifecyclemodel save-draft`, ordered `dataset save-draft --execution-contract`, dataset governance commands such as curation queue build/next/verify, BuildPlan gates, publish schema/verification gates, and the newer process maintenance commands are expected to preserve `100%` coverage even when they add schema-validation, rewrite, recovery, or fallback branches
 - LCI/LCIA release tests must cover all public actions and error branches without real credentials: user-session bootstrap is stubbed, remote error codes are preserved, upload request metadata is bound to local files, Calculation Bundle artifact selection is exact-path only, credentials stay masked, and no file becomes visible before size/hash verification succeeds. Live smoke tests, when explicitly authorized, use a disposable release identity and a real `data_product_manager` account through the public Edge/Database path; service-role or direct SQL evidence is invalid.
 - Dataset maintenance tests must prove exact `id` + `version`, expected state, and current-account ownership are enforced; rows outside the explicitly authorized owner-draft alias profile remain protected; no action runs after full-plan drift or approval mismatch; approval is persisted before the first mutation; each attempted action is appended durably to `apply-progress.jsonl` with plan/action/mode correlation, actor, timing, before/after hashes, result/error, and rollback fields; and `verify` performs its own remote readback instead of trusting `apply` output.
@@ -179,4 +193,4 @@ Install the versioned local hook once per checkout:
 ./scripts/install-git-hooks.sh
 ```
 
-The `pre-push` hook runs `scripts/docpact-gate.sh`, which delegates CLI lookup to `scripts/docpact` and performs strict config validation plus enforced lint before the push leaves the machine. It then runs `npm run prepush:gate` as the local test gate. The wrapper checks `DOCPACT_BIN`, Cargo install locations, Homebrew install locations, and then `PATH`, so local agent shells should not fail only because bare `docpact` is unavailable. The default comparison base is `origin/main`. Override it for unusual stacks with `DOCPACT_BASE_REF=<ref>` or `scripts/docpact-gate.sh --base <ref>`. The gate writes its detailed report to a temporary file so normal pushes do not create `.docpact/runs/` artifacts.
+The `pre-push` hook runs `scripts/docpact-gate.sh`, which delegates CLI lookup to `scripts/docpact` and performs strict config validation plus enforced lint before the push leaves the machine. It then runs `pnpm prepush:gate` as the local test gate, including `pnpm test:package` and exact 100% source coverage. The wrapper checks `DOCPACT_BIN`, Cargo install locations, Homebrew install locations, and then `PATH`, so local agent shells should not fail only because bare `docpact` is unavailable. The default comparison base is `origin/main`. Override it for unusual stacks with `DOCPACT_BASE_REF=<ref>` or `scripts/docpact-gate.sh --base <ref>`. The gate writes its detailed report to a temporary file so normal pushes do not create `.docpact/runs/` artifacts.

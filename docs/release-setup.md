@@ -12,6 +12,9 @@ whenToUpdate:
   - when release workflow filenames, token names, Trusted Publishing settings, or tag semantics change
 checkPaths:
   - docs/release-setup.md
+  - package.json
+  - pnpm-workspace.yaml
+  - pnpm-lock.yaml
   - .github/workflows/publish.yml
   - .github/workflows/tag-release-from-merge.yml
   - .githooks/pre-push
@@ -19,9 +22,9 @@ checkPaths:
   - scripts/docpact
   - scripts/docpact-gate.sh
   - scripts/install-git-hooks.sh
-lastReviewedAt: 2026-08-20
-lastReviewedCommit: 0b0518fb2b35446ebdeab72ca6de634677ae72b8
-lastReviewedNote: 'Reviewed for Issue #214: the remote request/derivative Contract cleanup changes no release credential or package setup.'
+lastReviewedAt: 2026-08-25
+lastReviewedCommit: c6a48e82d6a56e1f810cddf12d1d64666d9503ce
+lastReviewedNote: 'Reviewed for Issue #224: release setup now pins pnpm/setup v2.0.2, Node 24, frozen pnpm installs, and native pnpm OIDC/provenance.'
 related:
   - ../AGENTS.md
   - ../.docpact/config.yaml
@@ -38,10 +41,12 @@ For the repeatable per-release operator steps, see [release-runbook.md](./releas
 Recommended model:
 
 - maintainers open a normal release-prep PR from `main`
-- the PR updates `package.json` and `package-lock.json` version metadata for the next CLI release
+- the PR updates only the `package.json` version for the next CLI release; the sole root `pnpm-lock.yaml` stays present, frozen, and unchanged when dependencies do not change
 - after that PR merges, `tag-release-from-merge.yml` creates the immutable package tag
 - `publish.yml` publishes the package from that tag through npm Trusted Publishing
-- maintainers do not run local `npm publish` for routine releases
+- maintainers do not publish routinely from local workstations
+
+Review note, 2026-08-25: Issue #224 pins repository and workflow setup to Node 24, pnpm 11.23.0, TypeScript 7.0.2, type-aware Oxlint, the sole root `pnpm-workspace.yaml` / `pnpm-lock.yaml`, and immutable `pnpm/setup` v2.0.2. The publish job uses native pnpm OIDC with provenance and no long-lived npm token or npm fallback. The feature version remains 0.0.33; the maintainer/release compatibility boundary should be shipped later as a separate 0.1.0 release-only PR after all gates pass.
 
 Current workflow files:
 
@@ -114,15 +119,15 @@ GitHub Actions must be enabled for the repository.
 
 Review note, 2026-06-02: adding the dataset curation queue command does not change Trusted Publishing, release token, tag, or workflow setup.
 
-Release 0.0.11 note, 2026-06-02: package version bump only; no repository secret, Trusted Publisher, tag, or workflow setup change is required.
+Historical npm-era release 0.0.11 note, 2026-06-02: `package.json` version bump only; no repository secret, Trusted Publisher, tag, or workflow setup change was required.
 
-Release 0.0.12 note, 2026-06-05: package version bump only; no repository secret, Trusted Publisher, tag, workflow filename, or GitHub environment setup change is required.
+Historical npm-era release 0.0.12 note, 2026-06-05: `package.json` version bump only; no repository secret, Trusted Publisher, tag, workflow filename, or GitHub environment setup change was required.
 
-Release 0.0.13 note, 2026-06-06: package version and lockfile bump only; no repository secret, Trusted Publisher, tag, workflow filename, or GitHub environment setup change is required. The operator path is PR merge to upstream `main`, then GitHub Actions tag and publish.
+Historical npm-era release 0.0.13 note, 2026-06-06: `package.json` and `package-lock.json` version metadata changed; no repository secret, Trusted Publisher, tag, workflow filename, or GitHub environment setup change was required. The operator path was PR merge to upstream `main`, then GitHub Actions tag and publish.
 
-Release 0.0.14 note, 2026-06-07: package version and lockfile bump only; no repository secret, Trusted Publisher, tag, workflow filename, or GitHub environment setup change is required. The release includes a deterministic location apply fix and uses the same PR merge to upstream `main`, tag, and npm Trusted Publishing path.
+Historical npm-era release 0.0.14 note, 2026-06-07: `package.json` and `package-lock.json` version metadata changed; no repository secret, Trusted Publisher, tag, workflow filename, or GitHub environment setup change was required. The release included a deterministic location apply fix and used the same PR merge to upstream `main`, tag, and npm Trusted Publishing path.
 
-Release 0.0.15 note, 2026-06-11: package version and lockfile bump only; no repository secret, Trusted Publisher, tag, workflow filename, or GitHub environment setup change is required. The release includes the `dataset import-lca convert` adaptation to tidas-tools 0.0.28 process-bundle flags and uses the same PR merge to upstream `main`, tag, and npm Trusted Publishing path.
+Historical npm-era release 0.0.15 note, 2026-06-11: `package.json` and `package-lock.json` version metadata changed; no repository secret, Trusted Publisher, tag, workflow filename, or GitHub environment setup change was required. The release included the `dataset import-lca convert` adaptation to tidas-tools 0.0.28 process-bundle flags and used the same PR merge to upstream `main`, tag, and npm Trusted Publishing path.
 
 Issue #210 setup note, 2026-07-27: unified Rust import adds no npm secret, Trusted Publisher setting, tag rule, or release workflow. Operators install `tidas` separately from a checksum/provenance-verified release artifact or crates.io and select it with `--tidas-bin`, `TIDAS_BIN`, or PATH. The npm tarball intentionally contains the smoke fixture but no platform executable.
 
@@ -154,12 +159,14 @@ Leave the environment name unset unless the workflow is explicitly updated to us
 
 ## Operational Notes
 
-- `publish.yml` validates that the Git tag matches the package version before upload and supports `workflow_dispatch` for existing-tag recovery/backfill.
-- `tag-release-from-merge.yml` only creates a tag when `package.json` version changes on `main`, and it runs `npm run prepush:gate` before creating that tag. If the expected tag already points at the current merge commit, the tag step is idempotent; if it points elsewhere, the workflow fails.
-- The release-prep PR should update only the intended versioned release metadata for the CLI package, normally `package.json` and `package-lock.json`.
-- Local workstations may run `npm pack --dry-run` for package validation, but routine npm publication belongs to GitHub Actions Trusted Publishing after the upstream `main` merge.
+- `publish.yml` validates that the Git tag matches the package version before upload and supports `workflow_dispatch` only for pnpm-era tags whose tagged commit contains the root `pnpm-lock.yaml`. A pre-pnpm `cli-v*` tag fails fast; historical-tag replay has no legacy npm fallback.
+- `tag-release-from-merge.yml` only creates a tag when `package.json` version changes on `main`, and it runs `pnpm prepush:gate` before creating that tag. If the expected tag already points at the current merge commit, the tag step is idempotent; if it points elsewhere, the workflow fails.
+- every Node workflow uses immutable `pnpm/setup` v2.0.2 with Node 24, cache enabled, and `pnpm install --frozen-lockfile`; the publish job receives `id-token: write` and invokes native pnpm provenance publication
+- The release-prep PR should update only the intended `package.json` version. It must not churn `pnpm-lock.yaml` when the dependency graph is unchanged.
+- Local workstations may run `pnpm --filter @tiangong-lca/cli --fail-if-no-match pack --dry-run` for package validation, but routine npm publication belongs to GitHub Actions Trusted Publishing after the upstream `main` merge.
+- `pnpm test:package` must prove the tarball contains only the declared runtime surface and that a clean package-manager-neutral consumer can install and execute it without repository workspace state or leaked TypeScript/Oxlint/test tooling.
 - Adding CLI command families such as dataset or lifecyclemodel maintenance commands does not require release setup changes by itself; those feature PRs are covered by the normal quality and docpact gates before a later version bump.
 
 ## Local Docpact Push Gate
 
-The repository now includes a local pre-push gate that runs `scripts/docpact-gate.sh` and then `npm run prepush:gate`. It is the ordinary local validation path; release workflows still run release gates before tag creation or npm publishing.
+The repository now includes a local pre-push gate that runs `scripts/docpact-gate.sh` and then `pnpm prepush:gate`. It is the ordinary local validation path; release workflows still run release gates before tag creation or npm publishing.
