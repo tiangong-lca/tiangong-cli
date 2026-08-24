@@ -732,6 +732,8 @@ export function isDirectEntry(importMetaUrl: string, argv1: string | undefined):
   return Boolean(argv1) && importMetaUrl === pathToFileURL(path.resolve(argv1 as string)).href;
 }
 
+export const __testInternals = { prepareRuntimeSnapshot };
+
 if (isDirectEntry(import.meta.url, process.argv[1])) {
   process.exitCode = await main();
 }

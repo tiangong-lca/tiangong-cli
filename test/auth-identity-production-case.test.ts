@@ -1,4 +1,5 @@
 import assert from 'node:assert/strict';
+import { spawnSync } from 'node:child_process';
 import {
   existsSync,
   mkdtempSync,
@@ -13,6 +14,7 @@ import os from 'node:os';
 import path from 'node:path';
 import test from 'node:test';
 import {
+  __testInternals as productionCaseInternals,
   parseProductionCaseArgs,
   runProductionIdentityCase,
   type ProductionIdentityCaseSpawn,
@@ -144,6 +146,54 @@ test('production identity case default runtime snapshot is build-backed and clea
   } finally {
     rmSync(root, { recursive: true, force: true });
   }
+});
+
+test('production identity case default built snapshot executes auth help without env or network', () => {
+  const runtime = productionCaseInternals.prepareRuntimeSnapshot();
+  const cwd = mkdtempSync(path.join(os.tmpdir(), 'tg-auth-runtime-entry-'));
+  const snapshotRoot = path.resolve(path.dirname(runtime.entrypoint), '../..');
+  try {
+    const env: NodeJS.ProcessEnv = {};
+    for (const key of [
+      'PATH',
+      'Path',
+      'PATHEXT',
+      'SYSTEMROOT',
+      'SystemRoot',
+      'WINDIR',
+      'ComSpec',
+      'TEMP',
+      'TMP',
+      'TMPDIR',
+    ]) {
+      if (typeof process.env[key] === 'string') env[key] = process.env[key];
+    }
+    const child = spawnSync(
+      process.execPath,
+      [runtime.entrypoint, 'auth', 'identity-receipt', '--help'],
+      {
+        cwd,
+        env,
+        shell: false,
+        encoding: 'utf8',
+        maxBuffer: 262_144,
+        windowsHide: true,
+      },
+    );
+    assert.equal(child.status, 0, child.stderr);
+    assert.equal(child.signal, null);
+    assert.equal(child.stderr, '');
+    assert.match(child.stdout, /tiangong-lca\.auth-identity-receipt\.v1/u);
+    assert.match(runtime.entrypointSha256, /^[0-9a-f]{64}$/u);
+    assert.match(runtime.sourceTreeSha256, /^[0-9a-f]{64}$/u);
+    assert.match(runtime.runtimeTreeSha256, /^[0-9a-f]{64}$/u);
+    assert.match(runtime.runnerSha256, /^[0-9a-f]{64}$/u);
+    assert.match(runtime.pnpmLockSha256, /^[0-9a-f]{64}$/u);
+  } finally {
+    runtime.cleanup();
+    rmSync(cwd, { recursive: true, force: true });
+  }
+  assert.equal(existsSync(snapshotRoot), false);
 });
 
 test('production identity case runs with a narrow child env and persists only validated evidence', async () => {
