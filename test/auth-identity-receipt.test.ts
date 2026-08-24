@@ -108,16 +108,12 @@ test('identity receipt binds a server-verified account/project without exposing 
   });
   assert.equal(receipt.identity.user_id, '11111111-1111-4111-8111-111111111111');
   assert.equal(receipt.identity.display_email, 'us****@example.com');
-  assert.match(receipt.identity.email_fingerprint, /^sha256:[0-9a-f]{64}$/u);
   assert.deepEqual(receipt.session, {
     source: 'signin',
     cache_mode: 'disabled',
-    session_file_fingerprint: null,
     force_reauth: false,
     expires_at_utc: '2100-01-01T00:00:00.000Z',
   });
-  assert.match(receipt.bindings.user_api_key_fingerprint, /^sha256:[0-9a-f]{64}$/u);
-  assert.match(receipt.bindings.publishable_key_fingerprint, /^sha256:[0-9a-f]{64}$/u);
   assert.match(receipt.bindings.request_sha256, /^[0-9a-f]{64}$/u);
   assert.match(receipt.bindings.response_sha256, /^[0-9a-f]{64}$/u);
   assert.deepEqual(receipt.assertions, {
@@ -131,6 +127,10 @@ test('identity receipt binds a server-verified account/project without exposing 
   assert.deepEqual(parseAuthIdentityReceipt(receipt), receipt);
 
   const serialized = JSON.stringify(receipt);
+  assert.doesNotMatch(
+    serialized,
+    /user_api_key_fingerprint|publishable_key_fingerprint|email_fingerprint|session_file/u,
+  );
   for (const secret of [
     USER_API_KEY_SECRET,
     ACCESS_TOKEN_SECRET,
@@ -158,8 +158,7 @@ test('identity receipt canonicalization is deterministic and binds bounded reque
   const changedToken = await successfulReceipt({
     resolveSessionImpl: async () => resolvedSession({ accessToken: 'different-access-token' }),
   });
-  assert.notEqual(changedToken.bindings.request_sha256, first.bindings.request_sha256);
-  assert.notEqual(changedToken.receipt_scope_sha256, first.receipt_scope_sha256);
+  assert.deepEqual(changedToken, first);
 });
 
 test('identity receipt records cache modes without exposing a session path', async () => {
@@ -175,7 +174,6 @@ test('identity receipt records cache modes without exposing a session path', asy
       }),
   });
   assert.equal(custom.session.cache_mode, 'custom-file');
-  assert.match(custom.session.session_file_fingerprint ?? '', /^sha256:[0-9a-f]{64}$/u);
   assert.doesNotMatch(JSON.stringify(custom), /private\/account/u);
 
   const platformDefault = await successfulReceipt({
