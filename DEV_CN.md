@@ -301,7 +301,6 @@ Data API schema 不依赖 PostgREST 的默认 `public`。默认且唯一支持�
 显式授权的生产身份只读 case 使用窄环境 runner；`--env-file` 必须指向 ignored Foundry `.env`，`--out-dir` 必须是尚不存在的私有目录。命令先 clean-build TS7；plain-Node runner 不接受 `--cli-bin`，它单次读取/hash 当前 source/config/lock 与 freshly generated runtime/runner，把 exact built buffers 私有 snapshot 后再只读取三项白名单变量，将 `TIANGONG_LCA_TEST_API_KEY` 映射给 snapshot child，并强制 `TIANGONG_LCA_DISABLE_SESSION_CACHE=true`、`TIANGONG_LCA_FORCE_REAUTH=true`：
 
 ```text
-pnpm build
 pnpm case:auth-identity:production -- --env-file <foundry-ignored-.env> --expected-project-ref <project-ref> --expected-user-id <user-id> --out-dir <new-private-case-directory>
 ```
 
