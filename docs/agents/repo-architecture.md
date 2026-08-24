@@ -31,8 +31,8 @@ checkPaths:
   - scripts/docpact-gate.sh
   - scripts/install-git-hooks.sh
 lastReviewedAt: 2026-08-25
-lastReviewedCommit: 8d64d7e00b25a8a9e39f4041d0168aea7fd622af
-lastReviewedNote: 'Reviewed for Issue #230: the 0.1.1 release changes metadata/fixtures only and preserves the merged auth/runtime/package architecture.'
+lastReviewedCommit: 01ba9ff4a9d843ca3fbc3e5b2b021b36d1aa0b8e
+lastReviewedNote: 'Reviewed for Issue #230: the 0.1.1 release preserves auth/runtime/dependencies while making four-platform validation a pre-tag release dependency and adding an external public-package verifier.'
 related:
   - ../../AGENTS.md
   - ../../.docpact/config.yaml
@@ -53,7 +53,7 @@ Review note, 2026-08-25: Issue #226 advances the package compatibility boundary 
 
 Review note, 2026-08-25: Issue #228 adds `src/lib/auth-identity-receipt.ts` as a narrow read-only identity adapter. It reuses the existing API-key/session cache chain but never serializes that session object: exact project intent is safely checked before credential/session work, a redirect-disabled and incrementally bounded `/auth/v1/user` response supplies a canonical live user UUID, one 401/403 may force refresh and replay the read, timeout values stay within Node's supported timer range, and an exact-key parser hashes only a public safe projection. The pnpm case command itself owns the single clean TS7 build before starting a plain-Node parent; that runner single-reads/hash-binds source/config/lock and freshly generated runtime/runner bytes, privately snapshots the exact built buffers, cleans the snapshot before evidence publication, and only then exposes passed/failed artifacts. This is local evidence, not a server-signed attestation or a dataset mutation runtime.
 
-Review note, 2026-08-25: Issue #230 advances only the package compatibility identity to 0.1.1 after merged PR #229. Runtime files, dependencies, package-root exports, command families, auth/session boundaries, build output, and release workflow architecture remain unchanged.
+Review note, 2026-08-25: Issue #230 advances the package compatibility identity to 0.1.1 after merged PR #229 without changing runtime files, dependencies, package-root exports, command families, auth/session boundaries, or build output. The release control plane changes deliberately: `quality-gate.yml` is both manually dispatchable and reusable; `tag-release-from-merge.yml` detects a CLI version change and depends on all four platforms before tagging; and the non-published verifier script checks public provenance, tarball bytes, and a credential-free pnpm consumer.
 
 Review note, 2026-06-04: Foundry entity queue state now stays in the native CLI command family as `dataset curation-queue build/next/verify`; no secondary orchestration runtime was introduced.
 
@@ -283,7 +283,7 @@ If a task changes output layout, locking, or local run roots, inspect these firs
 
 Repo-level maintenance gates are now split across:
 
-- `.github/workflows/quality-gate.yml` for manual remote reproduction of the local gate
+- `.github/workflows/quality-gate.yml` for manual exact-head reproduction and reusable four-platform pre-tag validation
 - `.github/workflows/ai-doc-lint.yml`
 - `.github/workflows/tag-release-from-merge.yml`
 - `.github/workflows/publish.yml`

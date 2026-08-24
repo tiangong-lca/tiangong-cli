@@ -17,6 +17,7 @@ checkPaths:
   - pnpm-workspace.yaml
   - pnpm-lock.yaml
   - scripts/ci/**
+  - .github/workflows/quality-gate.yml
   - .github/workflows/publish.yml
   - .github/workflows/tag-release-from-merge.yml
   - .githooks/pre-push
@@ -25,8 +26,8 @@ checkPaths:
   - scripts/docpact-gate.sh
   - scripts/install-git-hooks.sh
 lastReviewedAt: 2026-08-25
-lastReviewedCommit: 8d64d7e00b25a8a9e39f4041d0168aea7fd622af
-lastReviewedNote: 'Reviewed for Issue #230: the 0.1.1 release follows the unchanged pnpm tag, Trusted Publishing, provenance, public-consumer, and workspace handoff sequence.'
+lastReviewedCommit: 01ba9ff4a9d843ca3fbc3e5b2b021b36d1aa0b8e
+lastReviewedNote: 'Reviewed for Issue #230: every detected CLI release now gates tag creation on the reusable four-platform pnpm workflow and has one executable provenance, tarball-integrity, clean-consumer, and tracked-workspace handoff path.'
 related:
   - ../AGENTS.md
   - ../.docpact/config.yaml
@@ -44,7 +45,7 @@ Review note, 2026-08-25: Issue #226 is that dedicated 0.1.0 release-only deliver
 
 Review note, 2026-08-25: Issue #228 adds a feature command and a local-only production read-case script without changing package version, tag creation, Trusted Publishing, provenance, or workspace follow-up mechanics. The ignored production test credential remains local and must never enter GitHub Actions or npm release configuration. After the feature merges, any public package delivery still uses a separate version-only release PR and every existing post-merge registry/provenance/integration check below.
 
-Review note, 2026-08-25: Issue #230 is that separate 0.1.1 release. It changes only package version metadata and the four live CLI-version fixtures, keeps the sole pnpm lock unchanged, and must prove version/tag absence, exact local/four-platform gates, merge-triggered `cli-v0.1.1`, native pnpm Trusted Publishing/provenance, npm `gitHead`/integrity, a clean public consumer, and exact workspace integration. Local publication and manual tag creation remain forbidden.
+Review note, 2026-08-25: Issue #230 is that separate 0.1.1 release. It keeps the sole pnpm lock and runtime dependency graph unchanged while closing three release-control gaps found by independent review: the four-platform pnpm workflow is reusable and blocks tag creation after a version change; `release:verify-published` binds registry metadata when `gitHead` is present and always binds the SLSA provenance `gitCommit`, workflow, tag, tarball sha512, and a credential-free clean pnpm ESM/CJS/bin consumer; and workspace handoff uses the current tracked-delivery controller. Local publication and manual tag creation remain forbidden.
 
 Review note, 2026-07-14: Issue #165 adds the guarded `dataset maintenance rebuild-derivatives` command profile but does not change the release procedure. Its command, contract, remote-adapter, asynchronous verification, and no-fallback tests must pass the existing pre-push/docpact gate before a later version-bump PR; the feature PR itself must not publish locally or alter package version metadata.
 
@@ -149,7 +150,7 @@ pnpm --filter @tiangong-lca/cli --fail-if-no-match pack --dry-run >/dev/null
    - `package.json`
    - keep the sole root `pnpm-lock.yaml` present and unchanged because a version-only bump does not change the dependency graph
 3. Keep the PR focused on the release bump.
-4. Open a normal PR with local pre-push gate evidence. Use the manual `quality-gate` workflow only when remote reproduction is needed.
+4. Open a normal PR with local pre-push gate evidence. Before merge, manually dispatch `quality-gate` on the exact release head and record all four successful jobs. After merge, `Tag Release From Merge` independently invokes that same reusable matrix on the exact merge commit and cannot create a tag unless it succeeds.
 5. Merge the PR into `main`.
 
 Release automation starts only after the version bump PR is merged into upstream `main`. A local workstation may run `pnpm --filter @tiangong-lca/cli --fail-if-no-match pack --dry-run` for package validation, but it must not publish the package; local npm authentication and personal registry permissions are intentionally outside the release contract. `pnpm test:package` must also prove the tarball is clean and its consumer does not depend on pnpm-specific workspace behavior.
@@ -174,7 +175,9 @@ gh api repos/tiangong-lca/tiangong-cli/git/ref/tags/cli-v<x.y.z>
 Expected result:
 
 - the workflow finishes successfully
-- `pnpm prepush:gate` runs inside the tag workflow before tag creation when a CLI version change is detected
+- release detection runs before expensive validation and starts the reusable pnpm quality matrix only when the CLI version changed
+- macOS arm64, Ubuntu x64, Ubuntu arm64, and Windows x64 all pass on the exact merge commit
+- the `tag-release` job depends on both release detection and the successful four-platform matrix, then reruns the Ubuntu release/docpact gates before tag creation
 - tag `cli-v<x.y.z>` exists
 
 ### 2. Publish workflow
@@ -209,14 +212,19 @@ Confirm npm has the expected version:
 ```bash
 pnpm view @tiangong-lca/cli version
 pnpm view @tiangong-lca/cli dist-tags --json
+pnpm release:verify-published -- --version <x.y.z> --expected-git-head <release-merge-sha>
 ```
 
 Expected result:
 
 - `version` equals `<x.y.z>`
 - `latest` points to `<x.y.z>` unless this release intentionally uses a different dist-tag strategy
+- `release:verify-published` returns `ok: true`, verifies an optional registry `gitHead` when npm exposes it, and always requires the SLSA provenance `gitCommit` to equal `<release-merge-sha>`
+- the provenance binds `refs/tags/cli-v<x.y.z>`, the canonical repository and `publish.yml`, and a canonical GitHub Actions invocation
+- independently downloaded tarball bytes equal the registry sha512 integrity and both npm publish/SLSA subjects
+- a private temporary consumer installs the exact public version through pnpm 11.23.0 with a credential-free environment, exercises the bin, `auth identity-receipt --help` for 0.1.1 and later, explicit ESM/CJS launcher imports, and proves no production TypeScript dependency
 
-Do not update the workspace pointer until npm verification succeeds.
+The verifier intentionally reports `registryGitHead: null` when npm omits that legacy metadata field; this is not a bypass because the signed provenance `gitCommit` remains mandatory. Do not update the workspace pointer until the complete verifier returns `ok: true`.
 
 ## Workspace Follow-Up
 
@@ -226,24 +234,21 @@ If the workspace tracks the CLI submodule, bump the workspace pointer only after
 - the release tag exists
 - the publish workflow succeeds
 - npm resolves to the new version
+- `pnpm release:verify-published` succeeds for the exact release merge commit
 
-From the workspace root, the release-aware helper can collapse that sequence into one command:
+Prepare a tracked workspace integration Issue body, then use the current controller from the workspace root:
 
 ```bash
-uv run python .agents/skills/lca-workspace-delivery-workflow/scripts/workflow_ops.py finalize-release-child-delivery \
-  --repo cli \
-  --issue <cli-issue-number> \
-  --pr <cli-pr-number> \
-  --parent <workspace-parent-issue-number>
+scripts/workspace-ops task create --repo workspace \
+  --title 'Integrate CLI <x.y.z> release' \
+  --body-file /tmp/cli-workspace-integration.md \
+  --type integration \
+  --priority P1
 ```
 
-For the CLI repo, that helper defaults to:
+Read the complete controller result and follow the exact `Next` command. The integration Issue must bind the child Issue/PR, `cli-v<x.y.z>`, release merge SHA, successful tag/publish runs, verifier output, intended workspace branch, and exact CLI gitlink before any root mutation.
 
-- package: `@tiangong-lca/cli`
-- tag workflow: `Tag Release From Merge`
-- publish workflow: `Publish Package`
-- tag prefix: `cli-v`
-- npm dist-tag check: `latest`
+Do not reconstruct lifecycle transitions with direct GitHub writes. Use `scripts/workspace-ops` for create/start/update/submit/finish and follow each returned continuation; use the workspace integration runbook for the exact gitlink commit and PR target.
 
 ## Failure Handling
 
@@ -262,10 +267,11 @@ For the CLI repo, that helper defaults to:
 - `cli-v<x.y.z>` exists
 - `Publish Package` succeeded
 - `pnpm view @tiangong-lca/cli version` equals `<x.y.z>`
-- published provenance and `gitHead` resolve to the immutable release merge commit
-- the released tarball matches the clean package-manager-neutral artifact inspected by `test:package`
+- `pnpm release:verify-published` returns `ok: true` for the immutable release merge commit
+- published provenance `gitCommit` and optional registry `gitHead` resolve to the immutable release merge commit
+- independently downloaded tarball integrity and the credential-free public pnpm ESM/CJS/bin consumer pass
 - workspace pointer updated only after all checks above passed
 
 ## Local Docpact Push Gate
 
-The repository now includes a local pre-push gate that runs `scripts/docpact-gate.sh` and then `pnpm prepush:gate`. It is the ordinary local validation path; release workflows still run their own release gates before creating tags or publishing.
+The repository now includes a local pre-push gate that runs `scripts/docpact-gate.sh` and then `pnpm prepush:gate`. It is the ordinary local validation path. For a detected CLI version change, the merge-triggered tag workflow additionally calls the reusable four-platform pnpm matrix and makes tag creation depend on its success; the publish workflow retains its independent tag-bound release gate.
