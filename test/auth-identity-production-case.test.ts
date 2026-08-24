@@ -71,6 +71,7 @@ function envFileText(): string {
 
 test('production identity case parser requires explicit intent-bound argv', () => {
   const parsed = parseProductionCaseArgs([
+    '--',
     '--env-file',
     '/private/foundry/.env',
     '--expected-project-ref',

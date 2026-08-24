@@ -143,10 +143,11 @@ function normalizeCaseOptions(
 }
 
 export function parseProductionCaseArgs(argv: string[]): ProductionIdentityCaseOptions {
+  const normalizedArgv = argv[0] === '--' ? argv.slice(1) : argv;
   let parsed: ReturnType<typeof parseArgs>;
   try {
     parsed = parseArgs({
-      args: argv,
+      args: normalizedArgv,
       allowPositionals: false,
       strict: true,
       tokens: true,
