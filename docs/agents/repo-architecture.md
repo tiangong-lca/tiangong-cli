@@ -31,8 +31,8 @@ checkPaths:
   - scripts/docpact-gate.sh
   - scripts/install-git-hooks.sh
 lastReviewedAt: 2026-08-25
-lastReviewedCommit: c6a48e82d6a56e1f810cddf12d1d64666d9503ce
-lastReviewedNote: 'Reviewed for Issue #224: the repository has one Node 24/pnpm 11.23.0/TypeScript 7.0.2/Oxlint development and release architecture.'
+lastReviewedCommit: 9078fe123e5909b680f27af1af1d2018bcd02826
+lastReviewedNote: 'Reviewed for Issue #226: the 0.1.0 release retains the runtime/package architecture and extends only explicit bin-launcher consumer proof.'
 related:
   - ../../AGENTS.md
   - ../../.docpact/config.yaml
@@ -48,6 +48,8 @@ This repo is organized around one stable launcher plus a library-style `src/lib/
 Review note, 2026-08-25: Issue #224 makes the toolchain architecture explicit: the root `pnpm-workspace.yaml` and sole `pnpm-lock.yaml` own dependency resolution; TypeScript 7.0.2 is the only compiler line; type-aware Oxlint replaces ESLint and Compiler API linting; and Node 24 is shared by local and CI gates. The feature stays on 0.0.33, with a separate 0.1.0 release-only PR recommended after merge to make the maintainer/release compatibility boundary explicit.
 
 Review note, 2026-08-25: the SDK 0.2 cutover makes build-plan taxonomy an explicit input rather than fabricated output. Plan-only materialization accepts canonical locked taxonomy objects only, selects product/process `common:classification` versus elementary `common:elementaryFlowCategorization` by flow type, and fails before artifact publication when classification is absent or malformed.
+
+Review note, 2026-08-25: Issue #226 advances the package compatibility boundary to 0.1.0 without changing runtime files, dependencies, package-root exports, command families, or release workflows. The validation architecture extends `test:package` only: a clean tarball must work through `.bin`, an ESM host importing the existing explicit bin launcher subpath, and a CJS host dynamically importing that same ESM subpath; package-root module imports remain intentionally unsupported.
 
 Review note, 2026-06-04: Foundry entity queue state now stays in the native CLI command family as `dataset curation-queue build/next/verify`; no secondary orchestration runtime was introduced.
 
