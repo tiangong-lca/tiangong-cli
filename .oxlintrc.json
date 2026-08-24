@@ -41,7 +41,7 @@
     "typescript/no-extraneous-class": "off",
     "typescript/no-floating-promises": "off",
     "typescript/no-misused-promises": "off",
-    "typescript/no-misused-spread": "off",
+    "typescript/no-misused-spread": "error",
     "typescript/no-redundant-type-constituents": "off",
     "typescript/no-unnecessary-boolean-literal-compare": "off",
     "typescript/no-unnecessary-type-assertion": "off",

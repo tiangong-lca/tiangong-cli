@@ -255,6 +255,43 @@ test('active automation uses pnpm commands and a current pnpm setup action', () 
   );
 });
 
+test('active maintainer documentation exposes only pnpm package-management commands', () => {
+  const documentationPaths = [
+    join(REPOSITORY_ROOT, 'AGENTS.md'),
+    join(REPOSITORY_ROOT, 'DEV_CN.md'),
+    join(REPOSITORY_ROOT, 'README.md'),
+    ...findFiles(join(REPOSITORY_ROOT, 'docs'), (path) => path.endsWith('.md')),
+  ];
+  const findings = [];
+
+  for (const documentationPath of documentationPaths) {
+    const content = readFileSync(documentationPath, 'utf8');
+    if (/^status:\s*historical\s*$/mu.test(content)) {
+      continue;
+    }
+    for (const [index, line] of content.split(/\r?\n/u).entries()) {
+      if (
+        NPM_PACKAGE_COMMAND_PATTERN.test(line) &&
+        !/(?:Historical npm-era|historical npm-era|retired; do not use as current instructions)/u.test(
+          line,
+        )
+      ) {
+        findings.push({
+          file: displayPath(documentationPath),
+          line: index + 1,
+          command: line.trim(),
+        });
+      }
+    }
+  }
+
+  assert.deepEqual(
+    findings,
+    [],
+    `active maintainer documentation still exposes npm or npx commands:\n${formatJson(findings)}`,
+  );
+});
+
 test('workflows use the reviewed Node 24 pnpm setup, frozen installs, and trusted publish path', () => {
   const workflowRoot = join(REPOSITORY_ROOT, '.github', 'workflows');
   const workflowPaths = findFiles(workflowRoot, (path) => /\.ya?ml$/u.test(path));

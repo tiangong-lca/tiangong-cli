@@ -16,6 +16,7 @@ import {
   recoverMaintenanceFlowIdentityScope,
   rewriteMaintenanceFlowIdentityProcess,
   type DatasetMaintenanceRemoteContext,
+  __testInternals as remoteTestInternals,
 } from '../src/lib/dataset-maintenance-remote.js';
 
 const dotEnvStatus: DotEnvLoadResult = {
@@ -58,6 +59,62 @@ function cliDeps(overrides: Partial<CliDeps> = {}): CliDeps {
     ...overrides,
   };
 }
+
+test('maintenance requests preserve every HeadersInit shape while adding auth and profile headers', async () => {
+  const observed: Headers[] = [];
+  const context = remoteContext(async (_input, init) => {
+    observed.push(new Headers(init?.headers));
+    return response({ ok: true });
+  });
+
+  for (const headers of [
+    new Headers([
+      ['Prefer', 'count=exact'],
+      ['X-Request-Shape', 'headers'],
+    ]),
+    [
+      ['Prefer', 'return=representation'],
+      ['X-Request-Shape', 'tuples'],
+    ] satisfies Array<[string, string]>,
+  ]) {
+    await remoteTestInternals.fetchJsonResponse({
+      context,
+      url: `${context.rest_base_url}/flows`,
+      init: { headers },
+      label: 'header normalization regression',
+    });
+  }
+
+  assert.equal(observed.length, 2);
+  assert.deepEqual(
+    observed.map((headers) => ({
+      accept: headers.get('accept'),
+      authorization: headers.get('authorization'),
+      apikey: headers.get('apikey'),
+      profile: headers.get('accept-profile'),
+      prefer: headers.get('prefer'),
+      shape: headers.get('x-request-shape'),
+    })),
+    [
+      {
+        accept: 'application/json',
+        authorization: 'Bearer access',
+        apikey: 'publishable',
+        profile: 'public',
+        prefer: 'count=exact',
+        shape: 'headers',
+      },
+      {
+        accept: 'application/json',
+        authorization: 'Bearer access',
+        apikey: 'publishable',
+        profile: 'public',
+        prefer: 'return=representation',
+        shape: 'tuples',
+      },
+    ],
+  );
+});
 
 test('flow-identity single-table remote census preserves exact pagination fences', async () => {
   const urls: URL[] = [];

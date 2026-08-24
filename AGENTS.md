@@ -170,7 +170,8 @@ Route those tasks to:
 ## Runtime Facts
 
 - Repo-local documentation governance is encoded in `.docpact/config.yaml` and enforced locally by the pre-push docpact gate; `.github/workflows/ai-doc-lint.yml` is manual-dispatch fallback.
-- Package manager: `npm`
+- Package manager: exact `pnpm@11.23.0`, with one root workspace and lockfile
+- Compiler and lint: `typescript@7.0.2` plus type-aware Oxlint; no TypeScript 5/6 or ESLint bridge
 - Node baseline: `>=24 <25`
 - Runtime style: TypeScript source, Node-native CLI, direct REST and Edge Function access only
 - Newly added process-maintenance commands such as `process identity-preflight`, `process build-plan`, `process scope-statistics`, `process dedup-review`, `process refresh-references`, and `process verify-rows` still belong to the native CLI command surface in `src/cli.ts` and `src/lib/process-*.ts` / shared CLI-native helpers.

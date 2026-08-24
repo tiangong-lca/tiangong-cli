@@ -109,20 +109,23 @@ async function fetchJsonResponse(options: {
   redactResponseDetails?: boolean;
 }): Promise<{ body: unknown; headers: ResponseLike['headers'] }> {
   const method = options.init?.method ?? 'GET';
-  const authHeaders = {
-    ...buildSupabaseAuthHeaders(options.context.publishable_key, options.context.access_token),
-    ...(options.init?.headers ?? {}),
-  };
+  const authHeaders = new Headers(
+    buildSupabaseAuthHeaders(options.context.publishable_key, options.context.access_token),
+  );
+  new Headers(options.init?.headers).forEach((value, name) => {
+    authHeaders.set(name, value);
+  });
+  const requestHeaders = Object.fromEntries(authHeaders.entries());
   const isDataApiRequest = isDataApiUrl(options.url);
   const response = await options.context.fetch_impl(options.url, {
     ...options.init,
     headers: isDataApiRequest
       ? applyDataApiProfileHeaders(
-          authHeaders,
+          requestHeaders,
           resolveDataApiCapabilityFromUrl({ url: options.url, method }),
           method,
         )
-      : authHeaders,
+      : requestHeaders,
     signal: AbortSignal.timeout(options.context.timeout_ms),
   });
   const text = await response.text();

@@ -51,17 +51,17 @@ related:
 - 2026-06-11 复核：release 0.0.15 的 `dataset import-lca convert` 适配仍通过 TypeScript CLI 包装 tidas-tools Python CLI 完成，不重新引入 Python、POSIX shell、MCP runtime 或本地发布脚本前提
 - 2026-07-27 复核：Issue #210 已关闭上述最后一个 import 例外；`dataset import-lca convert` 只调用统一 Rust `tidas import`，删除 Python executable、checkout/venv 与 `src/tidas_tools` 发现面。skills 若调用该命令只能传递公开 Rust/CLI 参数并保存机器报告，不得复制 import domain logic。
 - 2026-07-14 复核：`dataset maintenance rebuild-derivatives` 继续作为 TypeScript / Node 原生命令通过既有用户 session 和受保护 RPC 执行，不新增 Python、POSIX shell、MCP runtime 或私有 skill runtime 前提
-- 2026-07-15 复核：`dataset maintenance run-protected` 继续由 TypeScript / Node 原生 CLI 负责 sealed request、一次 admission、本地 immutable evidence 与只读恢复；不新增 Python、POSIX shell、MCP runtime、私有 skill runtime 或新 npm 依赖，skills 仍只能薄编排 CLI。
-- 2026-07-15 复核：`dataset maintenance freeze-protected` 与 `seal-protected-approval` 继续由 TypeScript / Node 原生 CLI 分别负责生产只读冻结和完全离线的人类批准记录；不新增 Python、POSIX shell、MCP runtime、私有 skill runtime 或 npm 依赖。Foundry/skills 只能调用已发布 CLI 并保留其产物，不得读取数据库 env、直调 RPC、重算 canonical JSON/hash 或复制 freeze/seal 逻辑。
-- 2026-07-16 复核：Issue #175 只在 TypeScript protected contract parser 中加入固定 5 秒的服务端领先时钟容差与无 token 诊断；不新增 Python、POSIX shell、MCP runtime、私有 skill runtime 或 npm 依赖，也不改变 skills 薄调用边界。
-- 2026-07-16 复核：Issue #182 只在 TypeScript protected verifier 内用既有 primary action evidence 修正 JSON hash 域桥接；不新增 Python、POSIX shell、MCP runtime、私有 skill runtime 或 npm 依赖，也不改变 skills 薄调用边界。
-- 2026-07-16 复核：`dataset maintenance flow-identity capture|plan|freeze|seal-approval|run|verify` 继续由 TypeScript / Node 原生 CLI 负责 305-source Step 3 单次 census/attestation、immutable plan、离线批准、guarded serial execution 与独立 readback；不新增 npm、Python、shell、MCP 或私有 skill runtime。Foundry/skills 不得复制哈希、数据库 receipt/scope、重试、derivative baseline 或补偿逻辑。
+- 2026-07-15 复核：`dataset maintenance run-protected` 继续由 TypeScript / Node 原生 CLI 负责 sealed request、一次 admission、本地 immutable evidence 与只读恢复；不新增 Python、POSIX shell、MCP runtime、私有 skill runtime 或新包依赖，skills 仍只能薄编排 CLI。
+- 2026-07-15 复核：`dataset maintenance freeze-protected` 与 `seal-protected-approval` 继续由 TypeScript / Node 原生 CLI 分别负责生产只读冻结和完全离线的人类批准记录；不新增 Python、POSIX shell、MCP runtime、私有 skill runtime 或包依赖。Foundry/skills 只能调用已发布 CLI 并保留其产物，不得读取数据库 env、直调 RPC、重算 canonical JSON/hash 或复制 freeze/seal 逻辑。
+- 2026-07-16 复核：Issue #175 只在 TypeScript protected contract parser 中加入固定 5 秒的服务端领先时钟容差与无 token 诊断；不新增 Python、POSIX shell、MCP runtime、私有 skill runtime 或包依赖，也不改变 skills 薄调用边界。
+- 2026-07-16 复核：Issue #182 只在 TypeScript protected verifier 内用既有 primary action evidence 修正 JSON hash 域桥接；不新增 Python、POSIX shell、MCP runtime、私有 skill runtime 或包依赖，也不改变 skills 薄调用边界。
+- 2026-07-16 复核：`dataset maintenance flow-identity capture|plan|freeze|seal-approval|run|verify` 继续由 TypeScript / Node 原生 CLI 负责 305-source Step 3 单次 census/attestation、immutable plan、离线批准、guarded serial execution 与独立 readback；不新增包、Python、shell、MCP 或私有 skill runtime。Foundry/skills 不得复制哈希、数据库 receipt/scope、重试、derivative baseline 或补偿逻辑。
 - 2026-07-17 复核：Issue #157 COMMON 的双 #29 passed-readback、HTTP-success domain rejection、`derivatives_pending` 验证、数据库 one-wrapper rotating permit、本地 create-only claim，以及 fresh exact recovery approval + read-only lookup 均属于 DB/TypeScript CLI 契约。Foundry/skills 不得复制这些执行权限或恢复逻辑；尚余 merge、Preview 与 DB/CLI 发布门禁，不改变本迁移结论。
-- 2026-07-23 复核：Issue #194 的 ordered owner-draft execution contract 继续完全位于 TypeScript / Node 原生 CLI，复用现有用户 session、平台 dataset command 与 TIDAS SDK 校验；action ledger 使用 Node 原生文件能力，不新增 Python、POSIX shell、MCP、私有 skill runtime 或 npm 依赖。skills 若后续接入只能保持薄调用，不得复制 attempt/readback/replay 逻辑。
-- 2026-07-23 复核：Issue #196 仅把 execution ledger 的 `fsync` 固定在同一可写 descriptor 上以通过 Windows release gate，不新增 Python、POSIX shell、MCP、私有 skill runtime 或 npm 依赖，也不改变 skills 薄调用边界。
-- 2026-07-23 复核：Issue #198 仅使用 Node 原生 `structuredClone` 隔离 dataset save-draft 的 SDK 校验副作用并发布 0.0.31，不新增 Python、shell、MCP、私有 skill runtime 或 npm 依赖，也不改变 skills 只负责薄调用的边界。
-- 2026-07-24 复核：Issue #200 在原生 CLI 内发布 0.0.32，使用 Node Promise worker pool 实现 dependency prefix 串行、unique-target suffix 最多 8 路并发，并复用既有 Supabase owner session 续期；不新增 Python、shell、MCP、私有 skill runtime 或 npm 依赖，skills 仍只能传入已审计 contract 与并发上限。
-- 2026-07-24 复核：Issue #202 在原生 CLI 内发布 0.0.33，使用既有 maintenance plan、RLS visible-process scan、protected delete RPC 与 Node Promise worker pool 实现最多 8 路 flow delete；不新增 Python、shell、MCP、私有 skill runtime 或 npm 依赖，Foundry/skills 仍只负责提供已审计计划并保存 CLI 证据。
+- 2026-07-23 复核：Issue #194 的 ordered owner-draft execution contract 继续完全位于 TypeScript / Node 原生 CLI，复用现有用户 session、平台 dataset command 与 TIDAS SDK 校验；action ledger 使用 Node 原生文件能力，不新增 Python、POSIX shell、MCP、私有 skill runtime 或包依赖。skills 若后续接入只能保持薄调用，不得复制 attempt/readback/replay 逻辑。
+- 2026-07-23 复核：Issue #196 仅把 execution ledger 的 `fsync` 固定在同一可写 descriptor 上以通过 Windows release gate，不新增 Python、POSIX shell、MCP、私有 skill runtime 或包依赖，也不改变 skills 薄调用边界。
+- 2026-07-23 复核：Issue #198 仅使用 Node 原生 `structuredClone` 隔离 dataset save-draft 的 SDK 校验副作用并发布 0.0.31，不新增 Python、shell、MCP、私有 skill runtime 或包依赖，也不改变 skills 只负责薄调用的边界。
+- 2026-07-24 复核：Issue #200 在原生 CLI 内发布 0.0.32，使用 Node Promise worker pool 实现 dependency prefix 串行、unique-target suffix 最多 8 路并发，并复用既有 Supabase owner session 续期；不新增 Python、shell、MCP、私有 skill runtime 或包依赖，skills 仍只能传入已审计 contract 与并发上限。
+- 2026-07-24 复核：Issue #202 在原生 CLI 内发布 0.0.33，使用既有 maintenance plan、RLS visible-process scan、protected delete RPC 与 Node Promise worker pool 实现最多 8 路 flow delete；不新增 Python、shell、MCP、私有 skill runtime 或包依赖，Foundry/skills 仍只负责提供已审计计划并保存 CLI 证据。
 
 这份文档记录的是：
 
@@ -96,14 +96,14 @@ related:
 只有下面全部满足，才可以把这项工作改回完成态：
 
 - [x] 两个仓库都不再要求 Python 作为运行时、脚手架或维护工具前提
-- [x] `npm` / `node` 的核心质量门命令在 macOS、Linux、Windows 上都可直接运行
+- [x] `pnpm` / `node` 的核心质量门命令在 macOS、Linux、Windows 上都可直接运行
 - [x] `.env.example`、README、`DEV_CN.md` 与真实公开 env contract 完全一致，并明确区分 required / optional / internal-only
 - [x] 默认文档不再把 `bash` / `cp` / `/tmp` / `nvm` 作为唯一可用路径
 - [x] skills 的治理与校验流程不再要求或暗示 Python 初始化器
 - [x] 公开 contract 和示例不再把 Python legacy 字段写成“当前输入面的一部分”
 - [x] CLI 和 skills 不兼容任何 legacy Python 输入面；不保留 Python fallback、兼容别名、兼容归一化层或“先读进来再拒绝”的兼容解析
 - [x] 仓库不允许通过 `c8 ignore`、`istanbul ignore` 或同类 pragma 跳过未覆盖分支；边缘分支必须用测试覆盖
-- [x] `npm test`、`npm run test:coverage`、`npm run test:coverage:assert-full`、`npm run prepush:gate` 形成统一的本地与 CI 门禁，并以 100% 覆盖率为硬要求
+- [x] `pnpm test`、`pnpm test:coverage`、`pnpm test:coverage:assert-full`、`pnpm prepush:gate` 形成统一的本地与 CI 门禁，并以 100% 覆盖率为硬要求
 - [x] 有 CI 或等价自动化证据证明 CLI 与 skills wrapper 至少在 Linux + Windows 上可执行
 - [x] 现在文档可以重新使用“迁移已全部完成”或“已经彻底脱离”这类表述
 
@@ -126,23 +126,23 @@ related:
 
 - [x] 补全 `.env.example`，并让它和真实 env contract 对齐当前阻塞：`.env.example` 只列出了 API / LLM 变量，但代码里还存在 `TIANGONG_LCA_KB_SEARCH_*`、`TIANGONG_LCA_UNSTRUCTURED_*` 等 env 面处理目标：先按“公开命令实际消费”与“内部预备模块保留”做分类，再决定哪些 env 必须进入 `.env.example`，哪些应进入单独的 advanced/internal 文档最低要求：不能继续出现“代码里真实使用，但 `.env.example` 和 README / DEV 完全看不见”的 env 涉及文件：`tiangong-lca-cli/.env.example` 涉及文件：`tiangong-lca-cli/README.md` 涉及文件：`tiangong-lca-cli/DEV_CN.md` 涉及文件：`tiangong-lca-cli/src/lib/env.ts` 涉及文件：`tiangong-lca-cli/src/lib/llm.ts` 涉及文件：`tiangong-lca-cli/src/lib/kb-search.ts` 涉及文件：`tiangong-lca-cli/src/lib/unstructured.ts` 验收标准：一个维护者只看 `.env.example` 和 README / DEV，就能知道当前公开支持的 env、可选 env，以及哪些 env 只是内部预备面已完成：`.env.example`、README、`DEV_CN.md` 已补上 public / optional / internal-preparatory 的明确分层
 
-- [x] 把 `test:coverage` 从内联环境变量赋值改成跨平台实现当前阻塞：`package.json` 里使用 `TIANGONG_LCA_COVERAGE=1 c8 ...` 推荐做法：新增一个 Node 自己的启动脚本，在脚本里设置 env 后再调用测试进程；不要默认引入新 npm 依赖涉及文件：`tiangong-lca-cli/package.json` 涉及文件：`tiangong-lca-cli/scripts/*` 验收标准：`npm run test:coverage` 在 Windows `cmd` / PowerShell 下也能直接通过已完成：`package.json` 已改成 `node ./scripts/run-test-coverage.cjs`，本地 coverage 和 100% 断言已通过
+- [x] 把 `test:coverage` 从内联环境变量赋值改成跨平台实现当前阻塞：`package.json` 里使用 `TIANGONG_LCA_COVERAGE=1 c8 ...` 推荐做法：新增一个 Node 自己的启动脚本，在脚本里设置 env 后再调用测试进程；不要默认引入新包依赖涉及文件：`tiangong-lca-cli/package.json` 涉及文件：`tiangong-lca-cli/scripts/*` 验收标准：`pnpm test:coverage` 在 Windows `cmd` / PowerShell 下也能直接通过已完成：`package.json` 已改成 `node ./scripts/run-test-coverage.cjs`，本地 coverage 和 100% 断言已通过
 
-- [x] 明确禁止用 `c8 ignore` / `istanbul ignore` 一类 pragma 绕过覆盖率当前状态：这轮扫描没有发现现存 ignore pragma，但仓库还没有把这条规则固化成文档门禁和自动检查处理目标：把“边缘情况必须在 test 里覆盖，而不是靠 coverage ignore 跳过”写成明确规则，并在需要时加一个扫描脚本或 lint 检查涉及文件：`tiangong-lca-cli/AGENTS.md` 涉及文件：`tiangong-lca-cli/README.md` 涉及文件：`tiangong-lca-cli/DEV_CN.md` 涉及文件：`tiangong-lca-cli/package.json` 涉及文件：`tiangong-lca-cli/scripts/*` 验收标准：仓库规则明确禁止 coverage ignore；若有人新增 ignore pragma，会在本地或 CI 直接失败已完成：已新增 `scripts/assert-no-coverage-ignore.cjs`，并接入 `npm run lint`
+- [x] 明确禁止用 `c8 ignore` / `istanbul ignore` 一类 pragma 绕过覆盖率当前状态：这轮扫描没有发现现存 ignore pragma，但仓库还没有把这条规则固化成文档门禁和自动检查处理目标：把“边缘情况必须在 test 里覆盖，而不是靠 coverage ignore 跳过”写成明确规则，并在需要时加一个扫描脚本或 lint 检查涉及文件：`tiangong-lca-cli/AGENTS.md` 涉及文件：`tiangong-lca-cli/README.md` 涉及文件：`tiangong-lca-cli/DEV_CN.md` 涉及文件：`tiangong-lca-cli/package.json` 涉及文件：`tiangong-lca-cli/scripts/*` 验收标准：仓库规则明确禁止 coverage ignore；若有人新增 ignore pragma，会在本地或 CI 直接失败已完成：已新增 `scripts/assert-no-coverage-ignore.cjs`，并接入 `pnpm lint`
 
-- [x] 确认 `prepush:gate` 只依赖跨平台命令当前要求：`prepush:gate` 依赖 `test:coverage` 处理目标：`npm run prepush:gate` 不再因为 shell 语法差异在 Windows 失败涉及文件：`tiangong-lca-cli/package.json` 验收标准：`npm run prepush:gate` 在至少 Linux + Windows 两个平台上跑通已完成：本地门禁链条已全部转成 `npm` / `node` / `tsx` 路径；Windows 真实验证留给 Phase 6 的 OS matrix
+- [x] 确认 `prepush:gate` 只依赖跨平台命令当前要求：`prepush:gate` 依赖 `test:coverage` 处理目标：`pnpm prepush:gate` 不再因为 shell 语法差异在 Windows 失败涉及文件：`tiangong-lca-cli/package.json` 验收标准：`pnpm prepush:gate` 在至少 Linux + Windows 两个平台上跑通已完成：本地门禁链条已全部转成 `pnpm` / `node` / `tsx` 路径；Windows 真实验证留给 Phase 6 的 OS matrix
 
-- [x] 把“测试全绿 + 100% 覆盖率” 固化为唯一通过门槛当前状态：本地文档和 `prepush:gate` 已经表达了这个方向，但还没有在跨平台 CI 里形成稳定、可见、不可绕过的统一门禁处理目标：明确以下四个命令的角色并接入门禁： `npm test` `npm run test:coverage` `npm run test:coverage:assert-full` `npm run prepush:gate` 要求：所有测试必须通过，且 `src/**/*.ts` 维持 lines / statements / functions / branches 全部 100% 涉及文件：`tiangong-lca-cli/package.json` 涉及文件：`tiangong-lca-cli/AGENTS.md` 涉及文件：`tiangong-lca-cli/README.md` 涉及文件：`tiangong-lca-cli/DEV_CN.md` 涉及文件：`tiangong-lca-cli/scripts/assert-full-coverage.ts` 验收标准：本地与 CI 都以“测试全绿 + 严格 100% 覆盖率”作为硬门禁，不存在只跑部分测试或只看松散 coverage summary 的路径已完成：本地 `npm test`、`npm run test:coverage`、`npm run test:coverage:assert-full`、`npm run prepush:gate` 均已通过；coverage 断言现只聚焦 CLI 自有 `src` 文件集合；当时按 CI 的依赖准备方式再次执行上述 coverage 门也保持 100% 通过；follow-up PR `tiangong-lca/tiangong-cli#53` 的 `ubuntu-latest` + `windows-latest` matrix 已双绿并合并
+- [x] 把“测试全绿 + 100% 覆盖率” 固化为唯一通过门槛当前状态：本地文档和 `prepush:gate` 已经表达了这个方向，但还没有在跨平台 CI 里形成稳定、可见、不可绕过的统一门禁处理目标：明确以下四个命令的角色并接入门禁： `pnpm test` `pnpm test:coverage` `pnpm test:coverage:assert-full` `pnpm prepush:gate` 要求：所有测试必须通过，且 `src/**/*.ts` 维持 lines / statements / functions / branches 全部 100% 涉及文件：`tiangong-lca-cli/package.json` 涉及文件：`tiangong-lca-cli/AGENTS.md` 涉及文件：`tiangong-lca-cli/README.md` 涉及文件：`tiangong-lca-cli/DEV_CN.md` 涉及文件：`tiangong-lca-cli/scripts/assert-full-coverage.ts` 验收标准：本地与 CI 都以“测试全绿 + 严格 100% 覆盖率”作为硬门禁，不存在只跑部分测试或只看松散 coverage summary 的路径已完成：本地 `pnpm test`、`pnpm test:coverage`、`pnpm test:coverage:assert-full`、`pnpm prepush:gate` 均已通过；coverage 断言现只聚焦 CLI 自有 `src` 文件集合；当时按 CI 的依赖准备方式再次执行上述 coverage 门也保持 100% 通过；follow-up PR `tiangong-lca/tiangong-cli#53` 的 `ubuntu-latest` + `windows-latest` matrix 已双绿并合并
 
-- [x] 为覆盖率质量门补一个最小的 Windows 回归验证处理目标：避免后续有人把 POSIX-only 语法重新加回 `package.json` 涉及文件：`tiangong-lca-cli/.github/workflows/*` 或等价 CI 所在位置验收标准：CI 中存在明确的 Windows 任务覆盖 `npm run test:coverage` 已完成：repo-local workflow 已在 `windows-latest` 上显式运行 `npm run test:coverage`、`npm run test:coverage:assert-full` 和 `npm run prepush:gate`，并已随 PR `#53` 远端通过
+- [x] 为覆盖率质量门补一个最小的 Windows 回归验证处理目标：避免后续有人把 POSIX-only 语法重新加回 `package.json` 涉及文件：`tiangong-lca-cli/.github/workflows/*` 或等价 CI 所在位置验收标准：CI 中存在明确的 Windows 任务覆盖 `pnpm test:coverage` 已完成：repo-local workflow 已在 `windows-latest` 上显式运行 `pnpm test:coverage`、`pnpm test:coverage:assert-full` 和 `pnpm prepush:gate`，并已随 PR `#53` 远端通过
 
 ### Phase 2：补齐 CLI 的跨平台文档
 
-- [x] 重写 `README.md` 的 Quick start 当前阻塞：文档默认使用 `curl ... | bash`、`nvm`、`cp .env.example .env` 处理目标：把“Node 24 安装”和“.env 初始化”改成跨平台表述，而不是只给 bash 命令涉及文件：`tiangong-lca-cli/README.md` 验收标准：一个 Windows 用户不需要自行翻译 shell 命令，也能按文档完成安装并执行 `node ./bin/tiangong-lca.js --help` 已完成：README 已改成“任意平台可用的 Node 24 安装方式 + `npm ci` + `npm run build` + 用编辑器/文件管理器复制 `.env.example`”的主路径，并去掉了 `curl|bash` / `nvm` / `cp` 作为默认入口
+- [x] 重写 `README.md` 的 Quick start 当前阻塞：文档默认使用 `curl ... | bash`、`nvm`、`cp .env.example .env` 处理目标：把“Node 24 安装”和“.env 初始化”改成跨平台表述，而不是只给 bash 命令涉及文件：`tiangong-lca-cli/README.md` 验收标准：一个 Windows 用户不需要自行翻译 shell 命令，也能按文档完成安装并执行 `node ./bin/tiangong-lca.js --help` 已完成：README 已改成“任意平台可用的 Node 24 安装方式 + `pnpm install --frozen-lockfile` + `pnpm build` + 用编辑器/文件管理器复制 `.env.example`”的主路径，并去掉了 `curl|bash` / `nvm` / `cp` 作为默认入口
 
 - [x] 重写 `DEV_CN.md` 的安装与初始化段落当前阻塞：开发文档同样默认使用 `bash`、`nvm`、`cp` 处理目标：给出平台中立写法，必要时补 macOS/Linux 和 Windows 两组示例涉及文件：`tiangong-lca-cli/DEV_CN.md` 验收标准：文档中不再把 POSIX shell 命令当作唯一入口已完成：`DEV_CN.md` 已改成平台中立的 Node 24 前提说明，并明确 `.env` 初始化不要求 shell 命令翻译
 
-- [x] 统一公开推荐的执行方式处理目标：明确推荐哪几个入口是跨平台稳定入口，例如： `npm exec tiangong-lca -- ...` `node ./bin/tiangong-lca.js ...` `node ./dist/src/main.js ...` 涉及文件：`tiangong-lca-cli/README.md` 涉及文件：`tiangong-lca-cli/DEV_CN.md` 验收标准：README 与开发文档对稳定入口的说法一致已完成：README 与 `DEV_CN.md` 都把 `npm exec tiangong-lca -- ...`、`node ./bin/tiangong-lca.js ...`、`node ./dist/src/main.js ...` 收口为主入口；`npm start -- ...` 降级为开发便利脚本
+- [x] 统一公开推荐的执行方式处理目标：明确推荐哪几个入口是跨平台稳定入口，例如： `pnpm exec tiangong-lca -- ...` `node ./bin/tiangong-lca.js ...` `node ./dist/src/main.js ...` 涉及文件：`tiangong-lca-cli/README.md` 涉及文件：`tiangong-lca-cli/DEV_CN.md` 验收标准：README 与开发文档对稳定入口的说法一致已完成：README 与 `DEV_CN.md` 都把 `pnpm exec tiangong-lca -- ...`、`node ./bin/tiangong-lca.js ...`、`node ./dist/src/main.js ...` 收口为主入口；`pnpm start -- ...` 降级为开发便利脚本
 
 ### Phase 3：清理 skills 仓库里的 Python 治理残留
 
@@ -172,7 +172,7 @@ related:
 
 - [x] 明确 `tiangong-lca-cli` 的 CI 归属当前状态：仓库里没有可见的 repo-local `.github/workflows` 需要先回答：CI 是应该在子仓库内维护，还是在别处统一维护验收标准：这个归属必须写清楚，不能继续处于“默认存在但仓库里看不到”的状态已完成：已在 `tiangong-lca-cli/.github/workflows/quality-gate.yml` 中建立 repo-local 质量门，CLI 的跨平台门禁归属已回到子仓库内可见维护
 
-- [x] 为 `tiangong-lca-cli` 增加或接入 OS matrix 验证最低要求：`ubuntu-latest` + `windows-latest` 推荐要求：`ubuntu-latest` + `windows-latest` + `macos-latest` 最少命令：`npm ci`、`npm run build`、`npm run lint`、`npm test` 必做命令：`npm run test:coverage`、`npm run test:coverage:assert-full` 推荐命令：`npm run prepush:gate` 验收标准：有自动化记录证明 CLI 至少在 Linux + Windows 上通过，并且 100% 覆盖率门在 CI 中真实执行已完成：workflow 已配置 `ubuntu-latest` + `windows-latest` matrix；当时的 CI 依赖准备方式也已验证可行。后续 direct dependency 收口完成后，当前路径已进一步简化为仓内直接依赖。最终 follow-up PR `tiangong-lca/tiangong-cli#53` 已在 `ubuntu-latest` + `windows-latest` 上双绿并合并，CLI 的跨平台自动化证据现已成立
+- [x] 为 `tiangong-lca-cli` 增加或接入 OS matrix 验证最低要求：`ubuntu-latest` + `windows-latest` 推荐要求：`ubuntu-latest` + `windows-latest` + `macos-latest` 最少命令：`pnpm install --frozen-lockfile`、`pnpm build`、`pnpm lint`、`pnpm test` 必做命令：`pnpm test:coverage`、`pnpm test:coverage:assert-full` 推荐命令：`pnpm prepush:gate` 验收标准：有自动化记录证明 CLI 至少在 Linux + Windows 上通过，并且 100% 覆盖率门在 CI 中真实执行已完成：workflow 已配置 `ubuntu-latest` + `windows-latest` matrix；当时的 CI 依赖准备方式也已验证可行。后续 direct dependency 收口完成后，当前路径已进一步简化为仓内直接依赖。最终 follow-up PR `tiangong-lca/tiangong-cli#53` 已在 `ubuntu-latest` + `windows-latest` 上双绿并合并，CLI 的跨平台自动化证据现已成立
 
 - [x] 扩展 `tiangong-lca-skills` 的 `validate-skills` workflow 为 OS matrix 当前状态：只在 `ubuntu-latest` 运行处理目标：至少补 Windows，证明 wrapper + CLI 委托链在 Windows 上成立涉及文件：`tiangong-lca-skills/.github/workflows/validate-skills.yml` 验收标准：`node scripts/validate-skills.mjs` 在 Linux + Windows 上通过当前进展：workflow 已改成 `ubuntu-latest` + `windows-latest` matrix，并补上 CRLF 兼容的 frontmatter 校验；2026-03-31 已再次本地执行 `node scripts/validate-skills.mjs` 通过，并已随 commit `5fbe073` 推送到 PR `tiangong-lca/skills#39`；失败原因、修复内容和复验结果也已补充记录到 PR 评论；远端 run `23807639148` 已确认 `ubuntu-latest` + `windows-latest` 双绿
 

@@ -17,6 +17,11 @@ import {
   type SafeParseSchema,
   type SdkValidationFactory,
 } from './tidas-sdk-validation.js';
+import {
+  validateElementaryFlowsClassificationHierarchy,
+  validateProcessesClassificationHierarchy,
+  validateProductFlowsClassificationHierarchy,
+} from './tidas-sdk-package-validator.js';
 
 type BuildPlanKind = 'process' | 'flow';
 type BuildPlanAction = 'validate' | 'materialize';
@@ -526,28 +531,60 @@ function canonicalClassificationEntries(
   });
 }
 
+function requireClassificationHierarchy(
+  entries: JsonObject[],
+  kind: 'elementary-flow' | 'product-flow' | 'process',
+): JsonObject[] {
+  const errors =
+    kind === 'elementary-flow'
+      ? validateElementaryFlowsClassificationHierarchy(entries)
+      : kind === 'process'
+        ? validateProcessesClassificationHierarchy(entries)
+        : validateProductFlowsClassificationHierarchy(entries);
+  if (errors.length > 0) {
+    throw new CliError(`Build plan classification_path is not a valid ${kind} hierarchy.`, {
+      code: 'BUILD_PLAN_CLASSIFICATION_HIERARCHY_INVALID',
+      exitCode: 2,
+      details: { kind, errors },
+    });
+  }
+  return entries;
+}
+
 function flowClassificationInformation(
   plan: JsonObject,
   flowType: 'Elementary flow' | 'Product flow' | 'Waste flow',
 ): JsonObject {
   if (flowType === 'Elementary flow') {
+    const entries = requireClassificationHierarchy(
+      canonicalClassificationEntries(plan, '@catId'),
+      'elementary-flow',
+    );
     return {
       'common:elementaryFlowCategorization': {
-        'common:category': canonicalClassificationEntries(plan, '@catId'),
+        'common:category': entries,
       },
     };
   }
+  const entries = requireClassificationHierarchy(
+    canonicalClassificationEntries(plan, '@classId'),
+    'product-flow',
+  );
   return {
     'common:classification': {
-      'common:class': canonicalClassificationEntries(plan, '@classId'),
+      'common:class': entries,
     },
   };
 }
 
 function processClassificationInformation(plan: JsonObject): JsonObject {
+  const entries = requireClassificationHierarchy(
+    canonicalClassificationEntries(plan, '@classId'),
+    'process',
+  );
   return {
     'common:classification': {
-      'common:class': canonicalClassificationEntries(plan, '@classId'),
+      'common:class': entries,
     },
   };
 }

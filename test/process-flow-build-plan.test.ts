@@ -495,6 +495,69 @@ test('build-plan classification materialization is canonical and fail-closed', (
     __testInternals.validateMaterializedSchema(spoofedTaxonomy, 'flow', undefined).status,
     'failed',
   );
+
+  assert.throws(
+    () =>
+      __testInternals.buildCanonicalProcessPayload(
+        processPlan({
+          classification_path: [
+            {
+              '@level': '0',
+              '@classId': 'D',
+              '#text': 'Electricity, gas, steam and air conditioning supply',
+            },
+            {
+              '@level': '1',
+              '@classId': '01',
+              '#text': 'Crop and animal production, hunting and related service activities',
+            },
+          ],
+        }),
+        '/tmp/cross-branch-process-classification-plan.json',
+      ),
+    /not a valid process hierarchy/u,
+  );
+
+  for (const flowType of ['Product flow', 'Waste flow']) {
+    assert.throws(
+      () =>
+        __testInternals.buildCanonicalFlowPayload(
+          flowPlan({
+            target: { flow_type: flowType },
+            classificationPath: [
+              {
+                '@level': '0',
+                '@classId': '3',
+                '#text':
+                  'Other transportable goods, except metal products, machinery and equipment',
+              },
+              {
+                '@level': '1',
+                '@classId': '01',
+                '#text': 'Products of agriculture, horticulture and market gardening',
+              },
+            ],
+          }),
+          `/tmp/cross-branch-${flowType.toLowerCase().replace(' ', '-')}-classification-plan.json`,
+        ),
+      /not a valid product-flow hierarchy/u,
+    );
+  }
+
+  assert.throws(
+    () =>
+      __testInternals.buildCanonicalFlowPayload(
+        flowPlan({
+          target: { flow_type: 'Elementary flow' },
+          classificationPath: [
+            { '@level': '0', '@catId': '1', '#text': 'Emissions' },
+            { '@level': '1', '@catId': '2.1', '#text': 'Resources from ground' },
+          ],
+        }),
+        '/tmp/cross-branch-elementary-classification-plan.json',
+      ),
+    /not a valid elementary-flow hierarchy/u,
+  );
 });
 
 test('process build-plan materialize validates supplied canonical payloads', async () => {
