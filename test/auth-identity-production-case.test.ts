@@ -1,5 +1,14 @@
 import assert from 'node:assert/strict';
-import { mkdtempSync, readFileSync, rmSync, statSync, writeFileSync } from 'node:fs';
+import {
+  existsSync,
+  mkdtempSync,
+  readFileSync,
+  readdirSync,
+  realpathSync,
+  rmSync,
+  statSync,
+  writeFileSync,
+} from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import test from 'node:test';
@@ -111,6 +120,32 @@ test('production identity case parser requires explicit intent-bound argv', () =
   }
 });
 
+test('production identity case default runtime snapshot is build-backed and cleaned before env failure', async () => {
+  const root = mkdtempSync(path.join(os.tmpdir(), 'tg-auth-runtime-smoke-'));
+  const cacheRoot = path.join(
+    realpathSync(process.cwd()),
+    'node_modules',
+    '.cache',
+    'tiangong-lca-auth-case',
+  );
+  const before = existsSync(cacheRoot) ? readdirSync(cacheRoot).sort() : [];
+  try {
+    await assert.rejects(
+      runProductionIdentityCase({
+        envFile: path.join(root, 'missing.env'),
+        expectedProjectRef: PROJECT_REF,
+        expectedUserId: USER_ID,
+        outDir: path.join(root, 'case-output'),
+      }),
+      /could not parse its env file/u,
+    );
+    const after = existsSync(cacheRoot) ? readdirSync(cacheRoot).sort() : [];
+    assert.deepEqual(after, before);
+  } finally {
+    rmSync(root, { recursive: true, force: true });
+  }
+});
+
 test('production identity case runs with a narrow child env and persists only validated evidence', async () => {
   const root = mkdtempSync(path.join(os.tmpdir(), 'tg-auth-production-case-'));
   const envFile = path.join(root, 'foundry.env');
@@ -140,7 +175,8 @@ test('production identity case runs with a narrow child env and persists only va
           entrypointSha256: 'b'.repeat(64),
           sourceTreeSha256: 'c'.repeat(64),
           runtimeTreeSha256: 'd'.repeat(64),
-          pnpmLockSha256: 'e'.repeat(64),
+          runnerSha256: 'e'.repeat(64),
+          pnpmLockSha256: 'f'.repeat(64),
           cleanup: () => {
             runtimeCleanups += 1;
           },
@@ -190,7 +226,8 @@ test('production identity case runs with a narrow child env and persists only va
     assert.equal(manifest.runtime_entrypoint_sha256, 'b'.repeat(64));
     assert.equal(manifest.source_tree_sha256, 'c'.repeat(64));
     assert.equal(manifest.runtime_tree_sha256, 'd'.repeat(64));
-    assert.equal(manifest.pnpm_lock_sha256, 'e'.repeat(64));
+    assert.equal(manifest.runner_sha256, 'e'.repeat(64));
+    assert.equal(manifest.pnpm_lock_sha256, 'f'.repeat(64));
     assert.equal(runtimeCleanups, 1);
     assert.equal(
       manifest.receipt_scope_sha256,
@@ -244,7 +281,8 @@ test('production identity case rejects missing env and sanitizes child failures'
             entrypointSha256: 'b'.repeat(64),
             sourceTreeSha256: 'c'.repeat(64),
             runtimeTreeSha256: 'd'.repeat(64),
-            pnpmLockSha256: 'e'.repeat(64),
+            runnerSha256: 'e'.repeat(64),
+            pnpmLockSha256: 'f'.repeat(64),
             cleanup: () => undefined,
           }),
           spawnImpl: () => {
@@ -271,7 +309,8 @@ test('production identity case rejects missing env and sanitizes child failures'
             entrypointSha256: 'b'.repeat(64),
             sourceTreeSha256: 'c'.repeat(64),
             runtimeTreeSha256: 'd'.repeat(64),
-            pnpmLockSha256: 'e'.repeat(64),
+            runnerSha256: 'e'.repeat(64),
+            pnpmLockSha256: 'f'.repeat(64),
             cleanup: () => undefined,
           }),
           spawnImpl: () => {
@@ -324,7 +363,8 @@ test('production identity case rejects ambiguous stdout and existing output dire
             entrypointSha256: 'b'.repeat(64),
             sourceTreeSha256: 'c'.repeat(64),
             runtimeTreeSha256: 'd'.repeat(64),
-            pnpmLockSha256: 'e'.repeat(64),
+            runnerSha256: 'e'.repeat(64),
+            pnpmLockSha256: 'f'.repeat(64),
             cleanup: () => undefined,
           }),
           spawnImpl: () => ({

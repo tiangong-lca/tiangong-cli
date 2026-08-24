@@ -59,6 +59,7 @@ export type ProductionIdentityRuntimeEvidence = {
   entrypointSha256: string;
   sourceTreeSha256: string;
   runtimeTreeSha256: string;
+  runnerSha256: string;
   pnpmLockSha256: string;
   cleanup: () => void;
 };
@@ -93,6 +94,7 @@ export type ProductionIdentityCaseManifest = {
   runtime_entrypoint_sha256: string;
   source_tree_sha256: string;
   runtime_tree_sha256: string;
+  runner_sha256: string;
   pnpm_lock_sha256: string;
   project_ref: string;
   user_id: string;
@@ -237,6 +239,23 @@ function prepareRuntimeSnapshot(): ProductionIdentityRuntimeEvidence {
       2,
     );
   }
+  const generatedFiles = collectGeneratedRuntimeFiles(root).map((filePath) => ({
+    relativePath: path.relative(root, filePath).replaceAll('\\', '/'),
+    bytes: readTrustedFile(filePath),
+  }));
+  const generatedEntrypoint = generatedFiles.find(
+    (file) => file.relativePath === 'dist/src/main.js',
+  );
+  if (!generatedEntrypoint) {
+    return fail(
+      'The production identity case requires a freshly built dist/src/main.js.',
+      'AUTH_IDENTITY_CASE_RUNTIME_INVALID',
+      2,
+    );
+  }
+  const runnerBytes = readTrustedFile(
+    path.join(root, 'dist', 'scripts', 'run-auth-identity-production-case.js'),
+  );
   const snapshotParent = path.join(root, 'node_modules', '.cache', 'tiangong-lca-auth-case');
   mkdirSync(snapshotParent, { recursive: true, mode: 0o700 });
   if (process.platform !== 'win32') {
@@ -247,59 +266,29 @@ function prepareRuntimeSnapshot(): ProductionIdentityRuntimeEvidence {
     if (process.platform !== 'win32') {
       chmodSync(snapshotRoot, 0o700);
     }
-    for (const sourceFile of sourceFiles) {
-      const targetPath = path.join(snapshotRoot, sourceFile.relativePath);
+    const packageJson = sourceFiles.find((file) => file.relativePath === 'package.json');
+    if (!packageJson) {
+      return fail(
+        'The production identity case runtime evidence is missing package.json.',
+        'AUTH_IDENTITY_CASE_RUNTIME_INVALID',
+        2,
+      );
+    }
+    for (const runtimeFile of [...generatedFiles, packageJson]) {
+      const targetPath = path.join(snapshotRoot, runtimeFile.relativePath);
       mkdirSync(path.dirname(targetPath), { recursive: true, mode: 0o700 });
-      writeFileSync(targetPath, sourceFile.bytes, { flag: 'wx', mode: 0o600 });
+      writeFileSync(targetPath, runtimeFile.bytes, { flag: 'wx', mode: 0o600 });
       if (process.platform !== 'win32') {
         chmodSync(targetPath, 0o600);
       }
     }
-
-    const compilerPath = realpathSync(path.join(root, 'node_modules', 'typescript', 'bin', 'tsc'));
-    readTrustedFile(compilerPath);
-    const compiler = spawnSync(
-      process.execPath,
-      [compilerPath, '-p', path.join(snapshotRoot, 'tsconfig.build.json')],
-      {
-        cwd: snapshotRoot,
-        env: Object.fromEntries(
-          SYSTEM_ENV_ALLOWLIST.flatMap((key) =>
-            typeof process.env[key] === 'string' ? [[key, process.env[key] as string]] : [],
-          ),
-        ),
-        shell: false,
-        encoding: 'utf8',
-        maxBuffer: MAX_CHILD_OUTPUT_BYTES,
-        windowsHide: true,
-      },
-    );
-    if (compiler.status !== 0 || compiler.signal !== null) {
-      return fail(
-        'The production identity case could not compile its private runtime snapshot.',
-        'AUTH_IDENTITY_CASE_RUNTIME_INVALID',
-        2,
-      );
-    }
-
-    const generatedFiles = collectGeneratedRuntimeFiles(snapshotRoot).map((filePath) => ({
-      relativePath: path.relative(snapshotRoot, filePath).replaceAll('\\', '/'),
-      bytes: readTrustedFile(filePath),
-    }));
     const entrypoint = path.join(snapshotRoot, 'dist', 'src', 'main.js');
-    const entrypointFile = generatedFiles.find((file) => file.relativePath === 'dist/src/main.js');
-    if (!entrypointFile) {
-      return fail(
-        'The production identity case compiled snapshot is missing its entrypoint.',
-        'AUTH_IDENTITY_CASE_RUNTIME_INVALID',
-        2,
-      );
-    }
     return {
       entrypoint,
-      entrypointSha256: createHash('sha256').update(entrypointFile.bytes).digest('hex'),
+      entrypointSha256: createHash('sha256').update(generatedEntrypoint.bytes).digest('hex'),
       sourceTreeSha256: hashBufferedFiles(sourceFiles),
       runtimeTreeSha256: hashBufferedFiles(generatedFiles),
+      runnerSha256: createHash('sha256').update(runnerBytes).digest('hex'),
       pnpmLockSha256: createHash('sha256').update(pnpmLock.bytes).digest('hex'),
       cleanup: () => rmSync(snapshotRoot, { recursive: true, force: true }),
     };
@@ -317,6 +306,7 @@ function validateRuntimeEvidence(
     !SHA256_PATTERN.test(evidence.entrypointSha256) ||
     !SHA256_PATTERN.test(evidence.sourceTreeSha256) ||
     !SHA256_PATTERN.test(evidence.runtimeTreeSha256) ||
+    !SHA256_PATTERN.test(evidence.runnerSha256) ||
     !SHA256_PATTERN.test(evidence.pnpmLockSha256) ||
     typeof evidence.cleanup !== 'function'
   ) {
@@ -688,6 +678,7 @@ export async function runProductionIdentityCase(
       runtime_entrypoint_sha256: runtimeEvidence.entrypointSha256,
       source_tree_sha256: runtimeEvidence.sourceTreeSha256,
       runtime_tree_sha256: runtimeEvidence.runtimeTreeSha256,
+      runner_sha256: runtimeEvidence.runnerSha256,
       pnpm_lock_sha256: runtimeEvidence.pnpmLockSha256,
       project_ref: receipt.project.project_ref,
       user_id: receipt.identity.user_id,
@@ -710,8 +701,8 @@ function renderHelp(): string {
   pnpm case:auth-identity:production -- --env-file <foundry-ignored-.env> --expected-project-ref <project-ref> --expected-user-id <uuid> --out-dir <new-private-directory>
 
 The runner reads only TIANGONG_LCA_API_BASE_URL, TIANGONG_LCA_SUPABASE_PUBLISHABLE_KEY,
-and TIANGONG_LCA_TEST_API_KEY from the env file. Before reading the key it compiles a private
-single-read TypeScript source snapshot, hashes the generated runtime, and performs no dataset mutation.
+and TIANGONG_LCA_TEST_API_KEY from the env file. The pnpm script first performs a clean build;
+the plain-Node runner then hashes and privately snapshots those exact runtime bytes before reading the key.
 `.trim();
 }
 
