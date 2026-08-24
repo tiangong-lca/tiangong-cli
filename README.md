@@ -22,17 +22,19 @@ checkPaths:
   - src/lib/lca-release.ts
   - test/lca-release*.test.ts
 lastReviewedAt: 2026-08-25
-lastReviewedCommit: c6a48e82d6a56e1f810cddf12d1d64666d9503ce
-lastReviewedNote: 'Reviewed for Issue #224: repository examples now use the exact pnpm 11.23.0, Node 24, and TypeScript 7.0.2 toolchain while the published tarball stays package-manager neutral.'
+lastReviewedCommit: 9078fe123e5909b680f27af1af1d2018bcd02826
+lastReviewedNote: 'Reviewed for Issue #226: the public package guide identifies the 0.1.0 pnpm/TypeScript 7 compatibility release while the tarball remains package-manager neutral.'
 ---
 
 # TianGong LCA CLI
 
-Package: `@tiangong-lca/cli` Executable: `tiangong-lca` Current feature version: `0.0.33` Node: `24.x`
+Package: `@tiangong-lca/cli` Executable: `tiangong-lca` Current package version: `0.1.0` Node: `24.x`
 
 Repository development is single-track on pnpm `11.23.0` and TypeScript `7.0.2`. The published package remains a clean, package-manager-neutral consumer artifact: it contains runtime files only, not pnpm, TypeScript, Oxlint, tests, source-only tooling, or repository lockfiles.
 
 Review note, 2026-08-25: Issue #224 migrates repository development and release automation to the sole root `pnpm-workspace.yaml` / `pnpm-lock.yaml`, TypeScript 7.0.2, and type-aware Oxlint on Node 24. The feature change deliberately keeps version 0.0.33. A separate release-only PR should prepare 0.1.0 after the toolchain change merges and its full package/coverage/release gates pass.
+
+Review note, 2026-08-25: Issue #226 publishes that 0.1.0 compatibility boundary after merged PR #225. Version metadata and public release evidence advance to 0.1.0; the runtime JavaScript/assets surface, command behavior, Node 24 runtime, pnpm/TypeScript 7 development baseline, native pnpm Trusted Publishing/provenance, and exact released-commit workspace handoff remain unchanged from the reviewed feature delivery.
 
 Review note, 2026-07-12: `dataset maintenance plan/apply/verify` provides current-user RLS-scoped exact-row maintenance with immutable plans, explicit approval, per-action logs, platform audit correlation, and independent readback. `merge-support-aliases` now runs only in `target_mode=owner_draft`: source/target support and all changed rows stay private `state_code=0`; publication is a separate future workflow.
 

@@ -495,7 +495,7 @@ test('the exact 100% source-coverage gate remains in the pnpm pre-push path', ()
 const maybePackTest = process.env.TIANGONG_LCA_COVERAGE === '1' ? test.skip : test;
 
 maybePackTest(
-  'a clean pnpm tarball preserves root bin behavior without installing TypeScript or build tools',
+  'a clean pnpm tarball preserves bin and explicit launcher-subpath behavior without build tools',
   { timeout: 180_000 },
   () => {
     const fixtureRoot = mkdtempSync(join(tmpdir(), 'tiangong-cli-pack-contract-'));
@@ -571,6 +571,7 @@ maybePackTest(
         process.platform === 'win32' ? 'tiangong-lca.cmd' : 'tiangong-lca',
       );
       assertRootBinBehavior(installedBinPath, consumerRoot, installedManifest.version);
+      assertModuleHostBehavior(consumerRoot, installedManifest.version);
 
       const consumerTree = pnpmList(consumerRoot, 'typescript');
       assert.deepEqual(
@@ -610,6 +611,47 @@ function assertRootBinBehavior(binPath, cwd, expectedVersion) {
       message: 'Unknown root option: --definitely-unknown',
     },
   });
+}
+
+function assertModuleHostBehavior(consumerRoot, expectedVersion) {
+  const launcherSpecifier = `${PACKAGE_JSON.name}/bin/tiangong-lca.js`;
+  const esmHostPath = join(consumerRoot, 'esm-host.mjs');
+  const cjsHostPath = join(consumerRoot, 'cjs-host.cjs');
+
+  writeFileSync(
+    esmHostPath,
+    [
+      `import { resolveInvokedUrl, runFromBin } from '${launcherSpecifier}';`,
+      "if (resolveInvokedUrl(null) !== null) throw new Error('ESM launcher resolver contract failed');",
+      "if ((await runFromBin(['--version'], {})) !== 0) throw new Error('ESM launcher returned nonzero');",
+      '',
+    ].join('\n'),
+    { encoding: 'utf8', flag: 'wx' },
+  );
+  writeFileSync(
+    cjsHostPath,
+    [
+      '(async () => {',
+      `  const { resolveInvokedUrl, runFromBin } = await import('${launcherSpecifier}');`,
+      "  if (resolveInvokedUrl(null) !== null) throw new Error('CJS launcher resolver contract failed');",
+      "  if ((await runFromBin(['--version'], {})) !== 0) throw new Error('CJS launcher returned nonzero');",
+      '})().catch((error) => {',
+      '  process.stderr.write(`${error instanceof Error ? error.stack : String(error)}\\n`);',
+      '  process.exitCode = 1;',
+      '});',
+      '',
+    ].join('\n'),
+    { encoding: 'utf8', flag: 'wx' },
+  );
+
+  assert.equal(
+    execFileSync(process.execPath, [esmHostPath], commandOptions(consumerRoot)),
+    `${expectedVersion}\n`,
+  );
+  assert.equal(
+    execFileSync(process.execPath, [cjsHostPath], commandOptions(consumerRoot)),
+    `${expectedVersion}\n`,
+  );
 }
 
 function assertPackedFiles(fileMetadata) {

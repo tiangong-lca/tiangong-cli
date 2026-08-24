@@ -23,8 +23,8 @@ checkPaths:
   - scripts/docpact-gate.sh
   - scripts/install-git-hooks.sh
 lastReviewedAt: 2026-08-25
-lastReviewedCommit: c6a48e82d6a56e1f810cddf12d1d64666d9503ce
-lastReviewedNote: 'Reviewed for Issue #224: release setup now pins pnpm/setup v2.0.2, Node 24, frozen pnpm installs, and native pnpm OIDC/provenance.'
+lastReviewedCommit: 9078fe123e5909b680f27af1af1d2018bcd02826
+lastReviewedNote: 'Reviewed for Issue #226: the 0.1.0 release reuses the existing pnpm/setup v2.0.2, Node 24, frozen install, native pnpm OIDC/provenance, and token-free Trusted Publisher setup.'
 related:
   - ../AGENTS.md
   - ../.docpact/config.yaml
@@ -47,6 +47,8 @@ Recommended model:
 - maintainers do not publish routinely from local workstations
 
 Review note, 2026-08-25: Issue #224 pins repository and workflow setup to Node 24, pnpm 11.23.0, TypeScript 7.0.2, type-aware Oxlint, the sole root `pnpm-workspace.yaml` / `pnpm-lock.yaml`, and immutable `pnpm/setup` v2.0.2. The publish job uses native pnpm OIDC with provenance and no long-lived npm token or npm fallback. The feature version remains 0.0.33; the maintainer/release compatibility boundary should be shipped later as a separate 0.1.0 release-only PR after all gates pass.
+
+Review note, 2026-08-25: Issue #226 publishes that 0.1.0 compatibility boundary through the existing setup. It adds no secret, environment, dependency, runner, Trusted Publisher setting, workflow filename, tag rule, service-role credential, or fallback client; `TIANGONG_CLI_RELEASE_AUTOMATION_TOKEN`, immutable pnpm/setup v2.0.2, Node 24, and native pnpm OIDC/provenance remain unchanged.
 
 Current workflow files:
 

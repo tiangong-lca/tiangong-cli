@@ -32,8 +32,8 @@ checkPaths:
   - scripts/docpact-gate.sh
   - scripts/install-git-hooks.sh
 lastReviewedAt: 2026-08-25
-lastReviewedCommit: c6a48e82d6a56e1f810cddf12d1d64666d9503ce
-lastReviewedNote: 'Reviewed for Issue #224: validation proves the exact pnpm/TS7/Oxlint toolchain, clean package-neutral tarball, and unchanged 100% source coverage.'
+lastReviewedCommit: 9078fe123e5909b680f27af1af1d2018bcd02826
+lastReviewedNote: 'Reviewed for Issue #226: 0.1.0 release proof retains exact pnpm/TS7/Oxlint, clean package, 100% source coverage, four-platform, provenance, and public-consumer gates.'
 related:
   - ../../AGENTS.md
   - ../../.docpact/config.yaml
@@ -65,6 +65,8 @@ pnpm prepush:gate
 Review note, 2026-08-25: Issue #224 fixes local and CI proof to Node 24, pnpm 11.23.0, TypeScript 7.0.2, and type-aware Oxlint. `pnpm test:package` is mandatory: it rejects alternate or nested lockfiles, legacy TypeScript/ESLint bridges, active npm package-management commands, unpinned pnpm CI bootstrap, and development-tool leakage into the tarball; it also installs and executes the packed artifact through a package-manager-neutral consumer. The feature version remains 0.0.33, while a separate 0.1.0 release PR is recommended after merge and all gates pass.
 
 Review note, 2026-08-25: SDK 0.2 build-plan proof covers exact canonical product/process/elementary taxonomy objects and the correct elementary output shape. Missing, empty, string-only, non-array, non-contiguous-level, missing-field, and arbitrary UUID/label classifications must fail; no test may bypass the production materializer with an injected passing schema.
+
+Review note, 2026-08-25: Issue #226 is the dedicated 0.1.0 release for merged Issue #224 / PR #225. Release proof requires pre-mutation npm/tag absence, all four live CLI-version fixtures at 0.1.0, unchanged `pnpm-lock.yaml`, `pnpm test:package`, exact 100% coverage, audit, strict Docpact, the fresh four-platform matrix, AI Doc Lint, merge-triggered tag creation, native pnpm Trusted Publishing/provenance, and a fresh public-registry consumer before workspace integration. The CLI is intentionally bin-only: proof means an ESM host imports `@tiangong-lca/cli/bin/tiangong-lca.js`, a CJS host dynamically imports that same explicit launcher subpath, both call the exported launcher helpers, and `node_modules/.bin/tiangong-lca` preserves help/version/error behavior. Package-root `require('@tiangong-lca/cli')` and `import '@tiangong-lca/cli'` are not supported module APIs.
 
 When command-surface, release-gate, or governed docs change, also run the repo-local documentation governance gate:
 
