@@ -31,7 +31,7 @@ checkPaths:
   - scripts/docpact-gate.sh
   - scripts/install-git-hooks.sh
 lastReviewedAt: 2026-08-25
-lastReviewedCommit: 4f5ad953237c4f881893e9edcdc68e362431145f
+lastReviewedCommit: 7116aa9c9607ab7a80152b67eb013ba52be2aae2
 lastReviewedNote: 'Reviewed for Issue #228: the auth receipt remains a narrow read-only session adapter with a secret-free DTO and local production-case harness.'
 related:
   - ../../AGENTS.md
@@ -51,7 +51,7 @@ Review note, 2026-08-25: the SDK 0.2 cutover makes build-plan taxonomy an explic
 
 Review note, 2026-08-25: Issue #226 advances the package compatibility boundary to 0.1.0 without changing runtime files, dependencies, package-root exports, command families, or release workflows. The validation architecture extends `test:package` only: a clean tarball must work through `.bin`, an ESM host importing the existing explicit bin launcher subpath, and a CJS host dynamically importing that same ESM subpath; package-root module imports remain intentionally unsupported.
 
-Review note, 2026-08-25: Issue #228 adds `src/lib/auth-identity-receipt.ts` as a narrow read-only identity adapter. It reuses the existing API-key/session cache chain but never serializes that session object: exact project intent is checked before auth work, a bounded `/auth/v1/user` response supplies the live user id, one 401/403 may force refresh and replay the read, and an exact-key parser hashes only a public safe projection. The TypeScript production-case runner uses a new private cwd and narrow child env; it is local evidence, not a server-signed attestation or a dataset mutation runtime.
+Review note, 2026-08-25: Issue #228 adds `src/lib/auth-identity-receipt.ts` as a narrow read-only identity adapter. It reuses the existing API-key/session cache chain but never serializes that session object: exact project intent is safely checked before credential/session work, a redirect-disabled and incrementally bounded `/auth/v1/user` response supplies a canonical live user UUID, one 401/403 may force refresh and replay the read, and an exact-key parser hashes only a public safe projection. The TypeScript production-case runner snapshots and hashes the repository source entrypoint/runtime plus local loader/lock/config before passing a narrow child env into an exclusively created private cwd; it is local evidence, not a server-signed attestation or a dataset mutation runtime.
 
 Review note, 2026-06-04: Foundry entity queue state now stays in the native CLI command family as `dataset curation-queue build/next/verify`; no secondary orchestration runtime was introduced.
 

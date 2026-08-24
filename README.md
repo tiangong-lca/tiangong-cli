@@ -25,7 +25,7 @@ checkPaths:
   - test/auth-identity*.test.ts
   - test/lca-release*.test.ts
 lastReviewedAt: 2026-08-25
-lastReviewedCommit: 4f5ad953237c4f881893e9edcdc68e362431145f
+lastReviewedCommit: 7116aa9c9607ab7a80152b67eb013ba52be2aae2
 lastReviewedNote: 'Reviewed for Issue #228: documents the secret-free, read-only auth receipt and intent-bound local production case.'
 ---
 
@@ -134,14 +134,13 @@ The command performs no dataset write. It exchanges the normal user API key for 
 
 Calling without expectations is allowed for discovery but produces `assertions.mode: "observed"`; it is not an authorization guard. The safe display email is masked and must not be used as the account key. The receipt deliberately excludes credentials, full email, session-file details, raw response metadata, and all credential/token/path-derived fingerprints.
 
-For the explicitly authorized local production read case, first build the CLI, then invoke the narrow TypeScript runner with a new private output directory:
+For the explicitly authorized local production read case from a validated repository checkout, invoke the narrow TypeScript runner with a new private output directory:
 
 ```text
-pnpm build
 pnpm case:auth-identity:production -- --env-file <data-foundry-ignored-.env> --expected-project-ref <project-ref> --expected-user-id <user-id> --out-dir <new-private-case-directory>
 ```
 
-The runner reads only `TIANGONG_LCA_API_BASE_URL`, `TIANGONG_LCA_SUPABASE_PUBLISHABLE_KEY`, and `TIANGONG_LCA_TEST_API_KEY`; the last is mapped to the child process's standard API-key variable. It forces reauthentication with session cache disabled, runs from a clean directory with an argv array and `shell:false`, and persists only the parsed receipt and case manifest with private permissions. It never stores raw child stdout/stderr and is intentionally not wired to CI secrets. This receipt is locally hash-verifiable, not server-signed attestation.
+The runner reads only `TIANGONG_LCA_API_BASE_URL`, `TIANGONG_LCA_SUPABASE_PUBLISHABLE_KEY`, and `TIANGONG_LCA_TEST_API_KEY`; the last is mapped to the child process's standard API-key variable. It does not accept an alternate CLI path: it hashes the repository TypeScript runtime tree, exact `src/main.ts`, local `tsx` loader, package metadata, lockfile, and compiler configs before exposing the key, then records those hashes in the manifest. It forces reauthentication with session cache disabled, runs from an exclusively created clean directory with an argv array and `shell:false`, and persists only the parsed receipt and case manifest with private permissions. It never stores raw child stdout/stderr and is intentionally not wired to CI secrets. This receipt is locally hash-verifiable, not server-signed attestation.
 
 ## LCI/LCIA Data Release
 

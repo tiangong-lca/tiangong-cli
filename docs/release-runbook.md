@@ -25,7 +25,7 @@ checkPaths:
   - scripts/docpact-gate.sh
   - scripts/install-git-hooks.sh
 lastReviewedAt: 2026-08-25
-lastReviewedCommit: 4f5ad953237c4f881893e9edcdc68e362431145f
+lastReviewedCommit: 7116aa9c9607ab7a80152b67eb013ba52be2aae2
 lastReviewedNote: 'Reviewed for Issue #228: the local identity-case script changes no package tag, Trusted Publishing, provenance, or workspace handoff step.'
 related:
   - ../AGENTS.md

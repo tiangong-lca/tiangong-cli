@@ -32,7 +32,7 @@ checkPaths:
   - scripts/docpact-gate.sh
   - scripts/install-git-hooks.sh
 lastReviewedAt: 2026-08-25
-lastReviewedCommit: 4f5ad953237c4f881893e9edcdc68e362431145f
+lastReviewedCommit: 7116aa9c9607ab7a80152b67eb013ba52be2aae2
 lastReviewedNote: 'Reviewed for Issue #228: identity-receipt proof adds exhaustive fail-closed auth tests plus a narrow, local-only production read case.'
 related:
   - ../../AGENTS.md
@@ -68,7 +68,7 @@ Review note, 2026-08-25: SDK 0.2 build-plan proof covers exact canonical product
 
 Review note, 2026-08-25: Issue #226 is the dedicated 0.1.0 release for merged Issue #224 / PR #225. Release proof requires pre-mutation npm/tag absence, all four live CLI-version fixtures at 0.1.0, unchanged `pnpm-lock.yaml`, `pnpm test:package`, exact 100% coverage, audit, strict Docpact, the fresh four-platform matrix, AI Doc Lint, merge-triggered tag creation, native pnpm Trusted Publishing/provenance, and a fresh public-registry consumer before workspace integration. The CLI is intentionally bin-only: proof means an ESM host imports `@tiangong-lca/cli/bin/tiangong-lca.js`, a CJS host dynamically imports that same explicit launcher subpath, both call the exported launcher helpers, and `node_modules/.bin/tiangong-lca` preserves help/version/error behavior. Package-root `require('@tiangong-lca/cli')` and `import '@tiangong-lca/cli'` are not supported module APIs.
 
-Review note, 2026-08-25: Issue #228 proof must cover missing/foreign project before session work, all session/cache modes, stale or foreign cache binding, one 401/403 refresh only, nonzero/malformed/non-JSON/`ok:false`/oversized current-user responses, exact-key schema validation, canonical request/response/receipt hashes, observed/partial/intent-bound assertion modes, and absence of credentials, full email, token/path data, or their fingerprints from success and error output. The local production case must use the ignored Foundry key only through the TypeScript allowlist runner, force reauth with cache disabled, use a clean cwd and argv array, persist no raw stdout/stderr, and perform no dataset mutation. Live execution remains a separate explicitly authorized local case; it is not added to CI secrets.
+Review note, 2026-08-25: Issue #228 proof must cover safe malformed-project rejection before credential/session work, all session/cache modes, stale or foreign cache binding, one 401/403 refresh only, redirect rejection, canonical user UUIDs, nonzero/malformed/non-JSON/`ok:false` responses, pre-read Content-Length and incremental stream byte caps, exact-key schema validation, canonical request/response/receipt hashes, observed/partial/intent-bound assertion modes, and absence of credentials, full email, token/path data, or their fingerprints from success and error output. The local production case must reject alternate entrypoints, snapshot/hash the reviewed TypeScript runtime and loader/lock/config before exposing the ignored Foundry key, force reauth with cache disabled, create a private cwd exclusively, persist no raw stdout/stderr, and perform no dataset mutation. Live execution remains a separate explicitly authorized local case; it is not added to CI secrets.
 
 When command-surface, release-gate, or governed docs change, also run the repo-local documentation governance gate:
 

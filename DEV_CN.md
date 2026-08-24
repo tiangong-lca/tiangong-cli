@@ -22,7 +22,7 @@ checkPaths:
   - scripts/**
   - .github/workflows/**
 lastReviewedAt: 2026-08-25
-lastReviewedCommit: 4f5ad953237c4f881893e9edcdc68e362431145f
+lastReviewedCommit: 7116aa9c9607ab7a80152b67eb013ba52be2aae2
 lastReviewedNote: 'Reviewed for Issue #228: 增加只读、无秘密、生产需 intent-bound 的身份回执及窄环境本地 case runner。'
 related:
   - AGENTS.md
@@ -39,7 +39,7 @@ related:
 
 Review note, 2026-08-25: Issue #224 把仓库收敛为单一 Node 工具链：根 `pnpm-workspace.yaml` 与唯一根 `pnpm-lock.yaml` 管理依赖；`test:package` 拒绝其他 lockfile、旧 TypeScript/ESLint bridge、active npm 包管理命令和发布包中的开发工具泄漏；Oxlint 完全替代 ESLint 与 TypeScript Compiler API lint 路径。feature 仍保持 0.0.33；合并且全部质量门通过后，应另开只含 release metadata 的 0.1.0 PR，明确 maintainer/release compatibility 边界。
 
-Review note, 2026-08-25: Issue #228 新增 `auth identity-receipt`。命令先在任何 session/network 之前核对 expected project，再通过既有 API-key/session 链对 `/auth/v1/user` 做有界只读校验；401/403 最多强制刷新并重读一次。公开回执只含 project、user id、脱敏展示邮箱、session/cache mode、安全请求/响应 hash 和 canonical receipt hash，严禁 credential/token/full-email/session-path 及其 fingerprint。生产 guard 必须同时带 expected project/user，并要求 `assertions.mode=intent-bound`。本地生产 case runner 只从 Foundry ignored `.env` 读取三个白名单变量，禁用 cache、使用干净 cwd 与 argv 数组，不保存原始 stdout/stderr，也不做 dataset mutation。
+Review note, 2026-08-25: Issue #228 新增 `auth identity-receipt`。命令先在 credential decode/session/network 之前安全核对 expected canonical project，再对 redirect-disabled `/auth/v1/user` 做增量 byte cap 只读校验并要求 canonical user UUID；401/403 最多强制刷新并重读一次。公开回执只含 project、user id、脱敏展示邮箱、session/cache mode、安全请求/响应 hash 和 canonical receipt hash，严禁 credential/token/full-email/session-path 及其 fingerprint。生产 guard 必须同时带 expected project/user，并要求 `assertions.mode=intent-bound`。本地生产 case runner 不接受 alternate CLI path，而是在暴露 key 前 snapshot/hash repository TypeScript runtime、tsx loader、lock/config，只从 Foundry ignored `.env` 读取三个白名单变量，禁用 cache、使用独占创建的干净 cwd 与 argv 数组，不保存原始 stdout/stderr，也不做 dataset mutation。
 
 Review note, 2026-06-04: `dataset curation-queue next/verify` extends the existing CLI-native dataset command family and does not change maintainer runtime, env, or release guidance.
 
@@ -298,7 +298,7 @@ Data API schema 不依赖 PostgREST 的默认 `public`。默认且唯一支持�
 
 `pnpm start -- ...` 仍可用于本地开发时的“先构建再执行”，但它不是 skills / 文档的 canonical 公共入口。
 
-显式授权的生产身份只读 case 使用窄环境 runner；`--env-file` 必须指向 ignored Foundry `.env`，`--out-dir` 必须是尚不存在的私有目录。runner 只允许读取三项白名单变量，将 `TIANGONG_LCA_TEST_API_KEY` 映射给子 CLI，并强制 `TIANGONG_LCA_DISABLE_SESSION_CACHE=true`、`TIANGONG_LCA_FORCE_REAUTH=true`：
+显式授权的生产身份只读 case 使用窄环境 runner；`--env-file` 必须指向 ignored Foundry `.env`，`--out-dir` 必须是尚不存在的私有目录。runner 不接受 `--cli-bin`：它先 snapshot/hash 当前仓库 TypeScript runtime、exact source entrypoint、tsx loader、lock 与 compiler config，再只读取三项白名单变量，将 `TIANGONG_LCA_TEST_API_KEY` 映射给 snapshot child，并强制 `TIANGONG_LCA_DISABLE_SESSION_CACHE=true`、`TIANGONG_LCA_FORCE_REAUTH=true`：
 
 ```text
 pnpm build
