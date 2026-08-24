@@ -37,8 +37,8 @@ checkPaths:
   - scripts/docpact-gate.sh
   - scripts/install-git-hooks.sh
 lastReviewedAt: 2026-08-25
-lastReviewedCommit: c6a48e82d6a56e1f810cddf12d1d64666d9503ce
-lastReviewedNote: 'Reviewed for Issue #224: CLI development is single-track on Node 24, pnpm 11.23.0, TypeScript 7.0.2, and Oxlint, with one root pnpm lock and package-contract proof.'
+lastReviewedCommit: 9078fe123e5909b680f27af1af1d2018bcd02826
+lastReviewedNote: 'Reviewed for Issue #226: the release-only 0.1.0 compatibility boundary retains the exact pnpm/TS7/Oxlint/package and automation contracts from merged PR #225.'
 related:
   - .docpact/config.yaml
   - docs/agents/repo-validation.md
@@ -119,6 +119,8 @@ Review note, 2026-07-25: Issue #208 lets the same bounded flow-delete path admit
 Review note, 2026-08-25: Issue #224 replaces the mixed Node package/lint toolchain with one exact baseline: Node 24, pnpm 11.23.0, TypeScript 7.0.2, and type-aware Oxlint. `pnpm-workspace.yaml` plus the sole root `pnpm-lock.yaml` own dependency resolution; `test:package` rejects alternate locks, legacy TypeScript/ESLint bridges, active npm package-management commands, and tool leakage into the published tarball. The feature branch stays at 0.0.33; because the migration changes maintainer and release compatibility, prepare 0.1.0 in a separate release-only PR after this feature merges and all gates pass.
 
 Review note, 2026-08-25: consuming the stricter TIDAS SDK 0.2 contract also closes one materialization gap: plan-only process/flow build materialization requires an explicit canonical `classification_path` of continuous level `0..n` objects. Process/product entries use exact locked `@classId` plus `#text`; elementary entries use `@catId` and emit `common:elementaryFlowCategorization`. Missing, label-only, malformed, out-of-order, or taxonomy-spoofed classifications fail closed instead of receiving synthetic UUID class ids.
+
+Review note, 2026-08-25: Issue #226 is the dedicated 0.1.0 release-only delivery for merged Issue #224 / PR #225. Its runtime delta is limited to the package version and four live CLI-version fixtures; its test-only delta extends the clean package consumer contract to an ESM host importing the explicit bin launcher subpath and a CJS host dynamically importing the same subpath, with governed/public release evidence updated alongside them. The pnpm lock/dependency graph, command/runtime behavior, package-root exports, Node 24 + pnpm 11.23.0 + TypeScript 7.0.2 + Oxlint baseline, tag workflow, native pnpm Trusted Publishing/provenance path, and exact released-commit workspace integration remain mandatory and unchanged.
 
 ## Bootstrap Order
 
