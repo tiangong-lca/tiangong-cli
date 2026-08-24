@@ -221,7 +221,7 @@ Expected result:
 - `latest` points to `<x.y.z>` unless this release intentionally uses a different dist-tag strategy
 - `release:verify-published` returns `ok: true`, verifies an optional registry `gitHead` when npm exposes it, and always requires the SLSA provenance `gitCommit` to equal `<release-merge-sha>`
 - the provenance binds `refs/tags/cli-v<x.y.z>`, the canonical repository and `publish.yml`, and a canonical GitHub Actions invocation
-- independently downloaded tarball bytes equal the registry sha512 integrity and both npm publish/SLSA subjects
+- independently downloaded tarball bytes equal the registry sha512 integrity and both package-publish/SLSA attestation subjects
 - a private temporary consumer installs the exact public version through pnpm 11.23.0 with a credential-free environment, exercises the bin, `auth identity-receipt --help` for 0.1.1 and later, explicit ESM/CJS launcher imports, and proves no production TypeScript dependency
 
 The verifier intentionally reports `registryGitHead: null` when npm omits that legacy metadata field; this is not a bypass because the signed provenance `gitCommit` remains mandatory. Do not update the workspace pointer until the complete verifier returns `ok: true`.
