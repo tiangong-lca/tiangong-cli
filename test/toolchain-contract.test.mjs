@@ -378,10 +378,7 @@ test('release tags are blocked by the reusable four-platform gate and have execu
   const workflowRoot = join(REPOSITORY_ROOT, '.github', 'workflows');
   const qualityWorkflow = readFileSync(join(workflowRoot, 'quality-gate.yml'), 'utf8');
   const tagWorkflow = readFileSync(join(workflowRoot, 'tag-release-from-merge.yml'), 'utf8');
-  const releaseRunbook = readFileSync(
-    join(REPOSITORY_ROOT, 'docs', 'release-runbook.md'),
-    'utf8',
-  );
+  const releaseRunbook = readFileSync(join(REPOSITORY_ROOT, 'docs', 'release-runbook.md'), 'utf8');
 
   assert.match(qualityWorkflow, /on:\s*\n\s+workflow_call:\s*\n\s+workflow_dispatch:/u);
   assert.match(
@@ -404,10 +401,7 @@ test('release tags are blocked by the reusable four-platform gate and have execu
     releaseRunbook,
     /scripts\/workspace-ops task create --repo workspace[\s\S]*?follow the exact `Next` command/u,
   );
-  assert.doesNotMatch(
-    releaseRunbook,
-    /lca-workspace-delivery-workflow|workflow_ops\.py/u,
-  );
+  assert.doesNotMatch(releaseRunbook, /lca-workspace-delivery-workflow|workflow_ops\.py/u);
 });
 
 test('Oxlint is the only JavaScript and TypeScript linter and uses type-aware TS7 rules', () => {

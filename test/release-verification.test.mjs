@@ -12,6 +12,7 @@ const {
   parseArgs,
   parseSha512Integrity,
   publicConsumerEnvironment,
+  requiresIdentityReceiptHelp,
   validateAttestations,
   validatePackageMetadata,
   validateTarballBytes,
@@ -127,6 +128,9 @@ test('published release verifier requires exact version and Git intent', () => {
   ]) {
     assert.throws(() => parseArgs(argv));
   }
+  assert.equal(requiresIdentityReceiptHelp('0.1.0'), false);
+  assert.equal(requiresIdentityReceiptHelp('0.1.1'), true);
+  assert.equal(requiresIdentityReceiptHelp('1.0.0'), true);
 });
 
 test('registry metadata binds canonical integrity, provenance, and public URLs', () => {

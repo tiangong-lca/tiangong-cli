@@ -9,8 +9,42 @@ permissions:
   contents: read
 
 jobs:
-  tag-release:
+  release-context:
     if: github.repository == 'tiangong-lca/tiangong-cli'
+    runs-on: ubuntu-latest
+    outputs:
+      cli_changed: ${{ steps.release.outputs.cli_changed }}
+      cli_tag: ${{ steps.release.outputs.cli_tag }}
+      cli_version: ${{ steps.release.outputs.cli_version }}
+
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
+
+      - name: Detect release version changes
+        id: release
+        env:
+          BASE_REF: ${{ github.event.before }}
+          HEAD_REF: ${{ github.sha }}
+        run: |
+          node ./scripts/ci/detect-release-changes.cjs \
+            --base-ref "$BASE_REF" \
+            --head-ref "$HEAD_REF"
+
+  quality-gate:
+    needs: release-context
+    if: needs.release-context.outputs.cli_changed == 'true'
+    uses: ./.github/workflows/quality-gate.yml
+
+  tag-release:
+    needs:
+      - release-context
+      - quality-gate
+    if: >-
+      github.repository == 'tiangong-lca/tiangong-cli' && needs.release-context.outputs.cli_changed == 'true' && needs.quality-gate.result == 'success'
+
     runs-on: ubuntu-latest
     env:
       GH_TOKEN: ${{ secrets.TIANGONG_CLI_RELEASE_AUTOMATION_TOKEN }}
@@ -52,40 +86,22 @@ jobs:
           fi
           scripts/docpact-gate.sh --base "$BASE_REF" --head "$HEAD_REF"
 
-      - name: Detect release version changes
-        id: release
-        env:
-          BASE_REF: ${{ github.event.before }}
-          HEAD_REF: ${{ github.sha }}
-        run: |
-          node ./scripts/ci/detect-release-changes.cjs \
-            --base-ref "$BASE_REF" \
-            --head-ref "$HEAD_REF"
-
-      - name: Stop when no package version changed
-        if: steps.release.outputs.any_changed != 'true'
-        run: echo "No package version changes detected on main."
-
       - name: Install dependencies
-        if: steps.release.outputs.cli_changed == 'true'
         run: pnpm install --frozen-lockfile
 
       - name: Run release gate before tag
-        if: steps.release.outputs.cli_changed == 'true'
         run: pnpm run prepush:gate
 
       - name: Check npm registry version availability
-        if: steps.release.outputs.cli_changed == 'true'
         env:
-          CLI_VERSION: ${{ steps.release.outputs.cli_version }}
+          CLI_VERSION: ${{ needs.release-context.outputs.cli_version }}
         run: |
           node ./scripts/ci/release-version.cjs assert-unpublished \
             --version "$CLI_VERSION"
 
       - name: Create release tag
-        if: steps.release.outputs.cli_changed == 'true'
         env:
-          TAG_NAME: ${{ steps.release.outputs.cli_tag }}
+          TAG_NAME: ${{ needs.release-context.outputs.cli_tag }}
           TARGET_SHA: ${{ github.sha }}
         run: |
           set -euo pipefail

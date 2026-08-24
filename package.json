@@ -50,6 +50,7 @@
     "prepush:gate": "pnpm lint && pnpm test:package && pnpm test:coverage && pnpm test:coverage:assert-full",
     "release:check-tag": "node ./scripts/ci/check-release-tag.cjs cli",
     "release:assert-unpublished": "node ./scripts/ci/release-version.cjs assert-unpublished",
+    "release:verify-published": "node ./scripts/ci/verify-published-release.cjs",
     "clean": "node --eval \"import('node:fs').then(({ rmSync }) => rmSync('dist', { recursive: true, force: true }))\""
   },
   "lint-staged": {
