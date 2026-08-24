@@ -2,7 +2,16 @@
 
 import { spawnSync } from 'node:child_process';
 import { createHash } from 'node:crypto';
-import { chmodSync, existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
+import {
+  chmodSync,
+  existsSync,
+  lstatSync,
+  mkdirSync,
+  readFileSync,
+  readdirSync,
+  realpathSync,
+  writeFileSync,
+} from 'node:fs';
 import path from 'node:path';
 import process from 'node:process';
 import { fileURLToPath, pathToFileURL } from 'node:url';
@@ -16,6 +25,8 @@ import { CliError, toErrorPayload } from '../src/lib/errors.js';
 const CASE_SCHEMA = 'tiangong-lca.auth-identity-production-case.v1' as const;
 const FAILURE_SCHEMA = 'tiangong-lca.auth-identity-production-case-failure.v1' as const;
 const MAX_CHILD_OUTPUT_BYTES = 256 * 1024;
+const SHA256_PATTERN = /^[0-9a-f]{64}$/u;
+const UUID_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/u;
 const REQUIRED_ENV_KEYS = [
   'TIANGONG_LCA_API_BASE_URL',
   'TIANGONG_LCA_SUPABASE_PUBLISHABLE_KEY',
@@ -39,7 +50,14 @@ export type ProductionIdentityCaseOptions = {
   expectedProjectRef: string;
   expectedUserId: string;
   outDir: string;
-  cliBin: string;
+};
+
+export type ProductionIdentityRuntimeEvidence = {
+  nodeImport: string;
+  entrypoint: string;
+  entrypointSha256: string;
+  tsxLoaderSha256: string;
+  runtimeTreeSha256: string;
 };
 
 export type ProductionIdentityCaseSpawn = {
@@ -69,6 +87,9 @@ export type ProductionIdentityCaseManifest = {
   cli: AuthIdentityReceipt['cli'];
   cli_argv: string[];
   cli_argv_sha256: string;
+  runtime_entrypoint_sha256: string;
+  tsx_loader_sha256: string;
+  runtime_tree_sha256: string;
   project_ref: string;
   user_id: string;
   receipt_scope_sha256: string;
@@ -78,6 +99,7 @@ export type ProductionIdentityCaseManifest = {
 export type RunProductionIdentityCaseDeps = {
   processEnv?: NodeJS.ProcessEnv;
   now?: () => Date;
+  resolveRuntimeEvidence?: () => ProductionIdentityRuntimeEvidence;
   spawnImpl?: (
     command: string,
     args: string[],
@@ -101,13 +123,121 @@ function sha256Text(value: string): string {
   return createHash('sha256').update(value).digest('hex');
 }
 
-function defaultCliBin(): string {
+function repositoryRoot(): string {
   const scriptDir = path.dirname(fileURLToPath(import.meta.url));
-  const candidates = [
-    path.resolve(scriptDir, '../bin/tiangong-lca.js'),
-    path.resolve(scriptDir, '../../bin/tiangong-lca.js'),
-  ];
-  return candidates.find(existsSync) ?? (candidates[0] as string);
+  const candidates = [path.resolve(scriptDir, '..'), path.resolve(scriptDir, '../..')];
+  const root = candidates.find(
+    (candidate) =>
+      existsSync(path.join(candidate, 'package.json')) &&
+      existsSync(path.join(candidate, 'pnpm-lock.yaml')) &&
+      existsSync(path.join(candidate, 'src', 'main.ts')),
+  );
+  if (!root) {
+    return fail(
+      'The production identity case could not resolve its trusted repository root.',
+      'AUTH_IDENTITY_CASE_RUNTIME_INVALID',
+      2,
+    );
+  }
+  return realpathSync(root);
+}
+
+function readTrustedFile(filePath: string): Buffer {
+  let stats;
+  try {
+    stats = lstatSync(filePath);
+  } catch {
+    return fail(
+      'The production identity case runtime evidence is incomplete.',
+      'AUTH_IDENTITY_CASE_RUNTIME_INVALID',
+      2,
+    );
+  }
+  if (!stats.isFile() || stats.isSymbolicLink()) {
+    return fail(
+      'The production identity case runtime evidence must contain regular files only.',
+      'AUTH_IDENTITY_CASE_RUNTIME_INVALID',
+      2,
+    );
+  }
+  return readFileSync(filePath);
+}
+
+function collectRuntimeSourceFiles(root: string): string[] {
+  const collected: string[] = [];
+  const visit = (directory: string): void => {
+    for (const entry of readdirSync(directory, { withFileTypes: true })) {
+      const entryPath = path.join(directory, entry.name);
+      if (entry.isSymbolicLink()) {
+        return fail(
+          'The production identity case source tree must not contain symlinks.',
+          'AUTH_IDENTITY_CASE_RUNTIME_INVALID',
+          2,
+        );
+      }
+      if (entry.isDirectory()) {
+        visit(entryPath);
+      } else if (entry.isFile() && entry.name.endsWith('.ts')) {
+        collected.push(entryPath);
+      }
+    }
+  };
+  visit(path.join(root, 'src'));
+  collected.push(
+    path.join(root, 'scripts', 'run-auth-identity-production-case.ts'),
+    path.join(root, 'package.json'),
+    path.join(root, 'pnpm-lock.yaml'),
+    path.join(root, 'tsconfig.json'),
+    path.join(root, 'tsconfig.build.json'),
+  );
+  return collected.sort();
+}
+
+function resolveRuntimeEvidence(): ProductionIdentityRuntimeEvidence {
+  const root = repositoryRoot();
+  const entrypoint = path.join(root, 'src', 'main.ts');
+  const entrypointBytes = readTrustedFile(entrypoint);
+  const nodeImport = import.meta.resolve('tsx');
+  if (!nodeImport.startsWith('file:')) {
+    return fail(
+      'The production identity case requires a local trusted tsx loader.',
+      'AUTH_IDENTITY_CASE_RUNTIME_INVALID',
+      2,
+    );
+  }
+  const tsxLoaderBytes = readTrustedFile(fileURLToPath(nodeImport));
+  const treeHash = createHash('sha256');
+  for (const filePath of collectRuntimeSourceFiles(root)) {
+    const relativePath = path.relative(root, filePath).replaceAll('\\', '/');
+    treeHash.update(relativePath).update('\0').update(readTrustedFile(filePath)).update('\0');
+  }
+  treeHash.update('@tsx-loader').update('\0').update(tsxLoaderBytes).update('\0');
+  return {
+    nodeImport,
+    entrypoint,
+    entrypointSha256: createHash('sha256').update(entrypointBytes).digest('hex'),
+    tsxLoaderSha256: createHash('sha256').update(tsxLoaderBytes).digest('hex'),
+    runtimeTreeSha256: treeHash.digest('hex'),
+  };
+}
+
+function validateRuntimeEvidence(
+  evidence: ProductionIdentityRuntimeEvidence,
+): ProductionIdentityRuntimeEvidence {
+  if (
+    !evidence.nodeImport.startsWith('file:') ||
+    !path.isAbsolute(evidence.entrypoint) ||
+    !SHA256_PATTERN.test(evidence.entrypointSha256) ||
+    !SHA256_PATTERN.test(evidence.tsxLoaderSha256) ||
+    !SHA256_PATTERN.test(evidence.runtimeTreeSha256)
+  ) {
+    return fail(
+      'The production identity case runtime evidence is invalid.',
+      'AUTH_IDENTITY_CASE_RUNTIME_INVALID',
+      2,
+    );
+  }
+  return evidence;
 }
 
 function normalizeCaseOptions(
@@ -117,11 +247,17 @@ function normalizeCaseOptions(
   const expectedProjectRef = token(options.expectedProjectRef);
   const expectedUserId = token(options.expectedUserId);
   const outDir = token(options.outDir);
-  const cliBin = token(options.cliBin);
-  if (!envFile || !expectedProjectRef || !expectedUserId || !outDir || !cliBin) {
+  if (!envFile || !expectedProjectRef || !expectedUserId || !outDir) {
     return fail(
-      'The production identity case requires --env-file, --expected-project-ref, --expected-user-id, --out-dir, and a CLI bin.',
+      'The production identity case requires --env-file, --expected-project-ref, --expected-user-id, and --out-dir.',
       'AUTH_IDENTITY_CASE_ARGS_REQUIRED',
+      2,
+    );
+  }
+  if (!UUID_PATTERN.test(expectedUserId)) {
+    return fail(
+      'The production identity case expected user id must be a canonical lowercase UUID.',
+      'AUTH_IDENTITY_CASE_ARGS_INVALID',
       2,
     );
   }
@@ -130,7 +266,6 @@ function normalizeCaseOptions(
     expectedProjectRef,
     expectedUserId,
     outDir: path.resolve(outDir),
-    cliBin: path.resolve(cliBin),
   };
   if (existsSync(normalized.outDir)) {
     return fail(
@@ -156,7 +291,6 @@ export function parseProductionCaseArgs(argv: string[]): ProductionIdentityCaseO
         'expected-project-ref': { type: 'string' },
         'expected-user-id': { type: 'string' },
         'out-dir': { type: 'string' },
-        'cli-bin': { type: 'string' },
       },
     });
   } catch (error) {
@@ -166,13 +300,7 @@ export function parseProductionCaseArgs(argv: string[]): ProductionIdentityCaseO
       2,
     );
   }
-  for (const name of [
-    'env-file',
-    'expected-project-ref',
-    'expected-user-id',
-    'out-dir',
-    'cli-bin',
-  ] as const) {
+  for (const name of ['env-file', 'expected-project-ref', 'expected-user-id', 'out-dir'] as const) {
     if (
       parsed.tokens!.filter((entry) => entry.kind === 'option' && entry.name === name).length > 1
     ) {
@@ -194,8 +322,6 @@ export function parseProductionCaseArgs(argv: string[]): ProductionIdentityCaseO
         ? parsed.values['expected-user-id']
         : '',
     outDir: typeof parsed.values['out-dir'] === 'string' ? parsed.values['out-dir'] : '',
-    cliBin:
-      typeof parsed.values['cli-bin'] === 'string' ? parsed.values['cli-bin'] : defaultCliBin(),
   });
 }
 
@@ -350,6 +476,9 @@ export async function runProductionIdentityCase(
   deps: RunProductionIdentityCaseDeps = {},
 ): Promise<ProductionIdentityCaseManifest> {
   const options = normalizeCaseOptions(rawOptions);
+  const runtimeEvidence = validateRuntimeEvidence(
+    (deps.resolveRuntimeEvidence ?? resolveRuntimeEvidence)(),
+  );
   const caseEnv = readCaseEnv(options.envFile);
   const observedProjectRef = projectRefFromApiBaseUrl(caseEnv.TIANGONG_LCA_API_BASE_URL);
   if (observedProjectRef !== options.expectedProjectRef) {
@@ -360,7 +489,15 @@ export async function runProductionIdentityCase(
     );
   }
 
-  mkdirSync(options.outDir, { recursive: true, mode: 0o700 });
+  try {
+    mkdirSync(options.outDir, { recursive: false, mode: 0o700 });
+  } catch {
+    return fail(
+      'The production identity case could not create its output directory exclusively.',
+      'AUTH_IDENTITY_CASE_OUTPUT_CREATE_FAILED',
+      2,
+    );
+  }
   if (process.platform !== 'win32') {
     chmodSync(options.outDir, 0o700);
   }
@@ -381,7 +518,7 @@ export async function runProductionIdentityCase(
     options.expectedUserId,
     '--json',
   ];
-  const args = [options.cliBin, ...cliArgv];
+  const args = ['--import', runtimeEvidence.nodeImport, runtimeEvidence.entrypoint, ...cliArgv];
   const spawnOptions: ProductionIdentityCaseSpawn['options'] = {
     cwd: options.outDir,
     env: buildChildEnv(deps.processEnv ?? process.env, caseEnv),
@@ -458,6 +595,9 @@ export async function runProductionIdentityCase(
     cli: receipt.cli,
     cli_argv: cliArgv,
     cli_argv_sha256: sha256Text(JSON.stringify(cliArgv)),
+    runtime_entrypoint_sha256: runtimeEvidence.entrypointSha256,
+    tsx_loader_sha256: runtimeEvidence.tsxLoaderSha256,
+    runtime_tree_sha256: runtimeEvidence.runtimeTreeSha256,
     project_ref: receipt.project.project_ref,
     user_id: receipt.identity.user_id,
     receipt_scope_sha256: receipt.receipt_scope_sha256,
@@ -473,15 +613,11 @@ export async function runProductionIdentityCase(
 
 function renderHelp(): string {
   return `Usage:
-  pnpm case:auth-identity:production -- \\
-    --env-file <foundry-ignored-.env> \\
-    --expected-project-ref <project-ref> \\
-    --expected-user-id <uuid> \\
-    --out-dir <new-private-directory> \\
-    [--cli-bin <absolute-cli-bin>]
+  pnpm case:auth-identity:production -- --env-file <foundry-ignored-.env> --expected-project-ref <project-ref> --expected-user-id <uuid> --out-dir <new-private-directory>
 
 The runner reads only TIANGONG_LCA_API_BASE_URL, TIANGONG_LCA_SUPABASE_PUBLISHABLE_KEY,
-and TIANGONG_LCA_TEST_API_KEY from the env file. It performs no dataset mutation.
+and TIANGONG_LCA_TEST_API_KEY from the env file. It executes the repository's hashed TypeScript
+source entrypoint with a pinned local tsx loader and performs no dataset mutation.
 `.trim();
 }
 

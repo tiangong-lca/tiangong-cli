@@ -666,7 +666,8 @@ Receipt schema:
   ${AUTH_IDENTITY_RECEIPT_SCHEMA}
 
 Safety:
-  This is a read-only command that performs one live read of /auth/v1/user. It never emits API keys, bearer/session
+  This is a read-only command that performs one live read of /auth/v1/user, with at most one
+  force-refresh retry after a 401 or 403. It never emits API keys, bearer/session
   tokens, full email addresses, session paths, or credential-derived fingerprints. Production guards
   must pass both expected assertions and require assertions.mode="intent-bound".
 
@@ -7151,7 +7152,16 @@ export async function executeCli(argv: string[], deps: CliDeps): Promise<CliResu
     }
 
     if (command === 'auth' && !subcommand) {
-      return { exitCode: 0, stdout: `${renderAuthHelp()}\n`, stderr: '' };
+      if (
+        commandArgs.length === 0 ||
+        (commandArgs.length === 1 && ['--help', '-h'].includes(commandArgs[0] as string))
+      ) {
+        return { exitCode: 0, stdout: `${renderAuthHelp()}\n`, stderr: '' };
+      }
+      throw new CliError('The auth namespace accepts only -h or --help.', {
+        code: 'INVALID_ARGS',
+        exitCode: 2,
+      });
     }
 
     if (command === 'auth' && subcommand === 'identity-receipt') {

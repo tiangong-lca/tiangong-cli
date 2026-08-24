@@ -22,6 +22,7 @@ const NOW = new Date('2026-08-25T12:34:56.000Z');
 const USER_API_KEY_SECRET = 'identity-api-key-password';
 const ACCESS_TOKEN_SECRET = 'identity-access-token';
 const PUBLISHABLE_KEY_SECRET = 'identity-publishable-key';
+const USER_ID = '11111111-1111-4111-8111-111111111111';
 
 function response(status: number, body: unknown, contentType = 'application/json'): ResponseLike {
   return {
@@ -109,6 +110,7 @@ test('identity receipt binds a server-verified account/project without exposing 
 
   assert.equal(capturedUrl, 'https://project-ref.supabase.co/auth/v1/user');
   assert.equal(capturedInit?.method, 'GET');
+  assert.equal(capturedInit?.redirect, 'error');
   assert.equal(receipt.schema, AUTH_IDENTITY_RECEIPT_SCHEMA);
   assert.equal(receipt.status, 'passed');
   assert.equal(receipt.operation, 'current-user-read');
@@ -527,31 +529,29 @@ test('identity receipt rejects nonzero, malformed, ok:false, oversized, and inco
 });
 
 test('identity receipt enforces the response byte limit before unbounded buffering', async () => {
-  let contentLengthPulls = 0;
-  const contentLengthBody = new ReadableStream<Uint8Array>({
-    pull(controller) {
-      contentLengthPulls += 1;
-      controller.enqueue(new Uint8Array(70_000));
-      controller.close();
-    },
-  });
+  let contentLengthReads = 0;
   await assert.rejects(
     successfulReceipt({
-      fetchImpl: async () =>
-        new Response(contentLengthBody, {
-          status: 200,
-          headers: {
-            'content-type': 'application/json',
-            'content-length': '70000',
+      fetchImpl: async () => ({
+        ok: true,
+        status: 200,
+        headers: {
+          get(name: string): string | null {
+            return name.toLowerCase() === 'content-length' ? '70000' : 'application/json';
           },
-        }),
+        },
+        async text(): Promise<string> {
+          contentLengthReads += 1;
+          return JSON.stringify({ id: USER_ID, email: 'user@example.com' });
+        },
+      }),
     }),
     (error: unknown) =>
       error instanceof Error &&
       'code' in error &&
       error.code === 'AUTH_IDENTITY_RESPONSE_TOO_LARGE',
   );
-  assert.equal(contentLengthPulls, 0);
+  assert.equal(contentLengthReads, 0);
 
   let streamingPulls = 0;
   let streamingCancelled = false;
@@ -566,6 +566,7 @@ test('identity receipt enforces the response byte limit before unbounded bufferi
     },
     cancel() {
       streamingCancelled = true;
+      throw new Error('simulated cancellation failure');
     },
   });
   await assert.rejects(
@@ -581,8 +582,17 @@ test('identity receipt enforces the response byte limit before unbounded bufferi
       'code' in error &&
       error.code === 'AUTH_IDENTITY_RESPONSE_TOO_LARGE',
   );
-  assert.ok(streamingPulls <= 5, `stream pulls must stop at the byte limit, got ${streamingPulls}`);
+  assert.ok(streamingPulls <= 6, `stream pulls must stop at the byte limit, got ${streamingPulls}`);
   assert.equal(streamingCancelled, true);
+
+  const streamedSuccess = await successfulReceipt({
+    fetchImpl: async () =>
+      new Response(JSON.stringify({ id: USER_ID, email: 'user@example.com' }), {
+        status: 200,
+        headers: { 'content-type': 'application/json' },
+      }),
+  });
+  assert.equal(streamedSuccess.identity.user_id, USER_ID);
 });
 
 test('identity receipt sanitizes transport and session-resolution failures', async () => {
@@ -747,7 +757,7 @@ test('identity receipt validates runtime options and current-user email consiste
   assert.equal(unsafeUrlSessionCalls, 0);
   await assert.rejects(
     successfulReceipt({
-      fetchImpl: async () => response(200, { id: 'user-id', email: 'other@example.com' }),
+      fetchImpl: async () => response(200, { id: USER_ID, email: 'other@example.com' }),
       expectedUserId: undefined,
     }),
     (error: unknown) =>

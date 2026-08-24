@@ -22,12 +22,21 @@ const DEFAULT_TIMEOUT_MS = 10_000;
 const MAX_RESPONSE_BYTES = 64 * 1024;
 const SESSION_REFRESH_WINDOW_SECONDS = 300;
 const SHA256_PATTERN = /^[0-9a-f]{64}$/u;
+const UUID_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/u;
+const EMAIL_PATTERN = /^[^@\s]+@[^@\s]+\.[^@\s]+$/u;
 const SESSION_SOURCES = ['memory', 'cache', 'refresh', 'signin'] as const;
 const CACHE_MODES = ['disabled', 'custom-file', 'platform-default'] as const;
 
 type SessionSource = (typeof SESSION_SOURCES)[number];
 type CacheMode = (typeof CACHE_MODES)[number];
 type JsonObject = Record<string, unknown>;
+
+class ResponseBodyTooLargeError extends Error {
+  constructor() {
+    super('Response body exceeded the identity receipt byte limit.');
+    this.name = 'ResponseBodyTooLargeError';
+  }
+}
 
 export type AuthIdentityReceiptScope = {
   schema: typeof AUTH_IDENTITY_RECEIPT_SCHEMA;
@@ -125,11 +134,14 @@ function token(value: unknown): string | null {
 
 function normalizeEmail(value: unknown): string | null {
   const normalized = token(value)?.toLowerCase() ?? null;
-  if (!normalized) {
+  if (!normalized || normalized.length > 254 || !EMAIL_PATTERN.test(normalized)) {
     return null;
   }
-  const separator = normalized.indexOf('@');
-  return separator > 0 && separator < normalized.length - 1 ? normalized : null;
+  return normalized;
+}
+
+function isCanonicalUuid(value: unknown): value is string {
+  return typeof value === 'string' && UUID_PATTERN.test(value);
 }
 
 function identityError(
@@ -161,6 +173,18 @@ function normalizeExpectation(value: string | null | undefined, label: string): 
         exitCode: 2,
         details: { option: label },
       },
+    );
+  }
+  return normalized;
+}
+
+function normalizeExpectedUserId(value: string | null | undefined): string | null {
+  const normalized = normalizeExpectation(value, '--expected-user-id');
+  if (normalized !== null && !isCanonicalUuid(normalized)) {
+    return identityError(
+      '--expected-user-id must be a canonical lowercase UUID.',
+      'AUTH_IDENTITY_EXPECTATION_INVALID',
+      { exitCode: 2, details: { option: '--expected-user-id' } },
     );
   }
   return normalized;
@@ -226,6 +250,24 @@ function projectRefFromBaseUrl(projectBaseUrl: string): string {
     );
   }
   return identity.projectRef;
+}
+
+function resolveProjectIdentity(apiBaseUrl: string): {
+  projectBaseUrl: string;
+  projectRef: string;
+} {
+  let projectBaseUrl: string;
+  try {
+    projectBaseUrl = deriveSupabaseProjectBaseUrl(apiBaseUrl);
+  } catch {
+    return identityError(
+      'TIANGONG_LCA_API_BASE_URL must identify a canonical Supabase project.',
+      'AUTH_IDENTITY_PROJECT_INVALID',
+      { exitCode: 2 },
+    );
+  }
+  const projectRef = projectRefFromBaseUrl(projectBaseUrl);
+  return { projectBaseUrl, projectRef };
 }
 
 function cacheMode(runtime: SupabaseRestRuntime): CacheMode {
@@ -345,6 +387,61 @@ function currentUserFailureStatus(error: unknown): number | null {
   return error.details.status;
 }
 
+function declaredResponseBytes(response: {
+  headers: { get(name: string): string | null };
+}): number | null {
+  const value = response.headers.get('content-length')?.trim() ?? '';
+  if (!/^\d+$/u.test(value)) {
+    return null;
+  }
+  return Number(value);
+}
+
+async function readBoundedResponseText(response: {
+  body?: ReadableStream<Uint8Array> | null;
+  headers: { get(name: string): string | null };
+  text(): Promise<string>;
+}): Promise<string> {
+  const declaredBytes = declaredResponseBytes(response);
+  if (declaredBytes !== null && declaredBytes > MAX_RESPONSE_BYTES) {
+    throw new ResponseBodyTooLargeError();
+  }
+  if (!response.body) {
+    const text = await response.text();
+    if (Buffer.byteLength(text, 'utf8') > MAX_RESPONSE_BYTES) {
+      throw new ResponseBodyTooLargeError();
+    }
+    return text;
+  }
+
+  const reader = response.body.getReader();
+  const decoder = new TextDecoder();
+  let observedBytes = 0;
+  let text = '';
+  try {
+    while (true) {
+      const chunk = await reader.read();
+      if (chunk.done) {
+        break;
+      }
+      observedBytes += chunk.value.byteLength;
+      if (observedBytes > MAX_RESPONSE_BYTES) {
+        try {
+          await reader.cancel();
+        } catch {
+          // Cancellation failure cannot turn an oversized response into accepted evidence.
+        }
+        throw new ResponseBodyTooLargeError();
+      }
+      text += decoder.decode(chunk.value, { stream: true });
+    }
+    text += decoder.decode();
+    return text;
+  } finally {
+    reader.releaseLock();
+  }
+}
+
 async function fetchCurrentUser(options: {
   projectBaseUrl: string;
   publishableKey: string;
@@ -358,6 +455,7 @@ async function fetchCurrentUser(options: {
     response = await options.fetchImpl(url, {
       method: 'GET',
       headers: buildSupabaseAuthHeaders(options.publishableKey, options.accessToken),
+      redirect: 'error',
       signal: AbortSignal.timeout(options.timeoutMs),
     });
   } catch (error) {
@@ -373,30 +471,6 @@ async function fetchCurrentUser(options: {
     );
   }
 
-  let text: string;
-  try {
-    text = await response.text();
-  } catch (error) {
-    return identityError(
-      'Authenticated current-user response could not be read.',
-      'AUTH_IDENTITY_REMOTE_REQUEST_FAILED',
-      {
-        details: {
-          endpoint: CURRENT_USER_PATH,
-          status: response.status,
-          cause: error instanceof Error ? error.name : typeof error,
-        },
-      },
-    );
-  }
-
-  if (Buffer.byteLength(text, 'utf8') > MAX_RESPONSE_BYTES) {
-    return identityError(
-      'Authenticated current-user response exceeded the bounded receipt limit.',
-      'AUTH_IDENTITY_RESPONSE_TOO_LARGE',
-      { details: { endpoint: CURRENT_USER_PATH, status: response.status } },
-    );
-  }
   if (!response.ok) {
     return identityError(
       `Authenticated current-user lookup returned HTTP ${response.status}.`,
@@ -410,6 +484,30 @@ async function fetchCurrentUser(options: {
       'Authenticated current-user response did not declare JSON content.',
       'AUTH_IDENTITY_REMOTE_INVALID_JSON',
       { details: { endpoint: CURRENT_USER_PATH, status: response.status } },
+    );
+  }
+
+  let text: string;
+  try {
+    text = await readBoundedResponseText(response);
+  } catch (error) {
+    if (error instanceof ResponseBodyTooLargeError) {
+      return identityError(
+        'Authenticated current-user response exceeded the bounded receipt limit.',
+        'AUTH_IDENTITY_RESPONSE_TOO_LARGE',
+        { details: { endpoint: CURRENT_USER_PATH, status: response.status } },
+      );
+    }
+    return identityError(
+      'Authenticated current-user response could not be read.',
+      'AUTH_IDENTITY_REMOTE_REQUEST_FAILED',
+      {
+        details: {
+          endpoint: CURRENT_USER_PATH,
+          status: response.status,
+          cause: error instanceof Error ? error.name : typeof error,
+        },
+      },
     );
   }
 
@@ -430,7 +528,7 @@ async function fetchCurrentUser(options: {
       { details: { endpoint: CURRENT_USER_PATH, status: response.status } },
     );
   }
-  const userId = isRecord(payload) ? token(payload.id) : null;
+  const userId = isRecord(payload) && isCanonicalUuid(payload.id) ? payload.id : null;
   const email = isRecord(payload) ? normalizeEmail(payload.email) : null;
   if (!userId || !email) {
     return identityError(
@@ -447,6 +545,7 @@ function requestFingerprint(projectRef: string): string {
     method: 'GET',
     path: CURRENT_USER_PATH,
     project_ref: projectRef,
+    redirect: 'error',
     header_names: ['accept', 'apikey', 'authorization'],
   });
 }
@@ -481,7 +580,7 @@ function isCanonicalToken(value: unknown): value is string {
 }
 
 function isMaskedEmail(value: unknown): value is string {
-  return isCanonicalToken(value) && /^(?:[^*@\s]{2})?\*{4}@[^@\s]+$/u.test(value);
+  return isCanonicalToken(value) && /^(?:[^*@\s]{2})?\*{4}@[^@\s]+\.[^@\s]+$/u.test(value);
 }
 
 function receiptScope(receipt: AuthIdentityReceipt): AuthIdentityReceiptScope {
@@ -537,7 +636,7 @@ export function parseAuthIdentityReceipt(value: unknown): AuthIdentityReceipt {
     parsedProject.projectRef !== project.project_ref ||
     !isRecord(identity) ||
     !hasExactKeys(identity, ['display_email', 'user_id']) ||
-    !isCanonicalToken(identity.user_id) ||
+    !isCanonicalUuid(identity.user_id) ||
     !isMaskedEmail(identity.display_email) ||
     !isRecord(session) ||
     !hasExactKeys(session, ['cache_mode', 'expires_at_utc', 'force_reauth', 'source']) ||
@@ -573,7 +672,7 @@ export function parseAuthIdentityReceipt(value: unknown): AuthIdentityReceipt {
     !(
       assertions.expected_project_ref === null || isCanonicalToken(assertions.expected_project_ref)
     ) ||
-    !(assertions.expected_user_id === null || isCanonicalToken(assertions.expected_user_id)) ||
+    !(assertions.expected_user_id === null || isCanonicalUuid(assertions.expected_user_id)) ||
     !(assertions.project_ref_passed === true || assertions.project_ref_passed === null) ||
     !(assertions.user_id_passed === true || assertions.user_id_passed === null) ||
     assertions.passed !== true ||
@@ -612,7 +711,7 @@ export async function runAuthIdentityReceipt(
     options.expectedProjectRef,
     '--expected-project-ref',
   );
-  const expectedUserId = normalizeExpectation(options.expectedUserId, '--expected-user-id');
+  const expectedUserId = normalizeExpectedUserId(options.expectedUserId);
   const cliVersion = token(options.cliVersion);
   if (!cliVersion) {
     return identityError(
@@ -631,9 +730,7 @@ export async function runAuthIdentityReceipt(
   }
 
   const runtime = requireSupabaseRestRuntime(options.env);
-  const credentials = requireUserApiKeyCredentials(runtime.userApiKey);
-  const projectBaseUrl = deriveSupabaseProjectBaseUrl(runtime.apiBaseUrl);
-  const projectRef = projectRefFromBaseUrl(projectBaseUrl);
+  const { projectBaseUrl, projectRef } = resolveProjectIdentity(runtime.apiBaseUrl);
   if (expectedProjectRef !== null && expectedProjectRef !== projectRef) {
     return identityError(
       'Authenticated project does not match --expected-project-ref.',
@@ -641,6 +738,7 @@ export async function runAuthIdentityReceipt(
       { details: { expected_project_ref: expectedProjectRef, observed_project_ref: projectRef } },
     );
   }
+  const credentials = requireUserApiKeyCredentials(runtime.userApiKey);
 
   let session = await resolveBoundSession({
     runtime,
@@ -778,17 +876,22 @@ export const __testInternals = {
   canonicalTimestamp,
   canonicalProjectIdentity,
   currentUserFailureStatus,
+  declaredResponseBytes,
   fetchCurrentUser,
   hasExactKeys,
   isCanonicalToken,
+  isCanonicalUuid,
   isMaskedEmail,
   isOneOf,
   normalizeEmail,
   normalizeExpectation,
+  normalizeExpectedUserId,
   normalizeTimeoutMs,
   projectRefFromBaseUrl,
+  readBoundedResponseText,
   requestFingerprint,
   responseFingerprint,
+  resolveProjectIdentity,
   sessionExpiresAtUtc,
   sha256Json,
   stableJsonValue,
