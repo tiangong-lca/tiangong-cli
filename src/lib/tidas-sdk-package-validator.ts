@@ -581,7 +581,7 @@ function collectFlowSchemaGapIssues(
   return [];
 }
 
-function collectClassificationIssues(
+export function collectClassificationIssues(
   jsonItem: unknown,
   category: string,
   filePath: string,
@@ -596,7 +596,7 @@ function collectClassificationIssues(
         'typeOfDataSet'
       ];
 
-      if (dataSetType === 'Product flow') {
+      if (dataSetType === 'Product flow' || dataSetType === 'Waste flow') {
         const items = asRecord(
           asRecord(
             asRecord(asRecord(flowDataSet?.flowInformation)?.dataSetInformation)

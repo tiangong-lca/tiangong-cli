@@ -18,6 +18,7 @@ import {
   type SdkValidationFactory,
 } from './tidas-sdk-validation.js';
 import {
+  collectClassificationIssues,
   validateElementaryFlowsClassificationHierarchy,
   validateProcessesClassificationHierarchy,
   validateProductFlowsClassificationHierarchy,
@@ -1473,7 +1474,19 @@ function validateMaterializedSchema(
   const { validator, schema, createEntity } = schemaForKind(kind, schemas);
   const payload = unwrapDatasetPayload(artifact);
   const outcome = validateSchemaWithDeepFallback(schema, payload, createEntity);
-  if (outcome.success) {
+  const issues = [
+    ...outcome.issues.map(normalizeSchemaIssue),
+    ...collectClassificationIssues(
+      payload,
+      kind === 'process' ? 'processes' : 'flows',
+      '<materialized-payload>',
+    ).map((issue) => ({
+      path: issue.location,
+      message: issue.message,
+      code: issue.issue_code,
+    })),
+  ];
+  if (issues.length === 0) {
     return {
       status: 'passed',
       validator,
@@ -1485,8 +1498,8 @@ function validateMaterializedSchema(
   return {
     status: 'failed',
     validator,
-    issue_count: outcome.issues.length,
-    issues: outcome.issues.map(normalizeSchemaIssue),
+    issue_count: issues.length,
+    issues,
   };
 }
 
