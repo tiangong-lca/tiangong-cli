@@ -25,7 +25,7 @@ checkPaths:
   - test/auth-identity*.test.ts
   - test/lca-release*.test.ts
 lastReviewedAt: 2026-08-25
-lastReviewedCommit: 7116aa9c9607ab7a80152b67eb013ba52be2aae2
+lastReviewedCommit: 4fffda916bf403152957ee4e991511435c223b25
 lastReviewedNote: 'Reviewed for Issue #228: documents the secret-free, read-only auth receipt and intent-bound local production case.'
 ---
 
@@ -140,7 +140,7 @@ For the explicitly authorized local production read case from a validated reposi
 pnpm case:auth-identity:production -- --env-file <data-foundry-ignored-.env> --expected-project-ref <project-ref> --expected-user-id <user-id> --out-dir <new-private-case-directory>
 ```
 
-The runner reads only `TIANGONG_LCA_API_BASE_URL`, `TIANGONG_LCA_SUPABASE_PUBLISHABLE_KEY`, and `TIANGONG_LCA_TEST_API_KEY`; the last is mapped to the child process's standard API-key variable. It does not accept an alternate CLI path: it hashes the repository TypeScript runtime tree, exact `src/main.ts`, local `tsx` loader, package metadata, lockfile, and compiler configs before exposing the key, then records those hashes in the manifest. It forces reauthentication with session cache disabled, runs from an exclusively created clean directory with an argv array and `shell:false`, and persists only the parsed receipt and case manifest with private permissions. It never stores raw child stdout/stderr and is intentionally not wired to CI secrets. This receipt is locally hash-verifiable, not server-signed attestation.
+The runner reads only `TIANGONG_LCA_API_BASE_URL`, `TIANGONG_LCA_SUPABASE_PUBLISHABLE_KEY`, and `TIANGONG_LCA_TEST_API_KEY`; the last is mapped to the child process's standard API-key variable. It does not accept an alternate CLI path. The pnpm command first performs a clean TS7 build without the production env. Its plain-Node runner then single-reads source/config/lock and the freshly generated `dist/src/**/*.js`, hashes the source tree, runner, runtime, exact entrypoint, and pnpm lock, and copies those exact built buffers into a private snapshot before exposing the key. It forces reauthentication with session cache disabled, runs only the built snapshot from an exclusively created clean directory with an argv array and `shell:false`, and persists only the parsed receipt and case manifest with private permissions. It never stores raw child stdout/stderr and is intentionally not wired to CI secrets. This receipt is locally hash-verifiable, not server-signed attestation.
 
 ## LCI/LCIA Data Release
 

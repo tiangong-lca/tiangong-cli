@@ -21,7 +21,7 @@ checkPaths:
   - src/**
   - test/**
 lastReviewedAt: 2026-08-25
-lastReviewedCommit: 7116aa9c9607ab7a80152b67eb013ba52be2aae2
+lastReviewedCommit: 4fffda916bf403152957ee4e991511435c223b25
 lastReviewedNote: 'Reviewed for Issue #228: auth identity receipt 使用既有 session、live current-user read、严格安全 DTO 与本地窄环境生产 case。'
 related:
   - ../AGENTS.md
@@ -35,7 +35,7 @@ related:
 
 Review note, 2026-08-25: Issue #224 把实现与验证工具链固定为 Node 24、pnpm 11.23.0、TypeScript 7.0.2 与 type-aware Oxlint。依赖只由根 `pnpm-workspace.yaml` / `pnpm-lock.yaml` 决定；不保留 TypeScript 5/6、ESLint 或 Compiler API 兼容路径。`test:package` 同时验证单轨工具链、干净 tarball 和 package-manager-neutral consumer。feature 版本保持 0.0.33；合并和完整门禁通过后，建议用单独的 release-only PR 准备 0.1.0。
 
-Review note, 2026-08-25: Issue #228 把生产 case 前的认证边界收口为 `auth identity-receipt`。命令在 credential decode/session/network 前安全断言 canonical Supabase project，通过既有 API key/session runtime 获取 token，并对 redirect-disabled `/auth/v1/user` 做增量 byte cap 只读验证且要求 canonical UUID；401/403 只允许 force-refresh 后重读一次。回执 exact-key parser 只接受 safe projection 和 canonical hash，不包含 credential、token、完整邮箱、session path 或其 fingerprint。无 expected 参数是 `observed`，只有 expected project/user 都由 argv 提供才是 `intent-bound`。独立 TypeScript case runner 拒绝 alternate entrypoint，在暴露 key 前 snapshot/hash repository TypeScript runtime、tsx loader、lock/config，只从 ignored Foundry env 选取三项变量、禁用 cache、使用独占干净 cwd 与 `shell:false` argv spawn，不保存 raw child output。
+Review note, 2026-08-25: Issue #228 把生产 case 前的认证边界收口为 `auth identity-receipt`。命令在 credential decode/session/network 前安全断言 canonical Supabase project，通过既有 API key/session runtime 获取 token，并对 redirect-disabled `/auth/v1/user` 做增量 byte cap 只读验证且要求 canonical UUID；401/403 只允许 force-refresh 后重读一次。回执 exact-key parser 只接受 safe projection 和 canonical hash，不包含 credential、token、完整邮箱、session path 或其 fingerprint。无 expected 参数是 `observed`，只有 expected project/user 都由 argv 提供才是 `intent-bound`。pnpm case 命令先 clean-build TS7；plain-Node runner 拒绝 alternate entrypoint，单次读取/hash source/config/lock 与 generated runtime/runner，把 exact built buffers 私有 snapshot 后才从 ignored Foundry env 选取三项变量、禁用 cache、使用独占干净 cwd 与 `shell:false` argv spawn，不保存 raw child output。
 
 Review note, 2026-07-30: Issue #214 将 identity preflight 的远程检索参数收敛为单一 `lexical_weight`，并把 derivative snapshot/readback 依赖收敛到 `extracted_md`、`embedding_ft` 与 `embedding_ft_at`。既有 owner-draft、一次性 admission、独立 readback 与 fail-closed 规则保持不变。
 
@@ -588,7 +588,7 @@ tiangong-lca admin embedding-run --input ./jobs.json --dry-run
 
 回执 schema 固定为 `tiangong-lca.auth-identity-receipt.v1`。公开字段只包含 CLI 版本、project ref/base、live user id、masked display email、session source/cache mode/force-reauth/expiry、安全投影 request/response SHA、expected assertions、capture time 与 receipt scope SHA。parser 要求 exact keys，并独立重算三类 hash；额外 metadata、`ok:false`、完整 email、API/publishable key、access/refresh token、session path，以及它们的 fingerprint 一律不能进入回执。无 expected 是 `observed`，只给一项是 `partial`，两项都给且通过才是 `intent-bound`；Foundry 只能把最后一种作为 production guard。
 
-真实生产只读 case 由 `scripts/run-auth-identity-production-case.ts` 独立承载。它不导入 Foundry runner、不接受 alternate CLI path，也不继承整份 `process.env`。在读取 key 前，runner 把当前仓库 `src/**/*.ts` 与 package/lock/compiler config、exact `src/main.ts`、本地 tsx loader 绑定成 runtime tree hash，并把 source entrypoint create-only snapshot 到私有随机目录；子进程只执行这个 snapshot。随后才从显式 env file 选择 API base、publishable key 与 `TIANGONG_LCA_TEST_API_KEY`，把最后一项映射给标准 CLI env；子进程固定 cache disabled + force reauth、独占创建 cwd、`shell:false` 和 argv array。成功只保存严格 parse 后的 receipt/manifest 及 runtime hashes，失败只保存 stage/exit/error code，不保存 raw stdout/stderr。该 case 不是 CI job，也不产生服务器签名。
+真实生产只读 case 由 package script 与 `scripts/run-auth-identity-production-case.ts` 两段承载。package script 先执行 clean `pnpm build`，所以 parent runner 是刚生成的 plain JS，不经 tsx 执行。runner 不导入 Foundry runner、不接受 alternate CLI path，也不继承整份 `process.env`；它单次读取当前 `src/**/*.ts`、runner、package/lock/compiler config 及 freshly generated `dist/src/**/*.js`，固定 source-tree、runner、runtime-tree、exact-entrypoint 与 pnpm-lock hashes，再把同一 built Buffer set create-only copy 到私有随机 snapshot。随后才从显式 env file 选择 API base、publishable key 与 `TIANGONG_LCA_TEST_API_KEY`，把最后一项映射给标准 CLI env；子进程只执行这份 snapshot，固定 cache disabled + force reauth、独占创建 cwd、`shell:false` 和 argv array。成功只保存严格 parse 后的 receipt/manifest 及 runtime hashes，失败只保存 stage/exit/error code，不保存 raw stdout/stderr。该 case 不是 CI job，也不产生服务器签名。
 
 ### 4.3.1 `search flow` 的最小 contract
 
