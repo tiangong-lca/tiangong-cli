@@ -447,3 +447,50 @@ test('production identity case rejects ambiguous stdout and existing output dire
     rmSync(root, { recursive: true, force: true });
   }
 });
+
+test('production identity case publishes no passed artifacts when runtime cleanup fails', async () => {
+  const root = mkdtempSync(path.join(os.tmpdir(), 'tg-auth-production-cleanup-'));
+  const envFile = path.join(root, 'foundry.env');
+  const outDir = path.join(root, 'output');
+  writeFileSync(envFile, envFileText(), 'utf8');
+  const stdout = await receiptJson();
+  try {
+    await assert.rejects(
+      runProductionIdentityCase(
+        {
+          envFile,
+          expectedProjectRef: PROJECT_REF,
+          expectedUserId: USER_ID,
+          outDir,
+        },
+        {
+          prepareRuntimeSnapshot: () => ({
+            entrypoint: '/trusted/dist/src/main.js',
+            entrypointSha256: 'b'.repeat(64),
+            sourceTreeSha256: 'c'.repeat(64),
+            runtimeTreeSha256: 'd'.repeat(64),
+            runnerSha256: 'e'.repeat(64),
+            pnpmLockSha256: 'f'.repeat(64),
+            cleanup: () => {
+              throw new Error('simulated cleanup failure');
+            },
+          }),
+          spawnImpl: () => ({
+            status: 0,
+            signal: null,
+            stdout,
+            stderr: '',
+          }),
+        },
+      ),
+      /clean up its private runtime snapshot/u,
+    );
+    assert.equal(existsSync(path.join(outDir, 'identity-receipt.json')), false);
+    assert.equal(existsSync(path.join(outDir, 'case-manifest.json')), false);
+    const failure = readFileSync(path.join(outDir, 'case-failure.json'), 'utf8');
+    assert.match(failure, /AUTH_IDENTITY_CASE_RUNTIME_CLEANUP_FAILED/u);
+    assert.doesNotMatch(failure, /simulated cleanup failure/u);
+  } finally {
+    rmSync(root, { recursive: true, force: true });
+  }
+});

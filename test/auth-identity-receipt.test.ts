@@ -678,6 +678,11 @@ test('identity receipt validates runtime options and current-user email consiste
       error instanceof Error && 'code' in error && error.code === 'AUTH_IDENTITY_TIMEOUT_INVALID',
   );
   await assert.rejects(
+    successfulReceipt({ timeoutMs: 2_147_483_648 }),
+    (error: unknown) =>
+      error instanceof Error && 'code' in error && error.code === 'AUTH_IDENTITY_TIMEOUT_INVALID',
+  );
+  await assert.rejects(
     successfulReceipt({ cliVersion: '   ' }),
     (error: unknown) =>
       error instanceof Error && 'code' in error && error.code === 'AUTH_IDENTITY_VERSION_INVALID',
