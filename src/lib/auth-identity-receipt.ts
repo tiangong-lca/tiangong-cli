@@ -186,18 +186,46 @@ function canonicalTimestamp(value: unknown): value is string {
   return !Number.isNaN(timestamp.getTime()) && timestamp.toISOString() === value;
 }
 
+function canonicalProjectIdentity(
+  projectBaseUrl: unknown,
+): { projectBaseUrl: string; projectRef: string } | null {
+  const normalized = token(projectBaseUrl);
+  if (!normalized || normalized !== projectBaseUrl) {
+    return null;
+  }
+  try {
+    const url = new URL(normalized);
+    const suffix = '.supabase.co';
+    const hostname = url.hostname.toLowerCase();
+    const projectRef = hostname.endsWith(suffix) ? hostname.slice(0, -suffix.length) : '';
+    if (
+      url.protocol !== 'https:' ||
+      url.origin !== normalized ||
+      url.username ||
+      url.password ||
+      url.port ||
+      !projectRef ||
+      projectRef.includes('.') ||
+      !/^[a-z0-9-]+$/u.test(projectRef)
+    ) {
+      return null;
+    }
+    return { projectBaseUrl: url.origin, projectRef };
+  } catch {
+    return null;
+  }
+}
+
 function projectRefFromBaseUrl(projectBaseUrl: string): string {
-  const hostname = new URL(projectBaseUrl).hostname.toLowerCase();
-  const suffix = '.supabase.co';
-  const projectRef = hostname.endsWith(suffix) ? hostname.slice(0, -suffix.length) : '';
-  if (!projectRef || projectRef.includes('.')) {
+  const identity = canonicalProjectIdentity(projectBaseUrl);
+  if (!identity) {
     return identityError(
       'The Supabase project URL did not contain a project identity.',
       'AUTH_IDENTITY_PROJECT_INVALID',
       { exitCode: 2 },
     );
   }
-  return projectRef;
+  return identity.projectRef;
 }
 
 function cacheMode(runtime: SupabaseRestRuntime): CacheMode {
@@ -278,6 +306,7 @@ async function resolveBoundSession(options: {
   fetchImpl: FetchLike;
   timeoutMs: number;
   now: Date;
+  forceRefresh?: boolean;
   resolveSessionImpl: ResolveAuthIdentitySession;
 }): Promise<ResolvedSupabaseUserSession> {
   try {
@@ -286,6 +315,7 @@ async function resolveBoundSession(options: {
       fetchImpl: options.fetchImpl,
       timeoutMs: options.timeoutMs,
       now: options.now,
+      forceRefresh: options.forceRefresh,
     });
   } catch (error) {
     const causeCode =
@@ -300,6 +330,19 @@ async function resolveBoundSession(options: {
       { details: { cause_code: causeCode } },
     );
   }
+}
+
+function currentUserFailureStatus(error: unknown): number | null {
+  if (
+    !(error instanceof CliError) ||
+    error.code !== 'AUTH_IDENTITY_REMOTE_REQUEST_FAILED' ||
+    !isRecord(error.details) ||
+    typeof error.details.status !== 'number' ||
+    !Number.isInteger(error.details.status)
+  ) {
+    return null;
+  }
+  return error.details.status;
 }
 
 async function fetchCurrentUser(options: {
@@ -433,6 +476,14 @@ function isOneOf<T extends string>(value: unknown, values: readonly T[]): value 
   return typeof value === 'string' && values.includes(value as T);
 }
 
+function isCanonicalToken(value: unknown): value is string {
+  return typeof value === 'string' && token(value) === value;
+}
+
+function isMaskedEmail(value: unknown): value is string {
+  return isCanonicalToken(value) && /^(?:[^*@\s]{2})?\*{4}@[^@\s]+$/u.test(value);
+}
+
 function receiptScope(receipt: AuthIdentityReceipt): AuthIdentityReceiptScope {
   const { receipt_scope_sha256: _receiptScopeSha256, ...scope } = receipt;
   return scope;
@@ -465,6 +516,10 @@ export function parseAuthIdentityReceipt(value: unknown): AuthIdentityReceipt {
   const session = value.session;
   const bindings = value.bindings;
   const assertions = value.assertions;
+  const parsedProject =
+    isRecord(project) && typeof project.project_base_url === 'string'
+      ? canonicalProjectIdentity(project.project_base_url)
+      : null;
   if (
     value.schema !== AUTH_IDENTITY_RECEIPT_SCHEMA ||
     value.status !== 'passed' ||
@@ -474,15 +529,16 @@ export function parseAuthIdentityReceipt(value: unknown): AuthIdentityReceipt {
     !isRecord(cli) ||
     !hasExactKeys(cli, ['package_name', 'package_version']) ||
     cli.package_name !== CLI_PACKAGE_NAME ||
-    !token(cli.package_version) ||
+    !isCanonicalToken(cli.package_version) ||
     !isRecord(project) ||
     !hasExactKeys(project, ['project_base_url', 'project_ref']) ||
-    !token(project.project_ref) ||
-    !token(project.project_base_url) ||
+    !isCanonicalToken(project.project_ref) ||
+    !parsedProject ||
+    parsedProject.projectRef !== project.project_ref ||
     !isRecord(identity) ||
     !hasExactKeys(identity, ['display_email', 'user_id']) ||
-    !token(identity.user_id) ||
-    !token(identity.display_email) ||
+    !isCanonicalToken(identity.user_id) ||
+    !isMaskedEmail(identity.display_email) ||
     !isRecord(session) ||
     !hasExactKeys(session, ['cache_mode', 'expires_at_utc', 'force_reauth', 'source']) ||
     !isOneOf(session.source, SESSION_SOURCES) ||
@@ -495,6 +551,13 @@ export function parseAuthIdentityReceipt(value: unknown): AuthIdentityReceipt {
     !SHA256_PATTERN.test(bindings.request_sha256) ||
     typeof bindings.response_sha256 !== 'string' ||
     !SHA256_PATTERN.test(bindings.response_sha256) ||
+    bindings.request_sha256 !== requestFingerprint(project.project_ref as string) ||
+    bindings.response_sha256 !==
+      responseFingerprint({
+        projectRef: project.project_ref as string,
+        userId: identity.user_id as string,
+        displayEmail: identity.display_email as string,
+      }) ||
     !isRecord(assertions) ||
     !hasExactKeys(assertions, [
       'expected_project_ref',
@@ -508,9 +571,9 @@ export function parseAuthIdentityReceipt(value: unknown): AuthIdentityReceipt {
     !isOneOf(assertions.mode, ['observed', 'partial', 'intent-bound'] as const) ||
     ![0, 1, 2].includes(assertions.requested_count as number) ||
     !(
-      assertions.expected_project_ref === null || token(assertions.expected_project_ref) !== null
+      assertions.expected_project_ref === null || isCanonicalToken(assertions.expected_project_ref)
     ) ||
-    !(assertions.expected_user_id === null || token(assertions.expected_user_id) !== null) ||
+    !(assertions.expected_user_id === null || isCanonicalToken(assertions.expected_user_id)) ||
     !(assertions.project_ref_passed === true || assertions.project_ref_passed === null) ||
     !(assertions.user_id_passed === true || assertions.user_id_passed === null) ||
     assertions.passed !== true ||
@@ -579,7 +642,7 @@ export async function runAuthIdentityReceipt(
     );
   }
 
-  const session = await resolveBoundSession({
+  let session = await resolveBoundSession({
     runtime,
     fetchImpl: options.fetchImpl,
     timeoutMs,
@@ -594,13 +657,43 @@ export async function runAuthIdentityReceipt(
     now,
   });
 
-  const currentUser = await fetchCurrentUser({
-    projectBaseUrl,
-    publishableKey: runtime.publishableKey,
-    accessToken: session.accessToken,
-    timeoutMs,
-    fetchImpl: options.fetchImpl,
-  });
+  let currentUser: Awaited<ReturnType<typeof fetchCurrentUser>>;
+  try {
+    currentUser = await fetchCurrentUser({
+      projectBaseUrl,
+      publishableKey: runtime.publishableKey,
+      accessToken: session.accessToken,
+      timeoutMs,
+      fetchImpl: options.fetchImpl,
+    });
+  } catch (error) {
+    const status = currentUserFailureStatus(error);
+    if (status === null || ![401, 403].includes(status)) {
+      throw error;
+    }
+    session = await resolveBoundSession({
+      runtime,
+      fetchImpl: options.fetchImpl,
+      timeoutMs,
+      now,
+      forceRefresh: true,
+      resolveSessionImpl: options.resolveSessionImpl ?? resolveSupabaseUserSession,
+    });
+    assertSessionBinding({
+      runtime,
+      session,
+      projectBaseUrl,
+      apiKeyEmail: credentials.email,
+      now,
+    });
+    currentUser = await fetchCurrentUser({
+      projectBaseUrl,
+      publishableKey: runtime.publishableKey,
+      accessToken: session.accessToken,
+      timeoutMs,
+      fetchImpl: options.fetchImpl,
+    });
+  }
   const sessionEmail = normalizeEmail(session.userEmail);
   const apiKeyEmail = normalizeEmail(credentials.email);
   if (
@@ -683,8 +776,12 @@ export const __testInternals = {
   assertSessionBinding,
   cacheMode,
   canonicalTimestamp,
+  canonicalProjectIdentity,
+  currentUserFailureStatus,
   fetchCurrentUser,
   hasExactKeys,
+  isCanonicalToken,
+  isMaskedEmail,
   isOneOf,
   normalizeEmail,
   normalizeExpectation,

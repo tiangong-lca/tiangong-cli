@@ -116,6 +116,9 @@ test('auth identity-receipt rejects malformed argv before network or command exe
     ['--timeout-ms', 'abc'],
     ['--expected-project-ref'],
     ['--unknown'],
+    ['--expected-project-ref', 'one', '--expected-project-ref', 'two'],
+    ['--expected-user-id', 'one', '--expected-user-id', 'two'],
+    ['--timeout-ms', '1', '--timeout-ms', '2'],
   ];
 
   for (const args of cases) {

@@ -7,8 +7,15 @@ import {
   runAuthIdentityReceipt,
   type AuthIdentityReceipt,
 } from '../src/lib/auth-identity-receipt.js';
-import type { ResolvedSupabaseUserSession } from '../src/lib/supabase-session.js';
-import { buildSupabaseTestEnv } from './helpers/supabase-auth.js';
+import {
+  __testInternals as sessionInternals,
+  type ResolvedSupabaseUserSession,
+} from '../src/lib/supabase-session.js';
+import {
+  buildSupabaseTestEnv,
+  isSupabaseAuthTokenUrl,
+  makeSupabaseAuthResponse,
+} from './helpers/supabase-auth.js';
 
 const NOW = new Date('2026-08-25T12:34:56.000Z');
 const USER_API_KEY_SECRET = 'identity-api-key-password';
@@ -163,6 +170,162 @@ test('identity receipt canonicalization is deterministic and binds bounded reque
   assert.deepEqual(changedToken, first);
 });
 
+test('identity receipt default wiring signs in and performs one live current-user read', async () => {
+  let authCalls = 0;
+  let currentUserCalls = 0;
+  try {
+    const receipt = await runAuthIdentityReceipt({
+      env: runtimeEnv({ TIANGONG_LCA_FORCE_REAUTH: 'true' }),
+      fetchImpl: async (url) => {
+        if (isSupabaseAuthTokenUrl(url)) {
+          authCalls += 1;
+          return makeSupabaseAuthResponse({
+            accessToken: ACCESS_TOKEN_SECRET,
+            email: 'user@example.com',
+            userId: '11111111-1111-4111-8111-111111111111',
+          });
+        }
+        assert.equal(url, 'https://project-ref.supabase.co/auth/v1/user');
+        currentUserCalls += 1;
+        return response(200, {
+          id: '11111111-1111-4111-8111-111111111111',
+          email: 'user@example.com',
+        });
+      },
+      cliVersion: '0.1.1-test',
+      expectedProjectRef: 'project-ref',
+      expectedUserId: '11111111-1111-4111-8111-111111111111',
+      now: NOW,
+    });
+
+    assert.equal(receipt.status, 'passed');
+    assert.equal(receipt.session.source, 'signin');
+    assert.equal(authCalls, 1);
+    assert.equal(currentUserCalls, 1);
+  } finally {
+    sessionInternals.SESSION_MEMORY_CACHE.clear();
+    sessionInternals.SESSION_OPERATION_CHAINS.clear();
+  }
+});
+
+test('identity receipt default wiring refreshes once after a 401', async () => {
+  let passwordCalls = 0;
+  let refreshCalls = 0;
+  let currentUserCalls = 0;
+  try {
+    const receipt = await runAuthIdentityReceipt({
+      env: runtimeEnv(),
+      fetchImpl: async (url) => {
+        if (url.includes('grant_type=password')) {
+          passwordCalls += 1;
+          return makeSupabaseAuthResponse({ accessToken: 'stale-default-token' });
+        }
+        if (url.includes('grant_type=refresh_token')) {
+          refreshCalls += 1;
+          return makeSupabaseAuthResponse({ accessToken: 'fresh-default-token' });
+        }
+        assert.equal(url, 'https://project-ref.supabase.co/auth/v1/user');
+        currentUserCalls += 1;
+        return currentUserCalls === 1
+          ? response(401, { message: 'expired' })
+          : response(200, {
+              id: '11111111-1111-4111-8111-111111111111',
+              email: 'user@example.com',
+            });
+      },
+      cliVersion: '0.1.1-test',
+      expectedProjectRef: 'project-ref',
+      expectedUserId: '11111111-1111-4111-8111-111111111111',
+      now: NOW,
+    });
+    assert.equal(receipt.session.source, 'refresh');
+    assert.equal(passwordCalls, 1);
+    assert.equal(refreshCalls, 1);
+    assert.equal(currentUserCalls, 2);
+  } finally {
+    sessionInternals.SESSION_MEMORY_CACHE.clear();
+    sessionInternals.SESSION_OPERATION_CHAINS.clear();
+  }
+});
+
+test('identity receipt refreshes once after an unauthorized live lookup and never loops', async () => {
+  const forceRefreshValues: Array<boolean | undefined> = [];
+  let fetchCalls = 0;
+  const receipt = await successfulReceipt({
+    resolveSessionImpl: async (options) => {
+      forceRefreshValues.push(options.forceRefresh);
+      return options.forceRefresh
+        ? resolvedSession({ source: 'refresh', accessToken: 'fresh-access-token' })
+        : resolvedSession({
+            source: 'cache',
+            accessToken: 'stale-access-token',
+            expiresAt: 4_102_444_800,
+          });
+    },
+    fetchImpl: async () => {
+      fetchCalls += 1;
+      return fetchCalls === 1
+        ? response(401, { message: 'expired' })
+        : response(200, {
+            id: '11111111-1111-4111-8111-111111111111',
+            email: 'user@example.com',
+          });
+    },
+  });
+  assert.deepEqual(forceRefreshValues, [undefined, true]);
+  assert.equal(fetchCalls, 2);
+  assert.equal(receipt.session.source, 'refresh');
+
+  fetchCalls = 0;
+  forceRefreshValues.length = 0;
+  await assert.rejects(
+    successfulReceipt({
+      resolveSessionImpl: async (options) => {
+        forceRefreshValues.push(options.forceRefresh);
+        return options.forceRefresh
+          ? resolvedSession({ source: 'refresh', accessToken: 'fresh-access-token' })
+          : resolvedSession({ source: 'cache', expiresAt: 4_102_444_800 });
+      },
+      fetchImpl: async () => {
+        fetchCalls += 1;
+        return response(403, { message: 'still forbidden' });
+      },
+    }),
+    (error: unknown) =>
+      error instanceof Error &&
+      'code' in error &&
+      error.code === 'AUTH_IDENTITY_REMOTE_REQUEST_FAILED',
+  );
+  await assert.rejects(
+    successfulReceipt({
+      fetchImpl: async () => ({
+        ...response(200, {}),
+        async text(): Promise<string> {
+          throw 'non-error read failure';
+        },
+      }),
+    }),
+    (error: unknown) =>
+      error instanceof Error &&
+      'code' in error &&
+      error.code === 'AUTH_IDENTITY_REMOTE_REQUEST_FAILED',
+  );
+  await assert.rejects(
+    successfulReceipt({
+      fetchImpl: async () => ({
+        ...response(200, {}),
+        headers: { get: () => null },
+      }),
+    }),
+    (error: unknown) =>
+      error instanceof Error &&
+      'code' in error &&
+      error.code === 'AUTH_IDENTITY_REMOTE_INVALID_JSON',
+  );
+  assert.deepEqual(forceRefreshValues, [undefined, true]);
+  assert.equal(fetchCalls, 2);
+});
+
 test('identity receipt records cache modes without exposing a session path', async () => {
   const custom = await successfulReceipt({
     env: runtimeEnv({
@@ -232,9 +395,49 @@ test('identity receipt fails closed on expected project or user mismatch before 
 });
 
 test('identity receipt rejects stale or foreign cached identity bindings', async () => {
+  const invalidSessions: ResolvedSupabaseUserSession[] = [
+    resolvedSession({ userEmail: 'foreign@example.com' }),
+    resolvedSession({ userEmail: 'not-an-email' }),
+    resolvedSession({ accessToken: '   ' }),
+    resolvedSession({ projectBaseUrl: 'https://foreign.supabase.co' }),
+    resolvedSession({ source: 'cache', expiresAt: Math.floor(NOW.getTime() / 1000) + 299 }),
+    resolvedSession({ source: 'memory', expiresAt: null }),
+    resolvedSession({ source: 'unknown' as never }),
+  ];
+
+  for (const session of invalidSessions) {
+    await assert.rejects(
+      successfulReceipt({ resolveSessionImpl: async () => session }),
+      (error: unknown) =>
+        error instanceof Error &&
+        'code' in error &&
+        error.code === 'AUTH_IDENTITY_SESSION_MISMATCH',
+    );
+  }
+
   await assert.rejects(
     successfulReceipt({
-      resolveSessionImpl: async () => resolvedSession({ userEmail: 'foreign@example.com' }),
+      env: runtimeEnv({
+        TIANGONG_LCA_DISABLE_SESSION_CACHE: 'false',
+        TIANGONG_LCA_SESSION_FILE: '/expected/session.json',
+      }),
+      resolveSessionImpl: async () => resolvedSession({ sessionFile: '/foreign/session.json' }),
+    }),
+    (error: unknown) =>
+      error instanceof Error && 'code' in error && error.code === 'AUTH_IDENTITY_SESSION_MISMATCH',
+  );
+
+  await assert.rejects(
+    successfulReceipt({
+      env: runtimeEnv({
+        TIANGONG_LCA_DISABLE_SESSION_CACHE: 'false',
+        TIANGONG_LCA_FORCE_REAUTH: 'true',
+      }),
+      resolveSessionImpl: async () =>
+        resolvedSession({
+          source: 'cache',
+          sessionFile: '/platform/session.json',
+        }),
     }),
     (error: unknown) =>
       error instanceof Error && 'code' in error && error.code === 'AUTH_IDENTITY_SESSION_MISMATCH',
@@ -249,6 +452,11 @@ test('identity receipt rejects nonzero, malformed, ok:false, oversized, and inco
       'AUTH_IDENTITY_REMOTE_REQUEST_FAILED',
     ],
     ['invalid-json', response(200, '{broken'), 'AUTH_IDENTITY_REMOTE_INVALID_JSON'],
+    [
+      'wrong-content-type',
+      response(200, { id: 'user-id', email: 'user@example.com' }, 'text/plain'),
+      'AUTH_IDENTITY_REMOTE_INVALID_JSON',
+    ],
     [
       'ok-false',
       response(200, { ok: false, token: ACCESS_TOKEN_SECRET }),
@@ -279,6 +487,23 @@ test('identity receipt rejects nonzero, malformed, ok:false, oversized, and inco
       },
     );
   }
+
+  await assert.rejects(
+    successfulReceipt({
+      fetchImpl: async () => ({
+        ...response(200, {}),
+        async text(): Promise<string> {
+          throw new Error(`body read included ${USER_API_KEY_SECRET}`);
+        },
+      }),
+    }),
+    (error: unknown) => {
+      assert.ok(error instanceof Error);
+      assert.equal('code' in error ? error.code : null, 'AUTH_IDENTITY_REMOTE_REQUEST_FAILED');
+      assert.doesNotMatch(JSON.stringify(error), new RegExp(USER_API_KEY_SECRET, 'u'));
+      return true;
+    },
+  );
 });
 
 test('identity receipt sanitizes transport and session-resolution failures', async () => {
@@ -299,6 +524,16 @@ test('identity receipt sanitizes transport and session-resolution failures', asy
 
   await assert.rejects(
     successfulReceipt({
+      fetchImpl: async () => Promise.reject('non-error transport secret'),
+    }),
+    (error: unknown) =>
+      error instanceof Error &&
+      'code' in error &&
+      error.code === 'AUTH_IDENTITY_REMOTE_REQUEST_FAILED',
+  );
+
+  await assert.rejects(
+    successfulReceipt({
       resolveSessionImpl: async () => {
         const error = new Error(`session included ${USER_API_KEY_SECRET}`) as Error & {
           code: string;
@@ -315,6 +550,36 @@ test('identity receipt sanitizes transport and session-resolution failures', asy
       return true;
     },
   );
+
+  await assert.rejects(
+    successfulReceipt({
+      resolveSessionImpl: async () => {
+        throw new Error('unexpected session failure');
+      },
+    }),
+    (error: unknown) => {
+      assert.ok(error instanceof Error);
+      assert.equal('code' in error ? error.code : null, 'AUTH_IDENTITY_SESSION_FAILED');
+      assert.match(JSON.stringify(error), /UNEXPECTED_SESSION_FAILURE/u);
+      return true;
+    },
+  );
+
+  await assert.rejects(
+    successfulReceipt({
+      resolveSessionImpl: async () => {
+        throw new (await import('../src/lib/errors.js')).CliError('safe', {
+          code: 'KNOWN_SESSION_FAILURE',
+        });
+      },
+    }),
+    (error: unknown) => {
+      assert.ok(error instanceof Error);
+      assert.equal('code' in error ? error.code : null, 'AUTH_IDENTITY_SESSION_FAILED');
+      assert.match(JSON.stringify(error), /KNOWN_SESSION_FAILURE/u);
+      return true;
+    },
+  );
 });
 
 test('identity receipt validates runtime options and current-user email consistency', async () => {
@@ -323,6 +588,43 @@ test('identity receipt validates runtime options and current-user email consiste
     (error: unknown) =>
       error instanceof Error && 'code' in error && error.code === 'AUTH_IDENTITY_TIMEOUT_INVALID',
   );
+  await assert.rejects(
+    successfulReceipt({ cliVersion: '   ' }),
+    (error: unknown) =>
+      error instanceof Error && 'code' in error && error.code === 'AUTH_IDENTITY_VERSION_INVALID',
+  );
+  await assert.rejects(
+    successfulReceipt({ now: new Date(Number.NaN) }),
+    (error: unknown) =>
+      error instanceof Error &&
+      'code' in error &&
+      error.code === 'AUTH_IDENTITY_CAPTURE_TIME_INVALID',
+  );
+  await assert.rejects(
+    successfulReceipt({
+      env: runtimeEnv({ TIANGONG_LCA_API_BASE_URL: 'https://custom.example.com/functions/v1' }),
+    }),
+    (error: unknown) =>
+      error instanceof Error && 'code' in error && error.code === 'AUTH_IDENTITY_PROJECT_INVALID',
+  );
+  await assert.rejects(
+    successfulReceipt({
+      resolveSessionImpl: async () => resolvedSession({ expiresAt: Number.POSITIVE_INFINITY }),
+    }),
+    (error: unknown) =>
+      error instanceof Error && 'code' in error && error.code === 'AUTH_IDENTITY_SESSION_MISMATCH',
+  );
+  await assert.rejects(
+    successfulReceipt({
+      resolveSessionImpl: async () => resolvedSession({ expiresAt: 1e20 }),
+    }),
+    (error: unknown) =>
+      error instanceof Error && 'code' in error && error.code === 'AUTH_IDENTITY_SESSION_MISMATCH',
+  );
+  const defaultTimeout = await successfulReceipt({ timeoutMs: undefined });
+  assert.equal(defaultTimeout.status, 'passed');
+  const defaultNow = await successfulReceipt({ now: undefined });
+  assert.equal(defaultNow.status, 'passed');
   await assert.rejects(
     successfulReceipt({ expectedProjectRef: '   ' }),
     (error: unknown) =>
@@ -356,8 +658,12 @@ test('identity receipt parser rejects schema drift and canonical hash tampering'
     { ...receipt, operation: 'write' },
     { ...receipt, remote_write_mode: 'read-write' },
     { ...receipt, captured_at_utc: 'not-a-timestamp' },
+    { ...receipt, captured_at_utc: null },
     { ...receipt, cli: { ...receipt.cli, package_name: '' } },
     { ...receipt, project: { ...receipt.project, project_ref: '' } },
+    { ...receipt, project: { ...receipt.project, project_base_url: null } },
+    { ...receipt, project: { ...receipt.project, project_base_url: ' ' } },
+    { ...receipt, project: { ...receipt.project, project_base_url: 'not-a-url' } },
     { ...receipt, identity: { ...receipt.identity, user_id: '' } },
     { ...receipt, session: { ...receipt.session, source: 'unknown' } },
     { ...receipt, bindings: { ...receipt.bindings, request_sha256: 'bad' } },

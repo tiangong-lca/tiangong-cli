@@ -2896,7 +2896,7 @@ function parseAuthIdentityReceiptFlags(args: string[]): {
     });
   }
 
-  const tokens = parsed.tokens ?? [];
+  const tokens = parsed.tokens!;
   for (const optionName of ['expected-project-ref', 'expected-user-id', 'timeout-ms'] as const) {
     const occurrences = tokens.filter(
       (entry) => entry.kind === 'option' && entry.name === optionName,
