@@ -426,11 +426,7 @@ async function readBoundedResponseText(response: {
       }
       observedBytes += chunk.value.byteLength;
       if (observedBytes > MAX_RESPONSE_BYTES) {
-        try {
-          await reader.cancel();
-        } catch {
-          // Cancellation failure cannot turn an oversized response into accepted evidence.
-        }
+        await Promise.allSettled([reader.cancel()]);
         throw new ResponseBodyTooLargeError();
       }
       text += decoder.decode(chunk.value, { stream: true });
