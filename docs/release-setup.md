@@ -23,8 +23,8 @@ checkPaths:
   - scripts/docpact-gate.sh
   - scripts/install-git-hooks.sh
 lastReviewedAt: 2026-08-25
-lastReviewedCommit: 08eed5bccf8bc0ba936c37e39c15a8fc7c82782b
-lastReviewedNote: 'Reviewed for Issue #228: the local identity-case credential is explicitly excluded from Actions and release setup remains unchanged.'
+lastReviewedCommit: 8d64d7e00b25a8a9e39f4041d0168aea7fd622af
+lastReviewedNote: 'Reviewed for Issue #230: 0.1.1 requires no new secret, environment, workflow, Trusted Publisher, tag, or authentication setup.'
 related:
   - ../AGENTS.md
   - ../.docpact/config.yaml
@@ -51,6 +51,8 @@ Review note, 2026-08-25: Issue #224 pins repository and workflow setup to Node 2
 Review note, 2026-08-25: Issue #226 publishes that 0.1.0 compatibility boundary through the existing setup. It adds no secret, environment, dependency, runner, Trusted Publisher setting, workflow filename, tag rule, service-role credential, or fallback client; `TIANGONG_CLI_RELEASE_AUTOMATION_TOKEN`, immutable pnpm/setup v2.0.2, Node 24, and native pnpm OIDC/provenance remain unchanged.
 
 Review note, 2026-08-25: Issue #228 requires no GitHub secret, environment, Trusted Publisher setting, workflow filename, tag rule, dependency, service-role credential, or alternate publication path. `TIANGONG_LCA_TEST_API_KEY` belongs only to the ignored local Data Foundry env used by the explicit read-only case runner; it must not be copied into repository settings, Actions secrets, publish jobs, package assets, or provenance inputs.
+
+Review note, 2026-08-25: Issue #230 publishes 0.1.1 through the existing merge-triggered tag and native pnpm Trusted Publishing workflows. It adds no secret, environment, runner, Trusted Publisher setting, workflow filename, tag rule, dependency, service-role credential, test-account credential, or alternate authentication/publication surface.
 
 Current workflow files:
 

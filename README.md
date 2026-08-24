@@ -25,13 +25,13 @@ checkPaths:
   - test/auth-identity*.test.ts
   - test/lca-release*.test.ts
 lastReviewedAt: 2026-08-25
-lastReviewedCommit: 08eed5bccf8bc0ba936c37e39c15a8fc7c82782b
-lastReviewedNote: 'Reviewed for Issue #228: documents the secret-free, read-only auth receipt and intent-bound local production case.'
+lastReviewedCommit: 8d64d7e00b25a8a9e39f4041d0168aea7fd622af
+lastReviewedNote: 'Reviewed for Issue #230: identifies 0.1.1 as the public auth-receipt release while preserving the package-manager-neutral artifact.'
 ---
 
 # TianGong LCA CLI
 
-Package: `@tiangong-lca/cli` Executable: `tiangong-lca` Current package version: `0.1.0` Node: `24.x`
+Package: `@tiangong-lca/cli` Executable: `tiangong-lca` Current package version: `0.1.1` Node: `24.x`
 
 Repository development is single-track on pnpm `11.23.0` and TypeScript `7.0.2`. The published package remains a clean, package-manager-neutral consumer artifact: it contains runtime files only, not pnpm, TypeScript, Oxlint, tests, source-only tooling, or repository lockfiles.
 
@@ -40,6 +40,8 @@ Review note, 2026-08-25: Issue #224 migrates repository development and release 
 Review note, 2026-08-25: Issue #226 publishes that 0.1.0 compatibility boundary after merged PR #225. Version metadata and public release evidence advance to 0.1.0; the runtime JavaScript/assets surface, command behavior, Node 24 runtime, pnpm/TypeScript 7 development baseline, native pnpm Trusted Publishing/provenance, and exact released-commit workspace handoff remain unchanged from the reviewed feature delivery.
 
 Review note, 2026-08-25: Issue #228 implements `auth identity-receipt` as a bounded read-only current-user proof. It checks expected project intent before session work, verifies the live user through `/auth/v1/user`, allows one auth-refresh replay after 401/403, and emits an exact-key canonical receipt without API keys, tokens, full email addresses, session paths, or credential-derived fingerprints. Production callers must pass both expected assertions and accept only `assertions.mode="intent-bound"`.
+
+Review note, 2026-08-25: Issue #230 publishes the merged identity receipt as `@tiangong-lca/cli@0.1.1`. The release changes only version metadata and live version fixtures; runtime behavior, direct dependencies, pnpm lock, Node 24 / pnpm 11.23.0 / TypeScript 7.0.2 / Oxlint baseline, and package-manager-neutral tarball contract are unchanged.
 
 Review note, 2026-07-12: `dataset maintenance plan/apply/verify` provides current-user RLS-scoped exact-row maintenance with immutable plans, explicit approval, per-action logs, platform audit correlation, and independent readback. `merge-support-aliases` now runs only in `target_mode=owner_draft`: source/target support and all changed rows stay private `state_code=0`; publication is a separate future workflow.
 

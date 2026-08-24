@@ -32,8 +32,8 @@ checkPaths:
   - scripts/docpact-gate.sh
   - scripts/install-git-hooks.sh
 lastReviewedAt: 2026-08-25
-lastReviewedCommit: 08eed5bccf8bc0ba936c37e39c15a8fc7c82782b
-lastReviewedNote: 'Reviewed for Issue #228: identity-receipt proof adds exhaustive fail-closed auth tests plus a narrow, local-only production read case.'
+lastReviewedCommit: 8d64d7e00b25a8a9e39f4041d0168aea7fd622af
+lastReviewedNote: 'Reviewed for Issue #230: 0.1.1 release proof retains exact pnpm/TS7, package, coverage, four-platform, provenance, and public-consumer gates.'
 related:
   - ../../AGENTS.md
   - ../../.docpact/config.yaml
@@ -69,6 +69,8 @@ Review note, 2026-08-25: SDK 0.2 build-plan proof covers exact canonical product
 Review note, 2026-08-25: Issue #226 is the dedicated 0.1.0 release for merged Issue #224 / PR #225. Release proof requires pre-mutation npm/tag absence, all four live CLI-version fixtures at 0.1.0, unchanged `pnpm-lock.yaml`, `pnpm test:package`, exact 100% coverage, audit, strict Docpact, the fresh four-platform matrix, AI Doc Lint, merge-triggered tag creation, native pnpm Trusted Publishing/provenance, and a fresh public-registry consumer before workspace integration. The CLI is intentionally bin-only: proof means an ESM host imports `@tiangong-lca/cli/bin/tiangong-lca.js`, a CJS host dynamically imports that same explicit launcher subpath, both call the exported launcher helpers, and `node_modules/.bin/tiangong-lca` preserves help/version/error behavior. Package-root `require('@tiangong-lca/cli')` and `import '@tiangong-lca/cli'` are not supported module APIs.
 
 Review note, 2026-08-25: Issue #228 proof must cover safe malformed-project rejection before credential/session work, supported timeout bounds, all session/cache modes, stale or foreign cache binding, one 401/403 refresh only, redirect rejection, canonical user UUIDs, nonzero/malformed/non-JSON/`ok:false` responses, pre-read Content-Length and incremental stream byte caps, exact-key schema validation, canonical request/response/receipt hashes, observed/partial/intent-bound assertion modes, and absence of credentials, full email, token/path data, or their fingerprints from success and error output. The local production case command itself must perform the one clean build before its plain-Node parent starts, reject alternate entrypoints, prove one-read built buffers feed both hash and snapshot, bind source/generated-runtime/runner/entrypoint/lock hashes, exercise the default snapshot path on every platform, clean the snapshot before evidence publication, reject cleanup ambiguity without passed artifacts, force reauth with cache disabled, create a private cwd exclusively, persist no raw stdout/stderr, and perform no dataset mutation. POSIX permission bits and Windows inherited-parent ACL assumptions must be stated separately. Live execution remains a separate explicitly authorized local case; it is not added to CI secrets.
+
+Review note, 2026-08-25: Issue #230 release proof requires pre-mutation 0.1.1 npm/tag absence, exactly four live CLI-version fixtures at 0.1.1, unchanged `pnpm-lock.yaml`, strict Docpact, package/prepush/exact-coverage gates, the four-platform matrix, merge-triggered `cli-v0.1.1`, native pnpm Trusted Publishing/provenance, npm `gitHead`/integrity verification, and a clean public pnpm consumer before workspace integration.
 
 When command-surface, release-gate, or governed docs change, also run the repo-local documentation governance gate:
 
