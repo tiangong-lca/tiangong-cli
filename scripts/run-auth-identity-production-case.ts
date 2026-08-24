@@ -221,6 +221,7 @@ function projectRefFromApiBaseUrl(apiBaseUrl: string): string {
     !['', '/functions/v1', '/rest/v1'].includes(pathname) ||
     url.username ||
     url.password ||
+    url.port ||
     url.search ||
     url.hash
   ) {

@@ -29,8 +29,9 @@ layout: repo
 # Review note, 2026-08-07: database-engine Issue #422 switches the existing Data API adapter to the frozen api-only contract, retires the private alias whole-plan transport, and keeps the change inside existing remote-session, command-family, test, and governed-doc routes.
 # Review note, 2026-08-25: Issue #224 makes the Node toolchain single-track on Node 24, pnpm 11.23.0, TypeScript 7.0.2, and Oxlint. The existing validation/release rule is extended to own the sole root pnpm workspace/lockfile, Oxlint configuration, package contract test, local pre-push gate, pnpm/setup v2.0.2 CI bootstrap, and native pnpm Trusted Publishing/provenance path; package version remains 0.0.33 in the feature change.
 # Review note, 2026-08-25: Issue #226 is the dedicated 0.1.0 compatibility-boundary release for merged Issue #224 / PR #225. Its runtime delta is limited to package version metadata and four live CLI-version fixtures; its test-only delta extends the clean package consumer contract to explicit ESM/CJS launcher-subpath hosts, with governed/public release evidence updated alongside it. The pnpm lock/dependency graph, ownership, routing, command behavior, package-root exports, tag automation, native pnpm Trusted Publishing, provenance, and workspace-integration rules remain unchanged.
+# Review note, 2026-08-25: Issue #228 adds the read-only `auth identity-receipt` command and a narrow local production-case runner. `src/lib/auth-identity-receipt.ts` belongs to the existing remote-session/auth domain; it verifies `/auth/v1/user`, emits only a strict secret-free projection, retries one 401/403 through the existing session refresh path, and adds no dependency or mutation surface. The case runner stays in existing scripts/test ownership and passes only three allowlisted env values to a cache-disabled child.
 lastReviewedAt: '2026-08-25'
-lastReviewedCommit: '9078fe123e5909b680f27af1af1d2018bcd02826'
+lastReviewedCommit: 'c5907fb5002464242d0fefff9274c952ce821e4f'
 
 catalog:
   repos:
@@ -99,6 +100,7 @@ ownership:
     - id: remote-session-and-adapters
       paths:
         include:
+          - src/lib/auth-identity-receipt.ts
           - src/lib/dotenv.ts
           - src/lib/env.ts
           - src/lib/http.ts
@@ -205,6 +207,7 @@ routing:
         - README.md
     remote-session:
       paths:
+        - src/lib/auth-identity-receipt.ts
         - src/lib/dotenv.ts
         - src/lib/env.ts
         - src/lib/http.ts
@@ -473,6 +476,8 @@ rules:
     scope: repo
     repo: cli
     triggers:
+      - path: src/lib/auth-identity-receipt.ts
+        kind: auth-runtime
       - path: src/lib/dotenv.ts
         kind: env-loading
       - path: src/lib/env.ts

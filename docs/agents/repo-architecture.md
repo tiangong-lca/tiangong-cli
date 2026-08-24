@@ -31,8 +31,8 @@ checkPaths:
   - scripts/docpact-gate.sh
   - scripts/install-git-hooks.sh
 lastReviewedAt: 2026-08-25
-lastReviewedCommit: 9078fe123e5909b680f27af1af1d2018bcd02826
-lastReviewedNote: 'Reviewed for Issue #226: the 0.1.0 release retains the runtime/package architecture and extends only explicit bin-launcher consumer proof.'
+lastReviewedCommit: c5907fb5002464242d0fefff9274c952ce821e4f
+lastReviewedNote: 'Reviewed for Issue #228: the auth receipt remains a narrow read-only session adapter with a secret-free DTO and local production-case harness.'
 related:
   - ../../AGENTS.md
   - ../../.docpact/config.yaml
@@ -50,6 +50,8 @@ Review note, 2026-08-25: Issue #224 makes the toolchain architecture explicit: t
 Review note, 2026-08-25: the SDK 0.2 cutover makes build-plan taxonomy an explicit input rather than fabricated output. Plan-only materialization accepts canonical locked taxonomy objects only, selects product/process `common:classification` versus elementary `common:elementaryFlowCategorization` by flow type, and fails before artifact publication when classification is absent or malformed.
 
 Review note, 2026-08-25: Issue #226 advances the package compatibility boundary to 0.1.0 without changing runtime files, dependencies, package-root exports, command families, or release workflows. The validation architecture extends `test:package` only: a clean tarball must work through `.bin`, an ESM host importing the existing explicit bin launcher subpath, and a CJS host dynamically importing that same ESM subpath; package-root module imports remain intentionally unsupported.
+
+Review note, 2026-08-25: Issue #228 adds `src/lib/auth-identity-receipt.ts` as a narrow read-only identity adapter. It reuses the existing API-key/session cache chain but never serializes that session object: exact project intent is checked before auth work, a bounded `/auth/v1/user` response supplies the live user id, one 401/403 may force refresh and replay the read, and an exact-key parser hashes only a public safe projection. The TypeScript production-case runner uses a new private cwd and narrow child env; it is local evidence, not a server-signed attestation or a dataset mutation runtime.
 
 Review note, 2026-06-04: Foundry entity queue state now stays in the native CLI command family as `dataset curation-queue build/next/verify`; no secondary orchestration runtime was introduced.
 
@@ -147,6 +149,7 @@ The CLI talks to remote services directly through helper modules such as:
 - `src/lib/dotenv.ts`
 - `src/lib/user-api-key.ts`
 - `src/lib/supabase-session.ts`
+- `src/lib/auth-identity-receipt.ts`
 - `src/lib/supabase-client.ts`
 - `src/lib/supabase-rest.ts`
 - `src/lib/supabase-data-api-contract.ts`

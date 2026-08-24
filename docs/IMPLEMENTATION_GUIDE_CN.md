@@ -21,8 +21,8 @@ checkPaths:
   - src/**
   - test/**
 lastReviewedAt: 2026-08-25
-lastReviewedCommit: c6a48e82d6a56e1f810cddf12d1d64666d9503ce
-lastReviewedNote: 'Reviewed for Issue #224: 实施基线已单轨切换到 Node 24、pnpm 11.23.0、TypeScript 7.0.2 与 Oxlint。'
+lastReviewedCommit: c5907fb5002464242d0fefff9274c952ce821e4f
+lastReviewedNote: 'Reviewed for Issue #228: auth identity receipt 使用既有 session、live current-user read、严格安全 DTO 与本地窄环境生产 case。'
 related:
   - ../AGENTS.md
   - ../.docpact/config.yaml
@@ -34,6 +34,8 @@ related:
 # TianGong LCA CLI 实施指南
 
 Review note, 2026-08-25: Issue #224 把实现与验证工具链固定为 Node 24、pnpm 11.23.0、TypeScript 7.0.2 与 type-aware Oxlint。依赖只由根 `pnpm-workspace.yaml` / `pnpm-lock.yaml` 决定；不保留 TypeScript 5/6、ESLint 或 Compiler API 兼容路径。`test:package` 同时验证单轨工具链、干净 tarball 和 package-manager-neutral consumer。feature 版本保持 0.0.33；合并和完整门禁通过后，建议用单独的 release-only PR 准备 0.1.0。
+
+Review note, 2026-08-25: Issue #228 把生产 case 前的认证边界收口为 `auth identity-receipt`。命令在 session/network 前断言 canonical Supabase project，通过既有 API key/session runtime 获取 token，并对 `/auth/v1/user` 做有界只读验证；401/403 只允许 force-refresh 后重读一次。回执 exact-key parser 只接受 safe projection 和 canonical hash，不包含 credential、token、完整邮箱、session path 或其 fingerprint。无 expected 参数是 `observed`，只有 expected project/user 都由 argv 提供才是 `intent-bound`。独立 TypeScript case runner 只从 ignored Foundry env 选取三项变量、禁用 cache、使用干净 cwd 与 `shell:false` argv spawn，不保存 raw child output。
 
 Review note, 2026-07-30: Issue #214 将 identity preflight 的远程检索参数收敛为单一 `lexical_weight`，并把 derivative snapshot/readback 依赖收敛到 `extracted_md`、`embedding_ft` 与 `embedding_ft_at`。既有 owner-draft、一次性 admission、独立 readback 与 fail-closed 规则保持不变。
 
@@ -110,6 +112,8 @@ database-engine Issue #422 将策略 2 收口为 `src/lib/supabase-data-api-cont
 ```text
 tiangong-lca
   doctor
+  auth
+    identity-receipt
   search
     flow
     process
@@ -185,6 +189,7 @@ tiangong-lca
 | CLI 命令 | 当前后端能力 |
 | --- | --- |
 | `tiangong-lca doctor` | 本地环境诊断、`.env` 加载、统一 env 合同检查 |
+| `tiangong-lca auth identity-receipt` | 既有用户 API key/session bootstrap + bounded live `/auth/v1/user` 只读证明；输出 secret-free canonical receipt，生产必须同时绑定 expected project/user argv |
 | `tiangong-lca search flow` | `flow_hybrid_search` |
 | `tiangong-lca search process` | `process_hybrid_search` |
 | `tiangong-lca search lifecyclemodel` | `lifecyclemodel_hybrid_search` |
@@ -340,7 +345,7 @@ tiangong-lca
 - 已实现的 `flow apply-process-flow-repairs` 把治理链中的独立 deterministic repair apply 切片收口到 CLI，固定与 planning 相同的输入契约，直接写出 `patched-processes.json` / `process-patches/**`，并可在 `--process-pool-file` 下同步本地 pool
 - 已实现的 `flow regen-product` 把治理后的 process-side 再生产物链收口到 CLI，在一个命令下固定 `scan -> repair plan -> optional apply -> optional validate` 契约，并把退出码 `1` 保留给 `--apply` 之后的本地校验失败
 - 已实现的 `flow validate-processes` 把治理后 patched process rows 的独立校验切片收口到 CLI，固定 original/patched/scope 三类输入契约，并直接写出 `validation-report.json` / `validation-failures.jsonl`
-- 现有命令族里已经没有残留的 Python / shell validation fallback；其余 review / build / publish CLI 面已经进入可执行状态，未迁移子命令只剩 `auth` / `job` 这类 placeholder surface
+- 现有命令族里已经没有残留的 Python / shell validation fallback；review / build / publish 与 `auth identity-receipt` 已进入可执行状态，未实现的只剩 `auth whoami` / `auth doctor-auth` 与 `job` placeholder surface
 - 这样做的目的不是“假装已完成”，而是先固定命令树，再逐个把 workflow 迁入 TypeScript CLI
 
 ### 2.1.1 `dataset maintenance plan/apply/freeze-protected/seal-protected-approval/run-protected/verify` v1 契约
@@ -482,7 +487,7 @@ Derivative rebuild guarded RPC 必须在 admission 时重新校验 authenticated
 
 - 运行时：Node 24
 - 源码：TypeScript
-- 包管理：npm
+- 包管理：pnpm 11.23.0（唯一根 workspace/lock）
 - 测试：`node:test`
 - 覆盖率：`c8`
 - 构建产物：`dist/`
@@ -576,6 +581,14 @@ tiangong-lca admin embedding-run --input ./jobs.json --dry-run
 ```
 
 而不是长自然语言参数和不稳定的 shell 拼接。
+
+### 4.3.0 `auth identity-receipt` 的最小 contract
+
+`tiangong-lca auth identity-receipt` 是 production-backed case 的身份前置证明，不是泛化 auth 管理器。运行顺序固定为：解析三项标准 runtime env；从 canonical `https://<ref>.supabase.co` base 派生 project；在任何 session/network 前核对 `--expected-project-ref`；复用既有 session cache/refresh/sign-in；对 `/auth/v1/user` 做大小和 JSON shape 有界的 live GET；核对 API-key email、session email 与 live email；最后核对 `--expected-user-id`。第一次 live GET 的 401/403 可以 force refresh 并重读一次，其他失败不重试。
+
+回执 schema 固定为 `tiangong-lca.auth-identity-receipt.v1`。公开字段只包含 CLI 版本、project ref/base、live user id、masked display email、session source/cache mode/force-reauth/expiry、安全投影 request/response SHA、expected assertions、capture time 与 receipt scope SHA。parser 要求 exact keys，并独立重算三类 hash；额外 metadata、`ok:false`、完整 email、API/publishable key、access/refresh token、session path，以及它们的 fingerprint 一律不能进入回执。无 expected 是 `observed`，只给一项是 `partial`，两项都给且通过才是 `intent-bound`；Foundry 只能把最后一种作为 production guard。
+
+真实生产只读 case 由 `scripts/run-auth-identity-production-case.ts` 独立承载。它不导入 Foundry runner，不继承整份 `process.env`，只从显式 env file 选择 API base、publishable key 与 `TIANGONG_LCA_TEST_API_KEY`，把最后一项映射给标准 CLI env；子进程固定 cache disabled + force reauth、干净 cwd、`shell:false` 和 argv array。成功只保存严格 parse 后的 receipt/manifest，失败只保存 stage/exit/error code，不保存 raw stdout/stderr。该 case 不是 CI job，也不产生服务器签名。
 
 ### 4.3.1 `search flow` 的最小 contract
 
@@ -1128,6 +1141,7 @@ TIANGONG_LCA_COVERAGE=0
 | 命令组 | 必需 env |
 | --- | --- | --- | --- | --- |
 | `doctor` | 无 |
+| `auth identity-receipt` | `TIANGONG_LCA_API_BASE_URL`、`TIANGONG_LCA_API_KEY`、`TIANGONG_LCA_SUPABASE_PUBLISHABLE_KEY`；生产 guard 还必须通过 argv 同时给出 expected project/user |
 | `search flow | process | lifecyclemodel` | `TIANGONG_LCA_API_BASE_URL`、`TIANGONG_LCA_API_KEY`、`TIANGONG_LCA_SUPABASE_PUBLISHABLE_KEY`（`TIANGONG_LCA_REGION` 可选） |
 | `dataset evidence-search` | 默认无；若使用 `--provider-url`，认证由 `--provider-key` 显式传入 |
 | `admin embedding-run` | `TIANGONG_LCA_API_BASE_URL`、`TIANGONG_LCA_API_KEY`、`TIANGONG_LCA_SUPABASE_PUBLISHABLE_KEY`（`TIANGONG_LCA_REGION` 可选） |
@@ -1299,7 +1313,7 @@ CLI 现在额外有一条独立于质量门的 npm 发布链路：
 ### 后续只保留原生增量，不再叫“遗留迁移”
 
 - lifecyclemodel 的 discovery / AI 选择逻辑，只有在产品面确认需要时才继续抽象成新的 CLI 子命令
-- `auth` / `job` 之类 placeholder surface 只有在真实场景出现时才补齐，而不是为了对称性先做
+- `auth identity-receipt` 已由真实生产 case 需求实现；`auth whoami` / `auth doctor-auth` 与 `job` placeholder 仍只在出现独立真实场景时补齐，而不是为了对称性先做
 - 任何新增能力都必须先定义成 `tiangong-lca <noun> <verb>`，再决定是否要进一步服务化
 
 ## 10. 结论
