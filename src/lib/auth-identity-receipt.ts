@@ -102,7 +102,7 @@ function stableJsonValue(value: unknown): unknown {
   if (isRecord(value)) {
     return Object.fromEntries(
       Object.keys(value)
-        .sort((left, right) => left.localeCompare(right))
+        .sort()
         .map((key) => [key, stableJsonValue(value[key])]),
     );
   }
@@ -464,8 +464,8 @@ function responseFingerprint(options: {
 }
 
 function hasExactKeys(value: JsonObject, expected: readonly string[]): boolean {
-  const actual = Object.keys(value).sort((left, right) => left.localeCompare(right));
-  const sortedExpected = [...expected].sort((left, right) => left.localeCompare(right));
+  const actual = Object.keys(value).sort();
+  const sortedExpected = [...expected].sort();
   return (
     actual.length === sortedExpected.length &&
     actual.every((key, index) => key === sortedExpected[index])
