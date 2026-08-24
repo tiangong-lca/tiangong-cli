@@ -119,6 +119,7 @@ test('production identity case runs with a narrow child env and persists only va
   writeFileSync(envFile, envFileText(), 'utf8');
   const receiptStdout = await receiptJson();
   const spawns: ProductionIdentityCaseSpawn[] = [];
+  let runtimeCleanups = 0;
 
   try {
     const manifest = await runProductionIdentityCase(
@@ -134,12 +135,15 @@ test('production identity case runs with a narrow child env and persists only va
           UNRELATED_AMBIENT_SECRET: 'must-never-reach-child',
         },
         now: () => new Date('2026-08-25T12:35:00.000Z'),
-        resolveRuntimeEvidence: () => ({
+        prepareRuntimeSnapshot: () => ({
           nodeImport: 'file:///trusted/tsx-loader.mjs',
           entrypoint: path.resolve(cliBin),
           entrypointSha256: 'b'.repeat(64),
           tsxLoaderSha256: 'c'.repeat(64),
           runtimeTreeSha256: 'd'.repeat(64),
+          cleanup: () => {
+            runtimeCleanups += 1;
+          },
         }),
         spawnImpl: (command, args, options) => {
           spawns.push({ command, args, options });
@@ -188,6 +192,7 @@ test('production identity case runs with a narrow child env and persists only va
     assert.equal(manifest.runtime_entrypoint_sha256, 'b'.repeat(64));
     assert.equal(manifest.tsx_loader_sha256, 'c'.repeat(64));
     assert.equal(manifest.runtime_tree_sha256, 'd'.repeat(64));
+    assert.equal(runtimeCleanups, 1);
     assert.equal(
       manifest.receipt_scope_sha256,
       parseAuthIdentityReceipt(JSON.parse(receiptStdout)).receipt_scope_sha256,
@@ -235,12 +240,13 @@ test('production identity case rejects missing env and sanitizes child failures'
           outDir: missingOut,
         },
         {
-          resolveRuntimeEvidence: () => ({
+          prepareRuntimeSnapshot: () => ({
             nodeImport: 'file:///trusted/tsx-loader.mjs',
             entrypoint: '/trusted/src/main.ts',
             entrypointSha256: 'b'.repeat(64),
             tsxLoaderSha256: 'c'.repeat(64),
             runtimeTreeSha256: 'd'.repeat(64),
+            cleanup: () => undefined,
           }),
           spawnImpl: () => {
             spawns += 1;
@@ -261,12 +267,13 @@ test('production identity case rejects missing env and sanitizes child failures'
           outDir: failingOut,
         },
         {
-          resolveRuntimeEvidence: () => ({
+          prepareRuntimeSnapshot: () => ({
             nodeImport: 'file:///trusted/tsx-loader.mjs',
             entrypoint: '/trusted/src/main.ts',
             entrypointSha256: 'b'.repeat(64),
             tsxLoaderSha256: 'c'.repeat(64),
             runtimeTreeSha256: 'd'.repeat(64),
+            cleanup: () => undefined,
           }),
           spawnImpl: () => {
             spawns += 1;
@@ -313,12 +320,13 @@ test('production identity case rejects ambiguous stdout and existing output dire
           outDir,
         },
         {
-          resolveRuntimeEvidence: () => ({
+          prepareRuntimeSnapshot: () => ({
             nodeImport: 'file:///trusted/tsx-loader.mjs',
             entrypoint: '/trusted/src/main.ts',
             entrypointSha256: 'b'.repeat(64),
             tsxLoaderSha256: 'c'.repeat(64),
             runtimeTreeSha256: 'd'.repeat(64),
+            cleanup: () => undefined,
           }),
           spawnImpl: () => ({
             status: 0,

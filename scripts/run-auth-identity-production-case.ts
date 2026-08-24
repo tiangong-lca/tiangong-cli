@@ -6,10 +6,12 @@ import {
   chmodSync,
   existsSync,
   lstatSync,
+  mkdtempSync,
   mkdirSync,
   readFileSync,
   readdirSync,
   realpathSync,
+  rmSync,
   writeFileSync,
 } from 'node:fs';
 import path from 'node:path';
@@ -58,6 +60,7 @@ export type ProductionIdentityRuntimeEvidence = {
   entrypointSha256: string;
   tsxLoaderSha256: string;
   runtimeTreeSha256: string;
+  cleanup: () => void;
 };
 
 export type ProductionIdentityCaseSpawn = {
@@ -99,7 +102,7 @@ export type ProductionIdentityCaseManifest = {
 export type RunProductionIdentityCaseDeps = {
   processEnv?: NodeJS.ProcessEnv;
   now?: () => Date;
-  resolveRuntimeEvidence?: () => ProductionIdentityRuntimeEvidence;
+  prepareRuntimeSnapshot?: () => ProductionIdentityRuntimeEvidence;
   spawnImpl?: (
     command: string,
     args: string[],
@@ -193,10 +196,10 @@ function collectRuntimeSourceFiles(root: string): string[] {
   return collected.sort();
 }
 
-function resolveRuntimeEvidence(): ProductionIdentityRuntimeEvidence {
+function prepareRuntimeSnapshot(): ProductionIdentityRuntimeEvidence {
   const root = repositoryRoot();
-  const entrypoint = path.join(root, 'src', 'main.ts');
-  const entrypointBytes = readTrustedFile(entrypoint);
+  const sourceEntrypoint = path.join(root, 'src', 'main.ts');
+  const entrypointBytes = readTrustedFile(sourceEntrypoint);
   const nodeImport = import.meta.resolve('tsx');
   if (!nodeImport.startsWith('file:')) {
     return fail(
@@ -207,17 +210,41 @@ function resolveRuntimeEvidence(): ProductionIdentityRuntimeEvidence {
   }
   const tsxLoaderBytes = readTrustedFile(fileURLToPath(nodeImport));
   const treeHash = createHash('sha256');
-  for (const filePath of collectRuntimeSourceFiles(root)) {
+  const runtimeFiles = collectRuntimeSourceFiles(root);
+  for (const filePath of runtimeFiles) {
     const relativePath = path.relative(root, filePath).replaceAll('\\', '/');
     treeHash.update(relativePath).update('\0').update(readTrustedFile(filePath)).update('\0');
   }
   treeHash.update('@tsx-loader').update('\0').update(tsxLoaderBytes).update('\0');
+  const snapshotParent = path.join(root, 'node_modules', '.cache', 'tiangong-lca-auth-case');
+  mkdirSync(snapshotParent, { recursive: true, mode: 0o700 });
+  if (process.platform !== 'win32') {
+    chmodSync(snapshotParent, 0o700);
+  }
+  const snapshotRoot = mkdtempSync(path.join(snapshotParent, 'runtime-'));
+  if (process.platform !== 'win32') {
+    chmodSync(snapshotRoot, 0o700);
+  }
+  for (const sourcePath of runtimeFiles.filter(
+    (filePath) =>
+      filePath.startsWith(`${path.join(root, 'src')}${path.sep}`) ||
+      filePath === path.join(root, 'package.json'),
+  )) {
+    const relativePath = path.relative(root, sourcePath);
+    const targetPath = path.join(snapshotRoot, relativePath);
+    mkdirSync(path.dirname(targetPath), { recursive: true, mode: 0o700 });
+    writeFileSync(targetPath, readTrustedFile(sourcePath), { flag: 'wx', mode: 0o600 });
+    if (process.platform !== 'win32') {
+      chmodSync(targetPath, 0o600);
+    }
+  }
   return {
     nodeImport,
-    entrypoint,
+    entrypoint: path.join(snapshotRoot, 'src', 'main.ts'),
     entrypointSha256: createHash('sha256').update(entrypointBytes).digest('hex'),
     tsxLoaderSha256: createHash('sha256').update(tsxLoaderBytes).digest('hex'),
     runtimeTreeSha256: treeHash.digest('hex'),
+    cleanup: () => rmSync(snapshotRoot, { recursive: true, force: true }),
   };
 }
 
@@ -229,7 +256,8 @@ function validateRuntimeEvidence(
     !path.isAbsolute(evidence.entrypoint) ||
     !SHA256_PATTERN.test(evidence.entrypointSha256) ||
     !SHA256_PATTERN.test(evidence.tsxLoaderSha256) ||
-    !SHA256_PATTERN.test(evidence.runtimeTreeSha256)
+    !SHA256_PATTERN.test(evidence.runtimeTreeSha256) ||
+    typeof evidence.cleanup !== 'function'
   ) {
     return fail(
       'The production identity case runtime evidence is invalid.',
@@ -477,138 +505,142 @@ export async function runProductionIdentityCase(
 ): Promise<ProductionIdentityCaseManifest> {
   const options = normalizeCaseOptions(rawOptions);
   const runtimeEvidence = validateRuntimeEvidence(
-    (deps.resolveRuntimeEvidence ?? resolveRuntimeEvidence)(),
+    (deps.prepareRuntimeSnapshot ?? prepareRuntimeSnapshot)(),
   );
-  const caseEnv = readCaseEnv(options.envFile);
-  const observedProjectRef = projectRefFromApiBaseUrl(caseEnv.TIANGONG_LCA_API_BASE_URL);
-  if (observedProjectRef !== options.expectedProjectRef) {
-    return fail(
-      'The production-case API project does not match --expected-project-ref.',
-      'AUTH_IDENTITY_CASE_PROJECT_MISMATCH',
-      2,
-    );
-  }
-
   try {
-    mkdirSync(options.outDir, { recursive: false, mode: 0o700 });
-  } catch {
-    return fail(
-      'The production identity case could not create its output directory exclusively.',
-      'AUTH_IDENTITY_CASE_OUTPUT_CREATE_FAILED',
-      2,
-    );
-  }
-  if (process.platform !== 'win32') {
-    chmodSync(options.outDir, 0o700);
-  }
-  if (existsSync(path.join(options.outDir, '.env'))) {
-    return fail(
-      'The production identity case working directory must not contain .env.',
-      'AUTH_IDENTITY_CASE_CWD_UNSAFE',
-      2,
-    );
-  }
+    const caseEnv = readCaseEnv(options.envFile);
+    const observedProjectRef = projectRefFromApiBaseUrl(caseEnv.TIANGONG_LCA_API_BASE_URL);
+    if (observedProjectRef !== options.expectedProjectRef) {
+      return fail(
+        'The production-case API project does not match --expected-project-ref.',
+        'AUTH_IDENTITY_CASE_PROJECT_MISMATCH',
+        2,
+      );
+    }
 
-  const cliArgv = [
-    'auth',
-    'identity-receipt',
-    '--expected-project-ref',
-    options.expectedProjectRef,
-    '--expected-user-id',
-    options.expectedUserId,
-    '--json',
-  ];
-  const args = ['--import', runtimeEvidence.nodeImport, runtimeEvidence.entrypoint, ...cliArgv];
-  const spawnOptions: ProductionIdentityCaseSpawn['options'] = {
-    cwd: options.outDir,
-    env: buildChildEnv(deps.processEnv ?? process.env, caseEnv),
-    shell: false,
-    encoding: 'utf8',
-    maxBuffer: MAX_CHILD_OUTPUT_BYTES,
-    windowsHide: true,
-  };
-  let child: ProductionIdentityCaseSpawnResult;
-  try {
-    child = (
-      deps.spawnImpl ??
-      ((command, childArgs, childOptions) => spawnSync(command, childArgs, childOptions))
-    )(process.execPath, args, spawnOptions);
-  } catch {
-    writeFailure(options.outDir, {
-      stage: 'spawn',
-      exitCode: null,
-      errorCode: 'AUTH_IDENTITY_CASE_CHILD_SPAWN_FAILED',
-    });
-    return fail(
-      'The production identity case CLI could not be started.',
-      'AUTH_IDENTITY_CASE_CHILD_SPAWN_FAILED',
+    try {
+      mkdirSync(options.outDir, { recursive: false, mode: 0o700 });
+    } catch {
+      return fail(
+        'The production identity case could not create its output directory exclusively.',
+        'AUTH_IDENTITY_CASE_OUTPUT_CREATE_FAILED',
+        2,
+      );
+    }
+    if (process.platform !== 'win32') {
+      chmodSync(options.outDir, 0o700);
+    }
+    if (existsSync(path.join(options.outDir, '.env'))) {
+      return fail(
+        'The production identity case working directory must not contain .env.',
+        'AUTH_IDENTITY_CASE_CWD_UNSAFE',
+        2,
+      );
+    }
+
+    const cliArgv = [
+      'auth',
+      'identity-receipt',
+      '--expected-project-ref',
+      options.expectedProjectRef,
+      '--expected-user-id',
+      options.expectedUserId,
+      '--json',
+    ];
+    const args = ['--import', runtimeEvidence.nodeImport, runtimeEvidence.entrypoint, ...cliArgv];
+    const spawnOptions: ProductionIdentityCaseSpawn['options'] = {
+      cwd: options.outDir,
+      env: buildChildEnv(deps.processEnv ?? process.env, caseEnv),
+      shell: false,
+      encoding: 'utf8',
+      maxBuffer: MAX_CHILD_OUTPUT_BYTES,
+      windowsHide: true,
+    };
+    let child: ProductionIdentityCaseSpawnResult;
+    try {
+      child = (
+        deps.spawnImpl ??
+        ((command, childArgs, childOptions) => spawnSync(command, childArgs, childOptions))
+      )(process.execPath, args, spawnOptions);
+    } catch {
+      writeFailure(options.outDir, {
+        stage: 'spawn',
+        exitCode: null,
+        errorCode: 'AUTH_IDENTITY_CASE_CHILD_SPAWN_FAILED',
+      });
+      return fail(
+        'The production identity case CLI could not be started.',
+        'AUTH_IDENTITY_CASE_CHILD_SPAWN_FAILED',
+      );
+    }
+
+    if (child.status !== 0 || child.signal !== null || child.stderr !== '') {
+      const errorCode = safeChildErrorCode(child.stderr);
+      writeFailure(options.outDir, {
+        stage: 'cli',
+        exitCode: child.status,
+        errorCode,
+      });
+      return fail('The production identity case CLI failed.', 'AUTH_IDENTITY_CASE_CHILD_FAILED');
+    }
+
+    let receipt: AuthIdentityReceipt;
+    try {
+      receipt = parseSingleReceiptLine(child.stdout);
+    } catch (error) {
+      writeFailure(options.outDir, {
+        stage: 'receipt',
+        exitCode: child.status,
+        errorCode: error instanceof CliError ? error.code : 'AUTH_IDENTITY_CASE_RECEIPT_INVALID',
+      });
+      throw error;
+    }
+    if (
+      receipt.project.project_ref !== options.expectedProjectRef ||
+      receipt.identity.user_id !== options.expectedUserId ||
+      receipt.assertions.mode !== 'intent-bound' ||
+      receipt.assertions.requested_count !== 2 ||
+      receipt.assertions.expected_project_ref !== options.expectedProjectRef ||
+      receipt.assertions.expected_user_id !== options.expectedUserId ||
+      receipt.assertions.passed !== true
+    ) {
+      writeFailure(options.outDir, {
+        stage: 'intent-binding',
+        exitCode: child.status,
+        errorCode: 'AUTH_IDENTITY_CASE_INTENT_MISMATCH',
+      });
+      return fail(
+        'The production identity receipt did not match the exact argv intent.',
+        'AUTH_IDENTITY_CASE_INTENT_MISMATCH',
+      );
+    }
+
+    const receiptText = `${JSON.stringify(receipt, null, 2)}\n`;
+    const receiptFileSha256 = sha256Text(receiptText);
+    const manifest: ProductionIdentityCaseManifest = {
+      schema: CASE_SCHEMA,
+      status: 'passed',
+      executed_at_utc: (deps.now ?? (() => new Date()))().toISOString(),
+      cli: receipt.cli,
+      cli_argv: cliArgv,
+      cli_argv_sha256: sha256Text(JSON.stringify(cliArgv)),
+      runtime_entrypoint_sha256: runtimeEvidence.entrypointSha256,
+      tsx_loader_sha256: runtimeEvidence.tsxLoaderSha256,
+      runtime_tree_sha256: runtimeEvidence.runtimeTreeSha256,
+      project_ref: receipt.project.project_ref,
+      user_id: receipt.identity.user_id,
+      receipt_scope_sha256: receipt.receipt_scope_sha256,
+      receipt_file_sha256: receiptFileSha256,
+    };
+    writePrivateFile(path.join(options.outDir, 'identity-receipt.json'), receiptText);
+    writePrivateFile(
+      path.join(options.outDir, 'case-manifest.json'),
+      `${JSON.stringify(manifest, null, 2)}\n`,
     );
+    return manifest;
+  } finally {
+    runtimeEvidence.cleanup();
   }
-
-  if (child.status !== 0 || child.signal !== null || child.stderr !== '') {
-    const errorCode = safeChildErrorCode(child.stderr);
-    writeFailure(options.outDir, {
-      stage: 'cli',
-      exitCode: child.status,
-      errorCode,
-    });
-    return fail('The production identity case CLI failed.', 'AUTH_IDENTITY_CASE_CHILD_FAILED');
-  }
-
-  let receipt: AuthIdentityReceipt;
-  try {
-    receipt = parseSingleReceiptLine(child.stdout);
-  } catch (error) {
-    writeFailure(options.outDir, {
-      stage: 'receipt',
-      exitCode: child.status,
-      errorCode: error instanceof CliError ? error.code : 'AUTH_IDENTITY_CASE_RECEIPT_INVALID',
-    });
-    throw error;
-  }
-  if (
-    receipt.project.project_ref !== options.expectedProjectRef ||
-    receipt.identity.user_id !== options.expectedUserId ||
-    receipt.assertions.mode !== 'intent-bound' ||
-    receipt.assertions.requested_count !== 2 ||
-    receipt.assertions.expected_project_ref !== options.expectedProjectRef ||
-    receipt.assertions.expected_user_id !== options.expectedUserId ||
-    receipt.assertions.passed !== true
-  ) {
-    writeFailure(options.outDir, {
-      stage: 'intent-binding',
-      exitCode: child.status,
-      errorCode: 'AUTH_IDENTITY_CASE_INTENT_MISMATCH',
-    });
-    return fail(
-      'The production identity receipt did not match the exact argv intent.',
-      'AUTH_IDENTITY_CASE_INTENT_MISMATCH',
-    );
-  }
-
-  const receiptText = `${JSON.stringify(receipt, null, 2)}\n`;
-  const receiptFileSha256 = sha256Text(receiptText);
-  const manifest: ProductionIdentityCaseManifest = {
-    schema: CASE_SCHEMA,
-    status: 'passed',
-    executed_at_utc: (deps.now ?? (() => new Date()))().toISOString(),
-    cli: receipt.cli,
-    cli_argv: cliArgv,
-    cli_argv_sha256: sha256Text(JSON.stringify(cliArgv)),
-    runtime_entrypoint_sha256: runtimeEvidence.entrypointSha256,
-    tsx_loader_sha256: runtimeEvidence.tsxLoaderSha256,
-    runtime_tree_sha256: runtimeEvidence.runtimeTreeSha256,
-    project_ref: receipt.project.project_ref,
-    user_id: receipt.identity.user_id,
-    receipt_scope_sha256: receipt.receipt_scope_sha256,
-    receipt_file_sha256: receiptFileSha256,
-  };
-  writePrivateFile(path.join(options.outDir, 'identity-receipt.json'), receiptText);
-  writePrivateFile(
-    path.join(options.outDir, 'case-manifest.json'),
-    `${JSON.stringify(manifest, null, 2)}\n`,
-  );
-  return manifest;
 }
 
 function renderHelp(): string {
