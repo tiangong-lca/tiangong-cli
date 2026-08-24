@@ -25,7 +25,7 @@ checkPaths:
   - test/auth-identity*.test.ts
   - test/lca-release*.test.ts
 lastReviewedAt: 2026-08-25
-lastReviewedCommit: a9499e65be99e3477b708cadc7d348d0fba5e2c1
+lastReviewedCommit: 08eed5bccf8bc0ba936c37e39c15a8fc7c82782b
 lastReviewedNote: 'Reviewed for Issue #228: documents the secret-free, read-only auth receipt and intent-bound local production case.'
 ---
 
@@ -140,7 +140,7 @@ For the explicitly authorized local production read case from a validated reposi
 pnpm case:auth-identity:production -- --env-file <data-foundry-ignored-.env> --expected-project-ref <project-ref> --expected-user-id <user-id> --out-dir <new-private-case-directory>
 ```
 
-The runner reads only `TIANGONG_LCA_API_BASE_URL`, `TIANGONG_LCA_SUPABASE_PUBLISHABLE_KEY`, and `TIANGONG_LCA_TEST_API_KEY`; the last is mapped to the child process's standard API-key variable. It does not accept an alternate CLI path. The pnpm command first performs a clean TS7 build without the production env. Its plain-Node runner then single-reads source/config/lock and the freshly generated `dist/src/**/*.js`, hashes the source tree, runner, runtime, exact entrypoint, and pnpm lock, and copies those exact built buffers into a private snapshot before exposing the key. It forces reauthentication with session cache disabled, runs only the built snapshot from an exclusively created clean directory with an argv array and `shell:false`, and persists only the parsed receipt and case manifest with private permissions. It never stores raw child stdout/stderr and is intentionally not wired to CI secrets. This receipt is locally hash-verifiable, not server-signed attestation.
+The runner reads only `TIANGONG_LCA_API_BASE_URL`, `TIANGONG_LCA_SUPABASE_PUBLISHABLE_KEY`, and `TIANGONG_LCA_TEST_API_KEY`; the last is mapped to the child process's standard API-key variable. It does not accept an alternate CLI path. The pnpm command first performs a clean TS7 build without the production env. Its plain-Node runner then single-reads source/config/lock and the freshly generated `dist/src/**/*.js`, hashes the source tree, runner, runtime, exact entrypoint, and pnpm lock, and copies those exact built buffers into a private snapshot before exposing the key. It forces reauthentication with session cache disabled, runs only the built snapshot from an exclusively created clean directory with an argv array and `shell:false`, cleans the snapshot before publishing success artifacts, and persists only the parsed receipt and case manifest. POSIX creates the case directory as `0700` and files as `0600`; Windows inherits ACLs from the caller-selected parent, so use a user-restricted parent because mode bits are not an ACL guarantee. The runner never stores raw child stdout/stderr and is intentionally not wired to CI secrets. This receipt is locally hash-verifiable, not server-signed attestation.
 
 ## LCI/LCIA Data Release
 

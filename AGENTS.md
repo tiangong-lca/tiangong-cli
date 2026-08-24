@@ -37,7 +37,7 @@ checkPaths:
   - scripts/docpact-gate.sh
   - scripts/install-git-hooks.sh
 lastReviewedAt: 2026-08-25
-lastReviewedCommit: a9499e65be99e3477b708cadc7d348d0fba5e2c1
+lastReviewedCommit: 08eed5bccf8bc0ba936c37e39c15a8fc7c82782b
 lastReviewedNote: 'Reviewed for Issue #228: auth identity receipts stay read-only, secret-free, intent-bound for production, and covered by the existing pnpm/TS7/100% gates.'
 related:
   - .docpact/config.yaml
@@ -54,7 +54,7 @@ related:
 
 `tiangong-lca-cli` owns the checked-in public `tiangong-lca` CLI contract: command nouns and verbs, launcher behavior, local artifact workflow, remote session/auth handling, and the repo-level release gate. Start here when the task may change what the CLI does or how it is validated.
 
-Review note, 2026-08-25: Issue #228 implements `auth identity-receipt` as the CLI-owned live identity proof. It resolves the existing API-key/session chain, safely validates the canonical Supabase project before credential decode or network work, performs a redirect-disabled and incrementally byte-bounded `/auth/v1/user` lookup for a canonical user UUID, retries only one 401/403 through forced session refresh, and emits an exact-key receipt containing no credential, token, full email, session path, or credential-derived fingerprint. A production guard is valid only with both expected project and user argv assertions and `assertions.mode=intent-bound`. The companion pnpm case command owns the single clean TS7 build before its plain-Node runner starts; callers must not add a redundant prebuild. The runner rejects alternate entrypoints, single-reads/hashes source/config/lock and generated runtime/runner bytes, snapshots the exact built runtime privately before exposing three allowlisted env values, disables cache, uses an exclusively created clean cwd and argv-array spawn, and never persists raw child output.
+Review note, 2026-08-25: Issue #228 implements `auth identity-receipt` as the CLI-owned live identity proof. It resolves the existing API-key/session chain, safely validates the canonical Supabase project before credential decode or network work, performs a redirect-disabled and incrementally byte-bounded `/auth/v1/user` lookup for a canonical user UUID, caps timeout values to Node's supported timer range, retries only one 401/403 through forced session refresh, and emits an exact-key receipt containing no credential, token, full email, session path, or credential-derived fingerprint. A production guard is valid only with both expected project and user argv assertions and `assertions.mode=intent-bound`. The companion pnpm case command owns the single clean TS7 build before its plain-Node runner starts; callers must not add a redundant prebuild. The runner rejects alternate entrypoints, single-reads/hashes source/config/lock and generated runtime/runner bytes, snapshots the exact built runtime privately before exposing three allowlisted env values, cleans the snapshot before publishing any passed/failed evidence, disables cache, uses an exclusively created clean cwd and argv-array spawn, and never persists raw child output. POSIX modes are enforced; Windows callers must choose a current-user-restricted parent ACL.
 
 Review note, 2026-06-04: `dataset curation-queue build/next/verify` is the CLI-owned state machine for Foundry entity queues; repo ownership boundaries remain unchanged.
 

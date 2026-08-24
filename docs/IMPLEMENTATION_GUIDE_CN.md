@@ -21,7 +21,7 @@ checkPaths:
   - src/**
   - test/**
 lastReviewedAt: 2026-08-25
-lastReviewedCommit: a9499e65be99e3477b708cadc7d348d0fba5e2c1
+lastReviewedCommit: 08eed5bccf8bc0ba936c37e39c15a8fc7c82782b
 lastReviewedNote: 'Reviewed for Issue #228: auth identity receipt 使用既有 session、live current-user read、严格安全 DTO 与本地窄环境生产 case。'
 related:
   - ../AGENTS.md
@@ -588,7 +588,7 @@ tiangong-lca admin embedding-run --input ./jobs.json --dry-run
 
 回执 schema 固定为 `tiangong-lca.auth-identity-receipt.v1`。公开字段只包含 CLI 版本、project ref/base、live user id、masked display email、session source/cache mode/force-reauth/expiry、安全投影 request/response SHA、expected assertions、capture time 与 receipt scope SHA。parser 要求 exact keys，并独立重算三类 hash；额外 metadata、`ok:false`、完整 email、API/publishable key、access/refresh token、session path，以及它们的 fingerprint 一律不能进入回执。无 expected 是 `observed`，只给一项是 `partial`，两项都给且通过才是 `intent-bound`；Foundry 只能把最后一种作为 production guard。
 
-真实生产只读 case 由 package script 与 `scripts/run-auth-identity-production-case.ts` 两段承载。package script 自身执行唯一一次 clean `pnpm build`，所以调用方不需要也不应预先重复 build；parent runner 是刚生成的 plain JS，不经 tsx 执行。runner 不导入 Foundry runner、不接受 alternate CLI path，也不继承整份 `process.env`；它单次读取当前 `src/**/*.ts`、runner、package/lock/compiler config 及 freshly generated `dist/src/**/*.js`，固定 source-tree、runner、runtime-tree、exact-entrypoint 与 pnpm-lock hashes，再把同一 built Buffer set create-only copy 到私有随机 snapshot。随后才从显式 env file 选择 API base、publishable key 与 `TIANGONG_LCA_TEST_API_KEY`，把最后一项映射给标准 CLI env；子进程只执行这份 snapshot，固定 cache disabled + force reauth、独占创建 cwd、`shell:false` 和 argv array。成功只保存严格 parse 后的 receipt/manifest 及 runtime hashes，失败只保存 stage/exit/error code，不保存 raw stdout/stderr。该 case 不是 CI job，也不产生服务器签名。
+真实生产只读 case 由 package script 与 `scripts/run-auth-identity-production-case.ts` 两段承载。package script 自身执行唯一一次 clean `pnpm build`，所以调用方不需要也不应预先重复 build；parent runner 是刚生成的 plain JS，不经 tsx 执行。runner 不导入 Foundry runner、不接受 alternate CLI path，也不继承整份 `process.env`；它单次读取当前 `src/**/*.ts`、runner、package/lock/compiler config 及 freshly generated `dist/src/**/*.js`，固定 source-tree、runner、runtime-tree、exact-entrypoint 与 pnpm-lock hashes，再把同一 built Buffer set create-only copy 到私有随机 snapshot。随后才从显式 env file 选择 API base、publishable key 与 `TIANGONG_LCA_TEST_API_KEY`，把最后一项映射给标准 CLI env；子进程只执行这份 snapshot，固定 cache disabled + force reauth、独占创建 cwd、`shell:false` 和 argv array。snapshot 必须在任何 passed/failure evidence 发布前清理；cleanup 失败只能写 safe failure，不能留下 passed manifest。成功只保存严格 parse 后的 receipt/manifest 及 runtime hashes，失败只保存 stage/exit/error code，不保存 raw stdout/stderr。POSIX 固定 `0700/0600`，Windows 必须由调用方选择 current-user-restricted parent ACL；mode bits 不代表 Windows ACL。该 case 不是 CI job，也不产生服务器签名。
 
 ### 4.3.1 `search flow` 的最小 contract
 

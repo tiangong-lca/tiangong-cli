@@ -23,7 +23,7 @@ checkPaths:
   - scripts/docpact-gate.sh
   - scripts/install-git-hooks.sh
 lastReviewedAt: 2026-08-25
-lastReviewedCommit: a9499e65be99e3477b708cadc7d348d0fba5e2c1
+lastReviewedCommit: 08eed5bccf8bc0ba936c37e39c15a8fc7c82782b
 lastReviewedNote: 'Reviewed for Issue #228: the local identity-case credential is explicitly excluded from Actions and release setup remains unchanged.'
 related:
   - ../AGENTS.md

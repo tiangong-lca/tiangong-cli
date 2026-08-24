@@ -22,7 +22,7 @@ checkPaths:
   - scripts/**
   - .github/workflows/**
 lastReviewedAt: 2026-08-25
-lastReviewedCommit: a9499e65be99e3477b708cadc7d348d0fba5e2c1
+lastReviewedCommit: 08eed5bccf8bc0ba936c37e39c15a8fc7c82782b
 lastReviewedNote: 'Reviewed for Issue #228: 增加只读、无秘密、生产需 intent-bound 的身份回执及窄环境本地 case runner。'
 related:
   - AGENTS.md
@@ -304,7 +304,7 @@ Data API schema 不依赖 PostgREST 的默认 `public`。默认且唯一支持�
 pnpm case:auth-identity:production -- --env-file <foundry-ignored-.env> --expected-project-ref <project-ref> --expected-user-id <user-id> --out-dir <new-private-case-directory>
 ```
 
-该 runner 不进入 CI，不保存 raw stdout/stderr，不接受 argv key，不做任何 dataset 写入。回执是本地 canonical hash 证明，不是服务器签名 attestation。
+该 runner 不进入 CI，不保存 raw stdout/stderr，不接受 argv key，不做任何 dataset 写入；它还必须在发布 passed artifacts 前清理 runtime snapshot。POSIX 下目录/文件固定为 `0700`/`0600`；Windows mode bits 不是 ACL 证明，调用方必须选择只允许当前用户访问的父目录并继承其 ACL。回执是本地 canonical hash 证明，不是服务器签名 attestation。
 
 ```bash
 node ./bin/tiangong-lca.js --help
