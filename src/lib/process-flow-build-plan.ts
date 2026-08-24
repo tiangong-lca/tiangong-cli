@@ -17,6 +17,12 @@ import {
   type SafeParseSchema,
   type SdkValidationFactory,
 } from './tidas-sdk-validation.js';
+import {
+  collectClassificationIssues,
+  validateElementaryFlowsClassificationHierarchy,
+  validateProcessesClassificationHierarchy,
+  validateProductFlowsClassificationHierarchy,
+} from './tidas-sdk-package-validator.js';
 
 type BuildPlanKind = 'process' | 'flow';
 type BuildPlanAction = 'validate' | 'materialize';
@@ -450,28 +456,138 @@ function dataSetFormatReference(plan: JsonObject): JsonObject {
   });
 }
 
-function classificationClasses(plan: JsonObject, kind: BuildPlanKind): JsonObject[] {
-  const pathValues =
-    valueAsArray(plan, ['target.classification_path', 'target.classificationPath']).length > 0
-      ? valueAsArray(plan, ['target.classification_path', 'target.classificationPath'])
-      : valueAsArray(plan, ['classification_path', 'classificationPath']);
-  const labels = pathValues
-    .map((entry) => textToken(entry))
-    .filter((entry): entry is string => Boolean(entry));
-  const fallback =
-    kind === 'process'
-      ? ['Technosphere', 'Unspecified sector', 'Unspecified activity', 'Unspecified process']
-      : ['Technosphere flows', 'Product flows', 'Unspecified category', 'Unspecified flow'];
-  const requiredCount = kind === 'process' ? 4 : Math.max(labels.length, 1);
-  const values = Array.from(
-    { length: requiredCount },
-    (_, index) => labels[index] ?? (fallback[index] as string),
+function classificationPath(plan: JsonObject): unknown {
+  return firstValue(plan, [
+    'target.classification_path',
+    'target.classificationPath',
+    'classification_path',
+    'classificationPath',
+  ]);
+}
+
+function canonicalClassificationToken(
+  entry: JsonObject,
+  key: '@level' | '@classId' | '@catId' | '#text',
+  index: number,
+): string {
+  const value = entry[key];
+  if (typeof value !== 'string' || !value.trim()) {
+    throw new CliError(
+      `Build plan classification_path[${index}] must contain a non-empty ${key} string.`,
+      {
+        code: 'BUILD_PLAN_CLASSIFICATION_INVALID',
+        exitCode: 2,
+      },
+    );
+  }
+  return value.trim();
+}
+
+function canonicalClassificationEntries(
+  plan: JsonObject,
+  idKey: '@classId' | '@catId',
+): JsonObject[] {
+  const rawPath = classificationPath(plan);
+  if (rawPath === undefined) {
+    throw new CliError('Build plan materialization requires classification_path.', {
+      code: 'BUILD_PLAN_CLASSIFICATION_REQUIRED',
+      exitCode: 2,
+    });
+  }
+  if (!Array.isArray(rawPath)) {
+    throw new CliError('Build plan classification_path must be an array.', {
+      code: 'BUILD_PLAN_CLASSIFICATION_INVALID',
+      exitCode: 2,
+    });
+  }
+  if (rawPath.length === 0) {
+    throw new CliError('Build plan classification_path must not be empty when provided.', {
+      code: 'BUILD_PLAN_CLASSIFICATION_INVALID',
+      exitCode: 2,
+    });
+  }
+
+  return rawPath.map((entry, index) => {
+    if (!isRecord(entry)) {
+      throw new CliError(`Build plan classification_path[${index}] must be a canonical object.`, {
+        code: 'BUILD_PLAN_CLASSIFICATION_INVALID',
+        exitCode: 2,
+      });
+    }
+    const level = canonicalClassificationToken(entry, '@level', index);
+    if (level !== String(index)) {
+      throw new CliError(
+        `Build plan classification_path[${index}] expected @level ${index}, received ${level}.`,
+        {
+          code: 'BUILD_PLAN_CLASSIFICATION_INVALID',
+          exitCode: 2,
+        },
+      );
+    }
+    return {
+      '@level': level,
+      [idKey]: canonicalClassificationToken(entry, idKey, index),
+      '#text': canonicalClassificationToken(entry, '#text', index),
+    };
+  });
+}
+
+function requireClassificationHierarchy(
+  entries: JsonObject[],
+  kind: 'elementary-flow' | 'product-flow' | 'process',
+): JsonObject[] {
+  const errors =
+    kind === 'elementary-flow'
+      ? validateElementaryFlowsClassificationHierarchy(entries)
+      : kind === 'process'
+        ? validateProcessesClassificationHierarchy(entries)
+        : validateProductFlowsClassificationHierarchy(entries);
+  if (errors.length > 0) {
+    throw new CliError(`Build plan classification_path is not a valid ${kind} hierarchy.`, {
+      code: 'BUILD_PLAN_CLASSIFICATION_HIERARCHY_INVALID',
+      exitCode: 2,
+      details: { kind, errors },
+    });
+  }
+  return entries;
+}
+
+function flowClassificationInformation(
+  plan: JsonObject,
+  flowType: 'Elementary flow' | 'Product flow' | 'Waste flow',
+): JsonObject {
+  if (flowType === 'Elementary flow') {
+    const entries = requireClassificationHierarchy(
+      canonicalClassificationEntries(plan, '@catId'),
+      'elementary-flow',
+    );
+    return {
+      'common:elementaryFlowCategorization': {
+        'common:category': entries,
+      },
+    };
+  }
+  const entries = requireClassificationHierarchy(
+    canonicalClassificationEntries(plan, '@classId'),
+    'product-flow',
   );
-  return values.map((label, index) => ({
-    '@level': String(index),
-    '@classId': deterministicUuid(`${kind}:classification:${index}:${label}`),
-    '#text': label,
-  }));
+  return {
+    'common:classification': {
+      'common:class': entries,
+    },
+  };
+}
+
+function processClassificationInformation(plan: JsonObject): JsonObject {
+  const entries = requireClassificationHierarchy(
+    canonicalClassificationEntries(plan, '@classId'),
+    'process',
+  );
+  return {
+    'common:classification': {
+      'common:class': entries,
+    },
+  };
 }
 
 function normalizeFlowType(
@@ -718,11 +834,7 @@ function buildCanonicalFlowPayload(plan: JsonObject, inputPath: string): JsonObj
               location ?? 'Global',
             ),
           },
-          classificationInformation: {
-            'common:classification': {
-              'common:class': classificationClasses(plan, 'flow'),
-            },
-          },
+          classificationInformation: flowClassificationInformation(plan, flowType),
           ...(firstToken(plan, ['target.cas_number', 'target.CASNumber'])
             ? { CASNumber: firstToken(plan, ['target.cas_number', 'target.CASNumber']) }
             : {}),
@@ -827,11 +939,7 @@ function buildCanonicalProcessPayload(plan: JsonObject, inputPath: string): Json
               ]) ?? 'reference unit',
             ),
           },
-          classificationInformation: {
-            'common:classification': {
-              'common:class': classificationClasses(plan, 'process'),
-            },
-          },
+          classificationInformation: processClassificationInformation(plan),
           'common:generalComment': firstMultiLang(
             plan,
             ['target.general_comment', 'target.generalComment', 'evidence_manifest.summary'],
@@ -1366,7 +1474,19 @@ function validateMaterializedSchema(
   const { validator, schema, createEntity } = schemaForKind(kind, schemas);
   const payload = unwrapDatasetPayload(artifact);
   const outcome = validateSchemaWithDeepFallback(schema, payload, createEntity);
-  if (outcome.success) {
+  const issues = [
+    ...outcome.issues.map(normalizeSchemaIssue),
+    ...collectClassificationIssues(
+      payload,
+      kind === 'process' ? 'processes' : 'flows',
+      '<materialized-payload>',
+    ).map((issue) => ({
+      path: issue.location,
+      message: issue.message,
+      code: issue.issue_code,
+    })),
+  ];
+  if (issues.length === 0) {
     return {
       status: 'passed',
       validator,
@@ -1378,8 +1498,8 @@ function validateMaterializedSchema(
   return {
     status: 'failed',
     validator,
-    issue_count: outcome.issues.length,
-    issues: outcome.issues.map(normalizeSchemaIssue),
+    issue_count: issues.length,
+    issues,
   };
 }
 

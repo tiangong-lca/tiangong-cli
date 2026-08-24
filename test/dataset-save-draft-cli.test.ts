@@ -74,6 +74,31 @@ function datasetRef(
 }
 
 function makeFlow(typeOfDataSet = 'Product flow'): Record<string, unknown> {
+  const classificationInformation =
+    typeOfDataSet === 'Elementary flow'
+      ? {
+          'common:elementaryFlowCategorization': {
+            'common:category': [
+              {
+                '@level': '0',
+                '@catId': '1',
+                '#text': 'Emissions',
+              },
+            ],
+          },
+        }
+      : {
+          'common:classification': {
+            'common:class': [
+              {
+                '@level': '0',
+                '@classId': '0',
+                '#text': 'Agriculture, forestry and fishery products',
+              },
+            ],
+          },
+        };
+
   return {
     flowDataSet: {
       '@xmlns': 'http://lca.jrc.it/ILCD/Flow',
@@ -91,15 +116,7 @@ function makeFlow(typeOfDataSet = 'Product flow'): Record<string, unknown> {
             treatmentStandardsRoutes: localized('not applicable'),
             mixAndLocationTypes: localized('market'),
           },
-          classificationInformation: {
-            'common:classification': {
-              'common:class': {
-                '@level': '0',
-                '@classId': '001',
-                '#text': 'General',
-              },
-            },
-          },
+          classificationInformation,
         },
         quantitativeReference: {
           referenceToReferenceFlowProperty: '0',

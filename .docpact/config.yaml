@@ -27,8 +27,9 @@ layout: repo
 # Review note, 2026-07-27: Issue #210 replaces the dataset import-lca Python/checkout discovery path with the external Rust `tidas import` machine contract. Existing dataset command, runtime, test, documentation, validation, and release routes cover binary discovery, the compatible 0.1.x/version-and-schema handshake, stable exit/report mapping, packaged smoke evidence, and supported-platform guidance; no ownership, npm dependency, authentication, tag, Trusted Publishing, or workspace-integration rule changes are required.
 # Review note, 2026-07-30: Issue #214 keeps the lexical-weight and derivative-proof cleanup inside the existing identity-preflight, dataset-maintenance, test, and governed-doc routes. No ownership, dependency, authentication, release, or workspace-integration rule changes are required.
 # Review note, 2026-08-07: database-engine Issue #422 switches the existing Data API adapter to the frozen api-only contract, retires the private alias whole-plan transport, and keeps the change inside existing remote-session, command-family, test, and governed-doc routes.
-lastReviewedAt: "2026-08-20"
-lastReviewedCommit: "0b0518fb2b35446ebdeab72ca6de634677ae72b8"
+# Review note, 2026-08-25: Issue #224 makes the Node toolchain single-track on Node 24, pnpm 11.23.0, TypeScript 7.0.2, and Oxlint. The existing validation/release rule is extended to own the sole root pnpm workspace/lockfile, Oxlint configuration, package contract test, local pre-push gate, pnpm/setup v2.0.2 CI bootstrap, and native pnpm Trusted Publishing/provenance path; package version remains 0.0.33 in the feature change.
+lastReviewedAt: '2026-08-25'
+lastReviewedCommit: 'c6a48e82d6a56e1f810cddf12d1d64666d9503ce'
 
 catalog:
   repos:
@@ -115,11 +116,14 @@ ownership:
     - id: tests-release-and-automation
       paths:
         include:
+          - .gitignore
           - package.json
+          - pnpm-workspace.yaml
+          - pnpm-lock.yaml
           - .nvmrc
           - tsconfig.json
           - tsconfig.build.json
-          - eslint.config.mjs
+          - .oxlintrc.json
           - test/**
           - scripts/**
           - .github/workflows/quality-gate.yml
@@ -153,11 +157,14 @@ coverage:
     - docs/TEMP_ISSUE_55_DIRECT_DEPS_TODO_CN.md
     - docs/release-runbook.md
     - docs/release-setup.md
+    - .gitignore
     - package.json
+    - pnpm-workspace.yaml
+    - pnpm-lock.yaml
     - .nvmrc
     - tsconfig.json
     - tsconfig.build.json
-    - eslint.config.mjs
+    - .oxlintrc.json
     - bin/**
     - src/**
     - test/**
@@ -175,7 +182,6 @@ coverage:
     - coverage/**
     - artifacts/**
     - '*.log'
-    - package-lock.json
 
 freshness:
   warn_after_commits: 40
@@ -253,11 +259,14 @@ routing:
         - docs/TEMP_ISSUE_55_DIRECT_DEPS_TODO_CN.md
     validation-release:
       paths:
+        - .gitignore
         - package.json
+        - pnpm-workspace.yaml
+        - pnpm-lock.yaml
         - .nvmrc
         - tsconfig.json
         - tsconfig.build.json
-        - eslint.config.mjs
+        - .oxlintrc.json
         - test/**
         - scripts/**
         - .github/workflows/quality-gate.yml
@@ -272,7 +281,10 @@ routing:
     proof:
       paths:
         - docs/agents/repo-validation.md
+        - .gitignore
         - package.json
+        - pnpm-workspace.yaml
+        - pnpm-lock.yaml
         - .nvmrc
         - bin/**
         - src/**
@@ -372,12 +384,12 @@ rules:
       - path: docs/IMPLEMENTATION_GUIDE_CN.md
         mode: review_or_update
       - path: docs/SKILLS_TO_CLI_MIGRATION_CHECKLIST_CN.md
-        mode: review_or_update
+        mode: must_exist
       - path: docs/TEMP_CLI_AUTH_SESSION_REDESIGN_CN.md
-        mode: review_or_update
+        mode: must_exist
       - path: docs/TEMP_ISSUE_55_DIRECT_DEPS_TODO_CN.md
-        mode: review_or_update
-    reason: Maintainer and historical docs should preserve context without becoming duplicate routing or rule sources.
+        mode: must_exist
+    reason: Active maintainer guides must stay aligned, while retained historical docs must remain discoverable without being rewritten for unrelated current-toolchain changes.
   - id: cli-command-surface-contract
     scope: repo
     repo: cli
@@ -504,16 +516,22 @@ rules:
     scope: repo
     repo: cli
     triggers:
+      - path: .gitignore
+        kind: package-manager-guard
       - path: package.json
         kind: runtime-config
+      - path: pnpm-workspace.yaml
+        kind: package-manager-config
+      - path: pnpm-lock.yaml
+        kind: dependency-lock
       - path: .nvmrc
         kind: runtime-config
       - path: tsconfig.json
         kind: runtime-config
       - path: tsconfig.build.json
         kind: runtime-config
-      - path: eslint.config.mjs
-        kind: runtime-config
+      - path: .oxlintrc.json
+        kind: lint-config
       - path: test/**
         kind: repo-test
       - path: scripts/**
@@ -539,7 +557,7 @@ rules:
         mode: review_or_update
       - path: docs/release-setup.md
         mode: review_or_update
-    reason: Runtime baselines, coverage gates, release checks, and publish workflows define how CLI changes are validated and shipped.
+    reason: The single pnpm/TypeScript/Oxlint runtime baseline, package contract, coverage gates, release checks, and publish workflows define how CLI changes are validated and shipped.
   - id: cli-doc-maintenance-contract
     scope: repo
     repo: cli

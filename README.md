@@ -14,19 +14,25 @@ whenToUpdate:
 checkPaths:
   - README.md
   - package.json
+  - pnpm-workspace.yaml
+  - pnpm-lock.yaml
   - bin/**
   - src/cli.ts
   - src/main.ts
   - src/lib/lca-release.ts
   - test/lca-release*.test.ts
-lastReviewedAt: 2026-07-27
-lastReviewedCommit: e35a3de9fb44ea2f3aa0ec83654a640c09348c39
-lastReviewedNote: 'Reviewed for Issue #222: public LCA import guidance now requires the unified Rust tidas 0.2.x contract line.'
+lastReviewedAt: 2026-08-25
+lastReviewedCommit: c6a48e82d6a56e1f810cddf12d1d64666d9503ce
+lastReviewedNote: 'Reviewed for Issue #224: repository examples now use the exact pnpm 11.23.0, Node 24, and TypeScript 7.0.2 toolchain while the published tarball stays package-manager neutral.'
 ---
 
 # TianGong LCA CLI
 
-Package: `@tiangong-lca/cli` Executable: `tiangong-lca` Node: `24.x`
+Package: `@tiangong-lca/cli` Executable: `tiangong-lca` Current feature version: `0.0.33` Node: `24.x`
+
+Repository development is single-track on pnpm `11.23.0` and TypeScript `7.0.2`. The published package remains a clean, package-manager-neutral consumer artifact: it contains runtime files only, not pnpm, TypeScript, Oxlint, tests, source-only tooling, or repository lockfiles.
+
+Review note, 2026-08-25: Issue #224 migrates repository development and release automation to the sole root `pnpm-workspace.yaml` / `pnpm-lock.yaml`, TypeScript 7.0.2, and type-aware Oxlint on Node 24. The feature change deliberately keeps version 0.0.33. A separate release-only PR should prepare 0.1.0 after the toolchain change merges and its full package/coverage/release gates pass.
 
 Review note, 2026-07-12: `dataset maintenance plan/apply/verify` provides current-user RLS-scoped exact-row maintenance with immutable plans, explicit approval, per-action logs, platform audit correlation, and independent readback. `merge-support-aliases` now runs only in `target_mode=owner_draft`: source/target support and all changed rows stay private `state_code=0`; publication is a separate future workflow.
 
@@ -57,15 +63,15 @@ Review note, 2026-07-25: Bounded flow deletion can instead accept an explicitly 
 One-off published run:
 
 ```bash
-npm exec --yes --package=@tiangong-lca/cli@latest -- tiangong-lca --help
-npm exec --yes --package=@tiangong-lca/cli@latest -- tiangong-lca doctor
-npm exec --yes --package=@tiangong-lca/cli@latest -- tiangong-lca flow --help
+pnpm dlx @tiangong-lca/cli@latest --help
+pnpm dlx @tiangong-lca/cli@latest doctor
+pnpm dlx @tiangong-lca/cli@latest flow --help
 ```
 
 Install the published CLI:
 
 ```bash
-npm install --global @tiangong-lca/cli
+pnpm add --global @tiangong-lca/cli
 tiangong-lca --help
 tiangong-lca doctor
 tiangong-lca flow --help
@@ -74,8 +80,8 @@ tiangong-lca flow --help
 Run from this repository:
 
 ```bash
-npm ci
-npm run build
+pnpm install --frozen-lockfile
+pnpm build
 node ./bin/tiangong-lca.js --help
 ```
 
@@ -275,7 +281,7 @@ tiangong-lca flow build-plan validate --input ./flow-build-plan.json --out-dir .
 tiangong-lca flow build-plan materialize --input ./flow-build-plan.json --out-dir ./flow-build-plan --json
 ```
 
-The minimum plan contract requires an automatic identity decision, EvidenceManifest sources and field bindings, name plan, and the relevant process reference-flow or flow-property fields. Process materialization carries name, quantitative reference, exchange, source evidence, modelling, administrative, and annual supply/production fields from the plan into `processDataSet`; when annual volume source evidence is not explicit, Foundry-facing required-field completion uses the deterministic `9999 missing-data-sentinel/year` value so the schema-required field stays searchable for later database-side curation. Flow materialization carries name, flow type, reference property, source evidence, administrative, and classification fields into `flowDataSet`. `--report-only` keeps exit code `0` while still reporting blockers.
+The minimum plan contract requires an automatic identity decision, EvidenceManifest sources and field bindings, name plan, and the relevant process reference-flow or flow-property fields. Plan-only materialization additionally requires an explicit canonical `classification_path`: continuous level `0..n` objects with exact locked `@classId`/`#text` for process and product/waste flow taxonomies, or `@catId`/`#text` for elementary flows. Label-only, missing, malformed, or taxonomy-spoofed classifications fail before artifact publication. Process materialization carries name, quantitative reference, exchange, source evidence, modelling, administrative, and annual supply/production fields from the plan into `processDataSet`; when annual volume source evidence is not explicit, Foundry-facing required-field completion uses the deterministic `9999 missing-data-sentinel/year` value so the schema-required field stays searchable for later database-side curation. Flow materialization carries name, flow type, reference property, source evidence, administrative, and classification fields into `flowDataSet`. `--report-only` keeps exit code `0` while still reporting blockers.
 
 Key outputs under `--out-dir`:
 
@@ -407,7 +413,7 @@ For `qa process`, `--rows-file` accepts either raw process rows as JSON/JSONL or
 
 For `process identity-preflight` and `flow identity-preflight`, canonical TIDAS wrappers are schema-checked when present. Loose target objects are accepted for early planning and produce `schema_validation.status: "not_applicable"` until materialization. Candidate rows can be embedded in the request, loaded from repeatable `--candidate-input` local files/directories, or fetched through explicit `--remote-candidates` hybrid search; `identity-candidate-sources.json` records scanned files, remote endpoints, queries, filters, edge-search options, and row counts. The remote Edge Function receives only search-safe query/options fields; local-only `profile_hints` stay in the preflight target profile and candidate scoring evidence.
 
-For `process build-plan` and `flow build-plan`, canonical payloads embedded in the plan are schema-checked during `materialize`. Plan-only materialization now creates deterministic canonical `processDataSet` / `flowDataSet` wrappers from the build plan and validates them with the TIDAS SDK before reporting `passed`.
+For `process build-plan` and `flow build-plan`, canonical payloads embedded in the plan are schema-checked during `materialize`. Plan-only materialization creates deterministic canonical `processDataSet` / `flowDataSet` wrappers, requires an explicit canonical locked-taxonomy `classification_path`, and validates the result with the TIDAS SDK before reporting `passed`; it never invents taxonomy ids from free-form labels.
 
 For `process save-draft`, canonical process payloads are validated locally with `ProcessSchema` before any `--commit` write. Schema-invalid rows remain in `outputs/save-draft-rpc/failures.jsonl` instead of being persisted. Batch import callers should pass `--target-user-id`; the CLI then verifies the current auth session and any visible draft owner before writing, while downstream readback verification still proves the final owner and payload.
 

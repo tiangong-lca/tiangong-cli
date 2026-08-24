@@ -14,11 +14,15 @@ checkPaths:
   - docs/IMPLEMENTATION_GUIDE_CN.md
   - DEV_CN.md
   - README.md
+  - package.json
+  - pnpm-workspace.yaml
+  - pnpm-lock.yaml
+  - .oxlintrc.json
   - src/**
   - test/**
-lastReviewedAt: 2026-07-30
-lastReviewedCommit: ad19f88667864d5bae626557f06d2c9b2d738bc4
-lastReviewedNote: 'Reviewed for Issue #214: identity search uses one lexical weight and derivative proof uses canonical Markdown/vector fields.'
+lastReviewedAt: 2026-08-25
+lastReviewedCommit: c6a48e82d6a56e1f810cddf12d1d64666d9503ce
+lastReviewedNote: 'Reviewed for Issue #224: 实施基线已单轨切换到 Node 24、pnpm 11.23.0、TypeScript 7.0.2 与 Oxlint。'
 related:
   - ../AGENTS.md
   - ../.docpact/config.yaml
@@ -28,6 +32,8 @@ related:
 ---
 
 # TianGong LCA CLI 实施指南
+
+Review note, 2026-08-25: Issue #224 把实现与验证工具链固定为 Node 24、pnpm 11.23.0、TypeScript 7.0.2 与 type-aware Oxlint。依赖只由根 `pnpm-workspace.yaml` / `pnpm-lock.yaml` 决定；不保留 TypeScript 5/6、ESLint 或 Compiler API 兼容路径。`test:package` 同时验证单轨工具链、干净 tarball 和 package-manager-neutral consumer。feature 版本保持 0.0.33；合并和完整门禁通过后，建议用单独的 release-only PR 准备 0.1.0。
 
 Review note, 2026-07-30: Issue #214 将 identity preflight 的远程检索参数收敛为单一 `lexical_weight`，并把 derivative snapshot/readback 依赖收敛到 `extracted_md`、`embedding_ft` 与 `embedding_ft_at`。既有 owner-draft、一次性 admission、独立 readback 与 fail-closed 规则保持不变。
 
@@ -286,7 +292,7 @@ tiangong-lca
 
 - `process get` 当前固定为 CLI 内部共享的 deterministic direct-read 面，内部执行已收口到原生 `@supabase/supabase-js`，供 lifecyclemodel resulting-process 和后续 review/governance 迁移复用
 - 已实现的 `process identity-preflight` 是本地只读、artifact-first 的生成前 gate；输入为 target + embedded candidates，并可通过 repeatable `--candidate-input` 读取 JSON/JSONL 文件或递归扫描本地目录。需要查正式库时，输入可设置 `remote_candidate_search`，CLI 也可传 `--remote-candidates --remote-query ... --remote-limit ...`，通过 `process_hybrid_search` 拉取远程候选并合并进入同一套 identity / exchange fingerprint 判定。CLI 传给 Edge Function 的是 fielded `query`、`filter`、`data_source`、`match_count`/`page_size` 和 hybrid search 权重；`remote_candidate_search.profile_hints` 只在本地补强 target profile 与候选评分，不会送入 Edge Function。输出 `identity-decision.json` / `identity-candidates.jsonl` / `identity-candidate-sources.json`；当 exact exchange fingerprint 与 reference/geography 等身份上下文同时命中时输出 `block_duplicate`，只有 inventory-only 弱命中时才进入 `manual_review`。
-- 已实现的 `process build-plan` 是 identity preflight 后、payload 生成前的本地 gate；输入为 BuildPlan，输出 `build-plan-gate-report.json`，并在 `materialize` 时输出 canonical `materialized-process.json`。如果 plan 内已提供 canonical payload，则直接校验该 payload；如果没有 payload，则从 name plan、quantitative reference、exchange plan、source evidence、modelling/admin 字段确定性生成 `processDataSet`。`annualSupplyOrProductionVolume` 使用 build plan/evidence 的显式源语言值；缺失时不按 reference flow 自动伪造业务真值，而使用 Foundry 约定的 `9999 missing-data-sentinel/year` 哨兵占位。该值明显无物理意义、便于批量查询定位，后续由数据库侧 curation 替换，不属于 Foundry 导入任务。
+- 已实现的 `process build-plan` 是 identity preflight 后、payload 生成前的本地 gate；输入为 BuildPlan，输出 `build-plan-gate-report.json`，并在 `materialize` 时输出 canonical `materialized-process.json`。如果 plan 内已提供 canonical payload，则直接校验该 payload；如果没有 payload，则必须提供 level `0..n` 连续、包含 locked taxonomy 精确 `@classId` / `#text` 的 canonical `classification_path` objects，再从 name plan、quantitative reference、exchange plan、source evidence、modelling/admin 字段确定性生成 `processDataSet`。缺失、字符串标签、乱序或伪造 taxonomy 会在产物发布前阻断。`annualSupplyOrProductionVolume` 使用 build plan/evidence 的显式源语言值；缺失时不按 reference flow 自动伪造业务真值，而使用 Foundry 约定的 `9999 missing-data-sentinel/year` 哨兵占位。该值明显无物理意义、便于批量查询定位，后续由数据库侧 curation 替换，不属于 Foundry 导入任务。
 - 已实现的 `process auto-build` 在调用方显式提供的 run root 内保留旧 `cache/process_from_flow_state.json`、`cache/agent_handoff_summary.json` 等运行布局，不再推断 repo 本地 `./artifacts/...` 默认路径
 - `process auto-build` 当前只负责本地 request intake、flow 归一化、run scaffold、初始 `manifests/process-build-plan.json` 和 manifest/report 预写，不继续执行后续阶段。该 build plan 是 scaffold_only，后续必须由 identity preflight、evidence replacement、build-plan validate/materialize、schema/QA gate 决定是否可写入。
 - 已实现的 `process resume-build` 保留同一套 run 布局，并把本地 state-lock、run-manifest 校验、resume metadata/history、invocation index 更新统一收口到 CLI
@@ -324,7 +330,7 @@ tiangong-lca
 - 已实现的 `flow get` 保留 deterministic direct-read 边界，但内部执行已经收口到原生 `@supabase/supabase-js`；支持 `id` + 可选 `version/user_id/state_code` 读取；若精确版本 miss，则回退到最新可见版本；若出现多个同版本可见候选，则直接报 ambiguous
 - 已实现的 `flow list` 保留 deterministic direct-read 边界，但内部执行已经收口到原生 `@supabase/supabase-js`；支持稳定 `id/state_code/type_of_dataset` 过滤、显式 `order=id.asc,version.asc` 默认值，以及 `--all --page-size` 的 offset 分页
 - 已实现的 `flow identity-preflight` 是本地只读、artifact-first 的生成前 gate；输入为 target + embedded candidates，并可通过 repeatable `--candidate-input` 读取 JSON/JSONL 文件或递归扫描本地目录。需要查正式库时，输入可设置 `remote_candidate_search`，CLI 也可传 `--remote-candidates --remote-query ... --remote-limit ...`，通过 `flow_hybrid_search` 拉取远程候选；若 target 有 flow type，CLI 会作为 remote filter 写入请求。CLI 传给 Edge Function 的是 fielded `query`、`filter`、`data_source`、`match_count`/`page_size` 和 hybrid search 权重；`remote_candidate_search.profile_hints` 只在本地补强 target profile 与候选评分，不会送入 Edge Function。输出 `identity-decision.json` / `identity-candidates.jsonl` / `identity-candidate-sources.json`；对 type、reference property、unit、CAS/category 和 alias/name 等价的 flow 输出 `block_duplicate`，避免 process 引用新建同义 flow。
-- 已实现的 `flow build-plan` 是 flow 生成前的本地 BuildPlan gate；输入为 BuildPlan，输出 `build-plan-gate-report.json`，并在 `materialize` 时输出 canonical `materialized-flow.json`。如果 plan 内没有 payload，CLI 会从 name plan、flow type、reference property、source evidence、admin/compliance 字段确定性生成 `flowDataSet` 并立即跑 `FlowSchema` 校验。
+- 已实现的 `flow build-plan` 是 flow 生成前的本地 BuildPlan gate；输入为 BuildPlan，输出 `build-plan-gate-report.json`，并在 `materialize` 时输出 canonical `materialized-flow.json`。如果 plan 内没有 payload，必须先提供 exact locked taxonomy `classification_path` objects：Product/Waste 使用 `@classId`，Elementary 使用 `@catId` 并生成 `common:elementaryFlowCategorization`；CLI 不再从任意文本生成 UUID 分类。随后 CLI 才从 name plan、flow type、reference property、source evidence、admin/compliance 字段确定性生成 `flowDataSet` 并立即跑 `FlowSchema` 校验。
 - 已实现的 `flow remediate` 保留旧 invalid-flow 输入与 round1 artifact 契约，但运行时已经收口到 CLI，不再需要 skill 私有 Python remediation 入口
 - 已实现的 `flow publish-version` 先用 `FlowSchema` 执行本地 gate 并输出 `flow-publish-version-gate-report.json`，通过后再做 `/rest/v1/flows` 精确版本可见性预检，并通过 `app_dataset_create` / `app_dataset_save_draft` 提交远端写入；`TIANGONG_LCA_API_BASE_URL` 可传 project root、`/functions/v1` 或 `/rest/v1`，同时继续保留 `mcp_success_list`、`remote_validation_failed`、`mcp_sync_report` 这些历史文件名
 - 已实现的 `flow publish-reviewed-data` 负责 reviewed publish preparation 阶段：支持 `--original-flow-rows-file` unchanged skip、flow/process `skip | append_only_bump | upsert_current_version`、`prepared-flow-rows.json` / `prepared-process-rows.json` / `flow-version-map.json` / `skipped-unchanged-flow-rows.json` / `process-flow-ref-rewrite-evidence.jsonl` / `publish-report.json` 输出，并在 `--commit` 时通过同一条共享 dataset command writer layer 同时执行 prepared flow rows 与 prepared process rows 的远端写入；commit flow path 复用 `flow publish-version` 的 FlowSchema gate 与 gate report
@@ -1158,13 +1164,16 @@ TIANGONG_LCA_COVERAGE=0
 ### 6.1 当前质量门
 
 ```bash
-npm run lint
-npm run prettier
-npm test
-npm run test:coverage
-npm run test:coverage:assert-full
-npm run prepush:gate
+pnpm lint
+pnpm prettier
+pnpm test
+pnpm test:package
+pnpm test:coverage
+pnpm test:coverage:assert-full
+pnpm prepush:gate
 ```
+
+`pnpm lint` 以 type-aware Oxlint 为唯一 lint engine，并串联格式、coverage-ignore、Data API consumer 与 TypeScript 7 typecheck。`pnpm prepush:gate` 必须包含 package contract 以及 `src/**/*.ts` 的 100% statements / branches / functions / lines 证明。
 
 ### 6.2 为什么覆盖率门只卡 `src/**/*.ts`
 
@@ -1187,10 +1196,12 @@ npm run prepush:gate
 
 CLI 现在额外有一条独立于质量门的 npm 发布链路：
 
-- release-prep PR 修改 `package.json` 和 `package-lock.json` 版本元数据
+- release-prep PR 只修改 `package.json` 版本；依赖图不变时，唯一根 `pnpm-lock.yaml` 保持存在、frozen 且不变
 - 合并到 `main` 后，`tag-release-from-merge.yml` 自动创建 `cli-vX.Y.Z`
-- `publish.yml` 从该 tag 触发 npm Trusted Publishing
-- 例行发布不在本机执行 `npm publish`；本机只做版本修改、质量门、未发布校验和 `npm pack --dry-run`
+- 所有 Node workflow 通过固定的 `pnpm/setup` v2.0.2 配置 Node 24，并以 frozen 根 lock 安装
+- `publish.yml` 从该 tag 通过原生 pnpm OIDC/provenance 触发 npm Trusted Publishing
+- 例行发布不从本机发起；本机只做版本修改、质量门、未发布校验和 `pnpm --filter @tiangong-lca/cli --fail-if-no-match pack --dry-run`
+- tarball 必须只含 runtime files；不能携带 pnpm workspace/lock、TypeScript、Oxlint、测试或源码工具，consumer 不能依赖 pnpm 特性
 
 每次发版的 operator runbook 见 [release-runbook.md](./release-runbook.md)。
 
@@ -1273,7 +1284,6 @@ CLI 现在额外有一条独立于质量门的 npm 发布链路：
 
 1. `node "${TIANGONG_LCA_CLI_DIR}/bin/tiangong-lca.js" ...`
 2. `node "${TIANGONG_LCA_CLI_DIR}/dist/src/main.js" ...`
-3. `npm exec --prefix "${TIANGONG_LCA_CLI_DIR}" tiangong-lca -- ...`
 
 不要再在 skill 内部重复实现一套 `curl` 参数解析和环境变量规则。
 

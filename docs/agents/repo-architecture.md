@@ -17,7 +17,11 @@ whenToUpdate:
 checkPaths:
   - docs/agents/repo-architecture.md
   - .docpact/config.yaml
+  - .gitignore
   - package.json
+  - pnpm-workspace.yaml
+  - pnpm-lock.yaml
+  - .oxlintrc.json
   - bin/**
   - src/**
   - test/**
@@ -26,9 +30,9 @@ checkPaths:
   - scripts/docpact
   - scripts/docpact-gate.sh
   - scripts/install-git-hooks.sh
-lastReviewedAt: 2026-08-07
-lastReviewedCommit: 5cb359f1d0860df560c7571fa7547b2822b37c71
-lastReviewedNote: 'Reviewed for database-engine Issue #422: one exact-contract adapter owns public core relations, api RPC selection, and retired private-executor rejection.'
+lastReviewedAt: 2026-08-25
+lastReviewedCommit: c6a48e82d6a56e1f810cddf12d1d64666d9503ce
+lastReviewedNote: 'Reviewed for Issue #224: the repository has one Node 24/pnpm 11.23.0/TypeScript 7.0.2/Oxlint development and release architecture.'
 related:
   - ../../AGENTS.md
   - ../../.docpact/config.yaml
@@ -41,11 +45,15 @@ related:
 
 This repo is organized around one stable launcher plus a library-style `src/lib/**` tree that implements command families and shared helpers.
 
+Review note, 2026-08-25: Issue #224 makes the toolchain architecture explicit: the root `pnpm-workspace.yaml` and sole `pnpm-lock.yaml` own dependency resolution; TypeScript 7.0.2 is the only compiler line; type-aware Oxlint replaces ESLint and Compiler API linting; and Node 24 is shared by local and CI gates. The feature stays on 0.0.33, with a separate 0.1.0 release-only PR recommended after merge to make the maintainer/release compatibility boundary explicit.
+
+Review note, 2026-08-25: the SDK 0.2 cutover makes build-plan taxonomy an explicit input rather than fabricated output. Plan-only materialization accepts canonical locked taxonomy objects only, selects product/process `common:classification` versus elementary `common:elementaryFlowCategorization` by flow type, and fails before artifact publication when classification is absent or malformed.
+
 Review note, 2026-06-04: Foundry entity queue state now stays in the native CLI command family as `dataset curation-queue build/next/verify`; no secondary orchestration runtime was introduced.
 
 Review note, 2026-06-05: release 0.0.12 is a package metadata bump only; no command-family ownership, launcher, session, artifact, or release architecture paths changed.
 
-Review note, 2026-06-06: release 0.0.13 keeps the release architecture unchanged: maintainers open a version-bump PR, update `package.json` and `package-lock.json`, merge to upstream `main`, and let GitHub Actions create the tag and publish through npm Trusted Publishing. Local `npm publish` is not part of the release architecture.
+Historical npm-era review note, 2026-06-06: release 0.0.13 kept the then-current release architecture unchanged: maintainers opened a version-bump PR, updated `package.json` and `package-lock.json`, merged to upstream `main`, and let GitHub Actions create the tag and publish through npm Trusted Publishing. Local `npm publish` was not part of that release architecture. This note is retained as history, not current guidance.
 
 Review note, 2026-06-07: release 0.0.14 keeps the architecture in the existing TypeScript dataset classification command family. The location apply helper now creates only explicit schema-derived missing location targets and does not introduce a new orchestration layer or release path.
 
@@ -275,12 +283,14 @@ Repo-level maintenance gates are now split across:
 
 Important constraints:
 
-- `npm run prepush:gate` remains the authoritative local proof for code changes and runs from the local pre-push hook
+- `pnpm prepush:gate` remains the authoritative local proof for code changes and runs from the local pre-push hook; it includes the `test:package` toolchain/tarball consumer contract and exact 100% coverage
 - `ai-doc-lint` keeps the historical check identity, but its implementation should run `docpact`
 - `docpact` enforces that command-surface and release-gate changes also refresh or review the governed source docs
 - the merge-tag workflow is guarded so only the upstream repository can execute release tagging
-- the publish workflow releases from `cli-v<package.json version>` and supports manual dispatch for existing-tag recovery/backfill
-- routine npm releases must flow through an upstream `main` PR merge and GitHub Actions Trusted Publishing; local workstations may validate with `npm pack --dry-run` but must not publish
+- CI bootstrap is pinned to `pnpm/setup` v2.0.2 with Node 24 and `pnpm install --frozen-lockfile`
+- the publish workflow releases from `cli-v<package.json version>` through native pnpm OIDC/provenance and supports manual dispatch for existing-tag recovery/backfill
+- routine npm releases must flow through an upstream `main` PR merge and GitHub Actions Trusted Publishing; local workstations may validate with `pnpm --filter @tiangong-lca/cli --fail-if-no-match pack --dry-run` but must not publish
+- the packed consumer surface is package-manager neutral and excludes pnpm workspace/lock metadata, TypeScript, Oxlint, tests, source-only tooling, and other repository internals
 
 ## Cross-Repo Boundaries
 
@@ -297,4 +307,4 @@ Important constraints:
 
 ## Local Docpact Push Gate
 
-This repository has a versioned local `pre-push` hook under `.githooks/pre-push` that delegates to `scripts/docpact-gate.sh` and then runs `npm run prepush:gate`. The gate resolves the CLI through `scripts/docpact`, so local agent shells do not need bare `docpact` on `PATH`. The hook is the local guard for docpact config validation, enforced doc-governance linting, and the CLI test gate; ordinary GitHub push tests are replaced by this local gate plus release-time gates.
+This repository has a versioned local `pre-push` hook under `.githooks/pre-push` that delegates to `scripts/docpact-gate.sh` and then runs `pnpm prepush:gate`. The gate resolves the CLI through `scripts/docpact`, so local agent shells do not need bare `docpact` on `PATH`. The hook is the local guard for docpact config validation, enforced doc-governance linting, and the CLI test gate; ordinary GitHub push tests are replaced by this local gate plus release-time gates.

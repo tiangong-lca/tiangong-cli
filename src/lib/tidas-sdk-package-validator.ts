@@ -260,7 +260,7 @@ function makeIssue(
   };
 }
 
-function validateElementaryFlowsClassificationHierarchy(
+export function validateElementaryFlowsClassificationHierarchy(
   classItems: Array<Record<string, unknown>>,
 ): string[] {
   const errors: string[] = [];
@@ -287,7 +287,7 @@ function validateElementaryFlowsClassificationHierarchy(
   return errors;
 }
 
-function validateProductFlowsClassificationHierarchy(
+export function validateProductFlowsClassificationHierarchy(
   classItems: Array<Record<string, unknown>>,
 ): string[] {
   const errors: string[] = [];
@@ -314,7 +314,7 @@ function validateProductFlowsClassificationHierarchy(
   return errors;
 }
 
-function validateProcessesClassificationHierarchy(
+export function validateProcessesClassificationHierarchy(
   classItems: Array<Record<string, unknown>>,
 ): string[] {
   const errors: string[] = [];
@@ -581,7 +581,7 @@ function collectFlowSchemaGapIssues(
   return [];
 }
 
-function collectClassificationIssues(
+export function collectClassificationIssues(
   jsonItem: unknown,
   category: string,
   filePath: string,
@@ -596,7 +596,7 @@ function collectClassificationIssues(
         'typeOfDataSet'
       ];
 
-      if (dataSetType === 'Product flow') {
+      if (dataSetType === 'Product flow' || dataSetType === 'Waste flow') {
         const items = asRecord(
           asRecord(
             asRecord(asRecord(flowDataSet?.flowInformation)?.dataSetInformation)

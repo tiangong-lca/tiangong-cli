@@ -13,15 +13,45 @@ import {
 import type { SafeParseSchema } from '../src/lib/tidas-sdk-validation.js';
 
 const now = new Date('2026-05-22T00:00:00.000Z');
+const evidenceSourceId = '66666666-6666-6666-6666-666666666666';
 
-function passingSchema(): SafeParseSchema {
-  return {
-    safeParse: () => ({
-      success: true as const,
-      data: {},
-    }),
-  };
-}
+const chemicalProductClassification = [
+  {
+    '@level': '0',
+    '@classId': '3',
+    '#text': 'Other transportable goods, except metal products, machinery and equipment',
+  },
+  { '@level': '1', '@classId': '34', '#text': 'Basic chemicals' },
+  { '@level': '2', '@classId': '341', '#text': 'Basic organic chemicals' },
+  {
+    '@level': '3',
+    '@classId': '3411',
+    '#text': 'Hydrocarbons and their halogenated, sulphonated, nitrated or nitrosated derivatives',
+  },
+];
+
+const energyProcessClassification = [
+  {
+    '@level': '0',
+    '@classId': 'D',
+    '#text': 'Electricity, gas, steam and air conditioning supply',
+  },
+  {
+    '@level': '1',
+    '@classId': '35',
+    '#text': 'Electricity, gas, steam and air conditioning supply',
+  },
+  {
+    '@level': '2',
+    '@classId': '351',
+    '#text': 'Electric power generation, transmission and distribution activities',
+  },
+  {
+    '@level': '3',
+    '@classId': '3511',
+    '#text': 'Electric power generation activities from non-renewable sources',
+  },
+];
 
 function failingSchema(): SafeParseSchema {
   return {
@@ -52,11 +82,12 @@ function processPlan(overrides: Record<string, unknown> = {}) {
       geography: 'CN',
       technology_route: 'PV installation',
     },
+    classification_path: energyProcessClassification,
     identity_decision: {
       decision: 'create_new',
     },
     evidence_manifest: {
-      sources: [{ id: 'source-1', type: 'local-fixture' }],
+      sources: [{ id: evidenceSourceId, type: 'local-fixture' }],
       field_bindings: [
         { field_path: 'target' },
         { field_path: 'identity_decision.decision' },
@@ -104,11 +135,12 @@ function flowPlan(overrides: Record<string, unknown> = {}) {
     target: {
       flow_type: 'Product flow',
     },
+    classificationPath: chemicalProductClassification,
     identityDecision: {
       decision: 'create_new',
     },
     evidenceManifest: {
-      sources: [{ id: 'source-1', type: 'local-fixture' }],
+      sources: [{ id: evidenceSourceId, type: 'local-fixture' }],
       fieldBindings: [
         { fieldPath: 'target' },
         { fieldPath: 'identity_decision.decision' },
@@ -144,6 +176,21 @@ function flowPlan(overrides: Record<string, unknown> = {}) {
     },
     ...overrides,
   };
+}
+
+function classificationItemsAt(
+  artifact: Record<string, unknown>,
+  pathSegments: string[],
+): Array<Record<string, unknown>> {
+  let current: unknown = artifact;
+  for (const segment of pathSegments) {
+    assert.equal(typeof current, 'object', `expected ${segment} parent to be an object`);
+    assert.notEqual(current, null, `expected ${segment} parent to be present`);
+    assert.equal(Array.isArray(current), false, `expected ${segment} parent not to be an array`);
+    current = (current as Record<string, unknown>)[segment];
+  }
+  assert.ok(Array.isArray(current), `expected ${pathSegments.join('.')} to be an array`);
+  return current as Array<Record<string, unknown>>;
 }
 
 test('process build-plan validate passes and writes a gate report', async () => {
@@ -203,7 +250,12 @@ test('flow build-plan materialize writes a deterministic canonical flow payload'
     ) as {
       flowDataSet: {
         flowInformation: {
-          dataSetInformation: { name: { baseName: Array<{ '#text': string }> } };
+          dataSetInformation: {
+            name: { baseName: Array<{ '#text': string }> };
+            classificationInformation: {
+              'common:classification': { 'common:class': Array<Record<string, string>> };
+            };
+          };
         };
         modellingAndValidation: { LCIMethod: { typeOfDataSet: string } };
         flowProperties: {
@@ -225,6 +277,12 @@ test('flow build-plan materialize writes a deterministic canonical flow payload'
       ],
       '93a60a56-a3c8-11da-a746-0800200b9a66',
     );
+    assert.deepEqual(
+      materialized.flowDataSet.flowInformation.dataSetInformation.classificationInformation[
+        'common:classification'
+      ]['common:class'],
+      chemicalProductClassification,
+    );
   } finally {
     rmSync(outDir, { recursive: true, force: true });
   }
@@ -243,7 +301,7 @@ test('process build-plan materialize builds canonical payloads from name, qref, 
           geography: 'CN-HB',
           technology_route: 'electricity production mix',
           reference_year: '2025',
-          classification_path: ['Energy', 'Electricity', 'Grid mix', 'Hubei'],
+          classification_path: energyProcessClassification,
         },
         name_plan: {
           base_name: [
@@ -284,7 +342,14 @@ test('process build-plan materialize builds canonical payloads from name, qref, 
       readFileSync(path.join(outDir, 'outputs', 'materialized-process.json'), 'utf8'),
     ) as {
       processDataSet: {
-        processInformation: { quantitativeReference: { referenceToReferenceFlow: string } };
+        processInformation: {
+          dataSetInformation: {
+            classificationInformation: {
+              'common:classification': { 'common:class': Array<Record<string, string>> };
+            };
+          };
+          quantitativeReference: { referenceToReferenceFlow: string };
+        };
         modellingAndValidation: {
           dataSourcesTreatmentAndRepresentativeness: {
             annualSupplyOrProductionVolume: Array<{ '#text': string; '@xml:lang': string }>;
@@ -316,30 +381,331 @@ test('process build-plan materialize builds canonical payloads from name, qref, 
         .annualSupplyOrProductionVolume,
       [{ '#text': '3.6 MJ/year', '@xml:lang': 'en' }],
     );
+    assert.deepEqual(
+      materialized.processDataSet.processInformation.dataSetInformation.classificationInformation[
+        'common:classification'
+      ]['common:class'],
+      energyProcessClassification,
+    );
   } finally {
     rmSync(outDir, { recursive: true, force: true });
   }
 });
 
-test('process build-plan materialize validates supplied canonical payloads', async () => {
+test('build-plan classification materialization is canonical and fail-closed', () => {
+  const elementaryFlow = __testInternals.buildCanonicalFlowPayload(
+    flowPlan({
+      target: { flow_type: 'Elementary flow' },
+      classificationPath: [
+        { '@level': '0', '@catId': '1', '#text': 'Emissions' },
+        { '@level': '1', '@catId': '1.3', '#text': 'Emissions to air' },
+      ],
+    }),
+    '/tmp/elementary-flow-plan.json',
+  );
+  assert.deepEqual(
+    (
+      (
+        (elementaryFlow.flowDataSet as Record<string, unknown>).flowInformation as Record<
+          string,
+          unknown
+        >
+      ).dataSetInformation as Record<string, unknown>
+    ).classificationInformation,
+    {
+      'common:elementaryFlowCategorization': {
+        'common:category': [
+          { '@level': '0', '@catId': '1', '#text': 'Emissions' },
+          { '@level': '1', '@catId': '1.3', '#text': 'Emissions to air' },
+        ],
+      },
+    },
+  );
+  assert.equal(
+    __testInternals.validateMaterializedSchema(elementaryFlow, 'flow', undefined).status,
+    'passed',
+  );
+
+  assert.throws(
+    () =>
+      __testInternals.buildCanonicalFlowPayload(
+        flowPlan({ classificationPath: undefined }),
+        '/tmp/missing-classification-flow-plan.json',
+      ),
+    /requires classification_path/u,
+  );
+  assert.throws(
+    () =>
+      __testInternals.buildCanonicalProcessPayload(
+        processPlan({ classification_path: undefined }),
+        '/tmp/missing-classification-process-plan.json',
+      ),
+    /requires classification_path/u,
+  );
+  assert.throws(
+    () =>
+      __testInternals.buildCanonicalFlowPayload(
+        flowPlan({ classificationPath: ['Arbitrary label'] }),
+        '/tmp/string-classification-flow-plan.json',
+      ),
+    /canonical object/u,
+  );
+  assert.throws(
+    () =>
+      __testInternals.buildCanonicalProcessPayload(
+        processPlan({ classification_path: [] }),
+        '/tmp/empty-classification-process-plan.json',
+      ),
+    /must not be empty/u,
+  );
+  assert.throws(
+    () =>
+      __testInternals.buildCanonicalFlowPayload(
+        flowPlan({ classificationPath: 'not-an-array' }),
+        '/tmp/non-array-classification-flow-plan.json',
+      ),
+    /must be an array/u,
+  );
+  assert.throws(
+    () =>
+      __testInternals.buildCanonicalProcessPayload(
+        processPlan({
+          classification_path: [{ '@level': '1', '@classId': '35', '#text': 'Electricity' }],
+        }),
+        '/tmp/out-of-order-classification-process-plan.json',
+      ),
+    /expected @level 0/u,
+  );
+  assert.throws(
+    () =>
+      __testInternals.buildCanonicalFlowPayload(
+        flowPlan({ classificationPath: [{ '@level': '0', '@classId': '3' }] }),
+        '/tmp/incomplete-classification-flow-plan.json',
+      ),
+    /non-empty #text string/u,
+  );
+
+  const spoofedTaxonomy = __testInternals.buildCanonicalFlowPayload(
+    flowPlan({
+      classificationPath: [
+        {
+          '@level': '0',
+          '@classId': '11111111-1111-4111-8111-111111111111',
+          '#text': 'Arbitrary label',
+        },
+      ],
+    }),
+    '/tmp/spoofed-classification-flow-plan.json',
+  );
+  assert.equal(
+    __testInternals.validateMaterializedSchema(spoofedTaxonomy, 'flow', undefined).status,
+    'failed',
+  );
+
+  assert.throws(
+    () =>
+      __testInternals.buildCanonicalProcessPayload(
+        processPlan({
+          classification_path: [
+            {
+              '@level': '0',
+              '@classId': 'D',
+              '#text': 'Electricity, gas, steam and air conditioning supply',
+            },
+            {
+              '@level': '1',
+              '@classId': '01',
+              '#text': 'Crop and animal production, hunting and related service activities',
+            },
+          ],
+        }),
+        '/tmp/cross-branch-process-classification-plan.json',
+      ),
+    /not a valid process hierarchy/u,
+  );
+
+  for (const flowType of ['Product flow', 'Waste flow']) {
+    assert.throws(
+      () =>
+        __testInternals.buildCanonicalFlowPayload(
+          flowPlan({
+            target: { flow_type: flowType },
+            classificationPath: [
+              {
+                '@level': '0',
+                '@classId': '3',
+                '#text':
+                  'Other transportable goods, except metal products, machinery and equipment',
+              },
+              {
+                '@level': '1',
+                '@classId': '01',
+                '#text': 'Products of agriculture, horticulture and market gardening',
+              },
+            ],
+          }),
+          `/tmp/cross-branch-${flowType.toLowerCase().replace(' ', '-')}-classification-plan.json`,
+        ),
+      /not a valid product-flow hierarchy/u,
+    );
+  }
+
+  assert.throws(
+    () =>
+      __testInternals.buildCanonicalFlowPayload(
+        flowPlan({
+          target: { flow_type: 'Elementary flow' },
+          classificationPath: [
+            { '@level': '0', '@catId': '1', '#text': 'Emissions' },
+            { '@level': '1', '@catId': '2.1', '#text': 'Resources from ground' },
+          ],
+        }),
+        '/tmp/cross-branch-elementary-classification-plan.json',
+      ),
+    /not a valid elementary-flow hierarchy/u,
+  );
+});
+
+test('process build-plan materialize validates complete embedded payloads with the production schema', async () => {
+  const payload = __testInternals.buildCanonicalProcessPayload(
+    processPlan(),
+    '/tmp/embedded-valid-process-plan.json',
+  );
   const report = await runProcessBuildPlanMaterialize({
     inputPath: '/tmp/process-build-plan.json',
     rawInput: processPlan({
-      payload: {
-        processDataSet: {
-          processInformation: {},
-        },
-      },
+      payload,
     }),
     now,
-    schemas: {
-      process: passingSchema(),
-    },
   });
 
   assert.equal(report.status, 'passed');
   assert.equal(report.schema_validation.status, 'passed');
-  assert.equal(report.schema_validation.validator, 'injected');
+  assert.equal(report.schema_validation.validator, '@tiangong-lca/tidas-sdk/ProcessSchema');
+});
+
+test('embedded canonical payload validation rejects cross-branch classification hierarchies', async () => {
+  const processPayload = __testInternals.buildCanonicalProcessPayload(
+    processPlan(),
+    '/tmp/embedded-process-plan.json',
+  );
+  assert.equal(
+    __testInternals.validateMaterializedSchema(processPayload, 'process', undefined).status,
+    'passed',
+  );
+  classificationItemsAt(processPayload, [
+    'processDataSet',
+    'processInformation',
+    'dataSetInformation',
+    'classificationInformation',
+    'common:classification',
+    'common:class',
+  ])[1] = {
+    '@level': '1',
+    '@classId': '01',
+    '#text': 'Crop and animal production, hunting and related service activities',
+  };
+  const invalidProcess = __testInternals.validateMaterializedSchema(
+    processPayload,
+    'process',
+    undefined,
+  );
+  assert.equal(invalidProcess.status, 'failed');
+  assert.equal(invalidProcess.issues[0]?.code, 'classification_hierarchy_error');
+  const processReport = await runProcessBuildPlanMaterialize({
+    inputPath: '/tmp/embedded-cross-branch-process-plan.json',
+    rawInput: processPlan({ payload: processPayload }),
+    now,
+  });
+  assert.equal(processReport.status, 'blocked');
+  assert.equal(processReport.next_action, 'fix_build_plan');
+  assert.equal(processReport.schema_validation.issues[0]?.code, 'classification_hierarchy_error');
+
+  for (const flowType of ['Product flow', 'Waste flow']) {
+    const flowPayload = __testInternals.buildCanonicalFlowPayload(
+      flowPlan({ target: { flow_type: flowType } }),
+      `/tmp/embedded-${flowType.toLowerCase().replace(' ', '-')}-plan.json`,
+    );
+    assert.equal(
+      __testInternals.validateMaterializedSchema(flowPayload, 'flow', undefined).status,
+      'passed',
+    );
+    classificationItemsAt(flowPayload, [
+      'flowDataSet',
+      'flowInformation',
+      'dataSetInformation',
+      'classificationInformation',
+      'common:classification',
+      'common:class',
+    ])[1] = {
+      '@level': '1',
+      '@classId': '01',
+      '#text': 'Products of agriculture, horticulture and market gardening',
+    };
+    const invalidFlow = __testInternals.validateMaterializedSchema(flowPayload, 'flow', undefined);
+    assert.equal(invalidFlow.status, 'failed');
+    assert.equal(invalidFlow.issues[0]?.code, 'classification_hierarchy_error');
+    const flowReport = await runFlowBuildPlanMaterialize({
+      inputPath: `/tmp/embedded-cross-branch-${flowType.toLowerCase().replace(' ', '-')}-plan.json`,
+      rawInput: flowPlan({ target: { flow_type: flowType }, payload: flowPayload }),
+      now,
+    });
+    assert.equal(flowReport.status, 'blocked');
+    assert.equal(flowReport.next_action, 'fix_build_plan');
+    assert.equal(flowReport.schema_validation.issues[0]?.code, 'classification_hierarchy_error');
+  }
+
+  const elementaryPayload = __testInternals.buildCanonicalFlowPayload(
+    flowPlan({
+      target: { flow_type: 'Elementary flow' },
+      classificationPath: [
+        { '@level': '0', '@catId': '1', '#text': 'Emissions' },
+        { '@level': '1', '@catId': '1.3', '#text': 'Emissions to air' },
+      ],
+    }),
+    '/tmp/embedded-elementary-flow-plan.json',
+  );
+  assert.equal(
+    __testInternals.validateMaterializedSchema(elementaryPayload, 'flow', undefined).status,
+    'passed',
+  );
+  classificationItemsAt(elementaryPayload, [
+    'flowDataSet',
+    'flowInformation',
+    'dataSetInformation',
+    'classificationInformation',
+    'common:elementaryFlowCategorization',
+    'common:category',
+  ])[1] = {
+    '@level': '1',
+    '@catId': '2.1',
+    '#text': 'Resources from ground',
+  };
+  const invalidElementary = __testInternals.validateMaterializedSchema(
+    elementaryPayload,
+    'flow',
+    undefined,
+  );
+  assert.equal(invalidElementary.status, 'failed');
+  assert.equal(invalidElementary.issues[0]?.code, 'classification_hierarchy_error');
+  const elementaryReport = await runFlowBuildPlanMaterialize({
+    inputPath: '/tmp/embedded-cross-branch-elementary-plan.json',
+    rawInput: flowPlan({
+      target: { flow_type: 'Elementary flow' },
+      classificationPath: [
+        { '@level': '0', '@catId': '1', '#text': 'Emissions' },
+        { '@level': '1', '@catId': '1.3', '#text': 'Emissions to air' },
+      ],
+      payload: elementaryPayload,
+    }),
+    now,
+  });
+  assert.equal(elementaryReport.status, 'blocked');
+  assert.equal(elementaryReport.next_action, 'fix_build_plan');
+  assert.equal(
+    elementaryReport.schema_validation.issues[0]?.code,
+    'classification_hierarchy_error',
+  );
 });
 
 test('build-plan gates block schema failures and mismatched canonical payload kinds', async () => {
@@ -667,7 +1033,11 @@ test('build-plan internals cover evidence path normalization and SDK schema fall
   );
   assert.ok(defaultRuleset.blockers.some((finding) => finding.code === 'evidence_sources_missing'));
 
-  const emptySeed = __testInternals.materializePlan({}, 'flow', '/tmp/empty-flow-plan.json');
+  const emptySeed = __testInternals.materializePlan(
+    { classification_path: chemicalProductClassification },
+    'flow',
+    '/tmp/empty-flow-plan.json',
+  );
   assert.equal(
     ((emptySeed.flowDataSet as Record<string, unknown>).flowInformation as Record<string, unknown>)
       ? true
@@ -682,6 +1052,7 @@ test('build-plan internals cover evidence path normalization and SDK schema fall
         geography: 'CN',
         CASNumber: '50-00-0',
       },
+      classificationPath: [{ '@level': '0', '@catId': '1', '#text': 'Emissions' }],
       namePlan: {
         baseName: { en: 'Formaldehyde', zh: '甲醛' },
         treatmentStandardsRoutes: { '#text': 'emission', '@xml:lang': 'en' },
@@ -726,6 +1097,7 @@ test('build-plan internals cover evidence path normalization and SDK schema fall
       evidence_manifest: {
         sources: [],
       },
+      classification_path: energyProcessClassification,
       name_plan: {
         base_name: 'Fallback process',
       },
@@ -820,7 +1192,13 @@ test('build-plan internals cover evidence path normalization and SDK schema fall
       target: {
         flow_type: 'Waste flow',
       },
-      classification_path: ['Waste catalog'],
+      classification_path: [
+        {
+          '@level': '0',
+          '@classId': '3',
+          '#text': 'Other transportable goods, except metal products, machinery and equipment',
+        },
+      ],
       evidenceManifest: {
         sources: [
           {
@@ -886,6 +1264,7 @@ test('build-plan internals cover evidence path normalization and SDK schema fall
       identity_decision: {
         decision: 'create_new',
       },
+      classification_path: energyProcessClassification,
       name_plan: {
         base_name: [{ value: 'Defaulted process', lang: 'en' }],
       },

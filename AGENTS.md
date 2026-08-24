@@ -21,7 +21,11 @@ checkPaths:
   - docs/IMPLEMENTATION_GUIDE_CN.md
   - .docpact/config.yaml
   - docs/agents/**
+  - .gitignore
   - package.json
+  - pnpm-workspace.yaml
+  - pnpm-lock.yaml
+  - .oxlintrc.json
   - .nvmrc
   - bin/**
   - src/**
@@ -32,9 +36,9 @@ checkPaths:
   - scripts/docpact
   - scripts/docpact-gate.sh
   - scripts/install-git-hooks.sh
-lastReviewedAt: 2026-08-07
-lastReviewedCommit: 5cb359f1d0860df560c7571fa7547b2822b37c71
-lastReviewedNote: 'Reviewed for database-engine Issue #422: the default and only Data API profile uses the frozen api contract, core relations remain public, and the retired private alias executor has no CLI transport.'
+lastReviewedAt: 2026-08-25
+lastReviewedCommit: c6a48e82d6a56e1f810cddf12d1d64666d9503ce
+lastReviewedNote: 'Reviewed for Issue #224: CLI development is single-track on Node 24, pnpm 11.23.0, TypeScript 7.0.2, and Oxlint, with one root pnpm lock and package-contract proof.'
 related:
   - .docpact/config.yaml
   - docs/agents/repo-validation.md
@@ -112,6 +116,10 @@ Review note, 2026-07-25: Issue #206 orders that complete RLS-visible process sca
 
 Review note, 2026-07-25: Issue #208 lets the same bounded flow-delete path admit a fresh external proof only when its exact bytes are SHA-approved and its project, actor, plan, complete target binding, contiguous chunks, SELECT-only provenance, zero inbound result, and 30-minute freshness all match. The proof must cover all process rows and is therefore stronger than the default RLS-visible scan; it is validated before approval or dispatch. The CLI does not execute raw SQL, the default scan remains available, and delete scope, owner/session DML, retry, RPC/schema, and protected-row boundaries are unchanged.
 
+Review note, 2026-08-25: Issue #224 replaces the mixed Node package/lint toolchain with one exact baseline: Node 24, pnpm 11.23.0, TypeScript 7.0.2, and type-aware Oxlint. `pnpm-workspace.yaml` plus the sole root `pnpm-lock.yaml` own dependency resolution; `test:package` rejects alternate locks, legacy TypeScript/ESLint bridges, active npm package-management commands, and tool leakage into the published tarball. The feature branch stays at 0.0.33; because the migration changes maintainer and release compatibility, prepare 0.1.0 in a separate release-only PR after this feature merges and all gates pass.
+
+Review note, 2026-08-25: consuming the stricter TIDAS SDK 0.2 contract also closes one materialization gap: plan-only process/flow build materialization requires an explicit canonical `classification_path` of continuous level `0..n` objects. Process/product entries use exact locked `@classId` plus `#text`; elementary entries use `@catId` and emit `common:elementaryFlowCategorization`. Missing, label-only, malformed, out-of-order, or taxonomy-spoofed classifications fail closed instead of receiving synthetic UUID class ids.
+
 ## Bootstrap Order
 
 Load docs in this order:
@@ -162,7 +170,8 @@ Route those tasks to:
 ## Runtime Facts
 
 - Repo-local documentation governance is encoded in `.docpact/config.yaml` and enforced locally by the pre-push docpact gate; `.github/workflows/ai-doc-lint.yml` is manual-dispatch fallback.
-- Package manager: `npm`
+- Package manager: exact `pnpm@11.23.0`, with one root workspace and lockfile
+- Compiler and lint: `typescript@7.0.2` plus type-aware Oxlint; no TypeScript 5/6 or ESLint bridge
 - Node baseline: `>=24 <25`
 - Runtime style: TypeScript source, Node-native CLI, direct REST and Edge Function access only
 - Newly added process-maintenance commands such as `process identity-preflight`, `process build-plan`, `process scope-statistics`, `process dedup-review`, `process refresh-references`, and `process verify-rows` still belong to the native CLI command surface in `src/cli.ts` and `src/lib/process-*.ts` / shared CLI-native helpers.
@@ -178,15 +187,16 @@ Route those tasks to:
 - `process publish-build` validates canonical process payloads with `ProcessSchema` before publish handoff artifacts are written, and emits `reports/process-publish-schema-gate.json`.
 - `publish run` emits `verification-report.json` next to `publish-report.json`; this is the deterministic publish ruleset summary for failed/deferred/executed outcomes.
 - `src/lib/runtime-rulesets.ts` is the CLI-local runtime activation layer for stable ruleset ids, methodology rule ids, severity, and blocker semantics used by review, dedup, and publish gate artifacts.
-- The canonical minimum validation command is `npm run lint`
-- The authoritative full gate is `npm run prepush:gate`; the local pre-push hook runs it after docpact.
+- The canonical minimum validation command is `pnpm lint`. Type-aware Oxlint is the only linter; the retired ESLint and TypeScript Compiler API lint paths must not return.
+- The authoritative full gate is `pnpm prepush:gate`; it includes `pnpm test:package`, the exact 100% coverage proof, and the coverage assertion. The local pre-push hook runs it after docpact.
 - Release tagging is guarded in `.github/workflows/tag-release-from-merge.yml` so only the upstream repository can execute the merge-tag flow, and it runs the release gate only when a package version change will create a `cli-v<version>` tag. `.github/workflows/publish.yml` publishes from that tag and also supports `workflow_dispatch` for existing-tag recovery/backfill.
-- CLI npm releases must go through a version-bump PR merged to upstream `main`; do not use local `npm publish` as the release path. The release-prep PR updates `package.json` and `package-lock.json`, merge creates `cli-v<version>`, and GitHub Actions publishes through npm Trusted Publishing.
+- CLI npm releases must go through a version-bump PR merged to upstream `main`; routine publication must not originate from a local workstation. The release-prep PR updates `package.json`; the sole root `pnpm-lock.yaml` remains present, frozen, and unchanged when the dependency graph is unchanged. Merge creates `cli-v<version>`, and GitHub Actions uses pinned `pnpm/setup` v2.0.2 plus native pnpm OIDC/provenance publication through npm Trusted Publishing.
 - Coverage for `src/**/*.ts` is expected to stay at `100%` statements, branches, functions, and lines
 
 ## Hard Boundaries
 
-- Do not add orchestration frameworks or new npm dependencies without explicit approval
+- Do not add orchestration frameworks or new runtime/package dependencies without explicit approval
+- Do not add another package manager, nested lockfile, TypeScript 5/6 compatibility track, ESLint bridge, or Compiler API lint path. This repository has one package graph: pnpm 11.23.0 with the root workspace and lockfile.
 - Do not publish `@tiangong-lca/cli` from a local workstation for routine releases; local npm auth state is not part of the release contract.
 - Do not implement dataset maintenance through direct SQL, service-role credentials, raw REST mutation, or Foundry-local database code. Foundry and skills may prepare scope and orchestrate the CLI, but the native CLI must own current-user RLS preflight, platform-command mutation, per-action audit logging, and independent readback verification.
 - Do not generalize `merge-support-aliases` beyond its reviewed two-dimension BAFU profile without a new tracked contract. The fixed factors, 52-row/59-exchange closure, 309 preserved exchanges, and postcondition counts are safety invariants.
@@ -216,4 +226,4 @@ Install the versioned local hook once per checkout:
 ./scripts/install-git-hooks.sh
 ```
 
-The `pre-push` hook runs `scripts/docpact-gate.sh`, which delegates CLI lookup to `scripts/docpact` and performs strict config validation plus enforced lint before the push leaves the machine. It then runs `npm run prepush:gate` as the local test gate. The wrapper checks `DOCPACT_BIN`, Cargo install locations, Homebrew install locations, and then `PATH`, so local agent shells should not fail only because bare `docpact` is unavailable. The default comparison base is `origin/main`. Override it for unusual stacks with `DOCPACT_BASE_REF=<ref>` or `scripts/docpact-gate.sh --base <ref>`. The gate writes its detailed report to a temporary file so normal pushes do not create `.docpact/runs/` artifacts. The GitHub `quality-gate` workflow is manual-dispatch only; publish and tag workflows still run release gates before release actions.
+The `pre-push` hook runs `scripts/docpact-gate.sh`, which delegates CLI lookup to `scripts/docpact` and performs strict config validation plus enforced lint before the push leaves the machine. It then runs `pnpm prepush:gate` as the local test gate. The wrapper checks `DOCPACT_BIN`, Cargo install locations, Homebrew install locations, and then `PATH`, so local agent shells should not fail only because bare `docpact` is unavailable. The default comparison base is `origin/main`. Override it for unusual stacks with `DOCPACT_BASE_REF=<ref>` or `scripts/docpact-gate.sh --base <ref>`. The gate writes its detailed report to a temporary file so normal pushes do not create `.docpact/runs/` artifacts. The GitHub `quality-gate` workflow is manual-dispatch only; publish and tag workflows still run release gates before release actions.

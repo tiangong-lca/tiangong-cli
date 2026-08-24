@@ -1,0 +1,903 @@
+import assert from 'node:assert/strict';
+import { execFileSync, spawnSync } from 'node:child_process';
+import {
+  cpSync,
+  existsSync,
+  mkdirSync,
+  mkdtempSync,
+  readFileSync,
+  readdirSync,
+  rmSync,
+  writeFileSync,
+} from 'node:fs';
+import { basename, dirname, join, relative } from 'node:path';
+import { fileURLToPath } from 'node:url';
+import { tmpdir } from 'node:os';
+import test from 'node:test';
+
+const TEST_DIR = dirname(fileURLToPath(import.meta.url));
+const REPOSITORY_ROOT = dirname(TEST_DIR);
+const PACKAGE_JSON_PATH = join(REPOSITORY_ROOT, 'package.json');
+const PACKAGE_JSON = readJson(PACKAGE_JSON_PATH);
+const PACKAGE_MANAGER = 'pnpm@11.23.0';
+const PACKAGE_MANAGER_VERSION = PACKAGE_MANAGER.slice('pnpm@'.length);
+const PNPM_SETUP_ACTION = '84cb39b217b10273981911c288cd62326dc7c6d2';
+
+const PACKAGE_LOCKFILE_NAMES = new Set([
+  'bun.lock',
+  'bun.lockb',
+  'npm-shrinkwrap.json',
+  'package-lock.json',
+  'pnpm-lock.yaml',
+  'pnpm-lock.yml',
+  'yarn.lock',
+]);
+
+const DEPENDENCY_SECTIONS = [
+  'dependencies',
+  'devDependencies',
+  'optionalDependencies',
+  'peerDependencies',
+];
+
+const FORBIDDEN_TYPESCRIPT_COMPATIBILITY_NAMES = [
+  /^@typescript-eslint\//u,
+  /^typescript-eslint$/u,
+  /^ts-eslint$/u,
+  /^typescript[-_]?compat/u,
+  /^typescript[-_]?[56](?:$|[-_])/u,
+  /^ts[-_]?[56](?:$|[-_])/u,
+];
+
+const FORBIDDEN_PUBLISHED_TOOLS = new Set([
+  '@eslint/js',
+  'c8',
+  'eslint',
+  'jest',
+  'lint-staged',
+  'oxlint',
+  'oxlint-tsgolint',
+  'prettier',
+  'ts-jest',
+  'ts-node',
+  'tsx',
+  'typescript',
+  'typescript-eslint',
+  'vitest',
+]);
+
+const NPM_PACKAGE_COMMAND_PATTERN =
+  /\b(?:npx|npm\s+(?:add|audit|cache|ci|config|dedupe|exec|fund|i|install|link|list|ls|outdated|pack|pkg|prune|publish|rebuild|remove|run|test|uninstall|unlink|update|version|view|whoami))\b/iu;
+
+test('the repository pins the exact supported pnpm and has one root pnpm lockfile', () => {
+  assert.equal(PACKAGE_JSON.packageManager, PACKAGE_MANAGER);
+  assert.equal(PACKAGE_JSON.engines?.pnpm, PACKAGE_MANAGER_VERSION);
+
+  const activeVersion = execFileSync('pnpm', ['--version'], commandOptions(REPOSITORY_ROOT)).trim();
+  assert.equal(
+    activeVersion,
+    PACKAGE_MANAGER_VERSION,
+    `the active pnpm must match ${PACKAGE_MANAGER}, received ${activeVersion}`,
+  );
+
+  const lockfiles = findFiles(REPOSITORY_ROOT, (path) =>
+    PACKAGE_LOCKFILE_NAMES.has(basename(path)),
+  ).map(displayPath);
+
+  assert.deepEqual(
+    lockfiles,
+    ['pnpm-lock.yaml'],
+    `remove non-pnpm or nested package-manager lockfiles:\n${formatJson(lockfiles)}`,
+  );
+});
+
+test('pnpm build permissions and release-age exceptions are exact and versioned', () => {
+  const workspaceText = readFileSync(join(REPOSITORY_ROOT, 'pnpm-workspace.yaml'), 'utf8');
+  assert.match(workspaceText, /allowBuilds:\n  esbuild: true\n  fsevents: false/u);
+
+  const exceptions = [...workspaceText.matchAll(/^  - ['"]?(.+?)['"]?$/gmu)].map(
+    (match) => match[1],
+  );
+  assert.equal(exceptions.length, 21);
+  assert.deepEqual(
+    exceptions.filter(
+      (entry) =>
+        !/^(?:oxlint|@oxlint\/binding-[a-z0-9-]+)@1\.80\.0$/u.test(entry) &&
+        entry !== '@tiangong-lca/tidas-sdk@0.2.0',
+    ),
+    [],
+    `minimum-release-age exceptions must stay exact and versioned:\n${formatJson(exceptions)}`,
+  );
+  assert.match(workspaceText, /overrides:\n  brace-expansion: 5\.0\.9\n  ws: 8\.21\.3/u);
+});
+
+test('all manifests and both recursive pnpm trees contain only direct TypeScript 7', () => {
+  const manifests = findFiles(REPOSITORY_ROOT, (path) => basename(path) === 'package.json');
+  const declarations = [];
+  const compatibilityFindings = [];
+
+  for (const manifestPath of manifests) {
+    const manifest = readJson(manifestPath);
+    for (const section of DEPENDENCY_SECTIONS) {
+      for (const [name, range] of Object.entries(manifest[section] ?? {})) {
+        if (name === 'typescript') {
+          declarations.push({ manifest: displayPath(manifestPath), section, range });
+        }
+        if (
+          FORBIDDEN_TYPESCRIPT_COMPATIBILITY_NAMES.some((pattern) => pattern.test(name)) ||
+          /^npm:typescript@/iu.test(String(range))
+        ) {
+          compatibilityFindings.push({
+            manifest: displayPath(manifestPath),
+            section,
+            name,
+            range,
+          });
+        }
+      }
+    }
+  }
+
+  assert.ok(declarations.length > 0, 'a direct TypeScript dependency must be declared');
+  assert.deepEqual(
+    declarations.filter(({ range }) => !isTypeScript7Range(range)),
+    [],
+    `direct TypeScript declarations must be 7.x:\n${formatJson(declarations)}`,
+  );
+  assert.deepEqual(
+    compatibilityFindings,
+    [],
+    `remove TypeScript compatibility aliases and legacy ESLint bridges:\n${formatJson(
+      compatibilityFindings,
+    )}`,
+  );
+
+  const lockText = readFileSync(join(REPOSITORY_ROOT, 'pnpm-lock.yaml'), 'utf8');
+  assert.doesNotMatch(lockText, /(?:@typescript-eslint\/|typescript-eslint|ts-eslint)/iu);
+  assert.doesNotMatch(lockText, /npm:typescript@/iu);
+
+  for (const [label, lockfileOnly] of [
+    ['installed', false],
+    ['lockfile-only', true],
+  ]) {
+    const tree = pnpmList(REPOSITORY_ROOT, 'typescript', {
+      recursive: true,
+      lockfileOnly,
+    });
+    const versions = collectDependencyVersions(tree, 'typescript');
+    assert.ok(versions.length > 0, `the recursive ${label} tree must contain TypeScript 7`);
+    assert.deepEqual(
+      versions.filter(({ version }) => majorVersion(version) !== 7),
+      [],
+      `the recursive ${label} tree contains non-7 TypeScript:\n${formatJson(versions)}`,
+    );
+  }
+});
+
+test('active automation uses pnpm commands and a current pnpm setup action', () => {
+  const findings = [];
+
+  const manifestPaths = findFiles(REPOSITORY_ROOT, (path) => basename(path) === 'package.json');
+  for (const manifestPath of manifestPaths) {
+    const manifest = readJson(manifestPath);
+    for (const [name, command] of Object.entries(manifest.scripts ?? {})) {
+      collectPackageCommandFinding(manifestPath, `scripts.${name}`, command, findings);
+    }
+
+    for (const [pattern, command] of Object.entries(manifest['lint-staged'] ?? {})) {
+      const commands = Array.isArray(command) ? command : [command];
+      for (const entry of commands) {
+        collectPackageCommandFinding(manifestPath, `lint-staged.${pattern}`, entry, findings);
+      }
+    }
+  }
+
+  const automationRoots = [
+    join(REPOSITORY_ROOT, '.github', 'actions'),
+    join(REPOSITORY_ROOT, '.github', 'workflows'),
+    join(REPOSITORY_ROOT, '.githooks'),
+    join(REPOSITORY_ROOT, 'scripts'),
+  ];
+  const legacySetupActions = [];
+  const setupActions = [];
+
+  for (const automationRoot of automationRoots) {
+    for (const automationPath of findFiles(automationRoot, () => true)) {
+      const content = readFileSync(automationPath, 'utf8');
+      collectActiveCommandFindings(automationPath, content, findings);
+      legacySetupActions.push(
+        ...[...content.matchAll(/pnpm\/action-setup@([^\s'"#]+)/giu)].map((match) => ({
+          file: displayPath(automationPath),
+          version: match[1],
+        })),
+      );
+      setupActions.push(
+        ...[...content.matchAll(/pnpm\/setup@([^\s'"#]+)/giu)].map((match) => ({
+          file: displayPath(automationPath),
+          version: match[1],
+        })),
+      );
+    }
+  }
+
+  assert.deepEqual(
+    findings,
+    [],
+    `active npm or npx package-management commands remain:\n${formatJson(findings)}`,
+  );
+  assert.deepEqual(legacySetupActions, [], 'the retired pnpm/action-setup action must not remain');
+  assert.ok(setupActions.length > 0, 'workflows must install pnpm through pnpm/setup');
+  assert.deepEqual(
+    setupActions.filter(({ version }) => version !== PNPM_SETUP_ACTION),
+    [],
+    `pnpm/setup must use the reviewed immutable v2.0.2 revision:\n${formatJson(setupActions)}`,
+  );
+
+  const launcherGuidanceFindings = [];
+  for (const launcherPath of findFiles(join(REPOSITORY_ROOT, 'bin'), () => true)) {
+    const lines = readFileSync(launcherPath, 'utf8').split(/\r?\n/u);
+    for (const [index, line] of lines.entries()) {
+      if (NPM_PACKAGE_COMMAND_PATTERN.test(line)) {
+        launcherGuidanceFindings.push({
+          file: displayPath(launcherPath),
+          line: index + 1,
+          guidance: line.trim(),
+        });
+      }
+    }
+  }
+  assert.deepEqual(
+    launcherGuidanceFindings,
+    [],
+    `launcher guidance still tells users to use npm or npx:\n${formatJson(
+      launcherGuidanceFindings,
+    )}`,
+  );
+});
+
+test('active maintainer documentation exposes only pnpm package-management commands', () => {
+  const documentationPaths = [
+    join(REPOSITORY_ROOT, 'AGENTS.md'),
+    join(REPOSITORY_ROOT, 'DEV_CN.md'),
+    join(REPOSITORY_ROOT, 'README.md'),
+    ...findFiles(join(REPOSITORY_ROOT, 'docs'), (path) => path.endsWith('.md')),
+  ];
+  const findings = [];
+
+  for (const documentationPath of documentationPaths) {
+    const content = readFileSync(documentationPath, 'utf8');
+    if (/^status:\s*historical\s*$/mu.test(content)) {
+      continue;
+    }
+    for (const [index, line] of content.split(/\r?\n/u).entries()) {
+      if (
+        NPM_PACKAGE_COMMAND_PATTERN.test(line) &&
+        !/(?:Historical npm-era|historical npm-era|retired; do not use as current instructions)/u.test(
+          line,
+        )
+      ) {
+        findings.push({
+          file: displayPath(documentationPath),
+          line: index + 1,
+          command: line.trim(),
+        });
+      }
+    }
+  }
+
+  assert.deepEqual(
+    findings,
+    [],
+    `active maintainer documentation still exposes npm or npx commands:\n${formatJson(findings)}`,
+  );
+});
+
+test('workflows use the reviewed Node 24 pnpm setup, frozen installs, and trusted publish path', () => {
+  const workflowRoot = join(REPOSITORY_ROOT, '.github', 'workflows');
+  const workflowPaths = findFiles(workflowRoot, (path) => /\.ya?ml$/u.test(path));
+  const requiredNodeWorkflows = new Set([
+    '.github/workflows/publish.yml',
+    '.github/workflows/quality-gate.yml',
+    '.github/workflows/tag-release-from-merge.yml',
+  ]);
+  const setupFindings = [];
+  const installFindings = [];
+  const workflowsUsingNode = [];
+
+  for (const workflowPath of workflowPaths) {
+    const content = readFileSync(workflowPath, 'utf8');
+    if (/\bpnpm\s+(?:install|run|exec|publish)\b/u.test(stripQuotedText(content))) {
+      workflowsUsingNode.push(displayPath(workflowPath));
+    }
+
+    for (const setup of collectPnpmSetupBlocks(content)) {
+      if (
+        setup.revision !== PNPM_SETUP_ACTION ||
+        setup.runtime !== 'node@24' ||
+        setup.install !== 'false' ||
+        setup.cache !== 'true'
+      ) {
+        setupFindings.push({ file: displayPath(workflowPath), ...setup });
+      }
+    }
+
+    for (const [index, line] of content.split(/\r?\n/u).entries()) {
+      const commandSurface = stripQuotedText(line).trim();
+      if (/\bpnpm\s+install\b/u.test(commandSurface) && !/--frozen-lockfile\b/u.test(line)) {
+        installFindings.push({
+          file: displayPath(workflowPath),
+          line: index + 1,
+          command: line.trim(),
+        });
+      }
+    }
+
+    assert.doesNotMatch(content, /\b(?:NPM_TOKEN|NODE_AUTH_TOKEN)\b/u);
+    assert.doesNotMatch(content, /\bnpm\s+(?:i|install)\s+(?:--global|-g)\b/iu);
+    assert.doesNotMatch(content, /\bactions\/setup-node@/u);
+  }
+
+  assert.deepEqual(
+    setupFindings,
+    [],
+    `pnpm setup blocks must pin Node 24 and disable implicit installs:\n${formatJson(
+      setupFindings,
+    )}`,
+  );
+  assert.deepEqual(
+    installFindings,
+    [],
+    `workflow installs must be frozen:\n${formatJson(installFindings)}`,
+  );
+  for (const workflowPath of workflowsUsingNode) {
+    const content = readFileSync(join(REPOSITORY_ROOT, workflowPath), 'utf8');
+    assert.match(
+      content,
+      new RegExp(`pnpm/setup@${PNPM_SETUP_ACTION}`, 'u'),
+      `${workflowPath} uses pnpm without the reviewed setup action`,
+    );
+  }
+  for (const workflowPath of requiredNodeWorkflows) {
+    const content = readFileSync(join(REPOSITORY_ROOT, workflowPath), 'utf8');
+    assert.match(
+      content,
+      new RegExp(`pnpm/setup@${PNPM_SETUP_ACTION}`, 'u'),
+      `${workflowPath} must use the reviewed pnpm/setup action`,
+    );
+  }
+
+  const publishWorkflow = readFileSync(join(workflowRoot, 'publish.yml'), 'utf8');
+  assert.match(publishWorkflow, /predates the pnpm release contract/u);
+  assert.match(
+    publishWorkflow,
+    /run:\s+pnpm --filter @tiangong-lca\/cli --fail-if-no-match publish --access public --provenance --no-git-checks\s*$/mu,
+  );
+});
+
+test('Oxlint is the only JavaScript and TypeScript linter and uses type-aware TS7 rules', () => {
+  const allDeclaredDependencies = Object.fromEntries(
+    DEPENDENCY_SECTIONS.flatMap((section) => Object.entries(PACKAGE_JSON[section] ?? {})),
+  );
+  const scripts = Object.values(PACKAGE_JSON.scripts ?? {}).join('\n');
+
+  assert.equal(typeof PACKAGE_JSON.devDependencies?.oxlint, 'string');
+  assert.equal(typeof PACKAGE_JSON.devDependencies?.['oxlint-tsgolint'], 'string');
+  assert.match(scripts, /\boxlint\b/u);
+  assert.doesNotMatch(scripts, /\beslint\b/u);
+  assert.deepEqual(
+    Object.keys(allDeclaredDependencies).filter(
+      (name) => name === 'eslint' || name === '@eslint/js' || name.includes('typescript-eslint'),
+    ),
+    [],
+  );
+  assert.equal(existsSync(join(REPOSITORY_ROOT, 'eslint.config.mjs')), false);
+
+  const oxlintConfigPath = join(REPOSITORY_ROOT, '.oxlintrc.json');
+  const oxlintConfig = readJson(oxlintConfigPath);
+  assert.equal(oxlintConfig.categories?.correctness, 'error');
+  assert.equal(oxlintConfig.categories?.suspicious, 'error');
+  assert.equal(oxlintConfig.options?.typeAware, true);
+  assert.ok(oxlintConfig.plugins?.includes('typescript'));
+  assert.equal(oxlintConfig.rules?.['typescript/no-deprecated'], 'error');
+
+  const configPaths = findFiles(REPOSITORY_ROOT, (path) =>
+    /^tsconfig(?:\..+)?\.json$/u.test(basename(path)),
+  );
+  const removedOptions = [];
+  for (const configPath of configPaths) {
+    const compilerOptions = readJson(configPath).compilerOptions ?? {};
+    const moduleResolution = String(compilerOptions.moduleResolution ?? '').toLowerCase();
+    if (moduleResolution === 'node' || moduleResolution === 'node10') {
+      removedOptions.push({
+        file: displayPath(configPath),
+        option: 'moduleResolution',
+        value: compilerOptions.moduleResolution,
+      });
+    }
+    if (Object.hasOwn(compilerOptions, 'baseUrl')) {
+      removedOptions.push({
+        file: displayPath(configPath),
+        option: 'baseUrl',
+        value: compilerOptions.baseUrl,
+      });
+    }
+    if (String(compilerOptions.ignoreDeprecations ?? '').startsWith('6.')) {
+      removedOptions.push({
+        file: displayPath(configPath),
+        option: 'ignoreDeprecations',
+        value: compilerOptions.ignoreDeprecations,
+      });
+    }
+  }
+  assert.deepEqual(
+    removedOptions,
+    [],
+    `TypeScript 7 removed or compatibility-only options remain:\n${formatJson(removedOptions)}`,
+  );
+});
+
+test('the runtime SDK floor is 0.2.0 and published dependencies contain no toolchain', () => {
+  const sdkRange = PACKAGE_JSON.dependencies?.['@tiangong-lca/tidas-sdk'];
+  assert.equal(typeof sdkRange, 'string');
+  assert.ok(
+    compareVersions(firstVersion(sdkRange), [0, 2, 0]) >= 0,
+    `@tiangong-lca/tidas-sdk must be >=0.2.0, received ${sdkRange}`,
+  );
+
+  const publishedDependencies = DEPENDENCY_SECTIONS.filter(
+    (section) => section !== 'devDependencies',
+  ).flatMap((section) => Object.keys(PACKAGE_JSON[section] ?? {}));
+  const forbiddenDependencies = publishedDependencies.filter(
+    (dependency) =>
+      FORBIDDEN_PUBLISHED_TOOLS.has(dependency) ||
+      dependency.startsWith('@types/') ||
+      dependency.includes('typescript-eslint'),
+  );
+  assert.deepEqual(
+    forbiddenDependencies,
+    [],
+    `published dependency fields contain compiler, lint, or test tooling: ${forbiddenDependencies.join(
+      ', ',
+    )}`,
+  );
+  assert.deepEqual(PACKAGE_JSON.publishConfig, {
+    access: 'public',
+    registry: 'https://registry.npmjs.org/',
+  });
+});
+
+test('the exact 100% source-coverage gate remains in the pnpm pre-push path', () => {
+  const coverageCommand = PACKAGE_JSON.scripts?.['test:coverage'] ?? '';
+  const coverageAssertCommand = PACKAGE_JSON.scripts?.['test:coverage:assert-full'] ?? '';
+  const packageContractCommand = PACKAGE_JSON.scripts?.['test:package'] ?? '';
+  const prepushCommand = PACKAGE_JSON.scripts?.['prepush:gate'] ?? '';
+  const coverageAssertionSource = readFileSync(
+    join(REPOSITORY_ROOT, 'scripts', 'assert-full-coverage.ts'),
+    'utf8',
+  );
+
+  assert.match(coverageCommand, /scripts\/run-test-coverage\.cjs/u);
+  assert.match(coverageAssertCommand, /assert-full-coverage\.js/u);
+  assert.match(packageContractCommand, /test\/toolchain-contract\.test\.mjs/u);
+  assert.match(prepushCommand, /(?:^|&&)\s*pnpm(?:\s+run)?\s+test:package(?:\s|&&|$)/u);
+  assert.match(prepushCommand, /(?:^|&&)\s*pnpm(?:\s+run)?\s+test:coverage(?:\s|&&|$)/u);
+  assert.match(
+    prepushCommand,
+    /(?:^|&&)\s*pnpm(?:\s+run)?\s+test:coverage:assert-full(?:\s|&&|$)/u,
+  );
+  for (const metric of ['lines', 'statements', 'functions', 'branches']) {
+    assert.match(coverageAssertionSource, new RegExp(`['"]${metric}['"]`, 'u'));
+  }
+  assert.match(coverageAssertionSource, /value\.covered !== value\.total/u);
+  assert.match(coverageAssertionSource, /value\.pct !== 100/u);
+});
+
+const maybePackTest = process.env.TIANGONG_LCA_COVERAGE === '1' ? test.skip : test;
+
+maybePackTest(
+  'a clean pnpm tarball preserves root bin behavior without installing TypeScript or build tools',
+  { timeout: 180_000 },
+  () => {
+    const fixtureRoot = mkdtempSync(join(tmpdir(), 'tiangong-cli-pack-contract-'));
+
+    try {
+      const cleanRepository = join(fixtureRoot, 'repository');
+      const packRoot = join(fixtureRoot, 'pack');
+      const consumerRoot = join(fixtureRoot, 'consumer');
+      mkdirSync(cleanRepository);
+      mkdirSync(packRoot);
+      mkdirSync(consumerRoot);
+      copyCleanPackageSource(cleanRepository);
+
+      execFileSync(
+        'pnpm',
+        ['install', '--frozen-lockfile', '--ignore-scripts'],
+        commandOptions(cleanRepository),
+      );
+      execFileSync('pnpm', ['run', 'build'], commandOptions(cleanRepository));
+      const packOutput = execFileSync(
+        'pnpm',
+        ['pack', '--json', '--pack-destination', packRoot],
+        commandOptions(cleanRepository),
+      );
+      const packMetadata = JSON.parse(packOutput);
+      assert.equal(packMetadata.name, PACKAGE_JSON.name);
+      assertPackedFiles(packMetadata.files ?? []);
+
+      const tarballs = readdirSync(packRoot)
+        .filter((file) => file.endsWith('.tgz'))
+        .map((file) => join(packRoot, file));
+      assert.equal(tarballs.length, 1, `expected one tarball, received ${tarballs.length}`);
+
+      writeFileSync(
+        join(consumerRoot, 'package.json'),
+        `${JSON.stringify(
+          {
+            name: 'tiangong-cli-pack-consumer',
+            private: true,
+            packageManager: PACKAGE_MANAGER,
+            dependencies: {
+              [PACKAGE_JSON.name]: `file:${tarballs[0]}`,
+            },
+          },
+          null,
+          2,
+        )}\n`,
+        { encoding: 'utf8', flag: 'wx' },
+      );
+      execFileSync(
+        'pnpm',
+        ['install', '--ignore-scripts', '--no-frozen-lockfile', '--no-lockfile'],
+        commandOptions(consumerRoot),
+      );
+
+      const installedPackageRoot = join(consumerRoot, 'node_modules', '@tiangong-lca', 'cli');
+      const installedManifest = readJson(join(installedPackageRoot, 'package.json'));
+      const installedPublishedDependencies = DEPENDENCY_SECTIONS.filter(
+        (section) => section !== 'devDependencies',
+      ).flatMap((section) => Object.keys(installedManifest[section] ?? {}));
+      assert.deepEqual(
+        installedPublishedDependencies.filter(
+          (dependency) =>
+            FORBIDDEN_PUBLISHED_TOOLS.has(dependency) || dependency.startsWith('@types/'),
+        ),
+        [],
+      );
+
+      const installedBinPath = join(
+        consumerRoot,
+        'node_modules',
+        '.bin',
+        process.platform === 'win32' ? 'tiangong-lca.cmd' : 'tiangong-lca',
+      );
+      assertRootBinBehavior(installedBinPath, consumerRoot, installedManifest.version);
+
+      const consumerTree = pnpmList(consumerRoot, 'typescript');
+      assert.deepEqual(
+        collectDependencyVersions(consumerTree, 'typescript'),
+        [],
+        'the packed CLI must not bring TypeScript into a production consumer tree',
+      );
+    } finally {
+      rmSync(fixtureRoot, { recursive: true, force: true });
+    }
+  },
+);
+
+function assertRootBinBehavior(binPath, cwd, expectedVersion) {
+  const rootHelp = runBin(binPath, [], cwd);
+  assertSuccessfulExit(rootHelp);
+  assert.match(rootHelp.stdout, /Unified TianGong command entrypoint\./u);
+  assert.equal(rootHelp.stderr, '');
+
+  const explicitHelp = runBin(binPath, ['--help'], cwd);
+  assertSuccessfulExit(explicitHelp);
+  assert.match(explicitHelp.stdout, /Usage:\s+tiangong-lca <command>/u);
+  assert.equal(explicitHelp.stderr, '');
+
+  const version = runBin(binPath, ['--version'], cwd);
+  assertSuccessfulExit(version);
+  assert.equal(version.stdout, `${expectedVersion}\n`);
+  assert.equal(version.stderr, '');
+
+  const error = runBin(binPath, ['--definitely-unknown'], cwd);
+  assert.ifError(error.error);
+  assert.equal(error.status, 2, error.stderr || error.stdout);
+  assert.equal(error.stdout, '');
+  assert.deepEqual(JSON.parse(error.stderr), {
+    error: {
+      code: 'UNKNOWN_ROOT_OPTION',
+      message: 'Unknown root option: --definitely-unknown',
+    },
+  });
+}
+
+function assertPackedFiles(fileMetadata) {
+  const packedFiles = fileMetadata.map(({ path }) => String(path).replaceAll('\\', '/'));
+  const forbidden = packedFiles.filter(
+    (path) =>
+      /^(?:src|test|scripts|node_modules)\//u.test(path) ||
+      /^dist\/(?:scripts|test)\//u.test(path) ||
+      /(?:^|\/)\.?(?:eslint|oxlint|tsconfig)[^/]*$/iu.test(path) ||
+      /(?:^|\/)(?:package-lock\.json|pnpm-lock\.ya?ml)$/u.test(path),
+  );
+
+  assert.ok(packedFiles.includes('bin/tiangong-lca.js'), 'the packed CLI bin is missing');
+  assert.ok(packedFiles.includes('dist/src/main.js'), 'the packed runtime entry is missing');
+  assert.deepEqual(
+    forbidden,
+    [],
+    `the tarball contains source, compiler, lint, or test tooling:\n${formatJson(forbidden)}`,
+  );
+}
+
+function copyCleanPackageSource(destination) {
+  for (const entry of [
+    '.npmrc',
+    '.oxlintrc.json',
+    'LICENSE',
+    'README.md',
+    'assets',
+    'bin',
+    'package.json',
+    'pnpm-lock.yaml',
+    'pnpm-workspace.yaml',
+    'scripts',
+    'src',
+    'tsconfig.build.json',
+    'tsconfig.json',
+  ]) {
+    const source = join(REPOSITORY_ROOT, entry);
+    if (existsSync(source)) {
+      cpSync(source, join(destination, entry), { recursive: true });
+    }
+  }
+}
+
+function runBin(binPath, args, cwd) {
+  return spawnSync(binPath, args, {
+    cwd,
+    encoding: 'utf8',
+    env: runtimeEnvironment(),
+    shell: process.platform === 'win32',
+  });
+}
+
+function assertSuccessfulExit(result) {
+  assert.ifError(result.error);
+  assert.equal(result.status, 0, result.stderr || result.stdout);
+}
+
+function runtimeEnvironment() {
+  const environment = {};
+  for (const key of [
+    'COMSPEC',
+    'ComSpec',
+    'NODE_OPTIONS',
+    'PATH',
+    'Path',
+    'PATHEXT',
+    'SYSTEMROOT',
+    'SystemRoot',
+    'TEMP',
+    'TMP',
+    'TMPDIR',
+  ]) {
+    if (process.env[key] !== undefined) {
+      environment[key] = process.env[key];
+    }
+  }
+  return environment;
+}
+
+function commandOptions(cwd) {
+  return {
+    cwd,
+    encoding: 'utf8',
+    env: process.env,
+    stdio: ['ignore', 'pipe', 'pipe'],
+  };
+}
+
+function pnpmList(cwd, dependency, { recursive = false, lockfileOnly = false } = {}) {
+  const args = ['list', dependency];
+  if (recursive) {
+    args.push('--recursive');
+  }
+  args.push('--depth', 'Infinity', '--json');
+  if (lockfileOnly) {
+    args.push('--lockfile-only');
+  }
+
+  const result = spawnSync('pnpm', args, commandOptions(cwd));
+  assert.ifError(result.error);
+  assert.equal(result.status, 0, `pnpm list failed in ${cwd}:\n${result.stderr || result.stdout}`);
+  return JSON.parse(result.stdout || '[]');
+}
+
+function collectDependencyVersions(tree, dependencyName) {
+  const roots = Array.isArray(tree) ? tree : [tree];
+  return roots.flatMap((root) => collectDependencyVersionsFromNode(root, dependencyName, []));
+}
+
+function collectDependencyVersionsFromNode(tree, dependencyName, ancestry) {
+  const matches = [];
+  for (const section of ['dependencies', 'devDependencies', 'optionalDependencies']) {
+    for (const [name, metadata] of Object.entries(tree?.[section] ?? {})) {
+      const entry = `${name}@${metadata.version ?? 'unknown'}`;
+      const dependencyPath = [...ancestry, entry];
+      if (name === dependencyName) {
+        matches.push({ version: metadata.version, path: dependencyPath.join(' > ') });
+      }
+      matches.push(...collectDependencyVersionsFromNode(metadata, dependencyName, dependencyPath));
+    }
+  }
+  return matches;
+}
+
+function collectPackageCommandFinding(path, surface, command, findings) {
+  if (typeof command !== 'string' || !NPM_PACKAGE_COMMAND_PATTERN.test(command)) {
+    return;
+  }
+  findings.push({ file: displayPath(path), surface, command });
+}
+
+function collectPnpmSetupBlocks(content) {
+  const lines = content.split(/\r?\n/u);
+  const blocks = [];
+
+  for (const [index, line] of lines.entries()) {
+    const actionMatch = line.match(/uses:\s+pnpm\/setup@([^\s#]+)/u);
+    if (!actionMatch) {
+      continue;
+    }
+
+    const actionIndent = line.match(/^\s*/u)?.[0].length ?? 0;
+    const blockLines = [line];
+    for (const candidate of lines.slice(index + 1)) {
+      const candidateIndent = candidate.match(/^\s*/u)?.[0].length ?? 0;
+      if (
+        candidate.trim() !== '' &&
+        (candidateIndent < actionIndent ||
+          (candidateIndent === actionIndent && /^\s*-\s/u.test(candidate)))
+      ) {
+        break;
+      }
+      blockLines.push(candidate);
+    }
+    const block = blockLines.join('\n');
+    blocks.push({
+      revision: actionMatch[1],
+      runtime: block.match(/^\s*runtime:\s*([^\s#]+)\s*$/mu)?.[1],
+      install: block.match(/^\s*install:\s*([^\s#]+)\s*$/mu)?.[1],
+      cache: block.match(/^\s*cache:\s*([^\s#]+)\s*$/mu)?.[1],
+    });
+  }
+
+  return blocks;
+}
+
+function collectActiveCommandFindings(path, content, findings) {
+  const extension = basename(path).split('.').at(-1)?.toLowerCase();
+  const isJavaScript = ['cjs', 'js', 'mjs', 'ts'].includes(extension);
+  const lines = content.split(/\r?\n/u);
+
+  for (const [index, line] of lines.entries()) {
+    const trimmed = line.trim();
+    if (trimmed.startsWith('#')) {
+      continue;
+    }
+
+    const commandSurface = stripQuotedText(line);
+    if (NPM_PACKAGE_COMMAND_PATTERN.test(commandSurface)) {
+      findings.push({ file: displayPath(path), line: index + 1, command: trimmed });
+    }
+  }
+
+  if (isJavaScript) {
+    for (const match of content.matchAll(
+      /\b(?:execFileSync|execFile|spawnSync|spawn)\s*\(\s*['"](npm|npx)['"]/gu,
+    )) {
+      findings.push({
+        file: displayPath(path),
+        line: content.slice(0, match.index).split(/\r?\n/u).length,
+        command: `${match[1]} child process`,
+      });
+    }
+  }
+}
+
+function stripQuotedText(value) {
+  let result = '';
+  let quote = null;
+  let escaped = false;
+
+  for (const character of value) {
+    if (escaped) {
+      result += quote === null ? character : ' ';
+      escaped = false;
+      continue;
+    }
+    if (character === '\\') {
+      result += quote === null ? character : ' ';
+      escaped = true;
+      continue;
+    }
+    if (quote !== null) {
+      result += ' ';
+      if (character === quote) {
+        quote = null;
+      }
+      continue;
+    }
+    if (character === "'" || character === '"' || character === '`') {
+      quote = character;
+      result += ' ';
+      continue;
+    }
+    result += character;
+  }
+  return result;
+}
+
+function findFiles(root, predicate) {
+  if (!existsSync(root)) {
+    return [];
+  }
+
+  const files = [];
+  for (const entry of readdirSync(root, { withFileTypes: true })) {
+    if (
+      entry.name === '.git' ||
+      entry.name === '.pnpm-store' ||
+      entry.name === 'coverage' ||
+      entry.name === 'dist' ||
+      entry.name === 'node_modules'
+    ) {
+      continue;
+    }
+    const path = join(root, entry.name);
+    if (entry.isDirectory()) {
+      files.push(...findFiles(path, predicate));
+    } else if (entry.isFile() && predicate(path)) {
+      files.push(path);
+    }
+  }
+  return files.sort((left, right) => (left < right ? -1 : left > right ? 1 : 0));
+}
+
+function readJson(path) {
+  return JSON.parse(readFileSync(path, 'utf8'));
+}
+
+function firstVersion(range) {
+  const match = String(range ?? '').match(/(\d+)\.(\d+)\.(\d+)/u);
+  assert.ok(match, `expected a semantic version range, received ${range}`);
+  return match.slice(1).map(Number);
+}
+
+function compareVersions(left, right) {
+  for (let index = 0; index < 3; index += 1) {
+    if (left[index] !== right[index]) {
+      return left[index] - right[index];
+    }
+  }
+  return 0;
+}
+
+function majorVersion(version) {
+  const match = String(version ?? '').match(/^(\d+)/u);
+  return match ? Number(match[1]) : Number.NaN;
+}
+
+function isTypeScript7Range(range) {
+  return /^(?:[~^]|>=)?7(?:\.|$)/u.test(String(range).trim());
+}
+
+function displayPath(path) {
+  return relative(REPOSITORY_ROOT, path) || '.';
+}
+
+function formatJson(value) {
+  return JSON.stringify(value, null, 2);
+}
