@@ -59,7 +59,13 @@ function flow(id: string, name: string): JsonObject {
           },
           classificationInformation: {
             'common:classification': {
-              'common:class': { '@level': '0', '@classId': '001', '#text': 'General' },
+              'common:class': [
+                {
+                  '@level': '0',
+                  '@classId': '0',
+                  '#text': 'Agriculture, forestry and fishery products',
+                },
+              ],
             },
           },
         },
