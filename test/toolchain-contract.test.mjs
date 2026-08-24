@@ -374,6 +374,42 @@ test('workflows use the reviewed Node 24 pnpm setup, frozen installs, and truste
   );
 });
 
+test('release tags are blocked by the reusable four-platform gate and have executable handoff proof', () => {
+  const workflowRoot = join(REPOSITORY_ROOT, '.github', 'workflows');
+  const qualityWorkflow = readFileSync(join(workflowRoot, 'quality-gate.yml'), 'utf8');
+  const tagWorkflow = readFileSync(join(workflowRoot, 'tag-release-from-merge.yml'), 'utf8');
+  const releaseRunbook = readFileSync(
+    join(REPOSITORY_ROOT, 'docs', 'release-runbook.md'),
+    'utf8',
+  );
+
+  assert.match(qualityWorkflow, /on:\s*\n\s+workflow_call:\s*\n\s+workflow_dispatch:/u);
+  assert.match(
+    tagWorkflow,
+    /quality-gate:\s*\n\s+needs: release-context[\s\S]*?uses: \.\/\.github\/workflows\/quality-gate\.yml/u,
+  );
+  assert.match(
+    tagWorkflow,
+    /tag-release:[\s\S]*?needs:\s*\n\s+- release-context\s*\n\s+- quality-gate/u,
+  );
+  assert.equal(
+    PACKAGE_JSON.scripts?.['release:verify-published'],
+    'node ./scripts/ci/verify-published-release.cjs',
+  );
+  assert.match(
+    releaseRunbook,
+    /pnpm release:verify-published -- --version <x\.y\.z> --expected-git-head <release-merge-sha>/u,
+  );
+  assert.match(
+    releaseRunbook,
+    /scripts\/workspace-ops task create --repo workspace[\s\S]*?follow the exact `Next` command/u,
+  );
+  assert.doesNotMatch(
+    releaseRunbook,
+    /lca-workspace-delivery-workflow|workflow_ops\.py/u,
+  );
+});
+
 test('Oxlint is the only JavaScript and TypeScript linter and uses type-aware TS7 rules', () => {
   const allDeclaredDependencies = Object.fromEntries(
     DEPENDENCY_SECTIONS.flatMap((section) => Object.entries(PACKAGE_JSON[section] ?? {})),
