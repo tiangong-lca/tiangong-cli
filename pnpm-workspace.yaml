@@ -6,6 +6,10 @@ allowBuilds:
   esbuild: true
   fsevents: false
 
+overrides:
+  brace-expansion: 5.0.9
+  ws: 8.21.3
+
 minimumReleaseAgeExclude:
   - '@oxlint/binding-android-arm-eabi@1.80.0'
   - '@oxlint/binding-android-arm64@1.80.0'

@@ -74,6 +74,11 @@ jobs:
             exit 1
           fi
 
+          if ! git cat-file -e "${release_head}:pnpm-lock.yaml" 2>/dev/null; then
+            echo "::error::Release tag ${tag_name} predates the pnpm release contract and cannot be replayed by this workflow."
+            exit 1
+          fi
+
           package_version="$(read_package_version "${release_head}")"
           expected_tag="cli-v${package_version}"
           if [ "${tag_name}" != "${expected_tag}" ]; then

@@ -108,6 +108,7 @@ test('pnpm build permissions and release-age exceptions are exact and versioned'
     [],
     `minimum-release-age exceptions must stay exact and versioned:\n${formatJson(exceptions)}`,
   );
+  assert.match(workspaceText, /overrides:\n  brace-expansion: 5\.0\.9\n  ws: 8\.21\.3/u);
 });
 
 test('all manifests and both recursive pnpm trees contain only direct TypeScript 7', () => {
@@ -329,6 +330,7 @@ test('workflows use the reviewed Node 24 pnpm setup, frozen installs, and truste
   }
 
   const publishWorkflow = readFileSync(join(workflowRoot, 'publish.yml'), 'utf8');
+  assert.match(publishWorkflow, /predates the pnpm release contract/u);
   assert.match(
     publishWorkflow,
     /run:\s+pnpm --filter @tiangong-lca\/cli --fail-if-no-match publish --access public --provenance --no-git-checks\s*$/mu,
