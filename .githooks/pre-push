@@ -6,5 +6,5 @@ cd "$repo_root"
 
 "$repo_root/scripts/docpact-gate.sh" "$@"
 
-echo "Running local test gate: npm run prepush:gate"
-npm run prepush:gate
+echo "Running local test gate: pnpm run prepush:gate"
+pnpm run prepush:gate

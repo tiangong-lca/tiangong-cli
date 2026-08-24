@@ -4,7 +4,5 @@ node_modules/
 *.log
 coverage/
 dist/
-.eslintcache
-package-lock.json
 artifacts/
 .docpact/runs/

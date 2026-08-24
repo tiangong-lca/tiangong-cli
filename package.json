@@ -10,6 +10,7 @@
   "bugs": {
     "url": "https://github.com/tiangong-lca/tiangong-cli/issues"
   },
+  "packageManager": "pnpm@11.23.0",
   "type": "module",
   "bin": {
     "tiangong-lca": "./bin/tiangong-lca.js"
@@ -17,45 +18,48 @@
   "files": [
     "assets/",
     "bin/",
-    "dist/",
+    "dist/src/",
     "README.md",
     "LICENSE"
   ],
   "publishConfig": {
-    "access": "public"
+    "access": "public",
+    "registry": "https://registry.npmjs.org/"
   },
   "scripts": {
-    "start": "npm run build && node ./bin/tiangong-lca.js",
-    "dev": "tsx watch src/main.ts",
-    "typecheck": "npm run tsc",
-    "tsc": "tsc --noEmit",
-    "lint": "npm run lint:js && npm run lint:prettier && npm run lint:coverage-guards && npm run lint:data-api-consumers && npm run tsc",
-    "lint-staged": "lint-staged",
-    "lint-staged:js": "eslint --ext .js,.jsx,.ts,.tsx ",
-    "lint:deprecated": "node ./scripts/lint-deprecated.cjs src test scripts",
+    "start": "pnpm build && node ./bin/tiangong-lca.js",
+    "dev": "pnpm exec tsx watch src/main.ts",
+    "typecheck": "pnpm exec tsc --noEmit",
+    "tsc": "pnpm typecheck",
+    "lint": "pnpm lint:oxlint && pnpm lint:prettier && pnpm lint:coverage-guards && pnpm lint:data-api-consumers && pnpm typecheck",
+    "lint-staged": "pnpm exec lint-staged",
     "lint:coverage-guards": "node ./scripts/assert-no-coverage-ignore.cjs",
-    "lint:data-api-consumers": "tsx ./scripts/scan-data-api-consumers.ts",
-    "lint:js": "eslint --cache --ext .js,.jsx,.ts,.tsx,.cjs,.mjs --format=stylish ./src ./test ./scripts ./bin && npm run lint:deprecated",
-    "lint:prettier": "prettier --check \"{src,test,docs,scripts,bin}/**/*.{js,cjs,mjs,jsx,tsx,ts,md,json}\" \"*.{js,cjs,mjs,jsx,tsx,ts,md,json}\"",
-    "prettier": "prettier --write \"{src,test,docs,scripts,bin}/**/*.{js,cjs,mjs,jsx,tsx,ts,md,json}\" \"*.{js,cjs,mjs,jsx,tsx,ts,md,json}\"",
-    "build": "tsc -p tsconfig.build.json",
-    "prepare": "npm run build",
-    "test": "npm run build && node --import tsx --test",
-    "test:coverage": "npm run build && node ./scripts/run-test-coverage.cjs",
+    "lint:data-api-consumers": "pnpm exec tsx ./scripts/scan-data-api-consumers.ts",
+    "lint:oxlint": "pnpm exec oxlint --type-aware --format=stylish --deny-warnings ./src ./test ./scripts ./bin",
+    "lint:prettier": "pnpm exec prettier --check \"{src,test,docs,scripts,bin}/**/*.{js,cjs,mjs,jsx,tsx,ts,md,json}\" \"*.{js,cjs,mjs,jsx,tsx,ts,md,json}\"",
+    "prettier": "pnpm exec prettier --write \"{src,test,docs,scripts,bin}/**/*.{js,cjs,mjs,jsx,tsx,ts,md,json}\" \"*.{js,cjs,mjs,jsx,tsx,ts,md,json}\"",
+    "prebuild": "pnpm clean",
+    "build": "pnpm exec tsc -p tsconfig.build.json",
+    "prepack": "pnpm build",
+    "prepublishOnly": "pnpm prepush:gate",
+    "test": "pnpm build && node --import tsx --test",
+    "test:package": "node --test test/toolchain-contract.test.mjs",
+    "test:coverage": "pnpm build && node ./scripts/run-test-coverage.cjs",
     "test:coverage:assert-full": "node ./dist/scripts/assert-full-coverage.js",
-    "prepush:gate": "npm run lint && npm run test:coverage && npm run test:coverage:assert-full",
+    "prepush:gate": "pnpm lint && pnpm test:package && pnpm test:coverage && pnpm test:coverage:assert-full",
     "release:check-tag": "node ./scripts/ci/check-release-tag.cjs cli",
     "release:assert-unpublished": "node ./scripts/ci/release-version.cjs assert-unpublished",
     "clean": "node --eval \"import('node:fs').then(({ rmSync }) => rmSync('dist', { recursive: true, force: true }))\""
   },
   "lint-staged": {
-    "**/*.{js,jsx,ts,tsx,cjs,mjs}": "npm run lint-staged:js --",
+    "**/*.{js,jsx,ts,tsx,cjs,mjs}": "oxlint --type-aware --format=stylish --deny-warnings",
     "**/*.{js,cjs,mjs,jsx,tsx,ts,md,json}": [
       "prettier --write"
     ]
   },
   "engines": {
-    "node": ">=24 <25"
+    "node": ">=24 <25",
+    "pnpm": "11.23.0"
   },
   "keywords": [
     "tiangong-lca",
@@ -65,19 +69,17 @@
   ],
   "license": "MIT",
   "devDependencies": {
-    "@eslint/js": "^10.0.1",
-    "@types/node": "^24.12.2",
-    "c8": "^11.0.0",
-    "eslint": "^10.2.0",
-    "globals": "^17.4.0",
-    "lint-staged": "^16.4.0",
-    "prettier": "^3.8.1",
-    "tsx": "^4.21.0",
-    "typescript": "^5.9.3",
-    "typescript-eslint": "^8.58.0"
+    "@types/node": "^24.13.3",
+    "c8": "^12.0.0",
+    "lint-staged": "^17.3.0",
+    "oxlint": "^1.80.0",
+    "oxlint-tsgolint": "^7.0.2001",
+    "prettier": "3.8.1",
+    "tsx": "^4.23.12",
+    "typescript": "^7.0.2"
   },
   "dependencies": {
     "@supabase/supabase-js": "^2.101.1",
-    "@tiangong-lca/tidas-sdk": "^0.1.45"
+    "@tiangong-lca/tidas-sdk": "^0.2.0"
   }
 }

@@ -24,7 +24,7 @@ export function resolveInvokedUrl(argv1 = process.argv[1]) {
 export async function runFromBin(argv = process.argv.slice(2), env = process.env) {
   if (!existsSync(entryPath)) {
     throw new Error(
-      "Missing built CLI artifacts at 'dist/src/main.js'. Run 'npm run build' or reinstall dependencies to regenerate dist.",
+      "Missing built CLI artifacts at 'dist/src/main.js'. Run 'pnpm build' or reinstall dependencies to regenerate dist.",
     );
   }
 
