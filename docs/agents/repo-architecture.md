@@ -31,7 +31,7 @@ checkPaths:
   - scripts/docpact-gate.sh
   - scripts/install-git-hooks.sh
 lastReviewedAt: 2026-08-25
-lastReviewedCommit: 4fffda916bf403152957ee4e991511435c223b25
+lastReviewedCommit: a9499e65be99e3477b708cadc7d348d0fba5e2c1
 lastReviewedNote: 'Reviewed for Issue #228: the auth receipt remains a narrow read-only session adapter with a secret-free DTO and local production-case harness.'
 related:
   - ../../AGENTS.md
