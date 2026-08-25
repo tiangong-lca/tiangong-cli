@@ -26,8 +26,8 @@ checkPaths:
   - scripts/docpact-gate.sh
   - scripts/install-git-hooks.sh
 lastReviewedAt: 2026-08-25
-lastReviewedCommit: 01ba9ff4a9d843ca3fbc3e5b2b021b36d1aa0b8e
-lastReviewedNote: 'Reviewed for Issue #230: every detected CLI release now gates tag creation on the reusable four-platform pnpm workflow and has one executable provenance, tarball-integrity, clean-consumer, and tracked-workspace handoff path.'
+lastReviewedCommit: e232bb837d9755fbac8f0c8e1e35e6f2a17206b7
+lastReviewedNote: 'Reviewed for Issue #230: every detected CLI release now gates tag creation on an exact-platform Node 24/pnpm matrix and has cryptographic Sigstore, registry-signature, isolated pnpm-consumer, and finish-first tracked-workspace proof.'
 related:
   - ../AGENTS.md
   - ../.docpact/config.yaml
@@ -45,7 +45,7 @@ Review note, 2026-08-25: Issue #226 is that dedicated 0.1.0 release-only deliver
 
 Review note, 2026-08-25: Issue #228 adds a feature command and a local-only production read-case script without changing package version, tag creation, Trusted Publishing, provenance, or workspace follow-up mechanics. The ignored production test credential remains local and must never enter GitHub Actions or npm release configuration. After the feature merges, any public package delivery still uses a separate version-only release PR and every existing post-merge registry/provenance/integration check below.
 
-Review note, 2026-08-25: Issue #230 is that separate 0.1.1 release. It keeps the sole pnpm lock and runtime dependency graph unchanged while closing three release-control gaps found by independent review: the four-platform pnpm workflow is reusable and blocks tag creation after a version change; `release:verify-published` binds registry metadata when `gitHead` is present and always binds the SLSA provenance `gitCommit`, workflow, tag, tarball sha512, and a credential-free clean pnpm ESM/CJS/bin consumer; and workspace handoff uses the current tracked-delivery controller. Local publication and manual tag creation remain forbidden.
+Review note, 2026-08-25: Issue #230 is that separate 0.1.1 release. It keeps the published runtime dependency graph unchanged while adding exact `sigstore@5.0.0` to the dev-only verification graph and regenerating the sole pnpm lock for that reviewed change. The four-platform workflow is reusable, asserts actual platform/architecture, and blocks tag creation; release detection itself uses pinned Node 24. `release:verify-published` cryptographically verifies the SLSA bundle against the GitHub OIDC issuer, exact workflow/tag certificate identity, certificate transparency and Rekor, binds its `gitCommit` and tarball sha512, runs pnpm registry-signature verification, isolates user/global package-manager configuration, pins pnpm 11.23.0, scans all production dependency sections, and exercises clean bin/ESM/CJS consumers. Workspace handoff starts with the child finish preflight. Local publication and manual tag creation remain forbidden.
 
 Review note, 2026-07-14: Issue #165 adds the guarded `dataset maintenance rebuild-derivatives` command profile but does not change the release procedure. Its command, contract, remote-adapter, asynchronous verification, and no-fallback tests must pass the existing pre-push/docpact gate before a later version-bump PR; the feature PR itself must not publish locally or alter package version metadata.
 
@@ -149,6 +149,7 @@ pnpm --filter @tiangong-lca/cli --fail-if-no-match pack --dry-run >/dev/null
 2. Update the CLI package version metadata:
    - `package.json`
    - keep the sole root `pnpm-lock.yaml` present and unchanged because a version-only bump does not change the dependency graph
+   - if an independently reviewed release-control dependency changes, pin it exactly, regenerate the sole lock with pnpm, prove it remains dev-only, and record that exception explicitly; Issue #230 adds only `sigstore@5.0.0` for cryptographic post-publish verification
 3. Keep the PR focused on the release bump.
 4. Open a normal PR with local pre-push gate evidence. Before merge, manually dispatch `quality-gate` on the exact release head and record all four successful jobs. After merge, `Tag Release From Merge` independently invokes that same reusable matrix on the exact merge commit and cannot create a tag unless it succeeds.
 5. Merge the PR into `main`.
@@ -176,7 +177,8 @@ Expected result:
 
 - the workflow finishes successfully
 - release detection runs before expensive validation and starts the reusable pnpm quality matrix only when the CLI version changed
-- macOS arm64, Ubuntu x64, Ubuntu arm64, and Windows x64 all pass on the exact merge commit
+- macOS arm64, Ubuntu x64, Ubuntu arm64, and Windows x64 all pass on the exact merge commit, and each job fail-closes unless `process.platform`/`process.arch` matches its exact matrix declaration
+- the release detector runs only after the same pinned Node 24 pnpm setup used by the rest of the workflow
 - the `tag-release` job depends on both release detection and the successful four-platform matrix, then reruns the Ubuntu release/docpact gates before tag creation
 - tag `cli-v<x.y.z>` exists
 
@@ -219,10 +221,10 @@ Expected result:
 
 - `version` equals `<x.y.z>`
 - `latest` points to `<x.y.z>` unless this release intentionally uses a different dist-tag strategy
-- `release:verify-published` returns `ok: true`, verifies an optional registry `gitHead` when npm exposes it, and always requires the SLSA provenance `gitCommit` to equal `<release-merge-sha>`
-- the provenance binds `refs/tags/cli-v<x.y.z>`, the canonical repository and `publish.yml`, and a canonical GitHub Actions invocation
-- independently downloaded tarball bytes equal the registry sha512 integrity and both package-publish/SLSA attestation subjects
-- a private temporary consumer installs the exact public version through pnpm 11.23.0 with a credential-free environment, exercises the bin, `auth identity-receipt --help` for 0.1.1 and later, explicit ESM/CJS launcher imports, and proves no production TypeScript dependency
+- `release:verify-published` returns `ok: true`, verifies an optional registry `gitHead` when the registry exposes it, and always requires the cryptographically verified SLSA provenance `gitCommit` to equal `<release-merge-sha>`
+- Sigstore verifies the Fulcio certificate against the GitHub OIDC issuer, an anchored exact `publish.yml@refs/tags/cli-v<x.y.z>` identity, certificate transparency, and Rekor before any decoded statement is trusted
+- the verified statement has exact in-toto/SLSA types and binds the canonical repository, tag, workflow, GitHub Actions invocation, and independently downloaded tarball sha512
+- the temporary consumer proves exact pnpm 11.23.0 and registry signatures, overrides both user and global package-manager configuration with private public-registry-only files, exercises the bin, `auth identity-receipt --help` for 0.1.1 and later, explicit ESM/CJS launcher imports, and scans dependencies, optional dependencies, and peers for production TypeScript
 
 The verifier intentionally reports `registryGitHead: null` when npm omits that legacy metadata field; this is not a bypass because the signed provenance `gitCommit` remains mandatory. Do not update the workspace pointer until the complete verifier returns `ok: true`.
 
@@ -236,7 +238,13 @@ If the workspace tracks the CLI submodule, bump the workspace pointer only after
 - npm resolves to the new version
 - `pnpm release:verify-published` succeeds for the exact release merge commit
 
-Prepare a tracked workspace integration Issue body, then use the current controller from the workspace root:
+From the workspace root, first run the child completion preflight:
+
+```bash
+scripts/workspace-ops task finish tiangong-lca/tiangong-cli#<cli-issue-number>
+```
+
+Read the complete result and follow the exact `Next` command. If the controller confirms that a required workspace integration is missing and no existing integration task covers the exact release, prepare a tracked integration Issue body and create it:
 
 ```bash
 scripts/workspace-ops task create --repo workspace \
@@ -246,7 +254,7 @@ scripts/workspace-ops task create --repo workspace \
   --priority P1
 ```
 
-Read the complete controller result and follow the exact `Next` command. The integration Issue must bind the child Issue/PR, `cli-v<x.y.z>`, release merge SHA, successful tag/publish runs, verifier output, intended workspace branch, and exact CLI gitlink before any root mutation.
+The integration Issue must bind the child Issue/PR, `cli-v<x.y.z>`, release merge SHA, successful tag/publish runs, verifier output, intended workspace branch, and exact CLI gitlink before any root mutation. After root integration completes, rerun child `task finish` and use only its short-lived continuation.
 
 Do not reconstruct lifecycle transitions with direct GitHub writes. Use `scripts/workspace-ops` for create/start/update/submit/finish and follow each returned continuation; use the workspace integration runbook for the exact gitlink commit and PR target.
 
@@ -261,7 +269,7 @@ Do not reconstruct lifecycle transitions with direct GitHub writes. Use `scripts
 
 ## Operator Checklist
 
-- only the intended `package.json` version changed; the root `pnpm-lock.yaml` is present and unchanged unless a separately reviewed dependency change requires regeneration
+- only the intended package version and explicitly reviewed release-control dependency changed; Issue #230 pins dev-only `sigstore@5.0.0`, regenerates the sole pnpm lock, and leaves published runtime dependencies unchanged
 - release-prep PR merged into `main`
 - `Tag Release From Merge` succeeded
 - `cli-v<x.y.z>` exists
@@ -269,7 +277,8 @@ Do not reconstruct lifecycle transitions with direct GitHub writes. Use `scripts
 - `pnpm view @tiangong-lca/cli version` equals `<x.y.z>`
 - `pnpm release:verify-published` returns `ok: true` for the immutable release merge commit
 - published provenance `gitCommit` and optional registry `gitHead` resolve to the immutable release merge commit
-- independently downloaded tarball integrity and the credential-free public pnpm ESM/CJS/bin consumer pass
+- Sigstore certificate/CT/Rekor verification, independently downloaded tarball integrity, registry signatures, isolated user/global config, and the credential-free public pnpm ESM/CJS/bin consumer pass
+- child `task finish` preflight precedes any new integration-task creation, and the final short-lived finish continuation runs after root integration
 - workspace pointer updated only after all checks above passed
 
 ## Local Docpact Push Gate
