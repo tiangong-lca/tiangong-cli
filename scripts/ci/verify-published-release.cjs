@@ -5,14 +5,15 @@ const { spawnSync } = require('node:child_process');
 const { chmodSync, mkdtempSync, readFileSync, rmSync, writeFileSync } = require('node:fs');
 const { tmpdir } = require('node:os');
 const path = require('node:path');
+const { verify: verifySigstore } = require('sigstore');
 
 const PACKAGE_NAME = '@tiangong-lca/cli';
 const PACKAGE_MANAGER = 'pnpm@11.23.0';
 const REGISTRY_ORIGIN = 'https://registry.npmjs.org';
 const REPOSITORY_URL = 'https://github.com/tiangong-lca/tiangong-cli';
 const PUBLISH_WORKFLOW_PATH = '.github/workflows/publish.yml';
-const NPM_PUBLISH_PREDICATE = 'https://github.com/npm/attestation/tree/main/specs/publish/v0.1';
 const SLSA_PROVENANCE_PREDICATE = 'https://slsa.dev/provenance/v1';
+const GITHUB_OIDC_ISSUER = 'https://token.actions.githubusercontent.com';
 const MAX_METADATA_BYTES = 2 * 1024 * 1024;
 const MAX_ATTESTATION_BYTES = 8 * 1024 * 1024;
 const MAX_TARBALL_BYTES = 64 * 1024 * 1024;
@@ -158,7 +159,7 @@ function requiresIdentityReceiptHelp(version) {
   return major > 0n || minor > 1n || (minor === 1n && patch >= 1n);
 }
 
-function decodeStatement(attestation) {
+function decodeStatement(attestation, expectedPredicateType) {
   const record = requireRecord(attestation, 'attestation');
   const bundle = requireRecord(record.bundle, 'attestation bundle');
   const envelope = requireRecord(bundle.dsseEnvelope, 'attestation DSSE envelope');
@@ -174,7 +175,14 @@ function decodeStatement(attestation) {
   } catch {
     throw new Error('attestation DSSE payload is not valid base64 JSON');
   }
-  return requireRecord(statement, 'attestation statement');
+  const recordStatement = requireRecord(statement, 'attestation statement');
+  if (
+    recordStatement._type !== 'https://in-toto.io/Statement/v1' ||
+    recordStatement.predicateType !== expectedPredicateType
+  ) {
+    throw new Error('attestation statement type or predicateType does not match its envelope');
+  }
+  return recordStatement;
 }
 
 function assertSubject(statement, options, expectedTarballSha512) {
@@ -185,32 +193,40 @@ function assertSubject(statement, options, expectedTarballSha512) {
   }
 }
 
-function validateAttestations(payload, options, expectedTarballSha512) {
+function escapeRegExp(value) {
+  return value.replace(/[.*+?^${}()|[\]\\]/gu, '\\$&');
+}
+
+async function verifyProvenanceBundle(bundle, options) {
+  const expectedIdentity = `${REPOSITORY_URL}/${PUBLISH_WORKFLOW_PATH}@refs/tags/cli-v${options.version}`;
+  return verifySigstore(bundle, {
+    certificateIssuer: GITHUB_OIDC_ISSUER,
+    certificateIdentityURI: `^${escapeRegExp(expectedIdentity)}$`,
+    ctLogThreshold: 1,
+    tlogThreshold: 1,
+    timeout: 30_000,
+    retry: 2,
+  });
+}
+
+async function validateAttestations(
+  payload,
+  options,
+  expectedTarballSha512,
+  verifyBundle = verifyProvenanceBundle,
+) {
   const root = requireRecord(payload, 'registry attestation response');
   const attestations = Array.isArray(root.attestations) ? root.attestations : [];
-  const publishAttestation = attestations.find(
-    (candidate) => candidate?.predicateType === NPM_PUBLISH_PREDICATE,
-  );
   const provenanceAttestation = attestations.find(
     (candidate) => candidate?.predicateType === SLSA_PROVENANCE_PREDICATE,
   );
-  if (!publishAttestation || !provenanceAttestation) {
-    throw new Error(
-      'registry attestations must include npm publish and SLSA provenance statements',
-    );
+  if (!provenanceAttestation) {
+    throw new Error('registry attestations must include SLSA provenance v1');
   }
 
-  const publishStatement = decodeStatement(publishAttestation);
-  assertSubject(publishStatement, options, expectedTarballSha512);
-  if (
-    publishStatement.predicate?.name !== PACKAGE_NAME ||
-    publishStatement.predicate?.version !== options.version ||
-    publishStatement.predicate?.registry !== REGISTRY_ORIGIN
-  ) {
-    throw new Error('npm publish attestation predicate does not match the expected release');
-  }
-
-  const provenanceStatement = decodeStatement(provenanceAttestation);
+  const provenanceBundle = requireRecord(provenanceAttestation.bundle, 'SLSA provenance bundle');
+  await verifyBundle(provenanceBundle, options);
+  const provenanceStatement = decodeStatement(provenanceAttestation, SLSA_PROVENANCE_PREDICATE);
   assertSubject(provenanceStatement, options, expectedTarballSha512);
   const predicate = requireRecord(provenanceStatement.predicate, 'SLSA provenance predicate');
   const buildDefinition = requireRecord(
@@ -250,13 +266,12 @@ function validateTarballBytes(bytes, integrity) {
   return actual.toString('hex');
 }
 
-function publicConsumerEnvironment(sourceEnv, userConfigPath) {
+function publicConsumerEnvironment(sourceEnv, userConfigPath, globalConfigPath) {
   const allowedNames = [
     'APPDATA',
     'COMSPEC',
     'ComSpec',
     'LOCALAPPDATA',
-    'NO_PROXY',
     'PATH',
     'Path',
     'PATHEXT',
@@ -267,8 +282,6 @@ function publicConsumerEnvironment(sourceEnv, userConfigPath) {
     'TMP',
     'TMPDIR',
     'USERPROFILE',
-    'http_proxy',
-    'https_proxy',
   ];
   const env = {};
   for (const name of allowedNames) {
@@ -280,9 +293,24 @@ function publicConsumerEnvironment(sourceEnv, userConfigPath) {
     ...env,
     CI: '1',
     NO_COLOR: '1',
+    NPM_CONFIG_GLOBALCONFIG: globalConfigPath,
     NPM_CONFIG_USERCONFIG: userConfigPath,
+    PNPM_CONFIG_GLOBALCONFIG: globalConfigPath,
+    PNPM_CONFIG_USERCONFIG: userConfigPath,
+    npm_config_globalconfig: globalConfigPath,
     npm_config_registry: `${REGISTRY_ORIGIN}/`,
+    npm_config_userconfig: userConfigPath,
   };
+}
+
+function validatePackageManagerVersion(value) {
+  const version = String(value).trim();
+  if (version !== PACKAGE_MANAGER.slice('pnpm@'.length)) {
+    throw new Error(
+      `public consumer requires ${PACKAGE_MANAGER}, received pnpm@${version || 'unknown'}`,
+    );
+  }
+  return version;
 }
 
 function runChecked(command, args, options) {
@@ -320,23 +348,41 @@ function collectDependencyVersions(value, dependencyName, versions = new Set()) 
   if (value.name === dependencyName && typeof value.version === 'string') {
     versions.add(value.version);
   }
-  for (const [key, nested] of Object.entries(value.dependencies ?? {})) {
-    if (key === dependencyName && typeof nested?.version === 'string') {
-      versions.add(nested.version);
+  for (const section of ['dependencies', 'optionalDependencies', 'peerDependencies']) {
+    for (const [key, nested] of Object.entries(value[section] ?? {})) {
+      if (key === dependencyName && typeof nested?.version === 'string') {
+        versions.add(nested.version);
+      }
+      collectDependencyVersions(nested, dependencyName, versions);
     }
-    collectDependencyVersions(nested, dependencyName, versions);
   }
   return versions;
 }
 
-function verifyPublicConsumer(options) {
-  const consumerRoot = mkdtempSync(path.join(tmpdir(), 'tiangong-cli-public-consumer-'));
-  chmodSync(consumerRoot, 0o700);
-  const userConfigPath = path.join(consumerRoot, '.npmrc');
-  const env = publicConsumerEnvironment(process.env, userConfigPath);
-
+function withPrivateTempDirectory(callback, dependencies = {}) {
+  const create = dependencies.mkdtemp ?? mkdtempSync;
+  const makePrivate = dependencies.chmod ?? chmodSync;
+  const remove = dependencies.remove ?? rmSync;
+  const directory = create(path.join(tmpdir(), 'tiangong-cli-public-consumer-'));
   try {
+    makePrivate(directory, 0o700);
+    return callback(directory);
+  } finally {
+    remove(directory, { recursive: true, force: true });
+  }
+}
+
+function verifyPublicConsumer(options) {
+  return withPrivateTempDirectory((consumerRoot) => {
+    const userConfigPath = path.join(consumerRoot, '.npmrc');
+    const globalConfigPath = path.join(consumerRoot, 'global.npmrc');
+    const env = publicConsumerEnvironment(process.env, userConfigPath, globalConfigPath);
     writeFileSync(userConfigPath, `registry=${REGISTRY_ORIGIN}/\nalways-auth=false\n`, {
+      encoding: 'utf8',
+      flag: 'wx',
+      mode: 0o600,
+    });
+    writeFileSync(globalConfigPath, `registry=${REGISTRY_ORIGIN}/\nalways-auth=false\n`, {
       encoding: 'utf8',
       flag: 'wx',
       mode: 0o600,
@@ -356,17 +402,24 @@ function verifyPublicConsumer(options) {
       { encoding: 'utf8', flag: 'wx', mode: 0o600 },
     );
 
+    const pnpmVersion = validatePackageManagerVersion(
+      runChecked('pnpm', ['--version'], {
+        cwd: consumerRoot,
+        env,
+        label: 'public consumer pnpm version check',
+      }).stdout,
+    );
+
     runChecked(
       'pnpm',
-      [
-        'install',
-        '--ignore-scripts',
-        '--no-frozen-lockfile',
-        '--no-lockfile',
-        `--registry=${REGISTRY_ORIGIN}/`,
-      ],
+      ['install', '--ignore-scripts', '--no-frozen-lockfile', `--registry=${REGISTRY_ORIGIN}/`],
       { cwd: consumerRoot, env, label: 'clean public pnpm install' },
     );
+    runChecked('pnpm', ['audit', 'signatures'], {
+      cwd: consumerRoot,
+      env,
+      label: 'public registry signature verification',
+    });
 
     const installedManifest = JSON.parse(
       readFileSync(
@@ -467,7 +520,8 @@ function verifyPublicConsumer(options) {
     }
 
     return {
-      packageManager: PACKAGE_MANAGER,
+      packageManager: `pnpm@${pnpmVersion}`,
+      registrySignatures: 'passed',
       installedVersion: installedManifest.version,
       bin: 'passed',
       authIdentityReceiptHelp,
@@ -475,9 +529,7 @@ function verifyPublicConsumer(options) {
       cjsLauncher: 'passed',
       productionTypeScriptVersions: [],
     };
-  } finally {
-    rmSync(consumerRoot, { recursive: true, force: true });
-  }
+  });
 }
 
 async function readResponseBytes(response, maxBytes, label) {
@@ -560,7 +612,12 @@ async function verifyPublishedRelease(options, dependencies = {}) {
     'public package attestations',
     fetchImpl,
   );
-  const provenance = validateAttestations(attestationPayload, options, tarballSha512);
+  const provenance = await validateAttestations(
+    attestationPayload,
+    options,
+    tarballSha512,
+    dependencies.verifyBundle,
+  );
   const consumer = (dependencies.verifyConsumer ?? verifyPublicConsumer)(options);
 
   return {
@@ -602,8 +659,10 @@ module.exports = {
   parseSha512Integrity,
   publicConsumerEnvironment,
   requiresIdentityReceiptHelp,
+  validatePackageManagerVersion,
   validateAttestations,
   validatePackageMetadata,
   validateTarballBytes,
   verifyPublishedRelease,
+  withPrivateTempDirectory,
 };

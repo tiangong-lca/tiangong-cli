@@ -23,6 +23,13 @@ jobs:
         with:
           fetch-depth: 0
 
+      - name: Set up pnpm and Node.js
+        uses: pnpm/setup@84cb39b217b10273981911c288cd62326dc7c6d2 # v2.0.2
+        with:
+          runtime: node@24
+          install: false
+          cache: true
+
       - name: Detect release version changes
         id: release
         env:
@@ -44,6 +51,7 @@ jobs:
       - quality-gate
     if: >-
       github.repository == 'tiangong-lca/tiangong-cli' && needs.release-context.outputs.cli_changed == 'true' && needs.quality-gate.result == 'success'
+
 
     runs-on: ubuntu-latest
     env:

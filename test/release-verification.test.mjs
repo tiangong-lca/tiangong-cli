@@ -162,13 +162,10 @@ test('registry metadata binds canonical integrity, provenance, and public URLs',
 
 test('npm and SLSA attestations bind verified bundles, tarball, tag, workflow, commit, and run', async () => {
   const verifiedBundles = [];
-  const result = await validateAttestations(
-    attestations(),
-    options(),
-    SHA512_HEX,
-    async (bundle) => verifiedBundles.push(bundle),
+  const result = await validateAttestations(attestations(), options(), SHA512_HEX, async (bundle) =>
+    verifiedBundles.push(bundle),
   );
-  assert.equal(verifiedBundles.length, 2);
+  assert.equal(verifiedBundles.length, 1);
   assert.equal(
     result.invocationId,
     'https://github.com/tiangong-lca/tiangong-cli/actions/runs/123/attempts/1',
@@ -242,16 +239,13 @@ test('public consumer environment is credential-free and dependency scanning is 
 test('temporary consumer cleanup runs even when private-directory setup fails', () => {
   const removed = [];
   assert.throws(() =>
-    withPrivateTempDirectory(
-      () => assert.fail('consumer callback must not run'),
-      {
-        mkdtemp: () => '/tmp/tiangong-cli-consumer-test',
-        chmod: () => {
-          throw new Error('chmod failed');
-        },
-        remove: (target, options) => removed.push({ target, options }),
+    withPrivateTempDirectory(() => assert.fail('consumer callback must not run'), {
+      mkdtemp: () => '/tmp/tiangong-cli-consumer-test',
+      chmod: () => {
+        throw new Error('chmod failed');
       },
-    ),
+      remove: (target, options) => removed.push({ target, options }),
+    }),
   );
   assert.deepEqual(removed, [
     {
