@@ -330,6 +330,41 @@ test('CommandSpec async execution validates limits, clock, and pre-aborted signa
   assert.equal(spawnCalls, 0);
 });
 
+test('CommandSpec success and timeout races do not leak unhandled sleep or spawn rejections', async () => {
+  const unhandled: unknown[] = [];
+  const observeUnhandled = (reason: unknown) => unhandled.push(reason);
+  process.on('unhandledRejection', observeUnhandled);
+  try {
+    const successful = createFoundryCommandSpec({
+      executable: process.execPath,
+      argv: ['--eval', "process.stdout.write('done')"],
+    });
+    const result = await executeFoundryCommandSpec(successful, {
+      resolveArtifactPath: () => null,
+      timeoutMs: 5_000,
+    });
+    assert.equal(result.stdout, 'done');
+
+    await assert.rejects(
+      executeFoundryCommandSpec(
+        createFoundryCommandSpec({ executable: process.execPath, argv: ['fixture.js'] }),
+        {
+          resolveArtifactPath: () => null,
+          timeoutMs: 1,
+          sleep: async () => undefined,
+          spawnImpl: () => new Promise(() => undefined),
+        },
+      ),
+      FoundryCommandSpecTimeoutError,
+    );
+    await new Promise<void>((resolve) => setImmediate(resolve));
+    await new Promise<void>((resolve) => setImmediate(resolve));
+    assert.deepEqual(unhandled, []);
+  } finally {
+    process.off('unhandledRejection', observeUnhandled);
+  }
+});
+
 test('CommandSpec display quoting is diagnostic only', () => {
   assert.equal(
     renderFoundryCommandDisplay('tool', ['plain', "has ' quote", '']),

@@ -54,9 +54,11 @@ export type CreateFileArtifactFactOptions = {
   filePath: string;
 };
 
+export type FoundryCommandSpecEnvironment = Record<string, string | undefined>;
+
 export type FoundryCommandSpecSpawnOptions = {
   cwd?: string;
-  env?: NodeJS.ProcessEnv;
+  env?: FoundryCommandSpecEnvironment;
   encoding: 'utf8';
   maxBuffer?: number;
   shell: false;
@@ -73,14 +75,14 @@ export type FoundryCommandSpecSpawnResult = {
   stdout: string;
   stderr: string;
   status: number | null;
-  signal: NodeJS.Signals | null;
+  signal: string | null;
   error?: Error;
 };
 
 export type ExecuteFoundryCommandSpecSyncOptions = {
   resolveArtifactPath: (artifactPath: string) => string | null;
   cwd?: string;
-  env?: NodeJS.ProcessEnv;
+  env?: FoundryCommandSpecEnvironment;
   maxBuffer?: number;
   spawnImpl?: (
     executable: string,
@@ -98,7 +100,7 @@ export type FoundryCommandSpecSleep = (milliseconds: number, signal: AbortSignal
 export type ExecuteFoundryCommandSpecOptions = {
   resolveArtifactPath: (artifactPath: string) => string | null;
   cwd?: string;
-  env?: NodeJS.ProcessEnv;
+  env?: FoundryCommandSpecEnvironment;
   maxBuffer?: number;
   timeoutMs?: number;
   signal?: AbortSignal;

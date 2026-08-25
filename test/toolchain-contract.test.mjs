@@ -702,6 +702,8 @@ function assertModuleHostBehavior(consumerRoot, compilerRoot, expectedVersion) {
   const cjsHostPath = join(consumerRoot, 'cjs-host.cjs');
   const rootHostPath = join(consumerRoot, 'root-host.mjs');
   const typescriptHostPath = join(consumerRoot, 'typescript-host.mts');
+  const emptyTypeRoots = join(consumerRoot, 'empty-types');
+  mkdirSync(emptyTypeRoots);
 
   writeFileSync(
     esmHostPath,
@@ -794,6 +796,8 @@ function assertModuleHostBehavior(consumerRoot, compilerRoot, expectedVersion) {
       'NodeNext',
       '--moduleResolution',
       'NodeNext',
+      '--typeRoots',
+      emptyTypeRoots,
       typescriptHostPath,
     ],
     commandOptions(compilerRoot),
