@@ -387,19 +387,25 @@ test('release tags are blocked by the reusable four-platform gate and have execu
   );
   assert.match(
     tagWorkflow,
+    /release-context:[\s\S]*?Set up pnpm and Node\.js[\s\S]*?Detect release version changes/u,
+  );
+  assert.match(
+    tagWorkflow,
     /tag-release:[\s\S]*?needs:\s*\n\s+- release-context\s*\n\s+- quality-gate/u,
   );
   assert.equal(
     PACKAGE_JSON.scripts?.['release:verify-published'],
     'node ./scripts/ci/verify-published-release.cjs',
   );
+  assert.equal(PACKAGE_JSON.devDependencies?.sigstore, '5.0.0');
+  assert.equal(PACKAGE_JSON.dependencies?.sigstore, undefined);
   assert.match(
     releaseRunbook,
     /pnpm release:verify-published -- --version <x\.y\.z> --expected-git-head <release-merge-sha>/u,
   );
   assert.match(
     releaseRunbook,
-    /scripts\/workspace-ops task create --repo workspace[\s\S]*?follow the exact `Next` command/u,
+    /scripts\/workspace-ops task finish tiangong-lca\/tiangong-cli#<cli-issue-number>[\s\S]*?follow the exact `Next` command[\s\S]*?scripts\/workspace-ops task create --repo workspace/u,
   );
   assert.doesNotMatch(releaseRunbook, /lca-workspace-delivery-workflow|workflow_ops\.py/u);
 });

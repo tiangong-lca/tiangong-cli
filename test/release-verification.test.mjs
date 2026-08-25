@@ -13,6 +13,7 @@ const {
   parseSha512Integrity,
   publicConsumerEnvironment,
   requiresIdentityReceiptHelp,
+  validatePackageManagerVersion,
   validateAttestations,
   validatePackageMetadata,
   validateTarballBytes,
@@ -158,8 +159,15 @@ test('registry metadata binds canonical integrity, provenance, and public URLs',
   assert.throws(() => parseSha512Integrity('sha256-deadbeef'));
 });
 
-test('npm and SLSA attestations bind tarball, tag, workflow, commit, and run', () => {
-  const result = validateAttestations(attestations(), options(), SHA512_HEX);
+test('npm and SLSA attestations bind verified bundles, tarball, tag, workflow, commit, and run', async () => {
+  const verifiedBundles = [];
+  const result = await validateAttestations(
+    attestations(),
+    options(),
+    SHA512_HEX,
+    async (bundle) => verifiedBundles.push(bundle),
+  );
+  assert.equal(verifiedBundles.length, 2);
   assert.equal(
     result.invocationId,
     'https://github.com/tiangong-lca/tiangong-cli/actions/runs/123/attempts/1',
@@ -171,9 +179,22 @@ test('npm and SLSA attestations bind tarball, tag, workflow, commit, and run', (
       resolvedDependencies: [],
     },
   });
-  assert.throws(() => validateAttestations(wrongCommit, options(), SHA512_HEX));
-  assert.throws(() => validateAttestations({ attestations: [] }, options(), SHA512_HEX));
-  assert.throws(() => validateAttestations(attestations(), options(), '0'.repeat(128)));
+  await assert.rejects(() =>
+    validateAttestations(wrongCommit, options(), SHA512_HEX, async () => {}),
+  );
+  await assert.rejects(() =>
+    validateAttestations({ attestations: [] }, options(), SHA512_HEX, async () => {}),
+  );
+  await assert.rejects(() =>
+    validateAttestations(attestations(), options(), '0'.repeat(128), async () => {}),
+  );
+});
+
+test('forged DSSE signatures are rejected by the real Sigstore verifier', async () => {
+  await assert.rejects(
+    () => validateAttestations(attestations(), options(), SHA512_HEX),
+    /sigstore|signature|bundle|verification/iu,
+  );
 });
 
 test('public consumer environment is credential-free and dependency scanning is recursive', () => {
@@ -185,17 +206,31 @@ test('public consumer environment is credential-free and dependency scanning is 
       NPM_TOKEN: 'must-not-pass',
     },
     '/tmp/public-consumer.npmrc',
+    '/tmp/public-consumer-global.npmrc',
   );
   assert.equal(env.PATH, '/bin');
   assert.equal(env.TIANGONG_LCA_TEST_API_KEY, undefined);
   assert.equal(env.NODE_AUTH_TOKEN, undefined);
   assert.equal(env.NPM_TOKEN, undefined);
   assert.equal(env.NPM_CONFIG_USERCONFIG, '/tmp/public-consumer.npmrc');
+  assert.equal(env.NPM_CONFIG_GLOBALCONFIG, '/tmp/public-consumer-global.npmrc');
+  assert.equal(env.npm_config_globalconfig, '/tmp/public-consumer-global.npmrc');
+  assert.equal(validatePackageManagerVersion('11.23.0'), '11.23.0');
+  assert.throws(() => validatePackageManagerVersion('11.22.0'));
 
   assert.deepEqual(
     [
       ...collectDependencyVersions(
         [{ dependencies: { nested: { name: 'typescript', version: '7.0.2' } } }],
+        'typescript',
+      ),
+    ],
+    ['7.0.2'],
+  );
+  assert.deepEqual(
+    [
+      ...collectDependencyVersions(
+        [{ optionalDependencies: { typescript: { version: '7.0.2' } } }],
         'typescript',
       ),
     ],
