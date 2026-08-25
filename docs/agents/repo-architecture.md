@@ -31,8 +31,8 @@ checkPaths:
   - scripts/docpact-gate.sh
   - scripts/install-git-hooks.sh
 lastReviewedAt: 2026-08-25
-lastReviewedCommit: 08eed5bccf8bc0ba936c37e39c15a8fc7c82782b
-lastReviewedNote: 'Reviewed for Issue #228: the auth receipt remains a narrow read-only session adapter with a secret-free DTO and local production-case harness.'
+lastReviewedCommit: 47b44c65cf4bf27070fa1057e672c6ef2b2e54f3
+lastReviewedNote: 'Reviewed for Issue #230: 0.1.1 pins Node 24.19.0 while preserving auth/runtime dependencies and adding exact-platform plus dev-only cryptographic release verification.'
 related:
   - ../../AGENTS.md
   - ../../.docpact/config.yaml
@@ -52,6 +52,8 @@ Review note, 2026-08-25: the SDK 0.2 cutover makes build-plan taxonomy an explic
 Review note, 2026-08-25: Issue #226 advances the package compatibility boundary to 0.1.0 without changing runtime files, dependencies, package-root exports, command families, or release workflows. The validation architecture extends `test:package` only: a clean tarball must work through `.bin`, an ESM host importing the existing explicit bin launcher subpath, and a CJS host dynamically importing that same ESM subpath; package-root module imports remain intentionally unsupported.
 
 Review note, 2026-08-25: Issue #228 adds `src/lib/auth-identity-receipt.ts` as a narrow read-only identity adapter. It reuses the existing API-key/session cache chain but never serializes that session object: exact project intent is safely checked before credential/session work, a redirect-disabled and incrementally bounded `/auth/v1/user` response supplies a canonical live user UUID, one 401/403 may force refresh and replay the read, timeout values stay within Node's supported timer range, and an exact-key parser hashes only a public safe projection. The pnpm case command itself owns the single clean TS7 build before starting a plain-Node parent; that runner single-reads/hash-binds source/config/lock and freshly generated runtime/runner bytes, privately snapshots the exact built buffers, cleans the snapshot before evidence publication, and only then exposes passed/failed artifacts. This is local evidence, not a server-signed attestation or a dataset mutation runtime.
+
+Review note, 2026-08-25: Issue #230 advances the package compatibility identity to 0.1.1 after merged PR #229 without changing runtime logic, published dependencies, package-root exports, command families, auth/session boundaries, or build output. The local/CI/package-engine architecture is exact Node 24.19.0. Exact `sigstore@5.0.0` is dev-only and owns cryptographic DSSE/Fulcio/CT/Rekor verification. `quality-gate.yml` is manually dispatchable and reusable with exact platform/architecture assertions; `tag-release-from-merge.yml` detects under the same exact Node version and depends on all four platforms; and the non-published verifier also checks registry signatures, tarball bytes, isolated user/global config, exact pnpm, all production dependency sections, and credential-free consumers.
 
 Review note, 2026-06-04: Foundry entity queue state now stays in the native CLI command family as `dataset curation-queue build/next/verify`; no secondary orchestration runtime was introduced.
 
@@ -281,7 +283,7 @@ If a task changes output layout, locking, or local run roots, inspect these firs
 
 Repo-level maintenance gates are now split across:
 
-- `.github/workflows/quality-gate.yml` for manual remote reproduction of the local gate
+- `.github/workflows/quality-gate.yml` for manual exact-head reproduction and reusable four-platform pre-tag validation
 - `.github/workflows/ai-doc-lint.yml`
 - `.github/workflows/tag-release-from-merge.yml`
 - `.github/workflows/publish.yml`
@@ -292,7 +294,7 @@ Important constraints:
 - `ai-doc-lint` keeps the historical check identity, but its implementation should run `docpact`
 - `docpact` enforces that command-surface and release-gate changes also refresh or review the governed source docs
 - the merge-tag workflow is guarded so only the upstream repository can execute release tagging
-- CI bootstrap is pinned to `pnpm/setup` v2.0.2 with Node 24 and `pnpm install --frozen-lockfile`
+- CI bootstrap is pinned to `pnpm/setup` v2.0.2 with Node 24.19.0 and `pnpm install --frozen-lockfile`
 - the publish workflow releases from `cli-v<package.json version>` through native pnpm OIDC/provenance and supports manual dispatch for existing-tag recovery/backfill
 - routine npm releases must flow through an upstream `main` PR merge and GitHub Actions Trusted Publishing; local workstations may validate with `pnpm --filter @tiangong-lca/cli --fail-if-no-match pack --dry-run` but must not publish
 - the packed consumer surface is package-manager neutral and excludes pnpm workspace/lock metadata, TypeScript, Oxlint, tests, source-only tooling, and other repository internals

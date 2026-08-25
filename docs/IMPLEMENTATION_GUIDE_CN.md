@@ -21,8 +21,8 @@ checkPaths:
   - src/**
   - test/**
 lastReviewedAt: 2026-08-25
-lastReviewedCommit: 08eed5bccf8bc0ba936c37e39c15a8fc7c82782b
-lastReviewedNote: 'Reviewed for Issue #228: auth identity receipt 使用既有 session、live current-user read、严格安全 DTO 与本地窄环境生产 case。'
+lastReviewedCommit: 47b44c65cf4bf27070fa1057e672c6ef2b2e54f3
+lastReviewedNote: 'Reviewed for Issue #230: 单轨 Node 工具链进一步精确固定为 24.19.0，以覆盖 Sigstore 发布验证及所有 CI 路径。'
 related:
   - ../AGENTS.md
   - ../.docpact/config.yaml
@@ -33,9 +33,11 @@ related:
 
 # TianGong LCA CLI 实施指南
 
-Review note, 2026-08-25: Issue #224 把实现与验证工具链固定为 Node 24、pnpm 11.23.0、TypeScript 7.0.2 与 type-aware Oxlint。依赖只由根 `pnpm-workspace.yaml` / `pnpm-lock.yaml` 决定；不保留 TypeScript 5/6、ESLint 或 Compiler API 兼容路径。`test:package` 同时验证单轨工具链、干净 tarball 和 package-manager-neutral consumer。feature 版本保持 0.0.33；合并和完整门禁通过后，建议用单独的 release-only PR 准备 0.1.0。
+Review note, 2026-08-25: Issue #224 把实现与验证工具链固定为 Node 24.19.0、pnpm 11.23.0、TypeScript 7.0.2 与 type-aware Oxlint。依赖只由根 `pnpm-workspace.yaml` / `pnpm-lock.yaml` 决定；不保留 TypeScript 5/6、ESLint 或 Compiler API 兼容路径。`test:package` 同时验证单轨工具链、干净 tarball 和 package-manager-neutral consumer。feature 版本保持 0.0.33；合并和完整门禁通过后，建议用单独的 release-only PR 准备 0.1.0。
 
 Review note, 2026-08-25: Issue #228 把生产 case 前的认证边界收口为 `auth identity-receipt`。命令在 credential decode/session/network 前安全断言 canonical Supabase project，通过既有 API key/session runtime 获取 token，并对 redirect-disabled `/auth/v1/user` 做增量 byte cap 只读验证且要求 canonical UUID；401/403 只允许 force-refresh 后重读一次。回执 exact-key parser 只接受 safe projection 和 canonical hash，不包含 credential、token、完整邮箱、session path 或其 fingerprint。无 expected 参数是 `observed`，只有 expected project/user 都由 argv 提供才是 `intent-bound`。pnpm case 命令先 clean-build TS7；plain-Node runner 拒绝 alternate entrypoint，单次读取/hash source/config/lock 与 generated runtime/runner，把 exact built buffers 私有 snapshot 后才从 ignored Foundry env 选取三项变量、禁用 cache、使用独占干净 cwd 与 `shell:false` argv spawn，不保存 raw child output。
+
+Review note, 2026-08-25: Issue #230 把本地、engines 和所有 Node workflow 的单轨版本从宽泛 Node 24 收敛为最新稳定 Node 24.19.0；这样 dev-only Sigstore 验证器、TS7/Oxlint、package test 与发布自动化共享同一个可复现的 minor 版本。
 
 Review note, 2026-07-30: Issue #214 将 identity preflight 的远程检索参数收敛为单一 `lexical_weight`，并把 derivative snapshot/readback 依赖收敛到 `extracted_md`、`embedding_ft` 与 `embedding_ft_at`。既有 owner-draft、一次性 admission、独立 readback 与 fail-closed 规则保持不变。
 
@@ -92,7 +94,7 @@ Review note, 2026-07-25: Issue #208 允许同一纯 flow-delete 模式显式接�
 
 - 用 TypeScript 直接实现 CLI
 - 不把 MCP 作为 CLI 内部传输层
-- 优先 Node 24 原生能力
+- 优先 Node 24.19.0 原生能力
 - 优先文件输入、结构化 JSON 输出
 - 把 `tiangong-lca-skills` 收敛成这个 CLI 的调用方，而不是并行产品面
 
@@ -485,7 +487,7 @@ Derivative rebuild guarded RPC 必须在 admission 时重新校验 authenticated
 
 ### 2.2 已经固定的工程约束
 
-- 运行时：Node 24
+- 运行时：Node 24.19.0
 - 源码：TypeScript
 - 包管理：pnpm 11.23.0（唯一根 workspace/lock）
 - 测试：`node:test`
@@ -1212,7 +1214,7 @@ CLI 现在额外有一条独立于质量门的 npm 发布链路：
 
 - release-prep PR 只修改 `package.json` 版本；依赖图不变时，唯一根 `pnpm-lock.yaml` 保持存在、frozen 且不变
 - 合并到 `main` 后，`tag-release-from-merge.yml` 自动创建 `cli-vX.Y.Z`
-- 所有 Node workflow 通过固定的 `pnpm/setup` v2.0.2 配置 Node 24，并以 frozen 根 lock 安装
+- 所有 Node workflow 通过固定的 `pnpm/setup` v2.0.2 配置 Node 24.19.0，并以 frozen 根 lock 安装
 - `publish.yml` 从该 tag 通过原生 pnpm OIDC/provenance 触发 npm Trusted Publishing
 - 例行发布不从本机发起；本机只做版本修改、质量门、未发布校验和 `pnpm --filter @tiangong-lca/cli --fail-if-no-match pack --dry-run`
 - tarball 必须只含 runtime files；不能携带 pnpm workspace/lock、TypeScript、Oxlint、测试或源码工具，consumer 不能依赖 pnpm 特性

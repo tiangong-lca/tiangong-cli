@@ -21,6 +21,7 @@ const PACKAGE_JSON_PATH = join(REPOSITORY_ROOT, 'package.json');
 const PACKAGE_JSON = readJson(PACKAGE_JSON_PATH);
 const PACKAGE_MANAGER = 'pnpm@11.23.0';
 const PACKAGE_MANAGER_VERSION = PACKAGE_MANAGER.slice('pnpm@'.length);
+const NODE_VERSION = '24.19.0';
 const PNPM_SETUP_ACTION = '84cb39b217b10273981911c288cd62326dc7c6d2';
 
 const PACKAGE_LOCKFILE_NAMES = new Set([
@@ -70,6 +71,9 @@ const NPM_PACKAGE_COMMAND_PATTERN =
   /\b(?:npx|npm\s+(?:add|audit|cache|ci|config|dedupe|exec|fund|i|install|link|list|ls|outdated|pack|pkg|prune|publish|rebuild|remove|run|test|uninstall|unlink|update|version|view|whoami))\b/iu;
 
 test('the repository pins the exact supported pnpm and has one root pnpm lockfile', () => {
+  assert.equal(process.version, `v${NODE_VERSION}`);
+  assert.equal(readFileSync(join(REPOSITORY_ROOT, '.nvmrc'), 'utf8').trim(), NODE_VERSION);
+  assert.equal(PACKAGE_JSON.engines?.node, `>=${NODE_VERSION} <25`);
   assert.equal(PACKAGE_JSON.packageManager, PACKAGE_MANAGER);
   assert.equal(PACKAGE_JSON.engines?.pnpm, PACKAGE_MANAGER_VERSION);
 
@@ -313,7 +317,7 @@ test('workflows use the reviewed Node 24 pnpm setup, frozen installs, and truste
     for (const setup of collectPnpmSetupBlocks(content)) {
       if (
         setup.revision !== PNPM_SETUP_ACTION ||
-        setup.runtime !== 'node@24' ||
+        setup.runtime !== `node@${NODE_VERSION}` ||
         setup.install !== 'false' ||
         setup.cache !== 'true'
       ) {
@@ -340,7 +344,7 @@ test('workflows use the reviewed Node 24 pnpm setup, frozen installs, and truste
   assert.deepEqual(
     setupFindings,
     [],
-    `pnpm setup blocks must pin Node 24 and disable implicit installs:\n${formatJson(
+    `pnpm setup blocks must pin Node ${NODE_VERSION} and disable implicit installs:\n${formatJson(
       setupFindings,
     )}`,
   );
@@ -372,6 +376,58 @@ test('workflows use the reviewed Node 24 pnpm setup, frozen installs, and truste
     publishWorkflow,
     /run:\s+pnpm --filter @tiangong-lca\/cli --fail-if-no-match publish --access public --provenance --no-git-checks\s*$/mu,
   );
+});
+
+test('release tags are blocked by the reusable four-platform gate and have executable handoff proof', () => {
+  const workflowRoot = join(REPOSITORY_ROOT, '.github', 'workflows');
+  const qualityWorkflow = readFileSync(join(workflowRoot, 'quality-gate.yml'), 'utf8');
+  const tagWorkflow = readFileSync(join(workflowRoot, 'tag-release-from-merge.yml'), 'utf8');
+  const releaseRunbook = readFileSync(join(REPOSITORY_ROOT, 'docs', 'release-runbook.md'), 'utf8');
+
+  assert.match(qualityWorkflow, /on:\s*\n\s+workflow_call:\s*\n\s+workflow_dispatch:/u);
+  assert.deepEqual(
+    [...qualityWorkflow.matchAll(/- os: ([^\n]+)\n\s+platform: ([^\n]+)\n\s+arch: ([^\n]+)/gu)].map(
+      ([, os, platform, arch]) => ({ os, platform, arch }),
+    ),
+    [
+      { os: 'ubuntu-latest', platform: 'linux', arch: 'x64' },
+      { os: 'windows-latest', platform: 'win32', arch: 'x64' },
+      { os: 'macos-latest', platform: 'darwin', arch: 'arm64' },
+      { os: 'ubuntu-24.04-arm', platform: 'linux', arch: 'arm64' },
+    ],
+  );
+  assert.match(
+    qualityWorkflow,
+    /node \.\/scripts\/ci\/assert-runtime-platform\.cjs --platform "\$\{\{ matrix\.platform \}\}" --arch "\$\{\{ matrix\.arch \}\}"/u,
+  );
+  assert.match(
+    tagWorkflow,
+    /quality-gate:\s*\n\s+needs: release-context[\s\S]*?uses: \.\/\.github\/workflows\/quality-gate\.yml/u,
+  );
+  assert.match(
+    tagWorkflow,
+    /release-context:[\s\S]*?Set up pnpm and Node\.js[\s\S]*?Detect release version changes/u,
+  );
+  assert.match(
+    tagWorkflow,
+    /tag-release:[\s\S]*?needs:\s*\n\s+- release-context\s*\n\s+- quality-gate/u,
+  );
+  assert.equal(
+    PACKAGE_JSON.scripts?.['release:verify-published'],
+    'node ./scripts/ci/verify-published-release.cjs',
+  );
+  assert.equal(PACKAGE_JSON.devDependencies?.sigstore, '5.0.0');
+  assert.equal(PACKAGE_JSON.dependencies?.sigstore, undefined);
+  assert.match(
+    releaseRunbook,
+    /pnpm release:verify-published -- --version <x\.y\.z> --expected-git-head <release-merge-sha>/u,
+  );
+  assert.match(
+    releaseRunbook,
+    /scripts\/workspace-ops task finish tiangong-lca\/tiangong-cli#<cli-issue-number>[\s\S]*?follow the exact `Next` command[\s\S]*?short-lived continuation[\s\S]*?scripts\/workspace-ops task finish tiangong-lca\/workspace#<integration-issue-number>/u,
+  );
+  assert.doesNotMatch(releaseRunbook, /scripts\/workspace-ops task create --repo workspace/u);
+  assert.doesNotMatch(releaseRunbook, /lca-workspace-delivery-workflow|workflow_ops\.py/u);
 });
 
 test('Oxlint is the only JavaScript and TypeScript linter and uses type-aware TS7 rules', () => {

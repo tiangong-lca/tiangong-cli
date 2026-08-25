@@ -1,6 +1,6 @@
 {
   "name": "@tiangong-lca/cli",
-  "version": "0.1.0",
+  "version": "0.1.1",
   "description": "Unified TianGong LCA CLI with direct REST adapters and low-entropy command surface.",
   "repository": {
     "type": "git",
@@ -50,6 +50,7 @@
     "prepush:gate": "pnpm lint && pnpm test:package && pnpm test:coverage && pnpm test:coverage:assert-full",
     "release:check-tag": "node ./scripts/ci/check-release-tag.cjs cli",
     "release:assert-unpublished": "node ./scripts/ci/release-version.cjs assert-unpublished",
+    "release:verify-published": "node ./scripts/ci/verify-published-release.cjs",
     "clean": "node --eval \"import('node:fs').then(({ rmSync }) => rmSync('dist', { recursive: true, force: true }))\""
   },
   "lint-staged": {
@@ -59,7 +60,7 @@
     ]
   },
   "engines": {
-    "node": ">=24 <25",
+    "node": ">=24.19.0 <25",
     "pnpm": "11.23.0"
   },
   "keywords": [
@@ -76,6 +77,7 @@
     "oxlint": "^1.80.0",
     "oxlint-tsgolint": "^7.0.2001",
     "prettier": "3.8.1",
+    "sigstore": "5.0.0",
     "tsx": "^4.23.12",
     "typescript": "^7.0.2"
   },

@@ -22,8 +22,8 @@ checkPaths:
   - scripts/**
   - .github/workflows/**
 lastReviewedAt: 2026-08-25
-lastReviewedCommit: 08eed5bccf8bc0ba936c37e39c15a8fc7c82782b
-lastReviewedNote: 'Reviewed for Issue #228: 增加只读、无秘密、生产需 intent-bound 的身份回执及窄环境本地 case runner。'
+lastReviewedCommit: 47b44c65cf4bf27070fa1057e672c6ef2b2e54f3
+lastReviewedNote: 'Reviewed for Issue #230: 本地、CI、engines 与维护文档统一固定 Node 24.19.0，并保留 pnpm 11.23.0 / TypeScript 7 单轨。'
 related:
   - AGENTS.md
   - .docpact/config.yaml
@@ -35,11 +35,13 @@ related:
 
 # 项目配置
 
-本项目是 TianGong 的统一 CLI 仓库，运行时基线固定为 Node 24，开发工具链固定为 pnpm 11.23.0、TypeScript 7.0.2 与 type-aware Oxlint，但运行时只执行 `dist/` 下的构建产物。
+本项目是 TianGong 的统一 CLI 仓库，本地与 CI 运行时基线固定为 Node 24.19.0，开发工具链固定为 pnpm 11.23.0、TypeScript 7.0.2 与 type-aware Oxlint，但发布运行时只执行 `dist/` 下的构建产物。
 
 Review note, 2026-08-25: Issue #224 把仓库收敛为单一 Node 工具链：根 `pnpm-workspace.yaml` 与唯一根 `pnpm-lock.yaml` 管理依赖；`test:package` 拒绝其他 lockfile、旧 TypeScript/ESLint bridge、active npm 包管理命令和发布包中的开发工具泄漏；Oxlint 完全替代 ESLint 与 TypeScript Compiler API lint 路径。feature 仍保持 0.0.33；合并且全部质量门通过后，应另开只含 release metadata 的 0.1.0 PR，明确 maintainer/release compatibility 边界。
 
 Review note, 2026-08-25: Issue #228 新增 `auth identity-receipt`。命令先在 credential decode/session/network 之前安全核对 expected canonical project，再对 redirect-disabled `/auth/v1/user` 做增量 byte cap 只读校验并要求 canonical user UUID；401/403 最多强制刷新并重读一次。公开回执只含 project、user id、脱敏展示邮箱、session/cache mode、安全请求/响应 hash 和 canonical receipt hash，严禁 credential/token/full-email/session-path 及其 fingerprint。生产 guard 必须同时带 expected project/user，并要求 `assertions.mode=intent-bound`。pnpm production case 命令先 clean-build TS7，再由 plain-Node runner 单次读取/hash source/config/lock 与 generated runtime/runner，把 exact built buffers 私有 snapshot 后才暴露 key；它不接受 alternate CLI path，只从 Foundry ignored `.env` 读取三个白名单变量，禁用 cache、使用独占创建的干净 cwd 与 argv 数组，不保存原始 stdout/stderr，也不做 dataset mutation。
+
+Review note, 2026-08-25: Issue #230 因最新稳定 `sigstore@5.0.0` 的 Node 引擎下限，进一步把 `.nvmrc`、package engines、所有 workflow、静态契约和维护文档统一到当前最新 Node 24 LTS `24.19.0`，不再宣称支持无法运行完整开发/发布门禁的旧 24.x minor。
 
 Review note, 2026-06-04: `dataset curation-queue next/verify` extends the existing CLI-native dataset command family and does not change maintainer runtime, env, or release guidance.
 
@@ -86,7 +88,7 @@ Review note, 2026-07-17: Issue #157 COMMON 收紧要求两个 Issue #29 derivati
 设计原则：
 
 - 统一入口：所有 TianGong 平台能力最终收敛到 `tiangong-lca` 一个命令树
-- 原生优先：优先使用 Node 24 原生能力，不默认引入高级包
+- 原生优先：优先使用 Node 24.19.0 原生能力，不默认引入高级包
 - 直连 REST：不再以内置 MCP 作为 CLI 传输层
 - 文件优先：输入优先走 JSON / JSONL / 本地文件，输出优先走结构化 JSON
 
@@ -151,11 +153,11 @@ review / dedup / publish 的规则 gate 元数据由 `src/lib/runtime-rulesets.t
 
 ## 安装依赖
 
-需要 Node.js `24.x` 和 package metadata 指定的 pnpm `11.23.0`。本仓库不要求 `bash`、`nvm` 或其他 Unix-only 初始化工具。你可以使用自己平台上最稳定的 Node 安装方式，例如：
+需要 Node.js `24.19.0` 和 package metadata 指定的 pnpm `11.23.0`。本仓库不要求 `bash`、`nvm` 或其他 Unix-only 初始化工具。你可以使用自己平台上最稳定的 Node 安装方式，例如：
 
-- Windows: 官方 Node.js `24.x` 安装器
+- Windows: 官方 Node.js `24.19.0` 安装器
 - macOS: 官方安装器、`fnm` 或 `nvm`
-- Linux: 你自己的 Node 24 安装方式
+- Linux: 你自己的 Node 24.19.0 安装方式
 
 ```bash
 pnpm --version

@@ -1,6 +1,7 @@
 name: quality-gate
 
 on:
+  workflow_call:
   workflow_dispatch:
 
 jobs:
@@ -12,12 +13,16 @@ jobs:
       matrix:
         include:
           - os: ubuntu-latest
+            platform: linux
             arch: x64
           - os: windows-latest
+            platform: win32
             arch: x64
           - os: macos-latest
+            platform: darwin
             arch: arm64
           - os: ubuntu-24.04-arm
+            platform: linux
             arch: arm64
     steps:
       - name: Checkout
@@ -26,9 +31,12 @@ jobs:
       - name: Set up pnpm and Node.js
         uses: pnpm/setup@84cb39b217b10273981911c288cd62326dc7c6d2 # v2.0.2
         with:
-          runtime: node@24
+          runtime: node@24.19.0
           install: false
           cache: true
+
+      - name: Assert runner platform and architecture
+        run: node ./scripts/ci/assert-runtime-platform.cjs --platform "${{ matrix.platform }}" --arch "${{ matrix.arch }}"
 
       - name: Install dependencies
         run: pnpm install --frozen-lockfile
