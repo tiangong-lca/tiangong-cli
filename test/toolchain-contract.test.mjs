@@ -522,6 +522,25 @@ test('the runtime SDK floor is 0.2.0 and published dependencies contain no toolc
   });
 });
 
+test('the package exposes only the launcher and typed public primitive subpaths', () => {
+  assert.deepEqual(PACKAGE_JSON.exports, {
+    './bin/tiangong-lca.js': './bin/tiangong-lca.js',
+    './command-spec': {
+      types: './dist/src/command-spec.d.ts',
+      import: './dist/src/command-spec.js',
+    },
+    './batch': {
+      types: './dist/src/batch.d.ts',
+      import: './dist/src/batch.js',
+    },
+  });
+  assert.equal(PACKAGE_JSON.exports['.'], undefined, 'the package root must remain unsupported');
+  assert.equal(
+    readJson(join(REPOSITORY_ROOT, 'tsconfig.build.json')).compilerOptions?.declaration,
+    true,
+  );
+});
+
 test('the exact 100% source-coverage gate remains in the pnpm pre-push path', () => {
   const coverageCommand = PACKAGE_JSON.scripts?.['test:coverage'] ?? '';
   const coverageAssertCommand = PACKAGE_JSON.scripts?.['test:coverage:assert-full'] ?? '';
@@ -551,7 +570,7 @@ test('the exact 100% source-coverage gate remains in the pnpm pre-push path', ()
 const maybePackTest = process.env.TIANGONG_LCA_COVERAGE === '1' ? test.skip : test;
 
 maybePackTest(
-  'a clean pnpm tarball preserves bin and explicit launcher-subpath behavior without build tools',
+  'a clean pnpm tarball preserves bin plus typed ESM public subpaths without runtime build tools',
   { timeout: 180_000 },
   () => {
     const fixtureRoot = mkdtempSync(join(tmpdir(), 'tiangong-cli-pack-contract-'));
@@ -627,7 +646,7 @@ maybePackTest(
         process.platform === 'win32' ? 'tiangong-lca.cmd' : 'tiangong-lca',
       );
       assertRootBinBehavior(installedBinPath, consumerRoot, installedManifest.version);
-      assertModuleHostBehavior(consumerRoot, installedManifest.version);
+      assertModuleHostBehavior(consumerRoot, cleanRepository, installedManifest.version);
 
       const consumerTree = pnpmList(consumerRoot, 'typescript');
       assert.deepEqual(
@@ -675,17 +694,59 @@ function assertRootBinBehavior(binPath, cwd, expectedVersion) {
   });
 }
 
-function assertModuleHostBehavior(consumerRoot, expectedVersion) {
+function assertModuleHostBehavior(consumerRoot, compilerRoot, expectedVersion) {
   const launcherSpecifier = `${PACKAGE_JSON.name}/bin/tiangong-lca.js`;
+  const commandSpecSpecifier = `${PACKAGE_JSON.name}/command-spec`;
+  const batchSpecifier = `${PACKAGE_JSON.name}/batch`;
   const esmHostPath = join(consumerRoot, 'esm-host.mjs');
   const cjsHostPath = join(consumerRoot, 'cjs-host.cjs');
+  const rootHostPath = join(consumerRoot, 'root-host.mjs');
+  const typescriptHostPath = join(consumerRoot, 'typescript-host.mts');
 
   writeFileSync(
     esmHostPath,
     [
       `import { resolveInvokedUrl, runFromBin } from '${launcherSpecifier}';`,
+      `import { createFoundryCommandSpec } from '${commandSpecSpecifier}';`,
+      `import { createBatchContract, runBoundedBatch } from '${batchSpecifier}';`,
       "if (resolveInvokedUrl(null) !== null) throw new Error('ESM launcher resolver contract failed');",
+      "const spec = createFoundryCommandSpec({ executable: 'tool', argv: ['--json'] });",
+      "if (spec.schema !== 'tiangong-foundry.command-spec.v1') throw new Error('CommandSpec export failed');",
+      "const contract = createBatchContract({ identity: { id: 'pack' }, content: ['a'], policy: { parallel: 1 } });",
+      'const batch = await runBoundedBatch({',
+      '  contract,',
+      "  items: ['a'],",
+      '  getItemIdentity: (item) => item,',
+      "  mode: 'read',",
+      '  maxConcurrency: 1,',
+      '  execute: ({ item }) => item.toUpperCase(),',
+      '});',
+      "if (batch.results_input_order[0]?.value !== 'A') throw new Error('Batch export failed');",
       "if ((await runFromBin(['--version'], {})) !== 0) throw new Error('ESM launcher returned nonzero');",
+      '',
+    ].join('\n'),
+    { encoding: 'utf8', flag: 'wx' },
+  );
+  writeFileSync(rootHostPath, [`await import('${PACKAGE_JSON.name}');`, ''].join('\n'), {
+    encoding: 'utf8',
+    flag: 'wx',
+  });
+  writeFileSync(
+    typescriptHostPath,
+    [
+      `import { createFoundryCommandSpec, type FoundryCommandSpec } from '${commandSpecSpecifier}';`,
+      `import { createBatchContract, runBoundedBatch, type BatchRunResult } from '${batchSpecifier}';`,
+      "const spec: FoundryCommandSpec = createFoundryCommandSpec({ executable: 'tool', argv: ['--json'] });",
+      "const contract = createBatchContract({ identity: { id: 'typed' }, content: ['a'], policy: { parallel: 1 } });",
+      'const result: BatchRunResult<string, string, { id: string }> = await runBoundedBatch({',
+      '  contract,',
+      "  items: ['a'],",
+      '  getItemIdentity: (item) => item,',
+      "  mode: 'read',",
+      '  maxConcurrency: 1,',
+      '  execute: ({ item }) => `${spec.executable}:${item}`,',
+      '});',
+      "if (result.status !== 'completed') throw new Error('typed batch contract failed');",
       '',
     ].join('\n'),
     { encoding: 'utf8', flag: 'wx' },
@@ -714,6 +775,29 @@ function assertModuleHostBehavior(consumerRoot, expectedVersion) {
     execFileSync(process.execPath, [cjsHostPath], commandOptions(consumerRoot)),
     `${expectedVersion}\n`,
   );
+  const rootImport = spawnSync(process.execPath, [rootHostPath], commandOptions(consumerRoot));
+  assert.ifError(rootImport.error);
+  assert.notEqual(rootImport.status, 0, 'the package root import must remain unsupported');
+  assert.match(rootImport.stderr, /ERR_PACKAGE_PATH_NOT_EXPORTED/u);
+  execFileSync(
+    'pnpm',
+    [
+      'exec',
+      'tsc',
+      '--noEmit',
+      '--ignoreConfig',
+      '--strict',
+      '--skipLibCheck',
+      '--target',
+      'ES2023',
+      '--module',
+      'NodeNext',
+      '--moduleResolution',
+      'NodeNext',
+      typescriptHostPath,
+    ],
+    commandOptions(compilerRoot),
+  );
 }
 
 function assertPackedFiles(fileMetadata) {
@@ -728,6 +812,11 @@ function assertPackedFiles(fileMetadata) {
 
   assert.ok(packedFiles.includes('bin/tiangong-lca.js'), 'the packed CLI bin is missing');
   assert.ok(packedFiles.includes('dist/src/main.js'), 'the packed runtime entry is missing');
+  assert.ok(
+    packedFiles.includes('dist/src/command-spec.d.ts'),
+    'the packed CommandSpec declaration is missing',
+  );
+  assert.ok(packedFiles.includes('dist/src/batch.d.ts'), 'the packed batch declaration is missing');
   assert.deepEqual(
     forbidden,
     [],

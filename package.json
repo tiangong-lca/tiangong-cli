@@ -15,6 +15,17 @@
   "bin": {
     "tiangong-lca": "./bin/tiangong-lca.js"
   },
+  "exports": {
+    "./bin/tiangong-lca.js": "./bin/tiangong-lca.js",
+    "./command-spec": {
+      "types": "./dist/src/command-spec.d.ts",
+      "import": "./dist/src/command-spec.js"
+    },
+    "./batch": {
+      "types": "./dist/src/batch.d.ts",
+      "import": "./dist/src/batch.js"
+    }
+  },
   "files": [
     "assets/",
     "bin/",
