@@ -21,6 +21,7 @@ const PACKAGE_JSON_PATH = join(REPOSITORY_ROOT, 'package.json');
 const PACKAGE_JSON = readJson(PACKAGE_JSON_PATH);
 const PACKAGE_MANAGER = 'pnpm@11.23.0';
 const PACKAGE_MANAGER_VERSION = PACKAGE_MANAGER.slice('pnpm@'.length);
+const NODE_VERSION = '24.19.0';
 const PNPM_SETUP_ACTION = '84cb39b217b10273981911c288cd62326dc7c6d2';
 
 const PACKAGE_LOCKFILE_NAMES = new Set([
@@ -70,6 +71,9 @@ const NPM_PACKAGE_COMMAND_PATTERN =
   /\b(?:npx|npm\s+(?:add|audit|cache|ci|config|dedupe|exec|fund|i|install|link|list|ls|outdated|pack|pkg|prune|publish|rebuild|remove|run|test|uninstall|unlink|update|version|view|whoami))\b/iu;
 
 test('the repository pins the exact supported pnpm and has one root pnpm lockfile', () => {
+  assert.equal(process.version, `v${NODE_VERSION}`);
+  assert.equal(readFileSync(join(REPOSITORY_ROOT, '.nvmrc'), 'utf8').trim(), NODE_VERSION);
+  assert.equal(PACKAGE_JSON.engines?.node, `>=${NODE_VERSION} <25`);
   assert.equal(PACKAGE_JSON.packageManager, PACKAGE_MANAGER);
   assert.equal(PACKAGE_JSON.engines?.pnpm, PACKAGE_MANAGER_VERSION);
 
@@ -313,7 +317,7 @@ test('workflows use the reviewed Node 24 pnpm setup, frozen installs, and truste
     for (const setup of collectPnpmSetupBlocks(content)) {
       if (
         setup.revision !== PNPM_SETUP_ACTION ||
-        setup.runtime !== 'node@24' ||
+        setup.runtime !== `node@${NODE_VERSION}` ||
         setup.install !== 'false' ||
         setup.cache !== 'true'
       ) {
@@ -340,7 +344,7 @@ test('workflows use the reviewed Node 24 pnpm setup, frozen installs, and truste
   assert.deepEqual(
     setupFindings,
     [],
-    `pnpm setup blocks must pin Node 24 and disable implicit installs:\n${formatJson(
+    `pnpm setup blocks must pin Node ${NODE_VERSION} and disable implicit installs:\n${formatJson(
       setupFindings,
     )}`,
   );
