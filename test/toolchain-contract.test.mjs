@@ -424,8 +424,9 @@ test('release tags are blocked by the reusable four-platform gate and have execu
   );
   assert.match(
     releaseRunbook,
-    /scripts\/workspace-ops task finish tiangong-lca\/tiangong-cli#<cli-issue-number>[\s\S]*?follow the exact `Next` command[\s\S]*?scripts\/workspace-ops task create --repo workspace/u,
+    /scripts\/workspace-ops task finish tiangong-lca\/tiangong-cli#<cli-issue-number>[\s\S]*?follow the exact `Next` command[\s\S]*?short-lived continuation[\s\S]*?scripts\/workspace-ops task finish tiangong-lca\/workspace#<integration-issue-number>/u,
   );
+  assert.doesNotMatch(releaseRunbook, /scripts\/workspace-ops task create --repo workspace/u);
   assert.doesNotMatch(releaseRunbook, /lca-workspace-delivery-workflow|workflow_ops\.py/u);
 });
 
