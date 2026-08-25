@@ -26,8 +26,8 @@ checkPaths:
   - scripts/docpact-gate.sh
   - scripts/install-git-hooks.sh
 lastReviewedAt: 2026-08-25
-lastReviewedCommit: e232bb837d9755fbac8f0c8e1e35e6f2a17206b7
-lastReviewedNote: 'Reviewed for Issue #230: every detected CLI release now gates tag creation on an exact-platform Node 24/pnpm matrix and has cryptographic Sigstore, registry-signature, isolated pnpm-consumer, and finish-first tracked-workspace proof.'
+lastReviewedCommit: 47b44c65cf4bf27070fa1057e672c6ef2b2e54f3
+lastReviewedNote: 'Reviewed for Issue #230: every release uses exact Node 24.19.0, exact-platform pnpm gates, cryptographic Sigstore/registry proof, isolated consumers, and continuation-owned workspace integration.'
 related:
   - ../AGENTS.md
   - ../.docpact/config.yaml
@@ -45,7 +45,7 @@ Review note, 2026-08-25: Issue #226 is that dedicated 0.1.0 release-only deliver
 
 Review note, 2026-08-25: Issue #228 adds a feature command and a local-only production read-case script without changing package version, tag creation, Trusted Publishing, provenance, or workspace follow-up mechanics. The ignored production test credential remains local and must never enter GitHub Actions or npm release configuration. After the feature merges, any public package delivery still uses a separate version-only release PR and every existing post-merge registry/provenance/integration check below.
 
-Review note, 2026-08-25: Issue #230 is that separate 0.1.1 release. It keeps the published runtime dependency graph unchanged while adding exact `sigstore@5.0.0` to the dev-only verification graph and regenerating the sole pnpm lock for that reviewed change. The four-platform workflow is reusable, asserts actual platform/architecture, and blocks tag creation; release detection itself uses pinned Node 24. `release:verify-published` cryptographically verifies the SLSA bundle against the GitHub OIDC issuer, exact workflow/tag certificate identity, certificate transparency and Rekor, binds its `gitCommit` and tarball sha512, runs pnpm registry-signature verification, isolates user/global package-manager configuration, pins pnpm 11.23.0, scans all production dependency sections, and exercises clean bin/ESM/CJS consumers. Workspace handoff starts with the child finish preflight. Local publication and manual tag creation remain forbidden.
+Review note, 2026-08-25: Issue #230 is that separate 0.1.1 release. It keeps the published runtime dependency graph unchanged while adding exact `sigstore@5.0.0` to the dev-only verification graph and regenerating the sole pnpm lock for that reviewed change. `.nvmrc`, engines, all workflows, tests, and active docs pin latest-stable Node 24.19.0. The four-platform workflow is reusable, asserts actual platform/architecture, and blocks tag creation. `release:verify-published` cryptographically verifies the SLSA bundle against the GitHub OIDC issuer, exact workflow/tag certificate identity, certificate transparency and Rekor, binds its `gitCommit` and tarball sha512, runs pnpm registry-signature verification, isolates user/global package-manager configuration, pins pnpm 11.23.0, scans all production dependency sections, and exercises clean bin/ESM/CJS consumers. The child finish continuation owns root integration create/reuse and child completion; operators never create a parallel task or finish the child twice. Local publication and manual tag creation remain forbidden.
 
 Review note, 2026-07-14: Issue #165 adds the guarded `dataset maintenance rebuild-derivatives` command profile but does not change the release procedure. Its command, contract, remote-adapter, asynchronous verification, and no-fallback tests must pass the existing pre-push/docpact gate before a later version-bump PR; the feature PR itself must not publish locally or alter package version metadata.
 
@@ -178,7 +178,7 @@ Expected result:
 - the workflow finishes successfully
 - release detection runs before expensive validation and starts the reusable pnpm quality matrix only when the CLI version changed
 - macOS arm64, Ubuntu x64, Ubuntu arm64, and Windows x64 all pass on the exact merge commit, and each job fail-closes unless `process.platform`/`process.arch` matches its exact matrix declaration
-- the release detector runs only after the same pinned Node 24 pnpm setup used by the rest of the workflow
+- the release detector and every later job run only after the same exact Node 24.19.0 pnpm setup
 - the `tag-release` job depends on both release detection and the successful four-platform matrix, then reruns the Ubuntu release/docpact gates before tag creation
 - tag `cli-v<x.y.z>` exists
 
@@ -244,19 +244,15 @@ From the workspace root, first run the child completion preflight:
 scripts/workspace-ops task finish tiangong-lca/tiangong-cli#<cli-issue-number>
 ```
 
-Read the complete result and follow the exact `Next` command. If the controller confirms that a required workspace integration is missing and no existing integration task covers the exact release, prepare a tracked integration Issue body and create it:
+Read the complete result and follow the exact `Next` command. The first finish call is non-mutating; execute only the short-lived continuation it returns. That continuation creates or reuses the required root integration task, completes the child task, and returns the integration task's exact start action. Do not independently create a root task and do not rerun finish on the now-complete child.
+
+Follow the integration task's returned start/update/submit sequence, use the workspace integration runbook for the exact gitlink and PR target, and bind the child Issue/PR, `cli-v<x.y.z>`, release merge SHA, successful tag/publish runs, and verifier output. After the root integration PR merges, finish the integration task itself:
 
 ```bash
-scripts/workspace-ops task create --repo workspace \
-  --title 'Integrate CLI <x.y.z> release' \
-  --body-file /tmp/cli-workspace-integration.md \
-  --type integration \
-  --priority P1
+scripts/workspace-ops task finish tiangong-lca/workspace#<integration-issue-number>
 ```
 
-The integration Issue must bind the child Issue/PR, `cli-v<x.y.z>`, release merge SHA, successful tag/publish runs, verifier output, intended workspace branch, and exact CLI gitlink before any root mutation. After root integration completes, rerun child `task finish` and use only its short-lived continuation.
-
-Do not reconstruct lifecycle transitions with direct GitHub writes. Use `scripts/workspace-ops` for create/start/update/submit/finish and follow each returned continuation; use the workspace integration runbook for the exact gitlink commit and PR target.
+Use only that task's successful preflight continuation to complete delivery. Do not reconstruct lifecycle transitions with direct GitHub writes.
 
 ## Failure Handling
 
@@ -278,7 +274,8 @@ Do not reconstruct lifecycle transitions with direct GitHub writes. Use `scripts
 - `pnpm release:verify-published` returns `ok: true` for the immutable release merge commit
 - published provenance `gitCommit` and optional registry `gitHead` resolve to the immutable release merge commit
 - Sigstore certificate/CT/Rekor verification, independently downloaded tarball integrity, registry signatures, isolated user/global config, and the credential-free public pnpm ESM/CJS/bin consumer pass
-- child `task finish` preflight precedes any new integration-task creation, and the final short-lived finish continuation runs after root integration
+- the child finish preflight's short-lived continuation owns integration-task create/reuse and child completion; no independent create or second child finish occurs
+- the root integration task follows its returned lifecycle and its own finish preflight/continuation after merge
 - workspace pointer updated only after all checks above passed
 
 ## Local Docpact Push Gate

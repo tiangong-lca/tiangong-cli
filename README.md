@@ -25,13 +25,13 @@ checkPaths:
   - test/auth-identity*.test.ts
   - test/lca-release*.test.ts
 lastReviewedAt: 2026-08-25
-lastReviewedCommit: e232bb837d9755fbac8f0c8e1e35e6f2a17206b7
-lastReviewedNote: 'Reviewed for Issue #230: identifies 0.1.1 as the public auth-receipt release and records exact-platform pre-tag plus cryptographic Sigstore/isolated pnpm verification.'
+lastReviewedCommit: 47b44c65cf4bf27070fa1057e672c6ef2b2e54f3
+lastReviewedNote: 'Reviewed for Issue #230: identifies 0.1.1 as the public auth-receipt release on exact Node 24.19.0 with cryptographic Sigstore and isolated pnpm verification.'
 ---
 
 # TianGong LCA CLI
 
-Package: `@tiangong-lca/cli` Executable: `tiangong-lca` Current package version: `0.1.1` Node: `24.x`
+Package: `@tiangong-lca/cli` Executable: `tiangong-lca` Current package version: `0.1.1` Node: `24.19.0`
 
 Repository development is single-track on pnpm `11.23.0` and TypeScript `7.0.2`. The published package remains a clean, package-manager-neutral consumer artifact: it contains runtime files only, not pnpm, TypeScript, Oxlint, tests, source-only tooling, or repository lockfiles.
 
@@ -41,7 +41,7 @@ Review note, 2026-08-25: Issue #226 publishes that 0.1.0 compatibility boundary 
 
 Review note, 2026-08-25: Issue #228 implements `auth identity-receipt` as a bounded read-only current-user proof. It checks expected project intent before session work, verifies the live user through `/auth/v1/user`, allows one auth-refresh replay after 401/403, and emits an exact-key canonical receipt without API keys, tokens, full email addresses, session paths, or credential-derived fingerprints. Production callers must pass both expected assertions and accept only `assertions.mode="intent-bound"`.
 
-Review note, 2026-08-25: Issue #230 publishes the merged identity receipt as `@tiangong-lca/cli@0.1.1`. Runtime behavior and published runtime dependencies remain unchanged; the sole pnpm lock changes only for exact dev-only `sigstore@5.0.0`. Release automation pins Node 24 for detection, asserts actual platform/architecture across the reusable four-platform pre-tag matrix, and provides `pnpm release:verify-published` for cryptographic Fulcio/CT/Rekor provenance, registry signatures, actual tarball integrity, isolated user/global package-manager configuration, exact pnpm 11.23.0, and credential-free bin/ESM/CJS consumer proof.
+Review note, 2026-08-25: Issue #230 publishes the merged identity receipt as `@tiangong-lca/cli@0.1.1`. Runtime logic and published dependencies remain unchanged; the sole pnpm lock changes only for exact dev-only `sigstore@5.0.0`. Local metadata, engines, and every workflow converge on Node 24.19.0. Release automation asserts actual platform/architecture across the reusable four-platform pre-tag matrix and provides `pnpm release:verify-published` for cryptographic Fulcio/CT/Rekor provenance, registry signatures, actual tarball integrity, isolated user/global package-manager configuration, exact pnpm 11.23.0, and credential-free bin/ESM/CJS consumer proof.
 
 Review note, 2026-07-12: `dataset maintenance plan/apply/verify` provides current-user RLS-scoped exact-row maintenance with immutable plans, explicit approval, per-action logs, platform audit correlation, and independent readback. `merge-support-aliases` now runs only in `target_mode=owner_draft`: source/target support and all changed rows stay private `state_code=0`; publication is a separate future workflow.
 

@@ -25,8 +25,8 @@ checkPaths:
   - scripts/docpact-gate.sh
   - scripts/install-git-hooks.sh
 lastReviewedAt: 2026-08-25
-lastReviewedCommit: e232bb837d9755fbac8f0c8e1e35e6f2a17206b7
-lastReviewedNote: 'Reviewed for Issue #230: exact-platform pre-tag gating and dev-only Sigstore/isolated pnpm verification require no new secret, environment, runner class, Trusted Publisher, tag, or authentication setup.'
+lastReviewedCommit: 47b44c65cf4bf27070fa1057e672c6ef2b2e54f3
+lastReviewedNote: 'Reviewed for Issue #230: exact Node 24.19.0/platform gates and dev-only Sigstore/isolated pnpm verification require no new secret, environment, runner class, publisher, tag, or auth setup.'
 related:
   - ../AGENTS.md
   - ../.docpact/config.yaml
@@ -54,7 +54,7 @@ Review note, 2026-08-25: Issue #226 publishes that 0.1.0 compatibility boundary 
 
 Review note, 2026-08-25: Issue #228 requires no GitHub secret, environment, Trusted Publisher setting, workflow filename, tag rule, dependency, service-role credential, or alternate publication path. `TIANGONG_LCA_TEST_API_KEY` belongs only to the ignored local Data Foundry env used by the explicit read-only case runner; it must not be copied into repository settings, Actions secrets, publish jobs, package assets, or provenance inputs.
 
-Review note, 2026-08-25: Issue #230 publishes 0.1.1 through the existing merge-triggered tag and native pnpm Trusted Publishing workflows. `quality-gate.yml` becomes a reusable exact-platform pre-tag dependency, release detection also pins Node 24, and exact dev-only `sigstore@5.0.0` cryptographically verifies public provenance. The temporary consumer fixes pnpm 11.23.0, verifies registry signatures, and replaces user/global config with private public-registry-only files. It adds no secret, environment, runner class, Trusted Publisher setting, tag pattern, published dependency, service-role credential, test-account credential, or alternate authentication/publication surface.
+Review note, 2026-08-25: Issue #230 publishes 0.1.1 through the existing merge-triggered tag and native pnpm Trusted Publishing workflows. `.nvmrc`, engines, release detection, quality, tag, and publish jobs all pin Node 24.19.0. `quality-gate.yml` is a reusable exact-platform pre-tag dependency, and exact dev-only `sigstore@5.0.0` cryptographically verifies public provenance. The temporary consumer fixes pnpm 11.23.0, verifies registry signatures, and replaces user/global config with private public-registry-only files. It adds no secret, environment, runner class, Trusted Publisher setting, tag pattern, published dependency, service-role credential, test-account credential, or alternate authentication/publication surface.
 
 Current workflow files:
 
@@ -169,8 +169,8 @@ Leave the environment name unset unless the workflow is explicitly updated to us
 ## Operational Notes
 
 - `publish.yml` validates that the Git tag matches the package version before upload and supports `workflow_dispatch` only for pnpm-era tags whose tagged commit contains the root `pnpm-lock.yaml`. A pre-pnpm `cli-v*` tag fails fast; historical-tag replay has no legacy npm fallback.
-- `tag-release-from-merge.yml` detects a CLI version change under pinned Node 24 before expensive validation, invokes the reusable four-platform `quality-gate.yml`, and permits its tag job only after every exact platform/architecture assertion and matrix gate succeeds. It then reruns the Ubuntu Docpact/release gates before creating the tag. If the expected tag already points at the current merge commit, the tag step is idempotent; if it points elsewhere, the workflow fails.
-- every Node workflow uses immutable `pnpm/setup` v2.0.2 with Node 24, cache enabled, and `pnpm install --frozen-lockfile`; the publish job receives `id-token: write` and invokes native pnpm provenance publication
+- `tag-release-from-merge.yml` detects a CLI version change under exact Node 24.19.0 before expensive validation, invokes the reusable four-platform `quality-gate.yml`, and permits its tag job only after every exact platform/architecture assertion and matrix gate succeeds. It then reruns the Ubuntu Docpact/release gates before creating the tag. If the expected tag already points at the current merge commit, the tag step is idempotent; if it points elsewhere, the workflow fails.
+- every Node workflow uses immutable `pnpm/setup` v2.0.2 with Node 24.19.0, cache enabled, and `pnpm install --frozen-lockfile`; the publish job receives `id-token: write` and invokes native pnpm provenance publication
 - The release-prep PR should ordinarily update only the intended package version and must not churn `pnpm-lock.yaml` when the graph is unchanged. Issue #230 is an explicit reviewed exception: exact dev-only `sigstore@5.0.0` regenerates the sole lock for cryptographic verification while published runtime dependencies remain unchanged.
 - Local workstations may run `pnpm --filter @tiangong-lca/cli --fail-if-no-match pack --dry-run` for package validation, but routine npm publication belongs to GitHub Actions Trusted Publishing after the upstream `main` merge.
 - `pnpm test:package` must prove the tarball contains only the declared runtime surface and that a clean package-manager-neutral consumer can install and execute it without repository workspace state or leaked TypeScript/Oxlint/test tooling.
