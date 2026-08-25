@@ -37,6 +37,13 @@ test('batch contracts bind typed identity plus canonical content and policy dige
   assert.equal(sha256BatchBytes('abc'), sha256BatchBytes(new TextEncoder().encode('abc')));
   assert.deepEqual(parseBatchContract(contract), contract);
   assert.doesNotThrow(() => assertBatchContractMatches(contract, reordered));
+  assert.equal(Object.isFrozen(contract), true);
+  assert.equal(Object.isFrozen(contract.identity), true);
+
+  const nullPrototype = Object.assign(Object.create(null) as Record<string, string>, { id: 'x' });
+  assert.equal(canonicalBatchJson(nullPrototype), '{"id":"x"}');
+  const cyclic: Record<string, unknown> = {};
+  cyclic.self = cyclic;
 
   for (const invalid of [
     null,
@@ -48,6 +55,9 @@ test('batch contracts bind typed identity plus canonical content and policy dige
     assert.throws(() => parseBatchContract(invalid), BatchContractError);
   }
   assert.throws(() => canonicalBatchJson({ value: Number.NaN } as never), BatchContractError);
+  assert.throws(() => canonicalBatchJson(undefined as never), BatchContractError);
+  assert.throws(() => canonicalBatchJson(new Date() as never), BatchContractError);
+  assert.throws(() => canonicalBatchJson(cyclic as never), BatchContractError);
   assert.throws(
     () => assertBatchContractMatches(contract, { ...contract, policy_sha256: '0'.repeat(64) }),
     BatchContractError,
@@ -136,6 +146,37 @@ test('pause is checked before claim and stop prevents later claims after in-flig
   assert.deepEqual(stopped.claim_order, ['a', 'b']);
   assert.deepEqual(stopped.unclaimed_item_ids, ['c']);
   assert.equal(stopped.status, 'stopped');
+
+  const resumedStop = await runBoundedBatch({
+    contract,
+    items: ['a', 'b'],
+    getItemIdentity: (item) => item,
+    mode: 'read',
+    maxConcurrency: 1,
+    resume: {
+      contract,
+      items: [{ item_id: 'a', state: 'completed', outcome: 'succeeded', value: 'A', attempts: 1 }],
+    },
+    shouldStop: () => true,
+    execute: () => {
+      throw new Error('resumed stop must prevent fresh claims');
+    },
+  });
+  assert.equal(resumedStop.status, 'stopped');
+  assert.deepEqual(resumedStop.claim_order, []);
+  assert.deepEqual(resumedStop.unclaimed_item_ids, ['b']);
+
+  const inFlightStop = await runBoundedBatch({
+    contract,
+    items: ['a', 'b'],
+    getItemIdentity: (item) => item,
+    mode: 'read',
+    maxConcurrency: 2,
+    execute: ({ item }) => item,
+    shouldStop: () => true,
+  });
+  assert.deepEqual(inFlightStop.claim_order, ['a', 'b']);
+  assert.equal(inFlightStop.status, 'stopped');
 });
 
 test('read retry uses an injected fake clock and awaited capped backoff', async () => {
@@ -268,6 +309,19 @@ test('mutation transport is attempted once and only explicit readback may recove
   assert.ok(unresolved.results_input_order.every((entry) => entry.status === 'failed'));
   assert.ok(unresolved.results_input_order.every((entry) => entry.attempts === 1));
 
+  const noRecovery = await runBoundedBatch({
+    contract,
+    items: ['a'],
+    getItemIdentity: (item) => item,
+    mode: 'mutation',
+    maxConcurrency: 1,
+    execute: () => {
+      throw new Error('consumed once');
+    },
+  });
+  assert.equal(noRecovery.results_input_order[0]?.status, 'failed');
+  assert.equal(noRecovery.results_input_order[0]?.attempts, 1);
+
   await assert.rejects(
     runBoundedBatch({
       contract,
@@ -370,14 +424,61 @@ test('batch validates concurrency, retry policy, identities, resume entries, and
   };
   await assert.rejects(runBoundedBatch({ ...base, maxConcurrency: 0 }), BatchContractError);
   await assert.rejects(
+    runBoundedBatch({ ...base, maxConcurrency: 1, mode: 'other' as never }),
+    BatchContractError,
+  );
+  await assert.rejects(
     runBoundedBatch({ ...base, maxConcurrency: 1, items: ['a', 'a'] }),
+    BatchContractError,
+  );
+  for (const identity of ['', 'bad\nidentity', 1 as never]) {
+    await assert.rejects(
+      runBoundedBatch({
+        ...base,
+        maxConcurrency: 1,
+        getItemIdentity: () => identity,
+      }),
+      BatchContractError,
+    );
+  }
+  await assert.rejects(
+    runBoundedBatch({
+      ...base,
+      maxConcurrency: 1,
+      retry: { maxAttempts: 0, maxDelayMs: -1, shouldRetry: () => true, delayMs: () => 0 },
+    }),
     BatchContractError,
   );
   await assert.rejects(
     runBoundedBatch({
       ...base,
       maxConcurrency: 1,
-      retry: { maxAttempts: 0, maxDelayMs: -1, shouldRetry: () => true, delayMs: () => 0 },
+      resume: {
+        contract,
+        items: [
+          { item_id: 'a', state: 'attempted', attempts: 1 },
+          { item_id: 'a', state: 'attempted', attempts: 1 },
+        ],
+      },
+    }),
+    BatchContractError,
+  );
+  await assert.rejects(
+    runBoundedBatch({
+      ...base,
+      maxConcurrency: 1,
+      resume: {
+        contract,
+        items: [
+          {
+            item_id: 'a',
+            state: 'completed',
+            outcome: 'failed',
+            value: 'A',
+            attempts: 1,
+          } as never,
+        ],
+      },
     }),
     BatchContractError,
   );
@@ -409,10 +510,199 @@ test('batch validates concurrency, retry policy, identities, resume entries, and
   assert.equal(invalidDelay.results_input_order[0]?.status, 'failed');
 });
 
+test('read retry isolates classifier, backoff sleep, and resumed-read failures', async () => {
+  const classifierFailure = await runBoundedBatch({
+    contract,
+    items: ['a'],
+    getItemIdentity: (item) => item,
+    mode: 'read',
+    maxConcurrency: 1,
+    retry: {
+      maxAttempts: 2,
+      maxDelayMs: 1,
+      shouldRetry: () => {
+        throw new Error('classifier failed');
+      },
+      delayMs: () => 0,
+    },
+    execute: () => {
+      throw new Error('read failed');
+    },
+  });
+  assert.match(String(failedError(classifierFailure.results_input_order[0])), /classifier failed/u);
+
+  const classifiedTerminal = await runBoundedBatch({
+    contract,
+    items: ['a'],
+    getItemIdentity: (item) => item,
+    mode: 'read',
+    maxConcurrency: 1,
+    retry: {
+      maxAttempts: 2,
+      maxDelayMs: 1,
+      shouldRetry: () => false,
+      delayMs: () => 0,
+    },
+    execute: () => {
+      throw new Error('not retryable');
+    },
+  });
+  assert.match(String(failedError(classifiedTerminal.results_input_order[0])), /not retryable/u);
+
+  const sleepFailure = await runBoundedBatch({
+    contract,
+    items: ['a'],
+    getItemIdentity: (item) => item,
+    mode: 'read',
+    maxConcurrency: 1,
+    retry: {
+      maxAttempts: 2,
+      maxDelayMs: 1,
+      shouldRetry: () => true,
+      delayMs: () => 1,
+    },
+    sleep: async () => {
+      throw new Error('sleep failed');
+    },
+    execute: () => {
+      throw new Error('retryable');
+    },
+  });
+  assert.match(String(failedError(sleepFailure.results_input_order[0])), /sleep failed/u);
+
+  let defaultSleepCalls = 0;
+  const defaultSleep = await runBoundedBatch({
+    contract,
+    items: ['a'],
+    getItemIdentity: (item) => item,
+    mode: 'read',
+    maxConcurrency: 1,
+    retry: {
+      maxAttempts: 2,
+      maxDelayMs: 1,
+      shouldRetry: () => true,
+      delayMs: () => 0,
+    },
+    execute: () => {
+      defaultSleepCalls += 1;
+      if (defaultSleepCalls === 1) throw new Error('once');
+      return 'A';
+    },
+  });
+  assert.equal(defaultSleep.results_input_order[0]?.status, 'succeeded');
+
+  const resumedRead = await runBoundedBatch({
+    contract,
+    items: ['a'],
+    getItemIdentity: (item) => item,
+    mode: 'read',
+    maxConcurrency: 1,
+    resume: { contract, items: [{ item_id: 'a', state: 'attempted', attempts: 2 }] },
+    execute: () => {
+      throw new Error('resumed read failed');
+    },
+  });
+  assert.equal(resumedRead.results_input_order[0]?.attempts, 3);
+  assert.equal(resumedRead.results_input_order[0]?.resumed, true);
+});
+
+test('mutation recovery isolates thrown, invalid, and explicit unresolved readback results', async () => {
+  const runRecovery = (recoverMutation: () => never) =>
+    runBoundedBatch({
+      contract,
+      items: ['a'],
+      getItemIdentity: (item) => item,
+      mode: 'mutation' as const,
+      maxConcurrency: 1,
+      execute: () => {
+        throw new Error('ambiguous');
+      },
+      recoverMutation,
+    });
+
+  const thrown = await runRecovery(() => {
+    throw new Error('readback failed');
+  });
+  assert.match(String(failedError(thrown.results_input_order[0])), /readback failed/u);
+
+  const invalid = await runRecovery(() => ({ status: 'invalid' }) as never);
+  assert.match(String(failedError(invalid.results_input_order[0])), /unsupported status/u);
+
+  const explicit = await runBoundedBatch({
+    contract,
+    items: ['a'],
+    getItemIdentity: (item) => item,
+    mode: 'mutation',
+    maxConcurrency: 1,
+    execute: () => {
+      throw new Error('ambiguous');
+    },
+    recoverMutation: () => ({ status: 'unresolved', error: new Error('desired absent') }),
+  });
+  assert.match(String(failedError(explicit.results_input_order[0])), /desired absent/u);
+});
+
+test('batch timestamps stay monotonic and sink or clock failures fail closed', async () => {
+  const times = [10, 5, 4, 20, 19, 18, 17];
+  const monotonic = await runBoundedBatch({
+    contract,
+    items: ['a'],
+    getItemIdentity: (item) => item,
+    mode: 'read',
+    maxConcurrency: 1,
+    clock: { now: () => times.shift() ?? 0 },
+    execute: ({ item }) => item,
+  });
+  assert.ok(
+    monotonic.events.every(
+      (event, index) =>
+        index === 0 || event.timestamp_ms >= monotonic.events[index - 1]!.timestamp_ms,
+    ),
+  );
+
+  await assert.rejects(
+    runBoundedBatch({
+      contract,
+      items: [],
+      getItemIdentity: (item: string) => item,
+      mode: 'read',
+      maxConcurrency: 1,
+      clock: { now: () => Number.NaN },
+      execute: ({ item }) => item,
+    }),
+    BatchContractError,
+  );
+  await assert.rejects(
+    runBoundedBatch({
+      contract,
+      items: ['a'],
+      getItemIdentity: (item) => item,
+      mode: 'read',
+      maxConcurrency: 1,
+      eventSink: () => {
+        throw new Error('event sink failed');
+      },
+      execute: ({ item }) => item,
+    }),
+    /event sink failed/u,
+  );
+});
+
 async function waitFor(predicate: () => boolean): Promise<void> {
   for (let attempts = 0; attempts < 100; attempts += 1) {
     if (predicate()) return;
     await new Promise<void>((resolve) => setImmediate(resolve));
   }
   throw new Error('Timed out waiting for deterministic test state.');
+}
+
+function failedError(value: unknown): unknown {
+  assert.ok(
+    value &&
+      typeof value === 'object' &&
+      'status' in value &&
+      value.status === 'failed' &&
+      'error' in value,
+  );
+  return value.error;
 }

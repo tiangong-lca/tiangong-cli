@@ -426,16 +426,18 @@ export async function executeFoundryCommandSpec(
   validateAsyncExecutionOptions(options);
   const clock = options.clock ?? { now: Date.now };
   const sleep = options.sleep ?? defaultSleep;
+  if (options.signal?.aborted) {
+    throw new FoundryCommandSpecAbortError(options.signal.reason);
+  }
   const controller = new AbortController();
   const startedAtMs = clock.now();
+  if (!Number.isFinite(startedAtMs)) {
+    throw new Error('CommandSpec clock must return a finite millisecond value.');
+  }
   let settled = false;
 
   const forwardAbort = () => controller.abort(options.signal?.reason);
-  if (options.signal?.aborted) {
-    forwardAbort();
-  } else {
-    options.signal?.addEventListener('abort', forwardAbort, { once: true });
-  }
+  options.signal?.addEventListener('abort', forwardAbort, { once: true });
 
   const spawnOptions: FoundryCommandSpecAsyncSpawnOptions = {
     ...(options.cwd === undefined ? {} : { cwd: options.cwd }),
@@ -458,8 +460,7 @@ export async function executeFoundryCommandSpec(
           : new FoundryCommandSpecAbortError(reason),
       );
     };
-    if (controller.signal.aborted) rejectAbort();
-    else controller.signal.addEventListener('abort', rejectAbort, { once: true });
+    controller.signal.addEventListener('abort', rejectAbort, { once: true });
   });
   const timeoutPromise =
     options.timeoutMs === undefined
@@ -498,12 +499,8 @@ function validateAsyncExecutionOptions(options: ExecuteFoundryCommandSpecOptions
 
 function defaultSleep(milliseconds: number, signal: AbortSignal): Promise<void> {
   return new Promise((resolve, reject) => {
-    if (signal.aborted) {
-      reject(signal.reason);
-      return;
-    }
     const timer = setTimeout(resolve, milliseconds);
-    timer.unref?.();
+    timer.unref();
     signal.addEventListener(
       'abort',
       () => {
@@ -522,8 +519,8 @@ function spawnCommandAsync(
 ): Promise<FoundryCommandSpecSpawnResult> {
   return new Promise((resolve) => {
     const child = spawn(executable, [...argv], {
-      ...(options.cwd === undefined ? {} : { cwd: options.cwd }),
-      ...(options.env === undefined ? {} : { env: options.env }),
+      cwd: options.cwd,
+      env: options.env,
       shell: false,
       windowsHide: true,
       signal: options.signal,
@@ -535,11 +532,8 @@ function spawnCommandAsync(
     let capturedBytes = 0;
     let captureError: Error | undefined;
     let spawnError: Error | undefined;
-    let finished = false;
 
-    const capture = (target: Buffer[], chunk: Buffer | string) => {
-      if (captureError) return;
-      const bytes = Buffer.isBuffer(chunk) ? chunk : Buffer.from(chunk);
+    const capture = (target: Buffer[], bytes: Buffer) => {
       capturedBytes += bytes.byteLength;
       if (capturedBytes > maxBuffer) {
         captureError = new RangeError(
@@ -550,14 +544,12 @@ function spawnCommandAsync(
       }
       target.push(bytes);
     };
-    child.stdout?.on('data', (chunk: Buffer | string) => capture(stdout, chunk));
-    child.stderr?.on('data', (chunk: Buffer | string) => capture(stderr, chunk));
+    child.stdout.on('data', (chunk: Buffer) => capture(stdout, chunk));
+    child.stderr.on('data', (chunk: Buffer) => capture(stderr, chunk));
     child.once('error', (error) => {
       spawnError = error;
     });
     child.once('close', (status, signal) => {
-      if (finished) return;
-      finished = true;
       const stdoutText = Buffer.concat(stdout).toString('utf8');
       const stderrText = Buffer.concat(stderr).toString('utf8');
       resolve({

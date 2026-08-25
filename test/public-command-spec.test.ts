@@ -65,6 +65,13 @@ test('CommandSpec remains byte-compatible with the Foundry v1 authority domain',
   );
   assert.equal(commandSpecOptionValue(spec, '--input'), 'rows with spaces.jsonl');
   assert.equal(commandSpecOptionValue(spec, '--missing'), null);
+  assert.equal(commandSpecOptionValue(spec, '--json'), null);
+
+  const diagnosticOption = createFoundryCommandSpec({
+    executable: 'tool',
+    argv: ['--unknown=value', '--custom='],
+  });
+  assert.equal(commandSpecOptionValue(diagnosticOption, '--custom'), null);
 
   const displayDrift = parseFoundryCommandSpec({ ...spec, display: 'never execute this text' });
   assert.equal(displayDrift.sha256, FIXTURE_SPEC_SHA);
@@ -141,6 +148,8 @@ test('CommandSpec binds exact artifact bytes and blocks drift before sync spawn'
     assert.throws(() =>
       assertFoundryCommandSpecBindsArtifact(spec, { ...artifact, sha256: '0'.repeat(64) }),
     );
+    assert.throws(() => assertFoundryCommandSpecArtifactsCurrent(spec, () => null));
+    assert.throws(() => assertFoundryCommandSpecArtifactsCurrent(spec, () => root));
 
     const result = executeFoundryCommandSpecSync(
       { ...spec, display: 'touch forbidden' },
@@ -204,10 +213,43 @@ test('CommandSpec sync and async default executors use executable plus argv with
   assert.equal(asyncResult.status, 0);
   assert.equal(asyncResult.stdout, 'safe;argv');
   assert.equal(asyncResult.stderr, '');
+
+  const overflow = await executeFoundryCommandSpec(
+    createFoundryCommandSpec({
+      executable: process.execPath,
+      argv: ['--eval', "process.stdout.write('12345')"],
+    }),
+    { resolveArtifactPath: () => null, maxBuffer: 4 },
+  );
+  assert.ok(overflow.error instanceof RangeError);
+
+  const missing = await executeFoundryCommandSpec(
+    createFoundryCommandSpec({
+      executable: 'definitely-missing-command-spec-executable',
+      argv: [],
+    }),
+    { resolveArtifactPath: () => null },
+  );
+  assert.ok(missing.error instanceof Error);
+  assert.notEqual(missing.status, 0);
 });
 
 test('CommandSpec async execution supports injected spawn, timeout, and external abort', async () => {
   const spec = createFoundryCommandSpec({ executable: process.execPath, argv: ['fixture.js'] });
+  const injected = await executeFoundryCommandSpec(spec, {
+    resolveArtifactPath: () => null,
+    cwd: '/tmp',
+    env: { TEST_ONLY: 'yes' },
+    maxBuffer: 8,
+    spawnImpl: async (_executable, _argv, options) => {
+      assert.equal(options.cwd, '/tmp');
+      assert.equal(options.env?.TEST_ONLY, 'yes');
+      assert.equal(options.maxBuffer, 8);
+      return { stdout: 'injected', stderr: '', status: 0, signal: null };
+    },
+  });
+  assert.equal(injected.stdout, 'injected');
+
   let timeoutSignal: AbortSignal | undefined;
   let now = 1_000;
   await assert.rejects(
@@ -250,6 +292,44 @@ test('CommandSpec async execution supports injected spawn, timeout, and external
   assert.equal(spawnOptions?.signal.aborted, true);
 });
 
+test('CommandSpec async execution validates limits, clock, and pre-aborted signals before spawn', async () => {
+  const spec = createFoundryCommandSpec({ executable: process.execPath, argv: ['fixture.js'] });
+  for (const options of [
+    { timeoutMs: 0 },
+    { timeoutMs: 1.5 },
+    { maxBuffer: 0 },
+    { maxBuffer: Number.NaN },
+  ]) {
+    await assert.rejects(
+      executeFoundryCommandSpec(spec, { resolveArtifactPath: () => null, ...options }),
+    );
+  }
+  await assert.rejects(
+    executeFoundryCommandSpec(spec, {
+      resolveArtifactPath: () => null,
+      clock: { now: () => Number.NaN },
+      spawnImpl: async () => ({ stdout: '', stderr: '', status: 0, signal: null }),
+    }),
+    /clock/iu,
+  );
+
+  const controller = new AbortController();
+  controller.abort('already stopped');
+  let spawnCalls = 0;
+  await assert.rejects(
+    executeFoundryCommandSpec(spec, {
+      resolveArtifactPath: () => null,
+      signal: controller.signal,
+      spawnImpl: async () => {
+        spawnCalls += 1;
+        return { stdout: '', stderr: '', status: 0, signal: null };
+      },
+    }),
+    FoundryCommandSpecAbortError,
+  );
+  assert.equal(spawnCalls, 0);
+});
+
 test('CommandSpec display quoting is diagnostic only', () => {
   assert.equal(
     renderFoundryCommandDisplay('tool', ['plain', "has ' quote", '']),
@@ -258,4 +338,12 @@ test('CommandSpec display quoting is diagnostic only', () => {
   assert.throws(() =>
     createFileArtifactFact({ role: 'missing', path: 'missing', filePath: 'definitely-missing' }),
   );
+  const root = mkdtempSync(path.join(tmpdir(), 'cli-command-spec-directory-'));
+  try {
+    assert.throws(() =>
+      createFileArtifactFact({ role: 'directory', path: 'directory', filePath: root }),
+    );
+  } finally {
+    rmSync(root, { recursive: true, force: true });
+  }
 });

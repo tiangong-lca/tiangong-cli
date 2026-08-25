@@ -228,12 +228,14 @@ export function sha256BatchJson(value: BatchJsonValue): string {
 export function createBatchContract<TIdentity extends BatchJsonValue>(
   options: CreateBatchContractOptions<TIdentity>,
 ): BatchContract<TIdentity> {
-  canonicalBatchJson(options.identity);
-  return {
-    identity: options.identity,
+  const identity = freezeBatchJson(
+    canonicalizeBatchValue(options.identity, new Set<object>()),
+  ) as TIdentity;
+  return Object.freeze({
+    identity,
     content_sha256: sha256BatchJson(options.content),
     policy_sha256: sha256BatchJson(options.policy),
-  };
+  });
 }
 
 export function parseBatchContract<TIdentity extends BatchJsonValue = BatchJsonValue>(
@@ -244,8 +246,11 @@ export function parseBatchContract<TIdentity extends BatchJsonValue = BatchJsonV
       'Batch contract must contain exact identity, content_sha256, and policy_sha256 keys.',
     );
   }
+  let identity: TIdentity;
   try {
-    canonicalBatchJson(value.identity as BatchJsonValue);
+    identity = freezeBatchJson(
+      canonicalizeBatchValue(value.identity, new Set<object>()),
+    ) as TIdentity;
   } catch (error) {
     throw new BatchContractError('Batch contract identity must be canonical JSON data.', {
       cause: error,
@@ -259,11 +264,11 @@ export function parseBatchContract<TIdentity extends BatchJsonValue = BatchJsonV
   ) {
     throw new BatchContractError('Batch contract content and policy SHA-256 values are malformed.');
   }
-  return {
-    identity: value.identity as TIdentity,
+  return Object.freeze({
+    identity,
     content_sha256: value.content_sha256,
     policy_sha256: value.policy_sha256,
-  };
+  });
 }
 
 export function assertBatchContractMatches<TIdentity extends BatchJsonValue>(
@@ -472,6 +477,14 @@ function canonicalizeBatchValue(value: unknown, ancestors: Set<object>): BatchJs
   }
 }
 
+function freezeBatchJson<T extends BatchJsonValue>(value: T): T {
+  if (value !== null && typeof value === 'object') {
+    for (const child of Object.values(value)) freezeBatchJson(child);
+    Object.freeze(value);
+  }
+  return value;
+}
+
 function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === 'object' && value !== null && !Array.isArray(value);
 }
@@ -487,6 +500,9 @@ function validateBatchOptions<TInput, TOutput, TIdentity extends BatchJsonValue>
 ): void {
   if (!Number.isSafeInteger(options.maxConcurrency) || options.maxConcurrency < 1) {
     throw new BatchContractError('Batch maxConcurrency must be a positive safe integer.');
+  }
+  if (options.mode !== 'read' && options.mode !== 'mutation') {
+    throw new BatchContractError('Batch mode must be read or mutation.');
   }
   if (options.mode === 'mutation' && options.retry) {
     throw new BatchMutationRetryError();
@@ -644,8 +660,9 @@ async function executeClaim<TInput, TOutput, TIdentity extends BatchJsonValue>(i
 }): Promise<BatchItemResult<TInput, TOutput>> {
   const { options, index, itemId, resumeItem, clock, sleep, emitter } = input;
   const item = options.items[index]!;
-  const baseAttempts = resumeItem?.state === 'attempted' ? resumeItem.attempts : 0;
-  if (resumeItem?.state === 'attempted' && options.mode === 'mutation') {
+  const resumed = resumeItem?.state === 'attempted';
+  const baseAttempts = resumed ? resumeItem.attempts : 0;
+  if (resumed && options.mode === 'mutation') {
     const error = new BatchMutationReplayError(itemId);
     if (!options.recoverMutation) {
       return failedResult(item, itemId, index, baseAttempts, true, true, clock, error);
@@ -665,7 +682,7 @@ async function executeClaim<TInput, TOutput, TIdentity extends BatchJsonValue>(i
   }
 
   const maxAttempts = options.retry?.maxAttempts ?? 1;
-  for (let invocationAttempt = 1; invocationAttempt <= maxAttempts; invocationAttempt += 1) {
+  for (let invocationAttempt = 1; ; invocationAttempt += 1) {
     const attempt = baseAttempts + invocationAttempt;
     const context: BatchExecutionContext<TInput> = {
       item,
@@ -684,7 +701,7 @@ async function executeClaim<TInput, TOutput, TIdentity extends BatchJsonValue>(i
         input_index: index,
         attempts: attempt,
         attempt_consumed: true,
-        resumed: resumeItem?.state === 'attempted',
+        resumed,
         completed_at_ms: readClock(clock),
         status: 'succeeded',
         value,
@@ -693,16 +710,7 @@ async function executeClaim<TInput, TOutput, TIdentity extends BatchJsonValue>(i
       await emitter.emit('attempt_failed', { item_id: itemId, input_index: index, attempt });
       if (options.mode === 'mutation') {
         if (!options.recoverMutation) {
-          return failedResult(
-            item,
-            itemId,
-            index,
-            attempt,
-            true,
-            resumeItem?.state === 'attempted',
-            clock,
-            error,
-          );
+          return failedResult(item, itemId, index, attempt, true, resumed, clock, error);
         }
         return recoverMutation({
           options,
@@ -712,22 +720,13 @@ async function executeClaim<TInput, TOutput, TIdentity extends BatchJsonValue>(i
           attempts: attempt,
           error,
           source: 'execution_error',
-          resumed: resumeItem?.state === 'attempted',
+          resumed,
           clock,
           emitter,
         });
       }
       if (!options.retry || invocationAttempt >= maxAttempts) {
-        return failedResult(
-          item,
-          itemId,
-          index,
-          attempt,
-          true,
-          resumeItem?.state === 'attempted',
-          clock,
-          error,
-        );
+        return failedResult(item, itemId, index, attempt, true, resumed, clock, error);
       }
       const retryContext: BatchRetryContext<TInput> = { ...context, error };
       let retry = false;
@@ -740,22 +739,13 @@ async function executeClaim<TInput, TOutput, TIdentity extends BatchJsonValue>(i
           index,
           attempt,
           true,
-          resumeItem?.state === 'attempted',
+          resumed,
           clock,
           classificationError,
         );
       }
       if (!retry) {
-        return failedResult(
-          item,
-          itemId,
-          index,
-          attempt,
-          true,
-          resumeItem?.state === 'attempted',
-          clock,
-          error,
-        );
+        return failedResult(item, itemId, index, attempt, true, resumed, clock, error);
       }
       let requestedDelay: number;
       try {
@@ -764,16 +754,7 @@ async function executeClaim<TInput, TOutput, TIdentity extends BatchJsonValue>(i
           throw new BatchContractError('Batch retry delay must be a non-negative safe integer.');
         }
       } catch (delayError) {
-        return failedResult(
-          item,
-          itemId,
-          index,
-          attempt,
-          true,
-          resumeItem?.state === 'attempted',
-          clock,
-          delayError,
-        );
+        return failedResult(item, itemId, index, attempt, true, resumed, clock, delayError);
       }
       const delay = Math.min(requestedDelay, options.retry.maxDelayMs);
       await emitter.emit('retry_scheduled', {
@@ -785,20 +766,10 @@ async function executeClaim<TInput, TOutput, TIdentity extends BatchJsonValue>(i
       try {
         await sleep(delay);
       } catch (sleepError) {
-        return failedResult(
-          item,
-          itemId,
-          index,
-          attempt,
-          true,
-          resumeItem?.state === 'attempted',
-          clock,
-          sleepError,
-        );
+        return failedResult(item, itemId, index, attempt, true, resumed, clock, sleepError);
       }
     }
   }
-  throw new BatchContractError('Batch retry loop exhausted without a terminal result.');
 }
 
 async function recoverMutation<TInput, TOutput, TIdentity extends BatchJsonValue>(input: {
