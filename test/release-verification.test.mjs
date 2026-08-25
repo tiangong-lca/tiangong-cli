@@ -17,6 +17,7 @@ const {
   validateAttestations,
   validatePackageMetadata,
   validateTarballBytes,
+  withPrivateTempDirectory,
 } = require('../scripts/ci/verify-published-release.cjs');
 
 const VERSION = '0.1.1';
@@ -236,4 +237,26 @@ test('public consumer environment is credential-free and dependency scanning is 
     ],
     ['7.0.2'],
   );
+});
+
+test('temporary consumer cleanup runs even when private-directory setup fails', () => {
+  const removed = [];
+  assert.throws(() =>
+    withPrivateTempDirectory(
+      () => assert.fail('consumer callback must not run'),
+      {
+        mkdtemp: () => '/tmp/tiangong-cli-consumer-test',
+        chmod: () => {
+          throw new Error('chmod failed');
+        },
+        remove: (target, options) => removed.push({ target, options }),
+      },
+    ),
+  );
+  assert.deepEqual(removed, [
+    {
+      target: '/tmp/tiangong-cli-consumer-test',
+      options: { recursive: true, force: true },
+    },
+  ]);
 });

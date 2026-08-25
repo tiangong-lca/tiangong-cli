@@ -381,6 +381,21 @@ test('release tags are blocked by the reusable four-platform gate and have execu
   const releaseRunbook = readFileSync(join(REPOSITORY_ROOT, 'docs', 'release-runbook.md'), 'utf8');
 
   assert.match(qualityWorkflow, /on:\s*\n\s+workflow_call:\s*\n\s+workflow_dispatch:/u);
+  assert.deepEqual(
+    [...qualityWorkflow.matchAll(/- os: ([^\n]+)\n\s+platform: ([^\n]+)\n\s+arch: ([^\n]+)/gu)].map(
+      ([, os, platform, arch]) => ({ os, platform, arch }),
+    ),
+    [
+      { os: 'ubuntu-latest', platform: 'linux', arch: 'x64' },
+      { os: 'windows-latest', platform: 'win32', arch: 'x64' },
+      { os: 'macos-latest', platform: 'darwin', arch: 'arm64' },
+      { os: 'ubuntu-24.04-arm', platform: 'linux', arch: 'arm64' },
+    ],
+  );
+  assert.match(
+    qualityWorkflow,
+    /node \.\/scripts\/ci\/assert-runtime-platform\.cjs --platform "\$\{\{ matrix\.platform \}\}" --arch "\$\{\{ matrix\.arch \}\}"/u,
+  );
   assert.match(
     tagWorkflow,
     /quality-gate:\s*\n\s+needs: release-context[\s\S]*?uses: \.\/\.github\/workflows\/quality-gate\.yml/u,
