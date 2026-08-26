@@ -8,15 +8,19 @@ import {
   BatchMutationReplayError,
   BatchMutationRetryError,
   assertBatchContractMatches,
+  assertBatchItemContractMatches,
   canonicalBatchJson,
   createBatchContract,
   createBatchItemContract,
+  parseBatchItemContract,
   parseBatchContract,
-  runBoundedBatch,
+  runBoundedBatch as runPublicBoundedBatch,
   sha256BatchBytes,
   sha256BatchJson,
   type BatchEvent,
+  type BatchJsonValue,
   type BatchResumeState,
+  type RunBoundedBatchOptions,
 } from '../src/batch.js';
 
 const contract = createBatchContract({
@@ -24,6 +28,36 @@ const contract = createBatchContract({
   content: [{ id: 'a' }, { id: 'b' }, { id: 'c' }],
   policy: { max_parallel: 2, retry: 'read-only' },
 });
+
+const stringItemProjections = {
+  projectItemContent: (item: string) => item,
+  projectItemPolicy: (_item: string) => null,
+};
+
+function stringItemContract(itemId: string) {
+  return createBatchItemContract({ item_id: itemId, content: itemId, policy: null });
+}
+
+type TestRunOptions<TInput, TOutput, TIdentity extends BatchJsonValue> = Omit<
+  RunBoundedBatchOptions<TInput, TOutput, TIdentity>,
+  'projectItemContent' | 'projectItemPolicy'
+> &
+  Partial<
+    Pick<
+      RunBoundedBatchOptions<TInput, TOutput, TIdentity>,
+      'projectItemContent' | 'projectItemPolicy'
+    >
+  >;
+
+function runBoundedBatch<TInput, TOutput, TIdentity extends BatchJsonValue>(
+  options: TestRunOptions<TInput, TOutput, TIdentity>,
+) {
+  return runPublicBoundedBatch({
+    projectItemContent: (item) => item as unknown as BatchJsonValue,
+    projectItemPolicy: () => null,
+    ...options,
+  });
+}
 
 test('per-item resume contracts isolate content or policy drift before claim', async () => {
   const currentItems = [
@@ -82,6 +116,42 @@ test('per-item resume contracts isolate content or policy drift before claim', a
     content_sha256: sha256BatchJson({ content: 'current-b' }),
     policy_sha256: sha256BatchJson({ policy: 'policy-b' }),
   });
+
+  let recoveries = 0;
+  const attemptedDrift = await runBoundedBatch({
+    contract,
+    items: currentItems,
+    getItemIdentity: (item) => item.id,
+    projectItemContent: (item) => ({ content: item.content }),
+    projectItemPolicy: (item) => ({ policy: item.policy }),
+    mode: 'mutation',
+    maxConcurrency: 1,
+    resume: {
+      contract,
+      items: [
+        {
+          ...createBatchItemContract({
+            item_id: 'a',
+            content: { content: 'current-a' },
+            policy: { policy: 'stale-policy-a' },
+          }),
+          state: 'attempted',
+          attempts: 2,
+        },
+      ],
+    },
+    execute: ({ item }) => item.id,
+    recoverMutation: () => {
+      recoveries += 1;
+      return { status: 'unresolved' };
+    },
+  });
+  assert.deepEqual(attemptedDrift.claim_order, ['b']);
+  assert.deepEqual(
+    attemptedDrift.results_input_order.map((item) => item.status),
+    ['failed', 'succeeded'],
+  );
+  assert.equal(recoveries, 0, 'a drifted attempt cannot enter recovery under a new item triple');
 });
 
 test('batch rejects concurrency above the public resource ceiling before projection or claim', async () => {
@@ -122,6 +192,22 @@ test('batch contracts bind typed identity plus canonical content and policy dige
   assert.doesNotThrow(() => assertBatchContractMatches(contract, reordered));
   assert.equal(Object.isFrozen(contract), true);
   assert.equal(Object.isFrozen(contract.identity), true);
+
+  const itemContract = stringItemContract('a');
+  assert.deepEqual(parseBatchItemContract(itemContract), itemContract);
+  assert.deepEqual(assertBatchItemContractMatches(itemContract, { ...itemContract }), itemContract);
+  assert.throws(
+    () =>
+      assertBatchItemContractMatches(itemContract, {
+        ...itemContract,
+        content_sha256: '0'.repeat(64),
+      }),
+    BatchItemResumeContractError,
+  );
+  assert.throws(
+    () => parseBatchItemContract({ ...itemContract, policy_sha256: 'bad' }),
+    BatchContractError,
+  );
 
   const nullPrototype = Object.assign(Object.create(null) as Record<string, string>, { id: 'x' });
   assert.equal(canonicalBatchJson(nullPrototype), '{"id":"x"}');
@@ -238,7 +324,15 @@ test('pause is checked before claim and stop prevents later claims after in-flig
     maxConcurrency: 1,
     resume: {
       contract,
-      items: [{ item_id: 'a', state: 'completed', outcome: 'succeeded', value: 'A', attempts: 1 }],
+      items: [
+        {
+          ...stringItemContract('a'),
+          state: 'completed',
+          outcome: 'succeeded',
+          value: 'A',
+          attempts: 1,
+        },
+      ],
     },
     shouldStop: () => true,
     execute: () => {
@@ -353,6 +447,36 @@ test('event delivery is serialized and awaited before execution continues', asyn
   );
 });
 
+test('item content and policy projections are recomputed immediately before claim', async () => {
+  const item = { id: 'a', content: 'before', policy: 'p1' };
+  let claimedContract: unknown;
+  const result = await runBoundedBatch({
+    contract,
+    items: [item],
+    getItemIdentity: (value) => value.id,
+    projectItemContent: (value) => ({ content: value.content }),
+    projectItemPolicy: (value) => ({ policy: value.policy }),
+    mode: 'read',
+    maxConcurrency: 1,
+    eventSink: (event) => {
+      if (event.type === 'batch_started') {
+        item.content = 'after';
+        item.policy = 'p2';
+      }
+    },
+    execute: ({ item_contract }) => {
+      claimedContract = item_contract;
+      return 'ok';
+    },
+  });
+  assert.deepEqual(claimedContract, {
+    item_id: 'a',
+    content_sha256: sha256BatchJson({ content: 'after' }),
+    policy_sha256: sha256BatchJson({ policy: 'p2' }),
+  });
+  assert.deepEqual(result.results_input_order[0]?.item_contract, claimedContract);
+});
+
 test('mutation transport is attempted once and only explicit readback may recover it', async () => {
   let attempts = 0;
   let recoveries = 0;
@@ -428,8 +552,14 @@ test('resume requires the exact identity/content/policy triple and never replays
   const completedResume: BatchResumeState<string, { batch: string; revision: number }> = {
     contract,
     items: [
-      { item_id: 'a', state: 'completed', outcome: 'succeeded', value: 'A', attempts: 1 },
-      { item_id: 'b', state: 'attempted', attempts: 1 },
+      {
+        ...stringItemContract('a'),
+        state: 'completed',
+        outcome: 'succeeded',
+        value: 'A',
+        attempts: 1,
+      },
+      { ...stringItemContract('b'), state: 'attempted', attempts: 1 },
     ],
   };
   let executes = 0;
@@ -467,7 +597,10 @@ test('resume requires the exact identity/content/policy triple and never replays
     getItemIdentity: (item) => item,
     mode: 'mutation',
     maxConcurrency: 1,
-    resume: { contract, items: [{ item_id: 'b', state: 'attempted', attempts: 2 }] },
+    resume: {
+      contract,
+      items: [{ ...stringItemContract('b'), state: 'attempted', attempts: 2 }],
+    },
     execute: () => {
       throw new Error('must not execute');
     },
@@ -539,8 +672,8 @@ test('batch validates concurrency, retry policy, identities, resume entries, and
       resume: {
         contract,
         items: [
-          { item_id: 'a', state: 'attempted', attempts: 1 },
-          { item_id: 'a', state: 'attempted', attempts: 1 },
+          { ...stringItemContract('a'), state: 'attempted', attempts: 1 },
+          { ...stringItemContract('a'), state: 'attempted', attempts: 1 },
         ],
       },
     }),
@@ -554,7 +687,7 @@ test('batch validates concurrency, retry policy, identities, resume entries, and
         contract,
         items: [
           {
-            item_id: 'a',
+            ...stringItemContract('a'),
             state: 'completed',
             outcome: 'failed',
             value: 'A',
@@ -571,7 +704,7 @@ test('batch validates concurrency, retry policy, identities, resume entries, and
       maxConcurrency: 1,
       resume: {
         contract,
-        items: [{ item_id: 'missing', state: 'attempted', attempts: 1 }],
+        items: [{ ...stringItemContract('missing'), state: 'attempted', attempts: 1 }],
       },
     }),
     BatchContractError,
@@ -680,7 +813,10 @@ test('read retry isolates classifier, backoff sleep, and resumed-read failures',
     getItemIdentity: (item) => item,
     mode: 'read',
     maxConcurrency: 1,
-    resume: { contract, items: [{ item_id: 'a', state: 'attempted', attempts: 2 }] },
+    resume: {
+      contract,
+      items: [{ ...stringItemContract('a'), state: 'attempted', attempts: 2 }],
+    },
     execute: () => {
       throw new Error('resumed read failed');
     },

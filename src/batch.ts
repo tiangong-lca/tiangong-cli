@@ -1,6 +1,7 @@
 import { createHash } from 'node:crypto';
 
 const SHA256_PATTERN = /^[a-f0-9]{64}$/u;
+export const MAX_BATCH_CONCURRENCY = 64 as const;
 
 export type BatchJsonPrimitive = boolean | null | number | string;
 export type BatchJsonValue = BatchJsonPrimitive | BatchJsonValue[] | BatchJsonObject;
@@ -11,6 +12,18 @@ export type BatchContract<TIdentity extends BatchJsonValue = BatchJsonValue> = {
   content_sha256: string;
   policy_sha256: string;
 };
+
+export type BatchItemContract = Readonly<{
+  item_id: string;
+  content_sha256: string;
+  policy_sha256: string;
+}>;
+
+export type CreateBatchItemContractOptions = Readonly<{
+  item_id: string;
+  content: BatchJsonValue;
+  policy: BatchJsonValue;
+}>;
 
 export type CreateBatchContractOptions<TIdentity extends BatchJsonValue> = {
   identity: TIdentity;
@@ -32,6 +45,7 @@ export type BatchEventType =
   | 'batch_stopped'
   | 'item_claimed'
   | 'item_completed'
+  | 'item_resume_rejected'
   | 'item_resumed'
   | 'recovery_failed'
   | 'recovery_started'
@@ -53,6 +67,7 @@ export type BatchEvent = Readonly<{
 type BatchItemResultCommon<TInput> = Readonly<{
   item: TInput;
   item_id: string;
+  item_contract: BatchItemContract;
   input_index: number;
   attempts: number;
   attempt_consumed: boolean;
@@ -95,6 +110,7 @@ export type BatchRunResult<
 export type BatchExecutionContext<TInput> = Readonly<{
   item: TInput;
   item_id: string;
+  item_contract: BatchItemContract;
   input_index: number;
   attempt: number;
   mode: BatchMode;
@@ -117,6 +133,7 @@ export type BatchRecoverySource = 'execution_error' | 'resume_incomplete';
 export type BatchMutationRecoveryContext<TInput> = Readonly<{
   item: TInput;
   item_id: string;
+  item_contract: BatchItemContract;
   input_index: number;
   attempts: number;
   error: unknown;
@@ -127,19 +144,19 @@ export type BatchMutationRecoveryResult<TOutput> =
   | Readonly<{ status: 'recovered'; value: TOutput }>
   | Readonly<{ status: 'unresolved'; error?: unknown }>;
 
-export type BatchCompletedResumeItem<TOutput> = Readonly<{
-  item_id: string;
-  state: 'completed';
-  outcome: BatchItemSuccessStatus;
-  value: TOutput;
-  attempts: number;
-}>;
+export type BatchCompletedResumeItem<TOutput> = BatchItemContract &
+  Readonly<{
+    state: 'completed';
+    outcome: BatchItemSuccessStatus;
+    value: TOutput;
+    attempts: number;
+  }>;
 
-export type BatchAttemptedResumeItem = Readonly<{
-  item_id: string;
-  state: 'attempted';
-  attempts: number;
-}>;
+export type BatchAttemptedResumeItem = BatchItemContract &
+  Readonly<{
+    state: 'attempted';
+    attempts: number;
+  }>;
 
 export type BatchResumeItem<TOutput> = BatchAttemptedResumeItem | BatchCompletedResumeItem<TOutput>;
 
@@ -154,6 +171,7 @@ export type BatchResumeState<
 export type BatchPauseContext<TInput, TOutput> = Readonly<{
   item: TInput;
   item_id: string;
+  item_contract: BatchItemContract;
   input_index: number;
   claimed_count: number;
   results_input_order: readonly BatchItemResult<TInput, TOutput>[];
@@ -173,6 +191,8 @@ export type RunBoundedBatchOptions<TInput, TOutput, TIdentity extends BatchJsonV
   contract: BatchContract<TIdentity>;
   items: readonly TInput[];
   getItemIdentity: (item: TInput, inputIndex: number) => string;
+  projectItemContent: (item: TInput, inputIndex: number) => BatchJsonValue;
+  projectItemPolicy: (item: TInput, inputIndex: number) => BatchJsonValue;
   mode: BatchMode;
   maxConcurrency: number;
   execute: (context: BatchExecutionContext<TInput>) => TOutput | Promise<TOutput>;
@@ -213,6 +233,18 @@ export class BatchMutationReplayError extends Error {
   }
 }
 
+export class BatchItemResumeContractError extends BatchContractError {
+  readonly itemId: string;
+
+  constructor(itemId: string) {
+    super(
+      `Batch resume item ${itemId} does not match the current item identity, content SHA-256, and policy SHA-256 triple.`,
+    );
+    this.name = 'BatchItemResumeContractError';
+    this.itemId = itemId;
+  }
+}
+
 export function canonicalBatchJson(value: BatchJsonValue): string {
   return JSON.stringify(canonicalizeBatchValue(value, new Set<object>()));
 }
@@ -236,6 +268,49 @@ export function createBatchContract<TIdentity extends BatchJsonValue>(
     content_sha256: sha256BatchJson(options.content),
     policy_sha256: sha256BatchJson(options.policy),
   });
+}
+
+export function createBatchItemContract(
+  options: CreateBatchItemContractOptions,
+): BatchItemContract {
+  const itemId = parseItemIdentity(options.item_id, 'contract');
+  return Object.freeze({
+    item_id: itemId,
+    content_sha256: sha256BatchJson(options.content),
+    policy_sha256: sha256BatchJson(options.policy),
+  });
+}
+
+export function parseBatchItemContract(value: unknown): BatchItemContract {
+  if (
+    !isRecord(value) ||
+    typeof value.item_id !== 'string' ||
+    typeof value.content_sha256 !== 'string' ||
+    !SHA256_PATTERN.test(value.content_sha256) ||
+    typeof value.policy_sha256 !== 'string' ||
+    !SHA256_PATTERN.test(value.policy_sha256)
+  ) {
+    throw new BatchContractError(
+      'Batch item contract requires item_id plus valid content and policy SHA-256 values.',
+    );
+  }
+  return Object.freeze({
+    item_id: parseItemIdentity(value.item_id, 'contract'),
+    content_sha256: value.content_sha256,
+    policy_sha256: value.policy_sha256,
+  });
+}
+
+export function assertBatchItemContractMatches(
+  expectedValue: unknown,
+  actualValue: unknown,
+): BatchItemContract {
+  const expected = parseBatchItemContract(expectedValue);
+  const actual = parseBatchItemContract(actualValue);
+  if (!batchItemContractsMatch(expected, actual)) {
+    throw new BatchItemResumeContractError(expected.item_id);
+  }
+  return actual;
 }
 
 export function parseBatchContract<TIdentity extends BatchJsonValue = BatchJsonValue>(
@@ -316,9 +391,22 @@ export async function runBoundedBatch<TInput, TOutput, TIdentity extends BatchJs
   for (const [index, item] of options.items.entries()) {
     const resumeItem = resumeItems.get(itemIds[index]!);
     if (resumeItem?.state === 'completed') {
-      const result = freezeResult({
+      const itemContract = projectBatchItemContract(options, item, index, itemIds[index]!);
+      if (!batchItemContractsMatch(itemContract, resumeItem)) {
+        const result = resumeContractFailure(item, itemContract, index, resumeItem.attempts, clock);
+        resultsByIndex.set(index, result);
+        completionResults.push(result);
+        await emitter.emit('item_resume_rejected', {
+          item_id: result.item_id,
+          input_index: result.input_index,
+          status: result.status,
+        });
+        continue;
+      }
+      const resumedResult = freezeResult({
         item,
-        item_id: itemIds[index]!,
+        item_id: itemContract.item_id,
+        item_contract: itemContract,
         input_index: index,
         attempts: resumeItem.attempts,
         attempt_consumed: true,
@@ -327,12 +415,12 @@ export async function runBoundedBatch<TInput, TOutput, TIdentity extends BatchJs
         status: resumeItem.outcome,
         value: resumeItem.value,
       });
-      resultsByIndex.set(index, result);
-      completionResults.push(result);
+      resultsByIndex.set(index, resumedResult);
+      completionResults.push(resumedResult);
       await emitter.emit('item_resumed', {
-        item_id: result.item_id,
-        input_index: result.input_index,
-        status: result.status,
+        item_id: resumedResult.item_id,
+        input_index: resumedResult.input_index,
+        status: resumedResult.status,
       });
     } else {
       pendingIndexes.push(index);
@@ -348,7 +436,14 @@ export async function runBoundedBatch<TInput, TOutput, TIdentity extends BatchJs
     await emitter.emit('batch_stopped', { status: 'stopped' });
   }
 
-  type Claim = { index: number; resumeItem: BatchResumeItem<TOutput> | undefined };
+  type Claim =
+    | {
+        kind: 'claimed';
+        index: number;
+        itemContract: BatchItemContract;
+        resumeItem: BatchResumeItem<TOutput> | undefined;
+      }
+    | { kind: 'resume_rejected'; result: BatchItemFailedResult<TInput> };
 
   const claimNext = async (): Promise<Claim | null> =>
     schedulerLock(async () => {
@@ -356,11 +451,24 @@ export async function runBoundedBatch<TInput, TOutput, TIdentity extends BatchJs
       const index = pendingIndexes[pendingCursor]!;
       const item = options.items[index]!;
       const itemId = itemIds[index]!;
+      const itemContract = projectBatchItemContract(options, item, index, itemId);
+      const resumeItem = resumeItems.get(itemId);
+      if (resumeItem && !batchItemContractsMatch(itemContract, resumeItem)) {
+        pendingCursor += 1;
+        const result = resumeContractFailure(item, itemContract, index, resumeItem.attempts, clock);
+        await emitter.emit('item_resume_rejected', {
+          item_id: result.item_id,
+          input_index: result.input_index,
+          status: result.status,
+        });
+        return { kind: 'resume_rejected', result };
+      }
       if (
         options.shouldPauseBeforeClaim &&
         (await options.shouldPauseBeforeClaim({
           item,
           item_id: itemId,
+          item_contract: itemContract,
           input_index: index,
           claimed_count: claimOrder.length,
           results_input_order: inputOrderedResults(resultsByIndex),
@@ -377,7 +485,7 @@ export async function runBoundedBatch<TInput, TOutput, TIdentity extends BatchJs
       pendingCursor += 1;
       claimOrder.push(itemId);
       await emitter.emit('item_claimed', { item_id: itemId, input_index: index });
-      return { index, resumeItem: resumeItems.get(itemId) };
+      return { kind: 'claimed', index, itemContract, resumeItem };
     });
 
   const complete = async (result: BatchItemResult<TInput, TOutput>): Promise<void> =>
@@ -406,10 +514,14 @@ export async function runBoundedBatch<TInput, TOutput, TIdentity extends BatchJs
     while (true) {
       const claim = await claimNext();
       if (!claim) return;
+      if (claim.kind === 'resume_rejected') {
+        await complete(claim.result);
+        continue;
+      }
       const result = await executeClaim({
         options,
         index: claim.index,
-        itemId: itemIds[claim.index]!,
+        itemContract: claim.itemContract,
         resumeItem: claim.resumeItem,
         clock,
         sleep,
@@ -498,8 +610,14 @@ function hasExactKeys(value: Record<string, unknown>, expectedKeys: readonly str
 function validateBatchOptions<TInput, TOutput, TIdentity extends BatchJsonValue>(
   options: RunBoundedBatchOptions<TInput, TOutput, TIdentity>,
 ): void {
-  if (!Number.isSafeInteger(options.maxConcurrency) || options.maxConcurrency < 1) {
-    throw new BatchContractError('Batch maxConcurrency must be a positive safe integer.');
+  if (
+    !Number.isSafeInteger(options.maxConcurrency) ||
+    options.maxConcurrency < 1 ||
+    options.maxConcurrency > MAX_BATCH_CONCURRENCY
+  ) {
+    throw new BatchContractError(
+      `Batch maxConcurrency must be a safe integer from 1 to ${MAX_BATCH_CONCURRENCY}.`,
+    );
   }
   if (options.mode !== 'read' && options.mode !== 'mutation') {
     throw new BatchContractError('Batch mode must be read or mutation.');
@@ -520,10 +638,12 @@ function validateBatchOptions<TInput, TOutput, TIdentity extends BatchJsonValue>
   }
 }
 
-function parseItemIdentity(value: unknown, index: number): string {
+function parseItemIdentity(value: unknown, location: number | 'contract'): string {
   if (typeof value !== 'string' || value.length === 0 || /[\0\r\n]/u.test(value)) {
     throw new BatchContractError(
-      `Batch item identity at input index ${index} must be a non-empty single-line string.`,
+      location === 'contract'
+        ? 'Batch item contract identity must be a non-empty single-line string.'
+        : `Batch item identity at input index ${location} must be a non-empty single-line string.`,
     );
   }
   return value;
@@ -545,25 +665,72 @@ function validateResume<TOutput, TIdentity extends BatchJsonValue>(
   assertBatchContractMatches<TIdentity>(contract, resume.contract);
   const currentIds = new Set(itemIds);
   for (const item of resume.items) {
+    let itemContract: BatchItemContract;
+    try {
+      itemContract = parseBatchItemContract(item);
+    } catch (error) {
+      throw new BatchContractError('Batch resume contains an invalid item contract.', {
+        cause: error,
+      });
+    }
     if (
       !isRecord(item) ||
-      typeof item.item_id !== 'string' ||
-      !currentIds.has(item.item_id) ||
+      !currentIds.has(itemContract.item_id) ||
       !Number.isSafeInteger(item.attempts) ||
       Number(item.attempts) < 1 ||
       !['attempted', 'completed'].includes(String(item.state))
     ) {
       throw new BatchContractError('Batch resume contains an invalid or foreign item.');
     }
-    if (result.has(item.item_id)) {
+    if (result.has(itemContract.item_id)) {
       throw new BatchContractError('Batch resume item identities must be unique.');
     }
     if (item.state === 'completed' && !['succeeded', 'recovered'].includes(String(item.outcome))) {
       throw new BatchContractError('Completed batch resume items require a successful outcome.');
     }
-    result.set(item.item_id, item);
+    result.set(itemContract.item_id, item);
   }
   return result;
+}
+
+function batchItemContractsMatch(left: BatchItemContract, right: BatchItemContract): boolean {
+  return (
+    left.item_id === right.item_id &&
+    left.content_sha256 === right.content_sha256 &&
+    left.policy_sha256 === right.policy_sha256
+  );
+}
+
+function projectBatchItemContract<TInput, TOutput, TIdentity extends BatchJsonValue>(
+  options: RunBoundedBatchOptions<TInput, TOutput, TIdentity>,
+  item: TInput,
+  index: number,
+  itemId: string,
+): BatchItemContract {
+  return createBatchItemContract({
+    item_id: itemId,
+    content: options.projectItemContent(item, index),
+    policy: options.projectItemPolicy(item, index),
+  });
+}
+
+function resumeContractFailure<TInput>(
+  item: TInput,
+  itemContract: BatchItemContract,
+  index: number,
+  attempts: number,
+  clock: BatchClock,
+): BatchItemFailedResult<TInput> {
+  return failedResult(
+    item,
+    itemContract,
+    index,
+    attempts,
+    true,
+    true,
+    clock,
+    new BatchItemResumeContractError(itemContract.item_id),
+  );
 }
 
 type EventEmitter = ReturnType<typeof createEventEmitter>;
@@ -652,25 +819,26 @@ async function shouldStopAfter<TInput, TOutput, TIdentity extends BatchJsonValue
 async function executeClaim<TInput, TOutput, TIdentity extends BatchJsonValue>(input: {
   options: RunBoundedBatchOptions<TInput, TOutput, TIdentity>;
   index: number;
-  itemId: string;
+  itemContract: BatchItemContract;
   resumeItem: BatchResumeItem<TOutput> | undefined;
   clock: BatchClock;
   sleep: BatchSleep;
   emitter: EventEmitter;
 }): Promise<BatchItemResult<TInput, TOutput>> {
-  const { options, index, itemId, resumeItem, clock, sleep, emitter } = input;
+  const { options, index, itemContract, resumeItem, clock, sleep, emitter } = input;
+  const itemId = itemContract.item_id;
   const item = options.items[index]!;
   const resumed = resumeItem?.state === 'attempted';
   const baseAttempts = resumed ? resumeItem.attempts : 0;
   if (resumed && options.mode === 'mutation') {
     const error = new BatchMutationReplayError(itemId);
     if (!options.recoverMutation) {
-      return failedResult(item, itemId, index, baseAttempts, true, true, clock, error);
+      return failedResult(item, itemContract, index, baseAttempts, true, true, clock, error);
     }
     return recoverMutation({
       options,
       item,
-      itemId,
+      itemContract,
       index,
       attempts: baseAttempts,
       error,
@@ -687,6 +855,7 @@ async function executeClaim<TInput, TOutput, TIdentity extends BatchJsonValue>(i
     const context: BatchExecutionContext<TInput> = {
       item,
       item_id: itemId,
+      item_contract: itemContract,
       input_index: index,
       attempt,
       mode: options.mode,
@@ -698,6 +867,7 @@ async function executeClaim<TInput, TOutput, TIdentity extends BatchJsonValue>(i
       return freezeResult({
         item,
         item_id: itemId,
+        item_contract: itemContract,
         input_index: index,
         attempts: attempt,
         attempt_consumed: true,
@@ -710,12 +880,12 @@ async function executeClaim<TInput, TOutput, TIdentity extends BatchJsonValue>(i
       await emitter.emit('attempt_failed', { item_id: itemId, input_index: index, attempt });
       if (options.mode === 'mutation') {
         if (!options.recoverMutation) {
-          return failedResult(item, itemId, index, attempt, true, resumed, clock, error);
+          return failedResult(item, itemContract, index, attempt, true, resumed, clock, error);
         }
         return recoverMutation({
           options,
           item,
-          itemId,
+          itemContract,
           index,
           attempts: attempt,
           error,
@@ -726,7 +896,7 @@ async function executeClaim<TInput, TOutput, TIdentity extends BatchJsonValue>(i
         });
       }
       if (!options.retry || invocationAttempt >= maxAttempts) {
-        return failedResult(item, itemId, index, attempt, true, resumed, clock, error);
+        return failedResult(item, itemContract, index, attempt, true, resumed, clock, error);
       }
       const retryContext: BatchRetryContext<TInput> = { ...context, error };
       let retry = false;
@@ -735,7 +905,7 @@ async function executeClaim<TInput, TOutput, TIdentity extends BatchJsonValue>(i
       } catch (classificationError) {
         return failedResult(
           item,
-          itemId,
+          itemContract,
           index,
           attempt,
           true,
@@ -745,7 +915,7 @@ async function executeClaim<TInput, TOutput, TIdentity extends BatchJsonValue>(i
         );
       }
       if (!retry) {
-        return failedResult(item, itemId, index, attempt, true, resumed, clock, error);
+        return failedResult(item, itemContract, index, attempt, true, resumed, clock, error);
       }
       let requestedDelay: number;
       try {
@@ -754,7 +924,7 @@ async function executeClaim<TInput, TOutput, TIdentity extends BatchJsonValue>(i
           throw new BatchContractError('Batch retry delay must be a non-negative safe integer.');
         }
       } catch (delayError) {
-        return failedResult(item, itemId, index, attempt, true, resumed, clock, delayError);
+        return failedResult(item, itemContract, index, attempt, true, resumed, clock, delayError);
       }
       const delay = Math.min(requestedDelay, options.retry.maxDelayMs);
       await emitter.emit('retry_scheduled', {
@@ -766,7 +936,7 @@ async function executeClaim<TInput, TOutput, TIdentity extends BatchJsonValue>(i
       try {
         await sleep(delay);
       } catch (sleepError) {
-        return failedResult(item, itemId, index, attempt, true, resumed, clock, sleepError);
+        return failedResult(item, itemContract, index, attempt, true, resumed, clock, sleepError);
       }
     }
   }
@@ -775,7 +945,7 @@ async function executeClaim<TInput, TOutput, TIdentity extends BatchJsonValue>(i
 async function recoverMutation<TInput, TOutput, TIdentity extends BatchJsonValue>(input: {
   options: RunBoundedBatchOptions<TInput, TOutput, TIdentity>;
   item: TInput;
-  itemId: string;
+  itemContract: BatchItemContract;
   index: number;
   attempts: number;
   error: unknown;
@@ -784,7 +954,9 @@ async function recoverMutation<TInput, TOutput, TIdentity extends BatchJsonValue
   clock: BatchClock;
   emitter: EventEmitter;
 }): Promise<BatchItemResult<TInput, TOutput>> {
-  const { options, item, itemId, index, attempts, error, source, resumed, clock, emitter } = input;
+  const { options, item, itemContract, index, attempts, error, source, resumed, clock, emitter } =
+    input;
+  const itemId = itemContract.item_id;
   await emitter.emit('recovery_started', {
     item_id: itemId,
     input_index: index,
@@ -795,6 +967,7 @@ async function recoverMutation<TInput, TOutput, TIdentity extends BatchJsonValue
     const recovery = await options.recoverMutation!({
       item,
       item_id: itemId,
+      item_contract: itemContract,
       input_index: index,
       attempts,
       error,
@@ -810,6 +983,7 @@ async function recoverMutation<TInput, TOutput, TIdentity extends BatchJsonValue
       return freezeResult({
         item,
         item_id: itemId,
+        item_contract: itemContract,
         input_index: index,
         attempts,
         attempt_consumed: true,
@@ -830,7 +1004,7 @@ async function recoverMutation<TInput, TOutput, TIdentity extends BatchJsonValue
     });
     return failedResult(
       item,
-      itemId,
+      itemContract,
       index,
       attempts,
       true,
@@ -845,13 +1019,13 @@ async function recoverMutation<TInput, TOutput, TIdentity extends BatchJsonValue
       attempt: attempts,
       source,
     });
-    return failedResult(item, itemId, index, attempts, true, resumed, clock, recoveryError);
+    return failedResult(item, itemContract, index, attempts, true, resumed, clock, recoveryError);
   }
 }
 
 function failedResult<TInput>(
   item: TInput,
-  itemId: string,
+  itemContract: BatchItemContract,
   inputIndex: number,
   attempts: number,
   attemptConsumed: boolean,
@@ -861,7 +1035,8 @@ function failedResult<TInput>(
 ): BatchItemFailedResult<TInput> {
   return freezeResult({
     item,
-    item_id: itemId,
+    item_id: itemContract.item_id,
+    item_contract: itemContract,
     input_index: inputIndex,
     attempts,
     attempt_consumed: attemptConsumed,
