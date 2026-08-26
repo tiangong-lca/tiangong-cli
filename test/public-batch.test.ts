@@ -491,6 +491,57 @@ test('resource-blocked items do not consume bounded worker capacity', async () =
   }
 });
 
+test('resource-blocked items remain unclaimed when an active item stops the batch', async () => {
+  let releaseA1: () => void = () => undefined;
+  const a1Gate = new Promise<void>((resolve) => {
+    releaseA1 = resolve;
+  });
+  let releaseB1: () => void = () => undefined;
+  const b1Gate = new Promise<void>((resolve) => {
+    releaseB1 = resolve;
+  });
+  const starts: string[] = [];
+  const events: BatchEvent[] = [];
+  const running = runBoundedBatch({
+    contract,
+    items: ['a-1', 'a-2', 'a-3', 'b-1'],
+    getItemIdentity: (item) => item,
+    getExclusiveKey: ({ item }) => item.split('-')[0]!,
+    mode: 'read',
+    maxConcurrency: 2,
+    eventSink: (event) => {
+      events.push(event);
+    },
+    execute: async ({ item }) => {
+      starts.push(item);
+      if (item === 'a-1') {
+        await a1Gate;
+        throw new Error('stop on a-1');
+      }
+      if (item === 'b-1') await b1Gate;
+      return item;
+    },
+    shouldStop: ({ last_result }) => last_result.status === 'failed',
+  });
+
+  try {
+    await waitFor(() => starts.includes('a-1') && starts.includes('b-1'));
+    releaseA1();
+    await waitFor(() => events.some((event) => event.type === 'batch_stopped'));
+    releaseB1();
+    const result = await running;
+
+    assert.deepEqual(starts, ['a-1', 'b-1']);
+    assert.deepEqual(result.claim_order, ['a-1', 'b-1']);
+    assert.deepEqual(result.unclaimed_item_ids, ['a-2', 'a-3']);
+    assert.equal(result.status, 'stopped');
+  } finally {
+    releaseA1();
+    releaseB1();
+    await running.catch(() => undefined);
+  }
+});
+
 test('exclusive resource key projection validates before work and rejects claim-time drift', async () => {
   let executeCalls = 0;
   await assert.rejects(
