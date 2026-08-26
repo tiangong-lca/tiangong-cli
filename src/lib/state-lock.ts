@@ -60,7 +60,11 @@ function normalizeLockTimings(options: StateLockOptions): { timeoutMs: number; p
     ['timeoutMs', options.timeoutMs],
     ['pollMs', options.pollMs],
   ] as const) {
-    if (value !== undefined && value > MAX_NODE_TIMER_DELAY_MS) {
+    if (value === undefined) continue;
+    if (!Number.isSafeInteger(value)) {
+      throw new RangeError(`State lock ${label} must be a finite safe integer.`);
+    }
+    if (value > MAX_NODE_TIMER_DELAY_MS) {
       throw new RangeError(
         `State lock ${label} exceeds the maximum supported timer delay (${MAX_NODE_TIMER_DELAY_MS} ms).`,
       );

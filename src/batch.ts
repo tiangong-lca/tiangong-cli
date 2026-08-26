@@ -1012,7 +1012,11 @@ function parseBatchRunLockToken(value: unknown, label: string): string {
 }
 
 function assertBatchTimerDelaySupported(value: number | undefined, label: string): void {
-  if (value !== undefined && value > MAX_NODE_TIMER_DELAY_MS) {
+  if (value === undefined) return;
+  if (!Number.isSafeInteger(value) || value < 0) {
+    throw new BatchContractError(`Batch ${label} must be a non-negative safe integer.`);
+  }
+  if (value > MAX_NODE_TIMER_DELAY_MS) {
     throw new BatchContractError(
       `Batch ${label} exceeds the maximum supported timer delay (${MAX_NODE_TIMER_DELAY_MS} ms).`,
     );
