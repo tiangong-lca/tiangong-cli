@@ -1248,9 +1248,7 @@ test('infrastructure callback failures stop new claims and drain in-flight mutat
     assert.deepEqual(stopCalls, ['b']);
     assert.deepEqual(executeCalls, ['a', 'b'], 'fatal infrastructure state must leave c unclaimed');
     assert.deepEqual(
-      events
-        .filter((event) => event.type === 'item_completed')
-        .map((event) => event.item_id),
+      events.filter((event) => event.type === 'item_completed').map((event) => event.item_id),
       ['b', 'a'],
     );
   } finally {

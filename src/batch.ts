@@ -652,13 +652,22 @@ export async function runBoundedBatch<
   const clock = options.clock ?? { now: Date.now };
   const sleep = options.sleep ?? defaultBatchSleep;
   const emitter = createEventEmitter(clock, options.eventSink);
-  const schedulerLock = createAsyncLock();
   const resultsByIndex = new Map<number, BatchItemResult<TInput, TOutput>>();
   const completionResults: BatchItemResult<TInput, TOutput>[] = [];
   const claimOrder: string[] = [];
   const pendingIndexes: number[] = [];
   let paused = false;
   let stopped = false;
+  let hasInfrastructureFailure = false;
+  let firstInfrastructureFailure: unknown;
+  const recordInfrastructureFailure = (error: unknown): void => {
+    if (!hasInfrastructureFailure) {
+      hasInfrastructureFailure = true;
+      firstInfrastructureFailure = error;
+    }
+    stopped = true;
+  };
+  const schedulerLock = createAsyncLock(recordInfrastructureFailure);
 
   await emitter.emit('batch_started');
 
@@ -953,33 +962,39 @@ export async function runBoundedBatch<
     });
 
   const worker = async () => {
-    while (true) {
-      const claim = await claimNext();
-      if (!claim) return;
-      if (claim.kind === 'rejected') {
-        await complete(claim.result, null, claim.resourceKey);
-        continue;
+    try {
+      while (true) {
+        const claim = await claimNext();
+        if (!claim) return;
+        if (claim.kind === 'rejected') {
+          await complete(claim.result, null, claim.resourceKey);
+          continue;
+        }
+        const execute = () =>
+          executeClaim({
+            options,
+            index: claim.index,
+            itemContract: claim.itemContract,
+            exclusiveKey: claim.exclusiveKey,
+            resumeItem: claim.resumeItem,
+            clock,
+            sleep,
+            emitter,
+          });
+        const result = await execute();
+        await complete(result, claim.exclusiveKey, claim.resourceKey);
       }
-      const execute = () =>
-        executeClaim({
-          options,
-          index: claim.index,
-          itemContract: claim.itemContract,
-          exclusiveKey: claim.exclusiveKey,
-          resumeItem: claim.resumeItem,
-          clock,
-          sleep,
-          emitter,
-        });
-      const result = await execute();
-      await complete(result, claim.exclusiveKey, claim.resourceKey);
+    } catch (error) {
+      recordInfrastructureFailure(error);
+      throw error;
     }
   };
 
   if (!stopped) {
     const workerCount = Math.min(options.maxConcurrency, pendingIndexes.length);
-    await Promise.all(Array.from({ length: workerCount }, worker));
+    await Promise.allSettled(Array.from({ length: workerCount }, worker));
   }
+  if (hasInfrastructureFailure) throw firstInfrastructureFailure;
 
   const status: BatchStatus = paused ? 'paused' : stopped ? 'stopped' : 'completed';
   await emitter.emit('batch_completed', { status });
@@ -1476,7 +1491,7 @@ function readClock(clock: BatchClock): number {
   return value;
 }
 
-function createAsyncLock() {
+function createAsyncLock(onError: (error: unknown) => void) {
   let tail = Promise.resolve();
   return async <T>(operation: () => Promise<T>): Promise<T> => {
     const previous = tail;
@@ -1487,6 +1502,9 @@ function createAsyncLock() {
     await previous;
     try {
       return await operation();
+    } catch (error) {
+      onError(error);
+      throw error;
     } finally {
       release();
     }
