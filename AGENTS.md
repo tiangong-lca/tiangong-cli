@@ -37,8 +37,8 @@ checkPaths:
   - scripts/docpact-gate.sh
   - scripts/install-git-hooks.sh
 lastReviewedAt: 2026-08-26
-lastReviewedCommit: 3d67a14d81f06279251bc468917ef09c7245678b
-lastReviewedNote: 'Reviewed for Issue #233: the 62-line facade and eight bounded acyclic batch modules preserve exact exports, identities, bytes, declarations, dogfood, pnpm-only tooling, and 0.1.1 release boundaries.'
+lastReviewedCommit: c8c7ae860b4e0a85443abb5de0d37ce8b7d65634
+lastReviewedNote: 'Reviewed for Issue #236: exact pnpm 11.24.0 replaces 11.23.0 across the manifest, release verifier, tests, and active docs with no lock, dependency, runtime, export, version, tag, or publication change.'
 related:
   - .docpact/config.yaml
   - docs/agents/repo-validation.md
@@ -61,6 +61,8 @@ Review note, 2026-08-25: Issue #230 publishes the merged Issue #228 runtime as C
 Review note, 2026-08-26: Issue #232 makes `src/command-spec.ts` and `src/batch.ts` the CLI-owned public library boundary. The first preserves the exact Foundry v1 CommandSpec authority and shell-free sync/async execution, including abort-listener cleanup after synchronous adapter failure and a Node-safe timeout ceiling; the second owns identity/content/policy-bound item scheduling, resource-aware claims, per-result resume-stop decisions, explicit readback-only mutation recovery, and canonical cross-process run-directory locks. Blocked resource keys stay unclaimed and consume no worker; claim-time identity drift or getter failure is a stable zero-execution item failure, and in-flight workers drain before return. Any escaping infrastructure callback immediately closes new claims; worker aggregation drains all already-claimed work before throwing the first recorded error. Per-resource FIFO cursors plus a private minimum-ready heap avoid repeated full pending scans while preserving stop/pause/unclaimed semantics. Run-lock ownership metadata is internal-only, and all public timer-backed delays reject unsupported values. `dataset save-draft --execution-contract` dogfoods only the parallel suffix scheduler; its serial dependency prefix, durable attempt/readback authority, report bytes, and no-replay behavior remain command-owned. Package version stays 0.1.1 pending a separate release.
 
 Review note, 2026-08-26: Issue #233 preserves that exact public batch API while making `src/batch.ts` a 62-line re-export facade over eight semantic modules under `src/lib/batch/`. The dependency graph is acyclic and executable architecture proof fixes the facade ceiling at 62 lines and the largest internal ceiling at 445 lines, both below the public 400 / internal 800 limits. The same proof locks exact runtime named exports, class/function object identity, declaration names, error/event/result bytes, forbidden upward imports, module inventory, and SCC absence. Package exports, version 0.1.1, dependencies, the pnpm-only Node 24/TS7 toolchain, run-lock behavior, and dataset save-draft dogfood remain unchanged.
+
+Review note, 2026-08-26: Issue #236 advances only the exact pnpm toolchain pin from 11.23.0 to 11.24.0. `packageManager`, `engines.pnpm`, the release verifier, static contracts, and active maintainer docs agree; pnpm 11.24.0 lockfile-only reconciliation produces no root lockfile byte change. Node 24.19.0, TypeScript 7.0.2 as the sole compiler graph, package version 0.1.1, dependencies, public exports/runtime behavior, tags, and publication remain unchanged, with no npm/Yarn fallback or alternate lock.
 
 Review note, 2026-06-04: `dataset curation-queue build/next/verify` is the CLI-owned state machine for Foundry entity queues; repo ownership boundaries remain unchanged.
 
@@ -181,7 +183,7 @@ Route those tasks to:
 ## Runtime Facts
 
 - Repo-local documentation governance is encoded in `.docpact/config.yaml` and enforced locally by the pre-push docpact gate; `.github/workflows/ai-doc-lint.yml` is manual-dispatch fallback.
-- Package manager: exact `pnpm@11.23.0`, with one root workspace and lockfile
+- Package manager: exact `pnpm@11.24.0`, with one root workspace and lockfile
 - Compiler and lint: `typescript@7.0.2` plus type-aware Oxlint; no TypeScript 5/6 or ESLint bridge
 - Node baseline: exact local/CI `24.19.0`; package engine range `>=24.19.0 <25`
 - Runtime style: TypeScript source, Node-native CLI, direct REST and Edge Function access only
@@ -212,7 +214,7 @@ Route those tasks to:
 
 - Do not add orchestration frameworks or new runtime/package dependencies without explicit approval
 - Do not add automatic mutation retry, infer idempotency from a transport result, weaken per-item content/policy binding, or turn run-directory locks into identity-specific paths. Ambiguous mutation progress remains readback-only and one run directory remains one exclusive lock domain.
-- Do not add another package manager, nested lockfile, TypeScript 5/6 compatibility track, ESLint bridge, or Compiler API lint path. This repository has one package graph: pnpm 11.23.0 with the root workspace and lockfile.
+- Do not add another package manager, nested lockfile, TypeScript 5/6 compatibility track, ESLint bridge, or Compiler API lint path. This repository has one package graph: pnpm 11.24.0 with the root workspace and lockfile.
 - Do not publish `@tiangong-lca/cli` from a local workstation for routine releases; local npm auth state is not part of the release contract.
 - Do not implement dataset maintenance through direct SQL, service-role credentials, raw REST mutation, or Foundry-local database code. Foundry and skills may prepare scope and orchestrate the CLI, but the native CLI must own current-user RLS preflight, platform-command mutation, per-action audit logging, and independent readback verification.
 - Do not generalize `merge-support-aliases` beyond its reviewed two-dimension BAFU profile without a new tracked contract. The fixed factors, 52-row/59-exchange closure, 309 preserved exchanges, and postcondition counts are safety invariants.

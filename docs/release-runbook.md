@@ -26,8 +26,8 @@ checkPaths:
   - scripts/docpact-gate.sh
   - scripts/install-git-hooks.sh
 lastReviewedAt: 2026-08-26
-lastReviewedCommit: 3d67a14d81f06279251bc468917ef09c7245678b
-lastReviewedNote: 'Reviewed for Issue #233: move-only batch decomposition stays at 0.1.1 with unchanged pnpm lock, dependencies, package exports, release automation, and later release-only gates.'
+lastReviewedCommit: c8c7ae860b4e0a85443abb5de0d37ce8b7d65634
+lastReviewedNote: 'Reviewed for Issue #236: release preparation and clean-consumer proof now require exact pnpm 11.24.0; package 0.1.1, lock bytes, dependencies, tags, provenance, publication, and integration mechanics are unchanged.'
 related:
   - ../AGENTS.md
   - ../.docpact/config.yaml
@@ -50,6 +50,8 @@ Review note, 2026-08-25: Issue #230 is that separate 0.1.1 release. It keeps the
 Review note, 2026-08-26: Issue #232 is a feature delivery for typed CommandSpec/batch/run-lock subpaths and keeps package version 0.1.1. It adds no dependency, secret, tag, or alternate publish path. A later release-only PR must advance the version and rerun the existing matrix, provenance, registry, packed ESM/CJS/TS public-subpath consumer, and exact workspace-integration gates before downstream repositories pin the new API.
 
 Review note, 2026-08-26: Issue #233 is an internal move-only prerequisite for that later release. It keeps version 0.1.1, package exports, dependencies, the sole pnpm lock, tag automation, and publication mechanics unchanged while decomposing the batch implementation behind the same public subpath. The later release must consume the same packed ESM/CJS/TypeScript and provenance gates; no release or local publish belongs to Issue #233.
+
+Review note, 2026-08-26: Issue #236 updates only the exact repository and public-release consumer pnpm requirement from 11.23.0 to 11.24.0. A pnpm 11.24.0 lockfile-only reconciliation confirms the sole root lock needs no byte change. Package version 0.1.1, Node 24.19.0, TypeScript 7.0.2, dependencies, runtime/exports, tag detection, native OIDC/provenance publication, registry state, and workspace follow-up remain unchanged; local publication and npm/Yarn fallback remain forbidden.
 
 Review note, 2026-07-14: Issue #165 adds the guarded `dataset maintenance rebuild-derivatives` command profile but does not change the release procedure. Its command, contract, remote-adapter, asynchronous verification, and no-fallback tests must pass the existing pre-push/docpact gate before a later version-bump PR; the feature PR itself must not publish locally or alter package version metadata.
 
@@ -228,7 +230,7 @@ Expected result:
 - `release:verify-published` returns `ok: true`, verifies an optional registry `gitHead` when the registry exposes it, and always requires the cryptographically verified SLSA provenance `gitCommit` to equal `<release-merge-sha>`
 - Sigstore verifies the Fulcio certificate against the GitHub OIDC issuer, an anchored exact `publish.yml@refs/tags/cli-v<x.y.z>` identity, certificate transparency, and Rekor before any decoded statement is trusted
 - the verified statement has exact in-toto/SLSA types and binds the canonical repository, tag, workflow, GitHub Actions invocation, and independently downloaded tarball sha512
-- the temporary consumer proves exact pnpm 11.23.0 and registry signatures, overrides both user and global package-manager configuration with private public-registry-only files, exercises the bin, `auth identity-receipt --help` for 0.1.1 and later, explicit ESM/CJS launcher imports, and scans dependencies, optional dependencies, and peers for production TypeScript
+- the temporary consumer proves exact pnpm 11.24.0 and registry signatures, overrides both user and global package-manager configuration with private public-registry-only files, exercises the bin, `auth identity-receipt --help` for 0.1.1 and later, explicit ESM/CJS launcher imports, and scans dependencies, optional dependencies, and peers for production TypeScript
 
 The verifier intentionally reports `registryGitHead: null` when npm omits that legacy metadata field; this is not a bypass because the signed provenance `gitCommit` remains mandatory. Do not update the workspace pointer until the complete verifier returns `ok: true`.
 

@@ -32,8 +32,8 @@ checkPaths:
   - scripts/docpact-gate.sh
   - scripts/install-git-hooks.sh
 lastReviewedAt: 2026-08-26
-lastReviewedCommit: 3d67a14d81f06279251bc468917ef09c7245678b
-lastReviewedNote: 'Reviewed for Issue #233: proof covers facade/internal LOC budgets, exact edges and zero SCCs, export/class/declaration/byte compatibility, packed consumers, dogfood, pnpm-only tooling, and 100% coverage.'
+lastReviewedCommit: c8c7ae860b4e0a85443abb5de0d37ce8b7d65634
+lastReviewedNote: 'Reviewed for Issue #236: proof now requires exact pnpm 11.24.0 across the repository and clean release consumer while preserving frozen lock, TS7, package, coverage, CI, and publication contracts.'
 related:
   - ../../AGENTS.md
   - ../../.docpact/config.yaml
@@ -75,6 +75,8 @@ Review note, 2026-08-25: Issue #230 release proof requires pre-mutation 0.1.1 re
 Review note, 2026-08-26: Issue #232 proof covers exact Foundry CommandSpec differential vectors; pre-aborted zero-spawn, synchronous adapter failure cleanup, timeout/abort race containment, and Node timer ceilings; all-item projection preflight; claim-time identity/content/policy/resource rechecks; stable identity-drift error/events for returned or thrown getter values; in-flight mutation drainage after both item drift and escaping `shouldStop` infrastructure failure; immediate fatal claim closure; deterministic first-error rejection after all workers settle; per-item resume triples; runtime exclusive-key validation and serialization; blocked-resource zero-worker scheduling with truthful claim/unclaimed order; FIFO successor exposure after stop; private min-heap structure and a 5,000-item near-linear operation bound; per-result resume stop; 64-worker resource ceiling; mutation retry rejection and readback-only recovery; timer-bounded read retry; monotonic awaited events; live-owner-scope-only reentrancy; detached nested scope drainage; completed-context rejection; same-directory cross-process exclusion across identities; internally derived ownership metadata; same-host stale recovery; spoof-resistant foreign/live lock preservation; and physical-lock-safe local handoff. Package proof runs the explicit launcher, CommandSpec, batch, and run-lock APIs from packed ESM/CJS hosts and compiles generated declarations with empty type roots. Dataset save-draft proof locks serial-prefix behavior, suffix concurrency/fatal stop, row order, and exact report bytes. Version stays 0.1.1 until separate release work.
 
 Review note, 2026-08-26: Issue #233 adds move-only architecture characterization before decomposition, then requires the same behavior proof after every wave. The architecture suite locks the exact public runtime/type export sets, re-exported function/class object identities, generated declaration names, error own-key/message/code shapes, deterministic event/result JSON bytes, semantic module inventory, current shrink-only LOC ceilings, allowed dependency edges, forbidden upward imports, and zero SCCs. Final proof requires a facade of 62 lines, no internal module above 445 lines, unchanged packed ESM/CJS/TypeScript consumers, unchanged dataset save-draft dogfood, and exact 100% coverage for every new module.
+
+Review note, 2026-08-26: Issue #236 starts with a failing exact-version contract, then requires pnpm 11.24.0 for manifest/engine resolution and the clean public-release consumer. Proof includes a pnpm 11.24.0 frozen install, zero lockfile diff after lockfile-only reconciliation, the 12/12 package suite, the complete pre-push gate with exact 100% coverage, strict Docpact, and the reusable macOS arm64, Ubuntu x64/arm64, and Windows x64 quality matrix. Node 24.19.0, TypeScript 7.0.2, package 0.1.1, dependencies, exports/runtime, tags, and publication state must not move.
 
 When command-surface, release-gate, or governed docs change, also run the repo-local documentation governance gate:
 
@@ -164,7 +166,7 @@ Review note, 2026-07-25: Issue #208 adds positive proof that a fresh exact-SHA a
 
 Facts that matter:
 
-- `pnpm --version` must be exactly `11.23.0`; `pnpm-workspace.yaml` and the sole root `pnpm-lock.yaml` are the only dependency-resolution authorities
+- `pnpm --version` must be exactly `11.24.0`; `pnpm-workspace.yaml` and the sole root `pnpm-lock.yaml` are the only dependency-resolution authorities
 - Node must be exactly `24.19.0` for local/CI and package engines must be `>=24.19.0 <25`; TypeScript resolves only to `7.0.2`, and type-aware Oxlint is the only lint engine
 - `pnpm test:package` verifies package-manager/TS7/Oxlint/CI contracts, inspects a clean tarball, and exercises a package-manager-neutral consumer
 - public primitive proof must keep `@tiangong-lca/cli/command-spec`, `@tiangong-lca/cli/batch`, and `@tiangong-lca/cli/bin/tiangong-lca.js` importable from packed ESM/CJS/TS consumers without publishing Node typings or enabling package-root/deep imports
@@ -174,7 +176,7 @@ Facts that matter:
 - the local `pre-push` hook runs docpact first and then `pnpm prepush:gate`
 - `.github/workflows/quality-gate.yml` supports manual exact-head reproduction and reusable invocation; its four exact matrix entries fail closed on actual `process.platform`/`process.arch`, and a detected CLI version change must pass them before tag creation
 - every Node workflow bootstraps through pinned `pnpm/setup` v2.0.2 with Node 24.19.0 and installs with `pnpm install --frozen-lockfile`; publishing uses native pnpm OIDC/provenance
-- `pnpm release:verify-published -- --version <x.y.z> --expected-git-head <release-merge-sha>` is the post-publish cryptographic Sigstore/registry-signature/tarball/public-consumer gate; it fixes pnpm 11.23.0, replaces user/global package-manager configs, scans every production dependency branch, and passes no TianGong or registry credential into the clean consumer
+- `pnpm release:verify-published -- --version <x.y.z> --expected-git-head <release-merge-sha>` is the post-publish cryptographic Sigstore/registry-signature/tarball/public-consumer gate; it fixes pnpm 11.24.0, replaces user/global package-manager configs, scans every production dependency branch, and passes no TianGong or registry credential into the clean consumer
 - `process save-draft`, `lifecyclemodel save-draft`, ordered `dataset save-draft --execution-contract`, dataset governance commands such as curation queue build/next/verify, BuildPlan gates, publish schema/verification gates, and the newer process maintenance commands are expected to preserve `100%` coverage even when they add schema-validation, rewrite, recovery, or fallback branches
 - dataset save-draft scheduler dogfood must leave the complete dependency prefix serial and keep `executeAction` as the only owner of durable attempt-before-dispatch, exact readback, UNKNOWN/no-replay, row reports, and report bytes; a generic batch failure may stop new suffix claims but cannot synthesize a command outcome
 - LCI/LCIA release tests must cover all public actions and error branches without real credentials: user-session bootstrap is stubbed, remote error codes are preserved, upload request metadata is bound to local files, Calculation Bundle artifact selection is exact-path only, credentials stay masked, and no file becomes visible before size/hash verification succeeds. Live smoke tests, when explicitly authorized, use a disposable release identity and a real `data_product_manager` account through the public Edge/Database path; service-role or direct SQL evidence is invalid.

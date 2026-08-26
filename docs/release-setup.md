@@ -25,8 +25,8 @@ checkPaths:
   - scripts/docpact-gate.sh
   - scripts/install-git-hooks.sh
 lastReviewedAt: 2026-08-26
-lastReviewedCommit: 3d67a14d81f06279251bc468917ef09c7245678b
-lastReviewedNote: 'Reviewed for Issue #233: bounded internal batch decomposition adds no secret, environment, dependency, lockfile, package-manager path, publisher, tag rule, credential, or alternate release setup.'
+lastReviewedCommit: c8c7ae860b4e0a85443abb5de0d37ce8b7d65634
+lastReviewedNote: 'Reviewed for Issue #236: exact pnpm 11.24.0 flows through the existing packageManager-driven CI setup and release consumer without new secrets, dependencies, lock bytes, workflows, tags, credentials, or publication paths.'
 related:
   - ../AGENTS.md
   - ../.docpact/config.yaml
@@ -59,6 +59,8 @@ Review note, 2026-08-25: Issue #230 publishes 0.1.1 through the existing merge-t
 Review note, 2026-08-26: Issue #232 adds supported public subpaths and run-directory locking without changing release setup, secrets, dependencies, Trusted Publisher configuration, tag rules, or package version 0.1.1. Publication remains a separate release-only PR; its clean consumer must exercise launcher, CommandSpec, batch, run-lock, closed root/deep imports, and generated types.
 
 Review note, 2026-08-26: Issue #233 only decomposes the implementation behind the existing batch subpath. It adds no secret, environment, dependency, lockfile, package-manager path, Trusted Publisher setting, workflow, tag rule, or version change. The repository remains pnpm 11.23.0 and TypeScript 7.0.2 single-track; publication remains separate.
+
+Review note, 2026-08-26: Issue #236 changes only the exact pnpm requirement to 11.24.0. The pinned `pnpm/setup` action continues to resolve that version from root `packageManager`, frozen installs keep the existing sole root lock byte-for-byte, and the public verifier uses the same exact version. No secret, environment, runner, dependency, Trusted Publisher setting, workflow filename, tag rule, credential, version, or alternate npm/Yarn publication path is added.
 
 Current workflow files:
 

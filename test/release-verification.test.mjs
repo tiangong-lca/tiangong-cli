@@ -213,8 +213,8 @@ test('public consumer environment is credential-free and dependency scanning is 
   assert.equal(env.NPM_CONFIG_USERCONFIG, '/tmp/public-consumer.npmrc');
   assert.equal(env.NPM_CONFIG_GLOBALCONFIG, '/tmp/public-consumer-global.npmrc');
   assert.equal(env.npm_config_globalconfig, '/tmp/public-consumer-global.npmrc');
-  assert.equal(validatePackageManagerVersion('11.23.0'), '11.23.0');
-  assert.throws(() => validatePackageManagerVersion('11.22.0'));
+  assert.equal(validatePackageManagerVersion('11.24.0'), '11.24.0');
+  assert.throws(() => validatePackageManagerVersion('11.23.0'));
 
   assert.deepEqual(
     [

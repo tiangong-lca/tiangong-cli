@@ -21,8 +21,8 @@ checkPaths:
   - src/**
   - test/**
 lastReviewedAt: 2026-08-26
-lastReviewedCommit: 3d67a14d81f06279251bc468917ef09c7245678b
-lastReviewedNote: 'Reviewed for Issue #233: 记录 batch facade/八模块 DAG、62/445 行 ceiling、精确对象/声明/字节兼容、pnpm 单轨与 dataset dogfood 边界。'
+lastReviewedCommit: c8c7ae860b4e0a85443abb5de0d37ce8b7d65634
+lastReviewedNote: 'Reviewed for Issue #236: 实现与验证工具链精确升级到 pnpm 11.24.0，保持 Node 24.19.0、TS 7.0.2、0.1.1 包版本、依赖、公开行为与发布边界。'
 related:
   - ../AGENTS.md
   - ../.docpact/config.yaml
@@ -46,6 +46,8 @@ Review note, 2026-08-26: Issue #232 在不新增依赖、不改 0.1.1 版本的�
 `dataset save-draft --execution-contract` 只把 unique-target parallel suffix 的 resource-aware claim/fatal-stop 调度接入公共 batch engine。依赖 prefix 仍逐项串行；`executeAction` 继续独占 before-state、PREPARED、token renewal、DML、append-only attempt/outcome、exact readback 与 no-replay 判断。因此 rows 的输入顺序、progress/failures/summary 字节和 fatal worker 传播保持原契约；blocked target 不消耗 worker 或越过 stop claim 窗口。
 
 Review note, 2026-08-26: Issue #233 对公共 batch 做纯移动式模块化。`src/batch.ts` 只从内部 owner 逐项 re-export，因此函数/类对象身份与 `instanceof` 不变；`types`/`errors` 为叶层，`canonical-contracts` 向上提供 JSON/hash/contract，`run-lock` 与 `scheduler-runtime` 相互独立，`item-projection`/`attempt-recovery` 复用叶层，`engine` 是唯一协调顶层。`test/public-batch-architecture.test.mjs` 与 shrink-only budget fixture 固定 62 行 facade、最大 445 行内部模块、精确 allowed edges、禁止回引 facade/CLI/dataset owner、零 SCC，以及公开 runtime/type/declaration/error/event/result 契约。无新依赖、版本、lockfile、npm/yarn 或发布路径；pnpm 11.23.0 与 TS7 单轨不变。
+
+Review note, 2026-08-26: Issue #236 只更新精确 package-manager contract：manifest、engine、release verifier、静态测试和 active docs 统一到 pnpm 11.24.0。使用该版本执行 lockfile-only reconciliation 后唯一根 lock 无字节变化；Node 24.19.0、唯一 TypeScript 7.0.2 图、包版本 0.1.1、dependencies、public exports/runtime、tag 与 publication 均保持不变，且不新增 npm/Yarn 或 alternate lock。
 
 Review note, 2026-07-30: Issue #214 将 identity preflight 的远程检索参数收敛为单一 `lexical_weight`，并把 derivative snapshot/readback 依赖收敛到 `extracted_md`、`embedding_ft` 与 `embedding_ft_at`。既有 owner-draft、一次性 admission、独立 readback 与 fail-closed 规则保持不变。
 
@@ -497,7 +499,7 @@ Derivative rebuild guarded RPC 必须在 admission 时重新校验 authenticated
 
 - 运行时：Node 24.19.0
 - 源码：TypeScript
-- 包管理：pnpm 11.23.0（唯一根 workspace/lock）
+- 包管理：pnpm 11.24.0（唯一根 workspace/lock）
 - 测试：`node:test`
 - 覆盖率：`c8`
 - 构建产物：`dist/`
