@@ -3,6 +3,7 @@
 import { closeSync, chmodSync, fsyncSync, mkdirSync, openSync, writeFileSync } from 'node:fs';
 import path from 'node:path';
 import * as tidasSdk from '@tiangong-lca/tidas-sdk';
+import { createBatchContract, runBoundedBatch, type BatchJsonValue } from '../batch.js';
 import { writeJsonArtifact, writeJsonLinesArtifact } from './artifacts.js';
 import { collectImportContentIssues } from './dataset-validate.js';
 import {
@@ -1438,6 +1439,19 @@ function assertParallelSuffixTargetsAreUnique(
   }
 }
 
+function executionBatchActionContent(action: DatasetSaveDraftExecutionAction): BatchJsonValue {
+  return {
+    action_id: action.action_id,
+    desired_sha256: action.desired_sha256,
+    expected_operation: action.expected_operation,
+    table: action.table,
+    id: action.id,
+    version: action.version,
+    before_sha256: action.before_sha256,
+    dependency_action_ids: [...action.dependency_action_ids],
+  };
+}
+
 async function renewExecutionOwnerToken(options: {
   runtime: SupabaseDataRuntime;
   commandTransport: NonNullable<Awaited<ReturnType<typeof buildDatasetCommandTransport>>>;
@@ -1711,29 +1725,57 @@ async function runExecutionContractBatch(options: {
     await executeAction(index);
   }
 
-  let nextParallelIndex = serialPrefixLength;
-  let fatalWorkerError: unknown = null;
-  const runParallelWorker = async (): Promise<void> => {
-    while (fatalWorkerError === null) {
-      const index = nextParallelIndex;
-      nextParallelIndex += 1;
-      if (index >= options.contract.actions.length) {
-        return;
-      }
-      try {
-        await executeAction(index);
-      } catch (error) {
-        fatalWorkerError ??= error;
-      }
-    }
-  };
-  const parallelWorkerCount = Math.min(
-    options.maxParallel,
-    options.contract.actions.length - serialPrefixLength,
+  const parallelIndexes = options.contract.actions
+    .slice(serialPrefixLength)
+    .map((_action, suffixIndex) => serialPrefixLength + suffixIndex);
+  const parallelBatch = await runBoundedBatch({
+    contract: createBatchContract({
+      identity: {
+        schema: 'dataset-save-draft.parallel-suffix.v1',
+        execution_id: options.contract.execution_id,
+        contract_sha256: contractSha256,
+      },
+      content: parallelIndexes.map((index) =>
+        executionBatchActionContent(
+          options.contract.actions[index] as DatasetSaveDraftExecutionAction,
+        ),
+      ),
+      policy: {
+        max_parallel: options.maxParallel,
+        serial_prefix_actions: serialPrefixLength,
+        mutation_retry: 'none',
+        fatal_stop: true,
+      },
+    }),
+    items: parallelIndexes,
+    getItemIdentity: (index) =>
+      (options.contract.actions[index] as DatasetSaveDraftExecutionAction).action_id,
+    projectItemContent: (index) =>
+      executionBatchActionContent(
+        options.contract.actions[index] as DatasetSaveDraftExecutionAction,
+      ),
+    projectItemPolicy: (index) => {
+      const action = options.contract.actions[index] as DatasetSaveDraftExecutionAction;
+      return {
+        contract_sha256: contractSha256,
+        target_mode: 'owner_draft',
+        expected_operation: action.expected_operation,
+      };
+    },
+    getExclusiveKey: ({ item: index }) => {
+      const action = options.contract.actions[index] as DatasetSaveDraftExecutionAction;
+      return JSON.stringify([action.table, action.id, action.version]);
+    },
+    mode: 'mutation',
+    maxConcurrency: options.maxParallel,
+    execute: async ({ item: index }) => executeAction(index),
+    shouldStop: ({ last_result: lastResult }) => lastResult.status === 'failed',
+  });
+  const fatalWorkerResult = parallelBatch.results_completion_order.find(
+    (result) => result.status === 'failed',
   );
-  await Promise.all(Array.from({ length: parallelWorkerCount }, () => runParallelWorker()));
-  if (fatalWorkerError !== null) {
-    throw fatalWorkerError;
+  if (fatalWorkerResult?.status === 'failed') {
+    throw fatalWorkerResult.error;
   }
 
   const completedReports = reports as DatasetSaveDraftRowReport[];

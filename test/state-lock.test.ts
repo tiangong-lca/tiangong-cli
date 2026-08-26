@@ -23,6 +23,7 @@ import {
 
 const require = createRequire(import.meta.url);
 const mutableFs = require('node:fs') as typeof import('node:fs');
+const NODE_MAX_TIMER_DELAY_MS = 2_147_483_647;
 
 function createErrnoError(code: string, message: string): NodeJS.ErrnoException {
   const error = new Error(message) as NodeJS.ErrnoException;
@@ -169,6 +170,73 @@ test('withStateFileLock waits for a live owner, clamps pollMs, and retries acqui
     assert.equal(result, 'acquired');
     assert.deepEqual(sleepCalls, [10]);
     assert.equal(readStateLockMetadata(lockPath), null);
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+test('withStateFileLock rejects timer delays above the Node maximum before acquisition', async () => {
+  const dir = mkdtempSync(path.join(os.tmpdir(), 'tg-cli-state-lock-timer-limit-'));
+  const statePath = path.join(dir, 'state.json');
+  let taskCalls = 0;
+  let sleepCalls = 0;
+  try {
+    for (const timing of [
+      { timeoutMs: NODE_MAX_TIMER_DELAY_MS + 1 },
+      { pollMs: NODE_MAX_TIMER_DELAY_MS + 1 },
+    ]) {
+      await assert.rejects(
+        withStateFileLock(
+          statePath,
+          {
+            reason: 'timer-limit',
+            ...timing,
+            sleep: async () => {
+              sleepCalls += 1;
+            },
+          },
+          () => {
+            taskCalls += 1;
+            return 'never';
+          },
+        ),
+        /maximum supported timer delay/iu,
+      );
+    }
+    assert.equal(taskCalls, 0);
+    assert.equal(sleepCalls, 0);
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+test('withStateFileLock rejects non-finite and fractional timer values before acquisition', async () => {
+  const dir = mkdtempSync(path.join(os.tmpdir(), 'tg-cli-state-lock-invalid-timer-'));
+  const statePath = path.join(dir, 'state.json');
+  let taskCalls = 0;
+  try {
+    for (const timing of [
+      { timeoutMs: Number.NaN },
+      { timeoutMs: 1.5 },
+      { pollMs: Number.NaN },
+      { pollMs: 1.5 },
+    ]) {
+      await assert.rejects(
+        withStateFileLock(
+          statePath,
+          {
+            reason: 'invalid-timer',
+            ...timing,
+          },
+          () => {
+            taskCalls += 1;
+            return 'never';
+          },
+        ),
+        /finite safe integer/iu,
+      );
+    }
+    assert.equal(taskCalls, 0);
   } finally {
     rmSync(dir, { recursive: true, force: true });
   }

@@ -488,9 +488,26 @@ test('execution contract keeps the dependency prefix serial and bounds the uniqu
       serial_prefix_actions: 2,
       parallel_suffix_actions: 4,
     });
+    assert.equal(
+      readFileSync(report.files.progress_jsonl, 'utf8'),
+      `${report.rows.map((row) => JSON.stringify(row)).join('\n')}\n`,
+    );
+    assert.equal(readFileSync(report.files.failures_jsonl, 'utf8'), '');
+    assert.equal(
+      readFileSync(report.files.summary_json, 'utf8'),
+      `${JSON.stringify(report, null, 2)}\n`,
+    );
   } finally {
     rmSync(dir, { recursive: true, force: true });
   }
+});
+
+test('execution contract parallel suffix delegates claims and fatal stop to the public batch engine', () => {
+  const source = readFileSync(path.resolve('src/lib/dataset-save-draft-run.ts'), 'utf8');
+  assert.match(source, /from ['"]\.\.\/batch\.js['"]/u);
+  assert.match(source, /runBoundedBatch\s*\(/u);
+  assert.match(source, /shouldStop:/u);
+  assert.doesNotMatch(source, /nextParallelIndex|runParallelWorker/u);
 });
 
 test('execution contract renews the exact owner token before DML and rejects a foreign renewal', async () => {

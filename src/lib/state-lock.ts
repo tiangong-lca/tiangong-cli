@@ -20,6 +20,8 @@ export type StateLockMetadata = {
 
 export type StateLockOptions = {
   reason: string;
+  metadata?: Record<string, string | number | boolean | null>;
+  stalePolicy?: 'local-pid' | 'same-host-pid' | 'never';
   timeoutMs?: number;
   pollMs?: number;
   sleep?: (ms: number) => Promise<void>;
@@ -36,6 +38,7 @@ type LocalLockOwner = {
 const LOCAL_LOCK_OWNERS = new Map<string, LocalLockOwner>();
 const DEFAULT_TIMEOUT_MS = 300_000;
 const DEFAULT_POLL_MS = 200;
+const MAX_NODE_TIMER_DELAY_MS = 2_147_483_647;
 
 function sleepMs(ms: number): Promise<void> {
   return new Promise((resolve) => {
@@ -53,6 +56,20 @@ function isErrnoException(error: unknown, code: string): boolean {
 }
 
 function normalizeLockTimings(options: StateLockOptions): { timeoutMs: number; pollMs: number } {
+  for (const [label, value] of [
+    ['timeoutMs', options.timeoutMs],
+    ['pollMs', options.pollMs],
+  ] as const) {
+    if (value === undefined) continue;
+    if (!Number.isSafeInteger(value)) {
+      throw new RangeError(`State lock ${label} must be a finite safe integer.`);
+    }
+    if (value > MAX_NODE_TIMER_DELAY_MS) {
+      throw new RangeError(
+        `State lock ${label} exceeds the maximum supported timer delay (${MAX_NODE_TIMER_DELAY_MS} ms).`,
+      );
+    }
+  }
   return {
     timeoutMs: Math.max(options.timeoutMs ?? DEFAULT_TIMEOUT_MS, 0),
     pollMs: Math.max(options.pollMs ?? DEFAULT_POLL_MS, 10),
@@ -151,6 +168,7 @@ export async function withStateFileLock<T>(
     try {
       const fileDescriptor = openSync(lockPath, 'wx');
       const metadata: StateLockMetadata = {
+        ...options.metadata,
         ownerPid: options.pid ?? process.pid,
         ownerHost: options.host ?? os.hostname(),
         reason: options.reason,
@@ -182,7 +200,15 @@ export async function withStateFileLock<T>(
 
       const metadata = readStateLockMetadata(lockPath);
       const ownerPid = metadata?.ownerPid;
-      if (typeof ownerPid === 'number' && !isProcessAlive(ownerPid)) {
+      const stalePolicy = options.stalePolicy ?? 'local-pid';
+      const ownerHost = metadata?.ownerHost;
+      const currentHost = options.host ?? os.hostname();
+      const staleOwner =
+        stalePolicy !== 'never' &&
+        typeof ownerPid === 'number' &&
+        !isProcessAlive(ownerPid) &&
+        (stalePolicy === 'local-pid' || ownerHost === currentHost);
+      if (staleOwner) {
         try {
           unlinkSync(lockPath);
           continue;
