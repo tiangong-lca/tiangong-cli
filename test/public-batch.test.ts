@@ -4,6 +4,7 @@ import test from 'node:test';
 import {
   MAX_BATCH_CONCURRENCY,
   BatchContractError,
+  BatchItemIdentityDriftError,
   BatchItemProjectionDriftError,
   BatchItemResourceDriftError,
   BatchItemResumeContractError,
@@ -845,8 +846,7 @@ test('identity is reprojected before resumed acceptance and every fresh claim', 
   );
   for (const entry of result.results_input_order) {
     const error = failedError(entry);
-    assert.ok(error instanceof Error);
-    assert.equal(error.name, 'BatchItemIdentityDriftError');
+    assert.ok(error instanceof BatchItemIdentityDriftError);
   }
   assert.deepEqual(
     events

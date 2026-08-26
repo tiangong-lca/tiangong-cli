@@ -64,6 +64,7 @@ export type BatchEventType =
   | 'batch_stopped'
   | 'item_claimed'
   | 'item_completed'
+  | 'item_identity_drift'
   | 'item_projection_drift'
   | 'item_resource_acquired'
   | 'item_resource_drift'
@@ -312,6 +313,16 @@ export class BatchItemProjectionDriftError extends BatchContractError {
   constructor(itemId: string) {
     super(`Batch item ${itemId} content or policy projection drifted before claim.`);
     this.name = 'BatchItemProjectionDriftError';
+    this.itemId = itemId;
+  }
+}
+
+export class BatchItemIdentityDriftError extends BatchContractError {
+  readonly itemId: string;
+
+  constructor(itemId: string) {
+    super(`Batch item ${itemId} identity drifted before claim.`);
+    this.name = 'BatchItemIdentityDriftError';
     this.itemId = itemId;
   }
 }
@@ -618,6 +629,7 @@ export async function runBoundedBatch<
   const recordPreclaimResult = async (
     result: BatchItemResult<TInput, TOutput>,
     eventType:
+      | 'item_identity_drift'
       | 'item_projection_drift'
       | 'item_resource_drift'
       | 'item_resume_rejected'
@@ -648,6 +660,18 @@ export async function runBoundedBatch<
     if (resumeItem?.state === 'completed') {
       const itemContract = preflightItemContracts[index]!;
       const exclusiveKey = preflightExclusiveKeys[index]!;
+      if (!itemIdentityMatches(options, item, index, itemContract.item_id)) {
+        const result = identityDriftFailure(
+          item,
+          itemContract,
+          exclusiveKey,
+          index,
+          resumeItem,
+          clock,
+        );
+        await recordPreclaimResult(result, 'item_identity_drift');
+        continue;
+      }
       const currentItemContract = projectBatchItemContract(options, item, index, itemIds[index]!);
       if (!batchItemContractsMatch(itemContract, currentItemContract)) {
         const result = projectionDriftFailure(
@@ -723,6 +747,23 @@ export async function runBoundedBatch<
       const itemId = itemIds[index]!;
       const itemContract = preflightItemContracts[index]!;
       const exclusiveKey = preflightExclusiveKeys[index]!;
+      if (!itemIdentityMatches(options, item, index, itemId)) {
+        pendingCursor += 1;
+        const result = identityDriftFailure(
+          item,
+          itemContract,
+          exclusiveKey,
+          index,
+          resumeItems.get(itemId),
+          clock,
+        );
+        await emitter.emit('item_identity_drift', {
+          item_id: result.item_id,
+          input_index: result.input_index,
+          status: result.status,
+        });
+        return { kind: 'rejected', result };
+      }
       const currentItemContract = projectBatchItemContract(options, item, index, itemId);
       const resumeItem = resumeItems.get(itemId);
       if (!batchItemContractsMatch(itemContract, currentItemContract)) {
@@ -1166,6 +1207,47 @@ function projectBatchItemContract<
     content: options.projectItemContent(item, index),
     policy: options.projectItemPolicy(item, index),
   });
+}
+
+function itemIdentityMatches<
+  TInput,
+  TOutput,
+  TIdentity extends BatchJsonValue,
+  TExclusiveKey extends string,
+>(
+  options: RunBoundedBatchOptions<TInput, TOutput, TIdentity, TExclusiveKey>,
+  item: TInput,
+  index: number,
+  expectedItemId: string,
+): boolean {
+  const projected = options.getItemIdentity(item, index);
+  try {
+    return parseItemIdentity(projected, index) === expectedItemId;
+  } catch (error) {
+    if (error instanceof BatchContractError) return false;
+    throw error;
+  }
+}
+
+function identityDriftFailure<TInput, TOutput>(
+  item: TInput,
+  itemContract: BatchItemContract,
+  exclusiveKey: string | null,
+  index: number,
+  resumeItem: BatchResumeItem<TOutput> | undefined,
+  clock: BatchClock,
+): BatchItemFailedResult<TInput> {
+  return failedResult(
+    item,
+    itemContract,
+    index,
+    resumeItem?.attempts ?? 0,
+    resumeItem !== undefined,
+    resumeItem !== undefined,
+    clock,
+    new BatchItemIdentityDriftError(itemContract.item_id),
+    exclusiveKey,
+  );
 }
 
 function projectExclusiveKey<
