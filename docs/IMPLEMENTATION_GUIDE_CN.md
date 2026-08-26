@@ -20,9 +20,9 @@ checkPaths:
   - .oxlintrc.json
   - src/**
   - test/**
-lastReviewedAt: 2026-08-25
-lastReviewedCommit: 47b44c65cf4bf27070fa1057e672c6ef2b2e54f3
-lastReviewedNote: 'Reviewed for Issue #230: 单轨 Node 工具链进一步精确固定为 24.19.0，以覆盖 Sigstore 发布验证及所有 CI 路径。'
+lastReviewedAt: 2026-08-26
+lastReviewedCommit: 76a1693a64e7153bb63031c00d7f016c88096e3e
+lastReviewedNote: 'Reviewed for Issue #232: 记录 CommandSpec、内容绑定 batch、exclusive key、resume stop、live-scope run lock 与 dataset scheduler dogfood 的实现边界。'
 related:
   - ../AGENTS.md
   - ../.docpact/config.yaml
@@ -38,6 +38,10 @@ Review note, 2026-08-25: Issue #224 把实现与验证工具链固定为 Node 24
 Review note, 2026-08-25: Issue #228 把生产 case 前的认证边界收口为 `auth identity-receipt`。命令在 credential decode/session/network 前安全断言 canonical Supabase project，通过既有 API key/session runtime 获取 token，并对 redirect-disabled `/auth/v1/user` 做增量 byte cap 只读验证且要求 canonical UUID；401/403 只允许 force-refresh 后重读一次。回执 exact-key parser 只接受 safe projection 和 canonical hash，不包含 credential、token、完整邮箱、session path 或其 fingerprint。无 expected 参数是 `observed`，只有 expected project/user 都由 argv 提供才是 `intent-bound`。pnpm case 命令先 clean-build TS7；plain-Node runner 拒绝 alternate entrypoint，单次读取/hash source/config/lock 与 generated runtime/runner，把 exact built buffers 私有 snapshot 后才从 ignored Foundry env 选取三项变量、禁用 cache、使用独占干净 cwd 与 `shell:false` argv spawn，不保存 raw child output。
 
 Review note, 2026-08-25: Issue #230 把本地、engines 和所有 Node workflow 的单轨版本从宽泛 Node 24 收敛为最新稳定 Node 24.19.0；这样 dev-only Sigstore 验证器、TS7/Oxlint、package test 与发布自动化共享同一个可复现的 minor 版本。
+
+Review note, 2026-08-26: Issue #232 在不新增依赖、不改 0.1.1 版本的前提下增加 `@tiangong-lca/cli/command-spec` 与 `@tiangong-lca/cli/batch`。前者保持 Foundry v1 exact-key/canonical SHA/artifact bytes 与 `shell:false` 执行兼容，并在注入 spawn 同步抛错时清理外部 abort listener；后者在任何工作前完成全部 item content/policy/resource projection，claim 前复核漂移，只接受 runtime string exclusive key，对每个 resume/pre-claim 结果执行 stop 判断，并明确禁止 mutation 自动重试。`withBatchRunLock` 以 canonical run directory 作为唯一跨进程锁域，只允许当前 holder 所属且仍存活的 scope 嵌套重入；顶层 Promise 等待 detached nested scope 全部排空，已完成 scope 遗留的 async context 不能重入后来的 owner；live/foreign-host 锁不回收，本地 waiter 只在物理锁清理后接棒。
+
+`dataset save-draft --execution-contract` 只把 unique-target parallel suffix 的 claim/fatal-stop 调度接入公共 batch engine。依赖 prefix 仍逐项串行；`executeAction` 继续独占 before-state、PREPARED、token renewal、DML、append-only attempt/outcome、exact readback 与 no-replay 判断。因此 rows 的输入顺序、progress/failures/summary 字节和 fatal worker 传播保持原契约。
 
 Review note, 2026-07-30: Issue #214 将 identity preflight 的远程检索参数收敛为单一 `lexical_weight`，并把 derivative snapshot/readback 依赖收敛到 `extracted_md`、`embedding_ft` 与 `embedding_ft_at`。既有 owner-draft、一次性 admission、独立 readback 与 fail-closed 规则保持不变。
 

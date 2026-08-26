@@ -21,9 +21,9 @@ checkPaths:
   - src/**
   - scripts/**
   - .github/workflows/**
-lastReviewedAt: 2026-08-25
-lastReviewedCommit: 47b44c65cf4bf27070fa1057e672c6ef2b2e54f3
-lastReviewedNote: 'Reviewed for Issue #230: 本地、CI、engines 与维护文档统一固定 Node 24.19.0，并保留 pnpm 11.23.0 / TypeScript 7 单轨。'
+lastReviewedAt: 2026-08-26
+lastReviewedCommit: 76a1693a64e7153bb63031c00d7f016c88096e3e
+lastReviewedNote: 'Reviewed for Issue #232: 公共类型原语不新增 env、依赖、包管理器或本地发布路径；Node 24.19.0、pnpm 11.23.0 与 TypeScript 7 单轨保持不变。'
 related:
   - AGENTS.md
   - .docpact/config.yaml

@@ -30,9 +30,9 @@ checkPaths:
   - scripts/docpact
   - scripts/docpact-gate.sh
   - scripts/install-git-hooks.sh
-lastReviewedAt: 2026-08-25
-lastReviewedCommit: 47b44c65cf4bf27070fa1057e672c6ef2b2e54f3
-lastReviewedNote: 'Reviewed for Issue #230: 0.1.1 pins Node 24.19.0 while preserving auth/runtime dependencies and adding exact-platform plus dev-only cryptographic release verification.'
+lastReviewedAt: 2026-08-26
+lastReviewedCommit: 76a1693a64e7153bb63031c00d7f016c88096e3e
+lastReviewedNote: 'Reviewed for Issue #232: adds explicit typed-public-primitive ownership, live-scope run-lock drainage, dataset scheduler dogfood, and closed package boundaries at version 0.1.1.'
 related:
   - ../../AGENTS.md
   - ../../.docpact/config.yaml
@@ -54,6 +54,8 @@ Review note, 2026-08-25: Issue #226 advances the package compatibility boundary 
 Review note, 2026-08-25: Issue #228 adds `src/lib/auth-identity-receipt.ts` as a narrow read-only identity adapter. It reuses the existing API-key/session cache chain but never serializes that session object: exact project intent is safely checked before credential/session work, a redirect-disabled and incrementally bounded `/auth/v1/user` response supplies a canonical live user UUID, one 401/403 may force refresh and replay the read, timeout values stay within Node's supported timer range, and an exact-key parser hashes only a public safe projection. The pnpm case command itself owns the single clean TS7 build before starting a plain-Node parent; that runner single-reads/hash-binds source/config/lock and freshly generated runtime/runner bytes, privately snapshots the exact built buffers, cleans the snapshot before evidence publication, and only then exposes passed/failed artifacts. This is local evidence, not a server-signed attestation or a dataset mutation runtime.
 
 Review note, 2026-08-25: Issue #230 advances the package compatibility identity to 0.1.1 after merged PR #229 without changing runtime logic, published dependencies, package-root exports, command families, auth/session boundaries, or build output. The local/CI/package-engine architecture is exact Node 24.19.0. Exact `sigstore@5.0.0` is dev-only and owns cryptographic DSSE/Fulcio/CT/Rekor verification. `quality-gate.yml` is manually dispatchable and reusable with exact platform/architecture assertions; `tag-release-from-merge.yml` detects under the same exact Node version and depends on all four platforms; and the non-published verifier also checks registry signatures, tarball bytes, isolated user/global config, exact pnpm, all production dependency sections, and credential-free consumers.
+
+Review note, 2026-08-26: Issue #232 adds two provider-neutral public primitives without adding a dependency or changing package version 0.1.1. `src/command-spec.ts` is byte-compatible with the existing Foundry v1 authority and cleans external abort listeners even when an injected spawn adapter throws synchronously; `src/batch.ts` owns run/item content contracts, projection preflight, bounded and runtime-string-exclusive-key scheduling, per-result resume-stop decisions, mutation no-auto-retry, explicit readback recovery, and host-aware run-directory locking. The dataset execution-contract parallel suffix now uses this scheduler while its serial prefix and action-level durability remain unchanged.
 
 Review note, 2026-06-04: Foundry entity queue state now stays in the native CLI command family as `dataset curation-queue build/next/verify`; no secondary orchestration runtime was introduced.
 
@@ -126,6 +128,8 @@ Review note, 2026-07-25: Issue #208 adds only an admission artifact path: an ext
 | `bin/tiangong-lca.js` | stable launcher entrypoint exposed as the public `tiangong-lca` executable |
 | `src/main.ts` | process entry, dotenv loading, stdout and stderr wiring |
 | `src/cli.ts` | top-level command dispatch, parsing, and help routing |
+| `src/command-spec.ts` | supported content-bound CommandSpec package subpath |
+| `src/batch.ts` | supported generic batch, exclusive-resource, event, recovery, and run-lock package subpath |
 | `src/lib/**` | command-family implementations plus shared auth, IO, artifact, and remote helpers |
 | `test/**` | unit and launcher tests that back the coverage gate |
 | `scripts/assert-full-coverage.ts` | strict coverage enforcement |
@@ -142,6 +146,16 @@ The public `tiangong-lca` surface starts in:
 - `src/cli.ts`
 
 If a task changes help output, exit behavior, or how subcommands are registered, start here.
+
+### Typed public primitives
+
+The package root remains intentionally unsupported. Two explicit module subpaths are owned here:
+
+- `@tiangong-lca/cli/command-spec` preserves `tiangong-foundry.command-spec.v1` exact keys and canonical authority over executable, argv, and artifact bindings. `display` never executes. Artifact bytes and SHA-256 are revalidated before sync or async `shell:false` spawn; timeout, abort, clock, sleep, resolver, and spawn are injectable.
+- `@tiangong-lca/cli/batch` separates overall run identity from exact per-item content/policy contracts. It preflights all projections before unsafe work, rechecks them before claim, caps concurrency at 64, optionally serializes matching exclusive keys, exposes both input and completion order, and awaits a monotonic event sink. Read retry is explicitly classified and capped; mutation retry is configuration-invalid, and consumed attempts can proceed only through explicit readback recovery.
+- The same batch subpath exposes one run-directory lock domain independent of identity. It uses a physical create-only state lock across processes and an owner/scope token in async context: only a still-live scope owned by the current holder may reenter, while siblings and callbacks inherited from a completed scope contend. The physical owner and top-level promise stay active until detached nested scopes drain; local waiters wake only after physical cleanup, and live or foreign-host locks are never stale-deleted.
+
+These primitives contain no Foundry profile, LCA stage, endpoint, artifact filename, credential, or blocker taxonomy. Callers project those domain facts at their own boundary.
 
 ### Session and remote access layer
 
@@ -241,7 +255,7 @@ Dataset-local governance now uses the same CLI-native command layer:
 
 These modules keep validation, entity-level curation queue build/next/verify state, reference rewrites, RLS-scoped account and exact-row maintenance, save-draft preparation, graph extraction, and local artifact reports inside the CLI instead of routing through skills or MCP transports.
 
-Execution-contract mode in `dataset-save-draft-run` is deliberately action-scoped rather than report-directory-scoped. The immutable input binds each ordered row to an `action_id@desired_sha256`, expected insert/update operation, before hash, and earlier-only dependencies. The append-only ledger is rooted in stable platform user state and names one file per owner/project/action identity, so copying a contract or output directory cannot create a replay path. A durable attempt without an outcome is recovered by exact current-owner state-0 payload readback only; terminal and unknown actions are never dispatched again, while unrelated actions may continue.
+Execution-contract mode in `dataset-save-draft-run` is deliberately action-scoped rather than report-directory-scoped. The immutable input binds each ordered row to an `action_id@desired_sha256`, expected insert/update operation, before hash, and earlier-only dependencies. The append-only ledger is rooted in stable platform user state and names one file per owner/project/action identity, so copying a contract or output directory cannot create a replay path. A durable attempt without an outcome is recovered by exact current-owner state-0 payload readback only; terminal and unknown actions are never dispatched again, while unrelated actions may continue. Issue #232 keeps the dependency prefix on its existing serial loop and delegates only unique-target suffix claims, exclusive keys, and fatal stop to `runBoundedBatch`; `executeAction` continues to own PREPARED/readback/no-replay and report ordering.
 
 The row-level maintenance family is deliberately split by responsibility:
 
@@ -297,7 +311,7 @@ Important constraints:
 - CI bootstrap is pinned to `pnpm/setup` v2.0.2 with Node 24.19.0 and `pnpm install --frozen-lockfile`
 - the publish workflow releases from `cli-v<package.json version>` through native pnpm OIDC/provenance and supports manual dispatch for existing-tag recovery/backfill
 - routine npm releases must flow through an upstream `main` PR merge and GitHub Actions Trusted Publishing; local workstations may validate with `pnpm --filter @tiangong-lca/cli --fail-if-no-match pack --dry-run` but must not publish
-- the packed consumer surface is package-manager neutral and excludes pnpm workspace/lock metadata, TypeScript, Oxlint, tests, source-only tooling, and other repository internals
+- the packed consumer surface is package-manager neutral and excludes pnpm workspace/lock metadata, TypeScript, Oxlint, tests, source-only tooling, and other repository internals; ESM, CJS dynamic-import, and TypeScript hosts exercise the explicit launcher, CommandSpec, batch, and run-lock exports while root/deep imports remain closed
 
 ## Cross-Repo Boundaries
 

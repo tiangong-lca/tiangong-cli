@@ -19,14 +19,16 @@ checkPaths:
   - bin/**
   - src/cli.ts
   - src/main.ts
+  - src/batch.ts
+  - src/command-spec.ts
   - src/lib/auth-identity-receipt.ts
   - src/lib/lca-release.ts
   - scripts/run-auth-identity-production-case.ts
   - test/auth-identity*.test.ts
   - test/lca-release*.test.ts
-lastReviewedAt: 2026-08-25
-lastReviewedCommit: 47b44c65cf4bf27070fa1057e672c6ef2b2e54f3
-lastReviewedNote: 'Reviewed for Issue #230: identifies 0.1.1 as the public auth-receipt release on exact Node 24.19.0 with cryptographic Sigstore and isolated pnpm verification.'
+lastReviewedAt: 2026-08-26
+lastReviewedCommit: 76a1693a64e7153bb63031c00d7f016c88096e3e
+lastReviewedNote: 'Reviewed for Issue #232: documents the supported CommandSpec and batch subpaths, live-scope run-lock contract, closed package root, and deferred release.'
 ---
 
 # TianGong LCA CLI
@@ -42,6 +44,8 @@ Review note, 2026-08-25: Issue #226 publishes that 0.1.0 compatibility boundary 
 Review note, 2026-08-25: Issue #228 implements `auth identity-receipt` as a bounded read-only current-user proof. It checks expected project intent before session work, verifies the live user through `/auth/v1/user`, allows one auth-refresh replay after 401/403, and emits an exact-key canonical receipt without API keys, tokens, full email addresses, session paths, or credential-derived fingerprints. Production callers must pass both expected assertions and accept only `assertions.mode="intent-bound"`.
 
 Review note, 2026-08-25: Issue #230 publishes the merged identity receipt as `@tiangong-lca/cli@0.1.1`. Runtime logic and published dependencies remain unchanged; the sole pnpm lock changes only for exact dev-only `sigstore@5.0.0`. Local metadata, engines, and every workflow converge on Node 24.19.0. Release automation asserts actual platform/architecture across the reusable four-platform pre-tag matrix and provides `pnpm release:verify-published` for cryptographic Fulcio/CT/Rekor provenance, registry signatures, actual tarball integrity, isolated user/global package-manager configuration, exact pnpm 11.23.0, and credential-free bin/ESM/CJS consumer proof.
+
+Review note, 2026-08-26: Issue #232 adds two supported typed library subpaths without changing version `0.1.1`: `@tiangong-lca/cli/command-spec` owns the byte-compatible `tiangong-foundry.command-spec.v1` authority and shell-free execution adapters, while `@tiangong-lca/cli/batch` owns content/policy-bound scheduling, exclusive resource keys, explicit mutation readback recovery, and host-safe run-directory locks. The package root remains unsupported and publication requires a later release-only delivery.
 
 Review note, 2026-07-12: `dataset maintenance plan/apply/verify` provides current-user RLS-scoped exact-row maintenance with immutable plans, explicit approval, per-action logs, platform audit correlation, and independent readback. `merge-support-aliases` now runs only in `target_mode=owner_draft`: source/target support and all changed rows stay private `state_code=0`; publication is a separate future workflow.
 
@@ -93,6 +97,16 @@ pnpm install --frozen-lockfile
 pnpm build
 node ./bin/tiangong-lca.js --help
 ```
+
+## Typed library subpaths
+
+The package exposes only these supported module APIs in addition to the executable launcher subpath:
+
+- `@tiangong-lca/cli/command-spec` parses, creates, artifact-binds, and executes exact `tiangong-foundry.command-spec.v1` objects. `display` is diagnostic only; executable plus argv and binding bytes/SHA-256 form the canonical authority. Sync and async execution always use `shell:false`; async callers may inject resolver, clock, sleep, spawn, timeout, and abort adapters.
+- `@tiangong-lca/cli/batch` runs bounded generic work with an overall run contract and a required per-item `{ item_id, content_sha256, policy_sha256 }` contract. Every item projection is validated before work starts and rechecked before claim. Input order, claim order, completion order, pause/stop behavior, awaited monotonic events, and exception isolation are explicit. Optional exclusive keys serialize only matching resources; the public ceiling is 64 workers.
+- Mutation batches reject automatic retry. A consumed or ambiguous mutation can continue only through an explicitly supplied readback-recovery callback; resume requires exact run and item contracts, and each resumed or rejected result participates in stop decisions before fresh claims. Exclusive keys must be runtime strings. `withBatchRunLock` gives one canonical run directory one cross-process lock domain, permits reentrancy only from a still-live scope owned by the current holder, keeps the top-level promise pending until detached nested scopes drain, rejects completed-context reentry into a later owner, preserves live or foreign-host locks, and stale-recovers only a same-host dead PID.
+
+The packed ESM, CJS dynamic-import, and TypeScript consumers exercise both public subpaths and generated declarations. Deep imports and `import '@tiangong-lca/cli'` remain unsupported.
 
 ## Env
 
@@ -451,7 +465,7 @@ For `process build-plan` and `flow build-plan`, canonical payloads embedded in t
 
 For `process save-draft`, canonical process payloads are validated locally with `ProcessSchema` before any `--commit` write. Schema-invalid rows remain in `outputs/save-draft-rpc/failures.jsonl` instead of being persisted. Batch import callers should pass `--target-user-id`; the CLI then verifies the current auth session and any visible draft owner before writing, while downstream readback verification still proves the final owner and payload.
 
-For `dataset save-draft --execution-contract`, the JSON contract uses schema `dataset-save-draft-execution-contract.v1` and supplies `execution_id`, `project_ref`, an exact owner (`user_id`, lowercase `email`, `state_code: 0`), and ordered actions. Each action binds `action_id`, `desired_sha256`, `expected_operation` (`insert` or `save_draft`), table/id/version, `before_sha256`, and earlier `dependency_action_ids`. Contract mode requires `--commit`; account-local Unit Group or Flow Property support rows additionally require `--allow-account-local-support`. `--max-parallel` defaults to 1 and is capped at 8. When it is greater than 1, every action through the highest referenced dependency remains serial; only the later table/id/version-unique suffix may overlap. The exact owner token is renewed and checked before each DML dispatch. Attempts and outcomes are stored under the platform user-state directory (`$XDG_STATE_HOME/tiangong-lca-cli` when configured), not beside the contract or report. Any prior terminal or unresolved attempt is read back or retained without re-dispatch; exit status is nonzero unless every action has exact terminal success.
+For `dataset save-draft --execution-contract`, the JSON contract uses schema `dataset-save-draft-execution-contract.v1` and supplies `execution_id`, `project_ref`, an exact owner (`user_id`, lowercase `email`, `state_code: 0`), and ordered actions. Each action binds `action_id`, `desired_sha256`, `expected_operation` (`insert` or `save_draft`), table/id/version, `before_sha256`, and earlier `dependency_action_ids`. Contract mode requires `--commit`; account-local Unit Group or Flow Property support rows additionally require `--allow-account-local-support`. `--max-parallel` defaults to 1 and is capped at 8. Every action through the highest referenced dependency remains on the existing serial path; only the later table/id/version-unique suffix delegates claims and fatal-stop coordination to the public batch engine. `executeAction` still exclusively owns PREPARED evidence, exact before-state checks, token renewal, dispatch, durable attempts, readback, and no-replay decisions, so report bytes and input ordering do not change. Attempts and outcomes are stored under the platform user-state directory (`$XDG_STATE_HOME/tiangong-lca-cli` when configured), not beside the contract or report. Any prior terminal or unresolved attempt is read back or retained without re-dispatch; exit status is nonzero unless every action has exact terminal success.
 
 For `dataset maintenance apply`, explicitly passing `--max-parallel 1..8` opts into the destructive flow-convergence profile. It accepts only a non-empty, unique-target, flow delete-only plan whose current and projected reference impacts are both zero. Before dispatch it completes a fresh SELECT-only scan of every process visible to the owner session and rejects any inbound edge. For a separately governed all-process check, pair `--global-inbound-proof /absolute/proof.json` with `--approve-global-inbound-proof <sha256>`; the proof must be fresh, SELECT-only, complete, zero-inbound, and bound to the exact project, actor, plan, and ordered target set, and it is validated before the live scan is skipped. The CLI never runs raw SQL. Each action writes append-only `PREPARED` and `DISPATCHED` evidence before its protected owner-session RPC, then records `COMMITTED` only after exact absent readback. An ambiguous action is read back, marked `UNKNOWN`, and never replayed automatically; independent actions continue. Omit `--max-parallel` to retain ordinary maintenance apply behavior.
 

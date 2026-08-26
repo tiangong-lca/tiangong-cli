@@ -24,9 +24,9 @@ checkPaths:
   - scripts/docpact
   - scripts/docpact-gate.sh
   - scripts/install-git-hooks.sh
-lastReviewedAt: 2026-08-25
-lastReviewedCommit: 47b44c65cf4bf27070fa1057e672c6ef2b2e54f3
-lastReviewedNote: 'Reviewed for Issue #230: exact Node 24.19.0/platform gates and dev-only Sigstore/isolated pnpm verification require no new secret, environment, runner class, publisher, tag, or auth setup.'
+lastReviewedAt: 2026-08-26
+lastReviewedCommit: 76a1693a64e7153bb63031c00d7f016c88096e3e
+lastReviewedNote: 'Reviewed for Issue #232: public subpaths and run locks require no new secret, environment, dependency, publisher, tag rule, credential, or alternate release setup.'
 related:
   - ../AGENTS.md
   - ../.docpact/config.yaml
@@ -55,6 +55,8 @@ Review note, 2026-08-25: Issue #226 publishes that 0.1.0 compatibility boundary 
 Review note, 2026-08-25: Issue #228 requires no GitHub secret, environment, Trusted Publisher setting, workflow filename, tag rule, dependency, service-role credential, or alternate publication path. `TIANGONG_LCA_TEST_API_KEY` belongs only to the ignored local Data Foundry env used by the explicit read-only case runner; it must not be copied into repository settings, Actions secrets, publish jobs, package assets, or provenance inputs.
 
 Review note, 2026-08-25: Issue #230 publishes 0.1.1 through the existing merge-triggered tag and native pnpm Trusted Publishing workflows. `.nvmrc`, engines, release detection, quality, tag, and publish jobs all pin Node 24.19.0. `quality-gate.yml` is a reusable exact-platform pre-tag dependency, and exact dev-only `sigstore@5.0.0` cryptographically verifies public provenance. The temporary consumer fixes pnpm 11.23.0, verifies registry signatures, and replaces user/global config with private public-registry-only files. It adds no secret, environment, runner class, Trusted Publisher setting, tag pattern, published dependency, service-role credential, test-account credential, or alternate authentication/publication surface.
+
+Review note, 2026-08-26: Issue #232 adds supported public subpaths and run-directory locking without changing release setup, secrets, dependencies, Trusted Publisher configuration, tag rules, or package version 0.1.1. Publication remains a separate release-only PR; its clean consumer must exercise launcher, CommandSpec, batch, run-lock, closed root/deep imports, and generated types.
 
 Current workflow files:
 
