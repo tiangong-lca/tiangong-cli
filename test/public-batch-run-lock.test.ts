@@ -45,15 +45,20 @@ test('batch run lock is reentrant for the same run path and identity', async () 
         runPath: root,
         identity,
         reason: 'outer',
-        pid: 12345,
-        host: 'unit-host',
-        now: new Date('2026-08-26T00:00:00.000Z'),
       },
       async (outer) => {
         assert.equal(outer.lock_path, batchRunLockPath(root));
         assert.equal(existsSync(outer.lock_path), true);
         const metadataBefore = readFileSync(outer.lock_path, 'utf8');
-        assert.equal(JSON.parse(metadataBefore).batch_identity_sha256, outer.identity_sha256);
+        assert.deepEqual(JSON.parse(metadataBefore), {
+          batch_identity_sha256: outer.identity_sha256,
+          batch_run_path: path.resolve(root),
+          ownerPid: process.pid,
+          ownerHost: os.hostname(),
+          reason: `batch-run:${outer.identity_sha256}:outer`,
+          updatedAt: JSON.parse(metadataBefore).updatedAt,
+        });
+        assert.equal(Number.isNaN(Date.parse(JSON.parse(metadataBefore).updatedAt)), false);
         const inner = await withBatchRunLock(
           { runPath: root, identity, reason: 'inner' },
           (receipt) => receipt,
@@ -321,12 +326,6 @@ test('batch run lock validates public tokens, preserves empty live locks, and cl
   const lockPath = batchRunLockPath(root);
   try {
     await assert.rejects(withBatchRunLock({ runPath: root, identity, reason: '' }, () => 'never'));
-    await assert.rejects(
-      withBatchRunLock(
-        { runPath: root, identity, reason: 'bad-host', host: 'bad\nhost' },
-        () => 'never',
-      ),
-    );
     await assert.rejects(
       withBatchRunLock({ runPath: root, identity, reason: 'task-error' }, () => {
         throw new Error('task failed');

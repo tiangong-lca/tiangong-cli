@@ -226,9 +226,6 @@ export type BatchRunLockOptions<TIdentity extends BatchJsonValue> = Readonly<{
   timeoutMs?: number;
   pollMs?: number;
   sleep?: BatchSleep;
-  pid?: number;
-  host?: string;
-  now?: Date;
 }>;
 
 export type BatchRunLockReceipt = Readonly<{
@@ -441,11 +438,6 @@ export async function withBatchRunLock<T, TIdentity extends BatchJsonValue>(
         ...(options.timeoutMs === undefined ? {} : { timeoutMs: options.timeoutMs }),
         ...(options.pollMs === undefined ? {} : { pollMs: options.pollMs }),
         ...(options.sleep === undefined ? {} : { sleep: options.sleep }),
-        ...(options.pid === undefined ? {} : { pid: options.pid }),
-        ...(options.host === undefined
-          ? {}
-          : { host: parseBatchRunLockToken(options.host, 'host') }),
-        ...(options.now === undefined ? {} : { now: options.now }),
       },
       async () => {
         const owner = createActiveBatchRunLock(identitySha256, receipt);
