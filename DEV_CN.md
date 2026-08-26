@@ -22,8 +22,8 @@ checkPaths:
   - scripts/**
   - .github/workflows/**
 lastReviewedAt: 2026-08-26
-lastReviewedCommit: 76a1693a64e7153bb63031c00d7f016c88096e3e
-lastReviewedNote: 'Reviewed for Issue #232: 公共类型原语不新增 env、依赖、包管理器或本地发布路径；Node 24.19.0、pnpm 11.23.0 与 TypeScript 7 单轨保持不变。'
+lastReviewedCommit: fb8823a488909b6a309737684688867c6a0d064c
+lastReviewedNote: 'Reviewed for Issue #232: 记录 identity drift、resource-aware claim、内部锁 ownership 与 timer 上限；不新增 env、依赖、包管理器或本地发布路径。'
 related:
   - AGENTS.md
   - .docpact/config.yaml
@@ -42,6 +42,8 @@ Review note, 2026-08-25: Issue #224 把仓库收敛为单一 Node 工具链：�
 Review note, 2026-08-25: Issue #228 新增 `auth identity-receipt`。命令先在 credential decode/session/network 之前安全核对 expected canonical project，再对 redirect-disabled `/auth/v1/user` 做增量 byte cap 只读校验并要求 canonical user UUID；401/403 最多强制刷新并重读一次。公开回执只含 project、user id、脱敏展示邮箱、session/cache mode、安全请求/响应 hash 和 canonical receipt hash，严禁 credential/token/full-email/session-path 及其 fingerprint。生产 guard 必须同时带 expected project/user，并要求 `assertions.mode=intent-bound`。pnpm production case 命令先 clean-build TS7，再由 plain-Node runner 单次读取/hash source/config/lock 与 generated runtime/runner，把 exact built buffers 私有 snapshot 后才暴露 key；它不接受 alternate CLI path，只从 Foundry ignored `.env` 读取三个白名单变量，禁用 cache、使用独占创建的干净 cwd 与 argv 数组，不保存原始 stdout/stderr，也不做 dataset mutation。
 
 Review note, 2026-08-25: Issue #230 因最新稳定 `sigstore@5.0.0` 的 Node 引擎下限，进一步把 `.nvmrc`、package engines、所有 workflow、静态契约和维护文档统一到当前最新 Node 24 LTS `24.19.0`，不再宣称支持无法运行完整开发/发布门禁的旧 24.x minor。
+
+Review note, 2026-08-26: Issue #232 的公共 CommandSpec/batch 修复不新增 env、依赖或发布路径。batch 在 resumed acceptance 与 fresh claim 前重投影 item identity，漂移稳定输出 `BatchItemIdentityDriftError` / `item_identity_drift` 且零执行；同 key 阻塞项保持 unclaimed、不占 worker，scheduler 可先执行后续 free key，stop 后精确保留未 claim 项。run-lock 的 PID/host/ownership time 只从当前进程与系统内部派生，公共调用方不能覆盖。CommandSpec timeout、run-lock timeout/poll、read retry/backoff 都拒绝超过 Node `2_147_483_647ms` 上限的值；公共 lock timing 另要求非负 safe integer。
 
 Review note, 2026-06-04: `dataset curation-queue next/verify` extends the existing CLI-native dataset command family and does not change maintainer runtime, env, or release guidance.
 
