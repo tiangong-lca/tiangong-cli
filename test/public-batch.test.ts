@@ -788,6 +788,74 @@ test('claim-time projection drift fails the item before execution', async () => 
   });
 });
 
+test('identity is reprojected before resumed acceptance and every fresh claim', async () => {
+  const items = [
+    { id: 'resumed', content: 'resumed-content' },
+    { id: 'fresh', content: 'fresh-content' },
+  ];
+  const identityCalls = new Map<string, number>();
+  const events: BatchEvent[] = [];
+  let executeCalls = 0;
+  const result = await runBoundedBatch({
+    contract,
+    items,
+    getItemIdentity: (item, index) => {
+      identityCalls.set(index.toString(), (identityCalls.get(index.toString()) ?? 0) + 1);
+      return item.id;
+    },
+    projectItemContent: (item) => item.content,
+    projectItemPolicy: () => null,
+    mode: 'read',
+    maxConcurrency: 1,
+    resume: {
+      contract,
+      items: [
+        {
+          ...createBatchItemContract({
+            item_id: 'resumed',
+            content: 'resumed-content',
+            policy: null,
+          }),
+          state: 'completed',
+          outcome: 'succeeded',
+          value: 'old-result',
+          attempts: 1,
+        },
+      ],
+    },
+    eventSink: (event) => {
+      events.push(event);
+      if (event.type === 'batch_started') {
+        items[0]!.id = 'resumed-drifted';
+        items[1]!.id = 'fresh-drifted';
+      }
+    },
+    execute: () => {
+      executeCalls += 1;
+      return 'forbidden';
+    },
+  });
+
+  assert.equal(executeCalls, 0);
+  assert.deepEqual(identityCalls, new Map([['0', 2], ['1', 2]]));
+  assert.deepEqual(result.claim_order, []);
+  assert.deepEqual(
+    result.results_input_order.map((entry) => entry.status),
+    ['failed', 'failed'],
+  );
+  for (const entry of result.results_input_order) {
+    const error = failedError(entry);
+    assert.ok(error instanceof Error);
+    assert.equal(error.name, 'BatchItemIdentityDriftError');
+  }
+  assert.deepEqual(
+    events
+      .filter((event) => String(event.type) === 'item_identity_drift')
+      .map((event) => event.item_id),
+    ['resumed', 'fresh'],
+  );
+});
+
 test('mutation transport is attempted once and only explicit readback may recover it', async () => {
   let attempts = 0;
   let recoveries = 0;
