@@ -434,6 +434,60 @@ test('exclusive resource keys serialize matching items while preserving cross-ke
   );
 });
 
+test('resource-blocked items do not consume bounded worker capacity', async () => {
+  const starts: string[] = [];
+  const gates = new Map<string, { promise: Promise<void>; release: () => void }>();
+  for (const item of ['a-1', 'a-2', 'b-1']) {
+    let release: () => void = () => undefined;
+    const promise = new Promise<void>((resolve) => {
+      release = resolve;
+    });
+    gates.set(item, { promise, release });
+  }
+  const events: BatchEvent[] = [];
+  const running = runBoundedBatch({
+    contract,
+    items: ['a-1', 'a-2', 'b-1'],
+    getItemIdentity: (item) => item,
+    getExclusiveKey: ({ item }) => item.split('-')[0]!,
+    mode: 'read',
+    maxConcurrency: 2,
+    eventSink: (event) => {
+      events.push(event);
+    },
+    execute: async ({ item }) => {
+      starts.push(item);
+      await gates.get(item)!.promise;
+      return item;
+    },
+  });
+
+  try {
+    await waitFor(() => starts.length === 2);
+    assert.deepEqual(starts, ['a-1', 'b-1']);
+    assert.equal(starts.includes('a-2'), false);
+
+    gates.get('b-1')!.release();
+    await waitFor(() =>
+      events.some((event) => event.type === 'item_completed' && event.item_id === 'b-1'),
+    );
+    assert.equal(starts.includes('a-2'), false, 'a-2 must still wait for resource a');
+
+    gates.get('a-1')!.release();
+    await waitFor(() => starts.includes('a-2'));
+    gates.get('a-2')!.release();
+    const result = await running;
+
+    assert.deepEqual(result.claim_order, ['a-1', 'b-1', 'a-2']);
+    const sequence = (type: BatchEvent['type'], itemId: string) =>
+      events.find((event) => event.type === type && event.item_id === itemId)?.sequence ?? 0;
+    assert.ok(sequence('item_resource_released', 'a-1') < sequence('item_claimed', 'a-2'));
+  } finally {
+    for (const gate of gates.values()) gate.release();
+    await running.catch(() => undefined);
+  }
+});
+
 test('exclusive resource key projection validates before work and rejects claim-time drift', async () => {
   let executeCalls = 0;
   await assert.rejects(
