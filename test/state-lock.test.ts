@@ -210,6 +210,38 @@ test('withStateFileLock rejects timer delays above the Node maximum before acqui
   }
 });
 
+test('withStateFileLock rejects non-finite and fractional timer values before acquisition', async () => {
+  const dir = mkdtempSync(path.join(os.tmpdir(), 'tg-cli-state-lock-invalid-timer-'));
+  const statePath = path.join(dir, 'state.json');
+  let taskCalls = 0;
+  try {
+    for (const timing of [
+      { timeoutMs: Number.NaN },
+      { timeoutMs: 1.5 },
+      { pollMs: Number.NaN },
+      { pollMs: 1.5 },
+    ]) {
+      await assert.rejects(
+        withStateFileLock(
+          statePath,
+          {
+            reason: 'invalid-timer',
+            ...timing,
+          },
+          () => {
+            taskCalls += 1;
+            return 'never';
+          },
+        ),
+        /finite safe integer/iu,
+      );
+    }
+    assert.equal(taskCalls, 0);
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+});
+
 test('withStateFileLock uses the default sleep path when retrying a live lock', async () => {
   const dir = mkdtempSync(path.join(os.tmpdir(), 'tg-cli-state-lock-default-sleep-'));
   const statePath = path.join(dir, 'state.json');

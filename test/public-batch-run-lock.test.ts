@@ -194,6 +194,41 @@ test('batch run lock rejects unsupported local and cross-process timer delays', 
   }
 });
 
+test('batch run lock rejects non-integer and negative public timer values before side effects', async () => {
+  let taskCalls = 0;
+  for (const [field, value] of [
+    ['timeoutMs', Number.NaN],
+    ['timeoutMs', 1.5],
+    ['timeoutMs', -1],
+    ['pollMs', Number.NaN],
+    ['pollMs', 1.5],
+    ['pollMs', -1],
+  ] as const) {
+    const root = mkdtempSync(path.join(os.tmpdir(), 'batch-run-lock-invalid-timer-'));
+    try {
+      await assert.rejects(
+        withBatchRunLock(
+          {
+            runPath: root,
+            identity,
+            reason: `invalid-${field}`,
+            [field]: value,
+          },
+          () => {
+            taskCalls += 1;
+            return 'never';
+          },
+        ),
+        BatchContractError,
+      );
+      assert.equal(existsSync(batchRunLockPath(root)), false);
+    } finally {
+      rmSync(root, { recursive: true, force: true });
+    }
+  }
+  assert.equal(taskCalls, 0);
+});
+
 test('same-process lock handoff keeps the physical lock through the queued sibling', async () => {
   const root = mkdtempSync(path.join(os.tmpdir(), 'batch-run-lock-handoff-'));
   const childFile = writeLockChildFile(root);
