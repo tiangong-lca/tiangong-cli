@@ -44,7 +44,7 @@ const EXPECTED_BATCH_RUNTIME_EXPORTS = Object.freeze([
   'sha256BatchJson',
   'withBatchRunLock',
 ]);
-const PACKAGE_MANAGER = 'pnpm@11.23.0';
+const PACKAGE_MANAGER = 'pnpm@11.24.0';
 const PACKAGE_MANAGER_VERSION = PACKAGE_MANAGER.slice('pnpm@'.length);
 const NODE_VERSION = '24.19.0';
 const PNPM_SETUP_ACTION = '84cb39b217b10273981911c288cd62326dc7c6d2';
