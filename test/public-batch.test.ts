@@ -5,6 +5,7 @@ import {
   MAX_BATCH_CONCURRENCY,
   BatchContractError,
   BatchItemProjectionDriftError,
+  BatchItemResourceDriftError,
   BatchItemResumeContractError,
   BatchMutationReplayError,
   BatchMutationRetryError,
@@ -378,6 +379,105 @@ test('bounded workers preserve claim, input, and completion orders while isolati
   assert.equal(result.results_input_order[1]?.status, 'succeeded');
   assert.equal(result.status, 'completed');
   assert.deepEqual(result.unclaimed_item_ids, []);
+});
+
+test('exclusive resource keys serialize matching items while preserving cross-key concurrency', async () => {
+  const starts: string[] = [];
+  const releases = new Map<string, () => void>();
+  const events: BatchEvent[] = [];
+  const running = runBoundedBatch({
+    contract,
+    items: ['a-1', 'a-2', 'b-1'],
+    getItemIdentity: (item) => item,
+    projectItemContent: (item) => item,
+    projectItemPolicy: () => null,
+    getExclusiveKey: (context) => context.item.split('-')[0]!,
+    mode: 'read',
+    maxConcurrency: 3,
+    eventSink: (event) => {
+      events.push(event);
+    },
+    execute: async ({ item }) => {
+      starts.push(item);
+      await new Promise<void>((resolve) => releases.set(item, resolve));
+      return item;
+    },
+  });
+
+  await waitFor(() => starts.length === 2);
+  assert.deepEqual(starts, ['a-1', 'b-1']);
+  releases.get('b-1')?.();
+  await waitFor(() =>
+    events.some((event) => event.type === 'item_completed' && event.item_id === 'b-1'),
+  );
+  releases.get('a-1')?.();
+  await waitFor(() => starts.includes('a-2'));
+  await waitFor(() =>
+    events.some((event) => event.type === 'item_completed' && event.item_id === 'a-1'),
+  );
+  releases.get('a-2')?.();
+  const result = await running;
+
+  assert.deepEqual(result.claim_order, ['a-1', 'a-2', 'b-1']);
+  assert.deepEqual(result.completion_order, ['b-1', 'a-1', 'a-2']);
+  const eventSequence = (type: BatchEvent['type'], itemId: string) =>
+    events.find((event) => event.type === type && event.item_id === itemId)?.sequence ?? 0;
+  assert.ok(eventSequence('item_claimed', 'a-2') < eventSequence('item_resource_queued', 'a-2'));
+  assert.ok(
+    eventSequence('item_resource_released', 'a-1') < eventSequence('item_resource_acquired', 'a-2'),
+  );
+  assert.equal(
+    events.find((event) => event.type === 'item_resource_acquired' && event.item_id === 'a-2')
+      ?.exclusive_key,
+    'a',
+  );
+});
+
+test('exclusive resource key projection validates before work and rejects claim-time drift', async () => {
+  let executeCalls = 0;
+  await assert.rejects(
+    runBoundedBatch({
+      contract,
+      items: ['a', 'b'],
+      getItemIdentity: (item) => item,
+      projectItemContent: (item) => item,
+      projectItemPolicy: () => null,
+      getExclusiveKey: ({ item }) => {
+        if (item === 'b') throw new Error('resource projection failed');
+        return item;
+      },
+      mode: 'mutation',
+      maxConcurrency: 2,
+      execute: ({ item }) => {
+        executeCalls += 1;
+        return item;
+      },
+    }),
+    /resource projection failed/u,
+  );
+  assert.equal(executeCalls, 0);
+
+  const item = { id: 'a', resource: 'before' };
+  const drift = await runBoundedBatch({
+    contract,
+    items: [item],
+    getItemIdentity: (value) => value.id,
+    projectItemContent: (value) => value.id,
+    projectItemPolicy: () => null,
+    getExclusiveKey: ({ item: value }) => value.resource,
+    mode: 'mutation',
+    maxConcurrency: 1,
+    eventSink: (event) => {
+      if (event.type === 'batch_started') item.resource = 'after';
+    },
+    execute: () => {
+      executeCalls += 1;
+      return 'forbidden';
+    },
+  });
+  assert.ok(failedError(drift.results_input_order[0]) instanceof BatchItemResourceDriftError);
+  assert.equal(executeCalls, 0);
+  assert.deepEqual(drift.claim_order, []);
 });
 
 test('pause is checked before claim and stop prevents later claims after in-flight work settles', async () => {
