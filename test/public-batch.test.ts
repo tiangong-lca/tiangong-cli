@@ -543,6 +543,38 @@ test('resource-blocked items remain unclaimed when an active item stops the batc
   }
 });
 
+test('resource head rejection evaluates stop before exposing the next FIFO item', async () => {
+  const identityCalls = new Map<string, number>();
+  let executeCalls = 0;
+  const result = await runBoundedBatch({
+    contract,
+    items: [
+      { id: 'a-1', resource: 'a' },
+      { id: 'a-2', resource: 'a' },
+    ],
+    getItemIdentity: (item) => {
+      const calls = (identityCalls.get(item.id) ?? 0) + 1;
+      identityCalls.set(item.id, calls);
+      return item.id === 'a-1' && calls > 1 ? 'a-1-drifted' : item.id;
+    },
+    getExclusiveKey: ({ item }) => item.resource,
+    mode: 'read',
+    maxConcurrency: 2,
+    execute: () => {
+      executeCalls += 1;
+      return 'forbidden';
+    },
+    shouldStop: ({ last_result: lastResult }) => lastResult.status === 'failed',
+  });
+
+  assert.equal(executeCalls, 0);
+  assert.equal(result.status, 'stopped');
+  assert.deepEqual(result.claim_order, []);
+  assert.deepEqual(result.unclaimed_item_ids, ['a-2']);
+  assert.ok(failedError(result.results_input_order[0]) instanceof BatchItemIdentityDriftError);
+  assert.equal(result.results_input_order[1], undefined);
+});
+
 test('resource scheduler uses near-linear ready operations at representative scale', async () => {
   const itemCount = 5_000;
   const resourceCount = 128;
