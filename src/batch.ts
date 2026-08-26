@@ -422,8 +422,9 @@ export async function withBatchRunLock<T, TIdentity extends BatchJsonValue>(
     }
   }
 
+  let physicalOwner: ReturnType<typeof createActiveBatchRunLock> | undefined;
   try {
-    return await withStateFileLock(
+    const result = await withStateFileLock(
       statePath,
       {
         reason: `batch-run:${identitySha256}:${reason}`,
@@ -443,14 +444,8 @@ export async function withBatchRunLock<T, TIdentity extends BatchJsonValue>(
       },
       async () => {
         const current = ACTIVE_BATCH_RUN_LOCKS.get(statePath);
-        if (current && current.identitySha256 !== identitySha256) {
-          throw new BatchRunLockIdentityConflictError({
-            runPath,
-            activeIdentitySha256: current.identitySha256,
-            requestedIdentitySha256: identitySha256,
-          });
-        }
         const owner = current ?? createActiveBatchRunLock(identitySha256, receipt);
+        if (!current) physicalOwner = owner;
         owner.depth += 1;
         ACTIVE_BATCH_RUN_LOCKS.set(statePath, owner);
         const context = new Map(BATCH_RUN_LOCK_CONTEXT.getStore() ?? []);
@@ -459,23 +454,28 @@ export async function withBatchRunLock<T, TIdentity extends BatchJsonValue>(
           return await BATCH_RUN_LOCK_CONTEXT.run(context, () => task(owner.receipt));
         } finally {
           owner.depth -= 1;
-          if (owner.depth === 0) {
-            ACTIVE_BATCH_RUN_LOCKS.delete(statePath);
-            owner.release();
-          }
         }
       },
     );
+    return result;
   } catch (error) {
     if (!(error instanceof StateLockTimeoutError)) throw error;
-    const details = isRecord(error.details) ? error.details : {};
+    const details = error.details as {
+      waitedMs: number;
+      owner: Record<string, unknown> | null;
+    };
     throw new BatchRunLockTimeoutError({
       runPath,
       lockPath,
       identitySha256,
-      waitedMs: typeof details.waitedMs === 'number' ? details.waitedMs : 0,
-      owner: isRecord(details.owner) ? Object.freeze({ ...details.owner }) : null,
+      waitedMs: details.waitedMs,
+      owner: details.owner ? Object.freeze({ ...details.owner }) : null,
     });
+  } finally {
+    if (physicalOwner) {
+      ACTIVE_BATCH_RUN_LOCKS.delete(statePath);
+      physicalOwner.release();
+    }
   }
 }
 

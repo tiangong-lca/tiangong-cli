@@ -20,6 +20,9 @@ test('batch run-lock paths are canonical and run-directory-bound', () => {
   const runPath = path.join(os.tmpdir(), 'batch-run-lock-path');
   assert.equal(batchRunLockStatePath(path.join(runPath, '.')), batchRunLockStatePath(runPath));
   assert.equal(batchRunLockPath(runPath), `${batchRunLockStatePath(runPath)}.lock`);
+  for (const invalid of ['', 'bad\npath', 1 as never]) {
+    assert.throws(() => batchRunLockStatePath(invalid));
+  }
 });
 
 test('batch run lock is reentrant for the same run path and identity', async () => {
@@ -86,10 +89,69 @@ test('same-process sibling calls are exclusive rather than implicitly reentrant'
     );
     assert.equal(siblingEntered, false);
     assert.equal(existsSync(batchRunLockPath(root)), true);
+    await assert.rejects(
+      withBatchRunLock({ runPath: root, identity, reason: 'timed-sibling', timeoutMs: 5 }, () => {
+        siblingEntered = true;
+      }),
+      (error: unknown) => {
+        assert.ok(error instanceof BatchRunLockTimeoutError);
+        assert.ok(error.waitedMs >= 0);
+        return true;
+      },
+    );
     releaseOuter?.();
     await outer;
   } finally {
     releaseOuter?.();
+    rmSync(root, { recursive: true, force: true });
+  }
+});
+
+test('same-process lock handoff keeps the physical lock through the queued sibling', async () => {
+  const root = mkdtempSync(path.join(os.tmpdir(), 'batch-run-lock-handoff-'));
+  const childFile = writeLockChildFile(root);
+  let releaseOuter: (() => void) | undefined;
+  let releaseSibling: (() => void) | undefined;
+  let outerStarted = false;
+  let siblingEntered = false;
+  let contender: ChildProcessWithoutNullStreams | undefined;
+  try {
+    const outer = withBatchRunLock(
+      { runPath: root, identity, reason: 'handoff-outer' },
+      async () => {
+        outerStarted = true;
+        await new Promise<void>((resolve) => {
+          releaseOuter = resolve;
+        });
+      },
+    );
+    await waitFor(() => outerStarted);
+    const sibling = withBatchRunLock(
+      { runPath: root, identity, reason: 'handoff-sibling' },
+      async () => {
+        siblingEntered = true;
+        await new Promise<void>((resolve) => {
+          releaseSibling = resolve;
+        });
+      },
+    );
+    releaseOuter?.();
+    await outer;
+    await waitFor(() => siblingEntered);
+    assert.equal(existsSync(batchRunLockPath(root)), true);
+
+    contender = spawnLockChild(childFile, root, identity);
+    const contenderAcquired = waitForOutput(contender, 'acquired\n');
+    await assertNoOutput(contender, 40);
+    releaseSibling?.();
+    await sibling;
+    await contenderAcquired;
+    contender.stdin.end('release\n');
+    await waitForExit(contender);
+  } finally {
+    releaseOuter?.();
+    releaseSibling?.();
+    contender?.kill();
     rmSync(root, { recursive: true, force: true });
   }
 });
@@ -114,6 +176,20 @@ test('batch run lock preserves a live lock on timeout and recovers a stale lock'
     assert.equal(existsSync(lockPath), true, 'a live lock must never be deleted by a contender');
 
     unlinkSync(lockPath);
+    writeLock(lockPath, process.pid, os.hostname());
+    const waited = await withBatchRunLock(
+      {
+        runPath: root,
+        identity,
+        reason: 'live-release',
+        timeoutMs: 50,
+        pollMs: 10,
+        sleep: async () => unlinkSync(lockPath),
+      },
+      () => 'waited',
+    );
+    assert.equal(waited, 'waited');
+
     writeLock(lockPath, 999_999_999, os.hostname());
     const recovered = await withBatchRunLock(
       { runPath: root, identity, reason: 'stale-recovery', timeoutMs: 50, pollMs: 10 },
@@ -121,6 +197,43 @@ test('batch run lock preserves a live lock on timeout and recovers a stale lock'
     );
     assert.equal(recovered, 'recovered');
     assert.equal(existsSync(lockPath), false);
+  } finally {
+    rmSync(root, { recursive: true, force: true });
+  }
+});
+
+test('batch run lock validates public tokens, preserves empty live locks, and cleans after task errors', async () => {
+  const root = mkdtempSync(path.join(os.tmpdir(), 'batch-run-lock-errors-'));
+  const lockPath = batchRunLockPath(root);
+  try {
+    await assert.rejects(withBatchRunLock({ runPath: root, identity, reason: '' }, () => 'never'));
+    await assert.rejects(
+      withBatchRunLock(
+        { runPath: root, identity, reason: 'bad-host', host: 'bad\nhost' },
+        () => 'never',
+      ),
+    );
+    await assert.rejects(
+      withBatchRunLock({ runPath: root, identity, reason: 'task-error' }, () => {
+        throw new Error('task failed');
+      }),
+      /task failed/u,
+    );
+    assert.equal(existsSync(lockPath), false);
+
+    writeFileSync(lockPath, '\n', 'utf8');
+    await assert.rejects(
+      withBatchRunLock(
+        { runPath: root, identity, reason: 'empty-owner', timeoutMs: 0 },
+        () => 'never',
+      ),
+      (error: unknown) => {
+        assert.ok(error instanceof BatchRunLockTimeoutError);
+        assert.equal(error.owner, null);
+        return true;
+      },
+    );
+    assert.equal(existsSync(lockPath), true);
   } finally {
     rmSync(root, { recursive: true, force: true });
   }
@@ -146,22 +259,7 @@ test('batch run lock never stale-recovers a foreign-host owner', async () => {
 
 test('batch run lock excludes another process for the run path across identities', async () => {
   const root = mkdtempSync(path.join(os.tmpdir(), 'batch-run-lock-process-'));
-  const childFile = path.join(root, 'lock-child.mts');
-  const batchModule = pathToFileURL(path.resolve('src/batch.ts')).href;
-  writeFileSync(
-    childFile,
-    [
-      `import { withBatchRunLock } from ${JSON.stringify(batchModule)};`,
-      `const runPath = process.argv[2];`,
-      `const identity = JSON.parse(process.argv[3]);`,
-      `await withBatchRunLock({ runPath, identity, reason: 'child', timeoutMs: 2000, pollMs: 10 }, async () => {`,
-      `  process.stdout.write('acquired\\n');`,
-      `  await new Promise((resolve) => process.stdin.once('data', resolve));`,
-      `});`,
-      '',
-    ].join('\n'),
-    'utf8',
-  );
+  const childFile = writeLockChildFile(root);
 
   try {
     for (const contenderIdentity of [identity, { execution_id: 'different-process-identity' }]) {
@@ -194,6 +292,26 @@ function writeLock(lockPath: string, ownerPid: number, ownerHost = 'test-host'):
     `${JSON.stringify({ ownerPid, ownerHost, reason: 'holder', updatedAt: 'now' })}\n`,
     'utf8',
   );
+}
+
+function writeLockChildFile(root: string): string {
+  const childFile = path.join(root, 'lock-child.mts');
+  const batchModule = pathToFileURL(path.resolve('src/batch.ts')).href;
+  writeFileSync(
+    childFile,
+    [
+      `import { withBatchRunLock } from ${JSON.stringify(batchModule)};`,
+      `const runPath = process.argv[2];`,
+      `const identity = JSON.parse(process.argv[3]);`,
+      `await withBatchRunLock({ runPath, identity, reason: 'child', timeoutMs: 2000, pollMs: 10 }, async () => {`,
+      `  process.stdout.write('acquired\\n');`,
+      `  await new Promise((resolve) => process.stdin.once('data', resolve));`,
+      `});`,
+      '',
+    ].join('\n'),
+    'utf8',
+  );
+  return childFile;
 }
 
 function spawnLockChild(
