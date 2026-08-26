@@ -7,6 +7,7 @@ import { pathToFileURL } from 'node:url';
 import test from 'node:test';
 
 import {
+  BatchContractError,
   BatchRunLockIdentityConflictError,
   BatchRunLockTimeoutError,
   batchRunLockPath,
@@ -17,6 +18,7 @@ import {
 } from '../src/batch.js';
 
 const identity = { execution_id: 'run-1', revision: 1 };
+const NODE_MAX_TIMER_DELAY_MS = 2_147_483_647;
 
 type AssertNever<T extends never> = T;
 type UnsafePublicOwnershipOverrides = Extract<
@@ -121,6 +123,74 @@ test('same-process sibling calls are exclusive rather than implicitly reentrant'
   } finally {
     releaseOuter?.();
     rmSync(root, { recursive: true, force: true });
+  }
+});
+
+test('batch run lock rejects unsupported local and cross-process timer delays', async () => {
+  const localRoot = mkdtempSync(path.join(os.tmpdir(), 'batch-run-lock-local-timer-limit-'));
+  let releaseOuter: (() => void) | undefined;
+  let outerStarted = false;
+  try {
+    const outer = withBatchRunLock(
+      { runPath: localRoot, identity, reason: 'timer-limit-owner' },
+      async () => {
+        outerStarted = true;
+        await new Promise<void>((resolve) => {
+          releaseOuter = resolve;
+        });
+      },
+    );
+    await waitFor(() => outerStarted);
+    await assert.rejects(
+      withBatchRunLock(
+        {
+          runPath: localRoot,
+          identity,
+          reason: 'timer-limit-local-contender',
+          timeoutMs: NODE_MAX_TIMER_DELAY_MS + 1,
+        },
+        () => 'never',
+      ),
+      BatchContractError,
+    );
+    releaseOuter?.();
+    await outer;
+  } finally {
+    releaseOuter?.();
+    rmSync(localRoot, { recursive: true, force: true });
+  }
+
+  const processRoot = mkdtempSync(path.join(os.tmpdir(), 'batch-run-lock-poll-limit-'));
+  const lockPath = batchRunLockPath(processRoot);
+  let sleepCalls = 0;
+  let taskCalls = 0;
+  try {
+    writeLock(lockPath, process.pid, os.hostname());
+    await assert.rejects(
+      withBatchRunLock(
+        {
+          runPath: processRoot,
+          identity,
+          reason: 'timer-limit-process-contender',
+          timeoutMs: 100,
+          pollMs: NODE_MAX_TIMER_DELAY_MS + 1,
+          sleep: async () => {
+            sleepCalls += 1;
+            throw new Error('unsupported poll reached sleep');
+          },
+        },
+        () => {
+          taskCalls += 1;
+          return 'never';
+        },
+      ),
+      BatchContractError,
+    );
+    assert.equal(sleepCalls, 0);
+    assert.equal(taskCalls, 0);
+    assert.equal(existsSync(lockPath), true);
+  } finally {
+    rmSync(processRoot, { recursive: true, force: true });
   }
 });
 

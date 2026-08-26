@@ -31,6 +31,7 @@ const contract = createBatchContract({
   content: [{ id: 'a' }, { id: 'b' }, { id: 'c' }],
   policy: { max_parallel: 2, retry: 'read-only' },
 });
+const NODE_MAX_TIMER_DELAY_MS = 2_147_483_647;
 
 function stringItemContract(itemId: string) {
   return createBatchItemContract({ item_id: itemId, content: itemId, policy: null });
@@ -1078,6 +1079,25 @@ test('batch validates concurrency, retry policy, identities, resume entries, and
     runBoundedBatch({ ...base, maxConcurrency: 1, mode: 'other' as never }),
     BatchContractError,
   );
+  let overflowPolicyExecutes = 0;
+  await assert.rejects(
+    runBoundedBatch({
+      ...base,
+      maxConcurrency: 1,
+      retry: {
+        maxAttempts: 2,
+        maxDelayMs: NODE_MAX_TIMER_DELAY_MS + 1,
+        shouldRetry: () => true,
+        delayMs: () => 0,
+      },
+      execute: () => {
+        overflowPolicyExecutes += 1;
+        return 'forbidden';
+      },
+    }),
+    BatchContractError,
+  );
+  assert.equal(overflowPolicyExecutes, 0);
   await assert.rejects(
     runBoundedBatch({ ...base, maxConcurrency: 1, items: ['a', 'a'] }),
     BatchContractError,
@@ -1177,6 +1197,25 @@ test('batch validates concurrency, retry policy, identities, resume entries, and
     },
   });
   assert.equal(invalidDelay.results_input_order[0]?.status, 'failed');
+
+  let overflowBackoffExecutes = 0;
+  const overflowBackoff = await runBoundedBatch({
+    ...base,
+    maxConcurrency: 1,
+    retry: {
+      maxAttempts: 2,
+      maxDelayMs: 0,
+      shouldRetry: () => true,
+      delayMs: () => NODE_MAX_TIMER_DELAY_MS + 1,
+    },
+    execute: () => {
+      overflowBackoffExecutes += 1;
+      if (overflowBackoffExecutes === 1) throw new Error('retry me');
+      return 'forbidden retry';
+    },
+  });
+  assert.equal(overflowBackoffExecutes, 1);
+  assert.ok(failedError(overflowBackoff.results_input_order[0]) instanceof BatchContractError);
 });
 
 test('read retry isolates classifier, backoff sleep, and resumed-read failures', async () => {

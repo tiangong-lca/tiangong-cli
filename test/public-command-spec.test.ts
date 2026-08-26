@@ -21,6 +21,8 @@ import {
   type FoundryCommandSpecAsyncSpawnOptions,
 } from '../src/command-spec.js';
 
+const NODE_MAX_TIMER_DELAY_MS = 2_147_483_647;
+
 const FIXTURE_ARTIFACT_SHA = 'a'.repeat(64);
 const FIXTURE_SPEC_SHA = '2a7d41b680bd0667f8d43fb5967d92a49b24a5ec9c3d463ec45eaef0dc2b7406';
 
@@ -304,6 +306,25 @@ test('CommandSpec async execution validates limits, clock, and pre-aborted signa
       executeFoundryCommandSpec(spec, { resolveArtifactPath: () => null, ...options }),
     );
   }
+  let overflowSpawnCalls = 0;
+  let overflowSleepCalls = 0;
+  await assert.rejects(
+    executeFoundryCommandSpec(spec, {
+      resolveArtifactPath: () => null,
+      timeoutMs: NODE_MAX_TIMER_DELAY_MS + 1,
+      sleep: async () => {
+        overflowSleepCalls += 1;
+        throw new Error('overflow timeout reached sleep');
+      },
+      spawnImpl: () => {
+        overflowSpawnCalls += 1;
+        return new Promise(() => undefined);
+      },
+    }),
+    /maximum supported timer delay/iu,
+  );
+  assert.equal(overflowSpawnCalls, 0);
+  assert.equal(overflowSleepCalls, 0);
   await assert.rejects(
     executeFoundryCommandSpec(spec, {
       resolveArtifactPath: () => null,
