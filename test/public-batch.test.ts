@@ -181,6 +181,44 @@ test('per-item resume contracts isolate content or policy drift before claim', a
   assert.ok(
     failedError(snapshotProof.results_input_order[0]) instanceof BatchItemResumeContractError,
   );
+
+  const driftingItem = { id: 'a', content: 'before-claim', policy: 'policy-a' };
+  const projectionDrift = await runBoundedBatch({
+    contract,
+    items: [driftingItem],
+    getItemIdentity: (item) => item.id,
+    projectItemContent: (item) => ({ content: item.content }),
+    projectItemPolicy: (item) => ({ policy: item.policy }),
+    mode: 'read',
+    maxConcurrency: 1,
+    resume: {
+      contract,
+      items: [
+        {
+          ...createBatchItemContract({
+            item_id: 'a',
+            content: { content: 'before-claim' },
+            policy: { policy: 'policy-a' },
+          }),
+          state: 'completed',
+          outcome: 'succeeded',
+          value: 'old-a',
+          attempts: 1,
+        },
+      ],
+    },
+    eventSink: (event) => {
+      if (event.type === 'batch_started') driftingItem.content = 'after-preflight';
+    },
+    execute: () => {
+      throw new Error('completed resume projection drift must not execute');
+    },
+  });
+  assert.ok(
+    failedError(projectionDrift.results_input_order[0]) instanceof BatchItemProjectionDriftError,
+  );
+  assert.equal(projectionDrift.results_input_order[0]?.attempts, 1);
+  assert.equal(projectionDrift.results_input_order[0]?.attempt_consumed, true);
 });
 
 test('batch rejects concurrency above the public resource ceiling before projection or claim', async () => {
