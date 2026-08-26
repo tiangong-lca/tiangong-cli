@@ -1,0 +1,78 @@
+{
+  "schema": "tiangong-cli.public-batch-module-budgets.v1",
+  "facade": {
+    "path": "src/batch.ts",
+    "max_lines": 400,
+    "allowed_internal_imports": [
+      "src/lib/batch/canonical-contracts.ts",
+      "src/lib/batch/engine.ts",
+      "src/lib/batch/errors.ts",
+      "src/lib/batch/run-lock.ts",
+      "src/lib/batch/types.ts"
+    ]
+  },
+  "ordinary_module_hard_max_lines": 800,
+  "modules": [
+    {
+      "path": "src/lib/batch/types.ts",
+      "max_lines": 400,
+      "allowed_internal_imports": []
+    },
+    {
+      "path": "src/lib/batch/errors.ts",
+      "max_lines": 200,
+      "allowed_internal_imports": []
+    },
+    {
+      "path": "src/lib/batch/canonical-contracts.ts",
+      "max_lines": 500,
+      "allowed_internal_imports": ["src/lib/batch/errors.ts", "src/lib/batch/types.ts"]
+    },
+    {
+      "path": "src/lib/batch/run-lock.ts",
+      "max_lines": 400,
+      "allowed_internal_imports": [
+        "src/lib/batch/canonical-contracts.ts",
+        "src/lib/batch/errors.ts",
+        "src/lib/batch/types.ts"
+      ]
+    },
+    {
+      "path": "src/lib/batch/scheduler-runtime.ts",
+      "max_lines": 300,
+      "allowed_internal_imports": ["src/lib/batch/errors.ts", "src/lib/batch/types.ts"]
+    },
+    {
+      "path": "src/lib/batch/item-projection.ts",
+      "max_lines": 500,
+      "allowed_internal_imports": [
+        "src/lib/batch/canonical-contracts.ts",
+        "src/lib/batch/errors.ts",
+        "src/lib/batch/scheduler-runtime.ts",
+        "src/lib/batch/types.ts"
+      ]
+    },
+    {
+      "path": "src/lib/batch/attempt-recovery.ts",
+      "max_lines": 500,
+      "allowed_internal_imports": [
+        "src/lib/batch/canonical-contracts.ts",
+        "src/lib/batch/errors.ts",
+        "src/lib/batch/scheduler-runtime.ts",
+        "src/lib/batch/types.ts"
+      ]
+    },
+    {
+      "path": "src/lib/batch/engine.ts",
+      "max_lines": 800,
+      "allowed_internal_imports": [
+        "src/lib/batch/attempt-recovery.ts",
+        "src/lib/batch/canonical-contracts.ts",
+        "src/lib/batch/item-projection.ts",
+        "src/lib/batch/scheduler-runtime.ts",
+        "src/lib/batch/types.ts"
+      ]
+    }
+  ],
+  "forbidden_upward_imports": ["src/batch.ts", "src/cli.ts", "src/lib/dataset-save-draft-run.ts"]
+}
