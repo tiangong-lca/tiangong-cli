@@ -1,7 +1,6 @@
 import {
   MAX_NODE_TIMER_DELAY_MS,
   assertBatchContractMatches,
-  batchItemContractsMatch,
   createBatchItemContract,
   isRecord,
   parseBatchItemContract,

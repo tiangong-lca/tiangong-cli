@@ -6,6 +6,7 @@ import test from 'node:test';
 const REPOSITORY_ROOT = resolve(import.meta.dirname, '..');
 const BUDGET_PATH = join(REPOSITORY_ROOT, 'test', 'fixtures', 'public-batch-module-budgets.json');
 const BUDGET = JSON.parse(readFileSync(BUDGET_PATH, 'utf8'));
+const compareText = (left, right) => left.localeCompare(right);
 const EXPECTED_RUNTIME_EXPORTS = Object.freeze([
   'BatchContractError',
   'BatchItemIdentityDriftError',
@@ -71,7 +72,10 @@ const EXPECTED_TYPE_EXPORTS = Object.freeze([
 
 test('public batch facade preserves exact runtime exports, bytes, and error shapes', async () => {
   const batch = await import('../src/batch.js');
-  assert.deepEqual(Object.keys(batch).sort(), [...EXPECTED_RUNTIME_EXPORTS].sort());
+  assert.deepEqual(
+    Object.keys(batch).sort(compareText),
+    [...EXPECTED_RUNTIME_EXPORTS].sort(compareText),
+  );
 
   const contract = batch.createBatchContract({
     identity: { revision: 1, run: 'facade' },
@@ -149,8 +153,11 @@ test('generated batch declaration preserves the exact named type and runtime sur
   const declaration = readFileSync(join(REPOSITORY_ROOT, 'dist', 'src', 'batch.d.ts'), 'utf8');
   assert.doesNotMatch(declaration, /export\s+default|export\s+\*|\bnamespace\b|\bNodeJS\./u);
   const names = declarationExportNames(declaration);
-  assert.deepEqual(names.runtime.sort(), [...EXPECTED_RUNTIME_EXPORTS].sort());
-  assert.deepEqual(names.types.sort(), [...EXPECTED_TYPE_EXPORTS].sort());
+  assert.deepEqual(
+    names.runtime.sort(compareText),
+    [...EXPECTED_RUNTIME_EXPORTS].sort(compareText),
+  );
+  assert.deepEqual(names.types.sort(compareText), [...EXPECTED_TYPE_EXPORTS].sort(compareText));
 });
 
 test('public batch modules obey shrink-only LOC, dependency-direction, and SCC budgets', () => {
@@ -163,12 +170,12 @@ test('public batch modules obey shrink-only LOC, dependency-direction, and SCC b
   );
 
   const configured = [BUDGET.facade, ...BUDGET.modules];
-  const expectedInternalPaths = BUDGET.modules.map(({ path }) => path).sort();
+  const expectedInternalPaths = BUDGET.modules.map(({ path }) => path).sort(compareText);
   const actualInternalPaths = existsSync(join(REPOSITORY_ROOT, 'src', 'lib', 'batch'))
     ? readdirSync(join(REPOSITORY_ROOT, 'src', 'lib', 'batch'))
         .filter((entry) => entry.endsWith('.ts'))
         .map((entry) => `src/lib/batch/${entry}`)
-        .sort()
+        .sort(compareText)
     : [];
   assert.deepEqual(actualInternalPaths, expectedInternalPaths, 'module inventory drifted');
 
@@ -215,8 +222,8 @@ test('public batch modules obey shrink-only LOC, dependency-direction, and SCC b
       }
     }
     assert.deepEqual(
-      [...new Set(internalImports)].sort(),
-      [...module.allowed_internal_imports].sort(),
+      [...new Set(internalImports)].sort(compareText),
+      [...module.allowed_internal_imports].sort(compareText),
       `${module.path} internal dependency direction drifted`,
     );
     graph.set(module.path, [...new Set(internalImports)]);
@@ -304,7 +311,7 @@ function stronglyConnectedComponents(graph) {
       component.push(member);
       if (member === node) break;
     }
-    components.push(component.sort());
+    components.push(component.sort(compareText));
   };
   for (const node of graph.keys()) if (!indexes.has(node)) visit(node);
   return components;
