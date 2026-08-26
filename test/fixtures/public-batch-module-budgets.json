@@ -15,17 +15,17 @@
   "modules": [
     {
       "path": "src/lib/batch/types.ts",
-      "max_lines": 400,
+      "max_lines": 251,
       "allowed_internal_imports": []
     },
     {
       "path": "src/lib/batch/errors.ts",
-      "max_lines": 200,
+      "max_lines": 110,
       "allowed_internal_imports": []
     },
     {
       "path": "src/lib/batch/canonical-contracts.ts",
-      "max_lines": 500,
+      "max_lines": 244,
       "allowed_internal_imports": ["src/lib/batch/errors.ts", "src/lib/batch/types.ts"]
     },
     {

@@ -244,7 +244,9 @@ function declarationExportNames(source) {
   )) {
     (match[1] === 'type' || match[1] === 'interface' ? types : runtime).add(match[2]);
   }
-  for (const match of source.matchAll(/^export\s+(type\s+)?\{([^}]+)\}\s+from\s+/gmu)) {
+  for (const match of source.matchAll(
+    /^export\s+(type\s+)?\{([^}]+)\}(?:\s+from\s+['"][^'"]+['"])?\s*;/gmu,
+  )) {
     const target = match[1] ? types : runtime;
     for (const part of match[2].split(',')) {
       const name = part

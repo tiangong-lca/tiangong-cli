@@ -1,12 +1,63 @@
 import { AsyncLocalStorage } from 'node:async_hooks';
-import { createHash } from 'node:crypto';
 import path from 'node:path';
 import { StateLockTimeoutError, lockPathForState, withStateFileLock } from './lib/state-lock.js';
+import {
+  MAX_NODE_TIMER_DELAY_MS,
+  assertBatchContractMatches,
+  assertBatchItemContractMatches,
+  assertBatchTimerDelaySupported,
+  assertUniqueItemIds,
+  batchItemContractsMatch,
+  canonicalBatchJson,
+  createBatchContract,
+  createBatchItemContract,
+  isRecord,
+  parseBatchContract,
+  parseBatchItemContract,
+  parseBatchRunLockToken,
+  parseBatchRunPath,
+  parseItemIdentity,
+  sha256BatchBytes,
+  sha256BatchJson,
+} from './lib/batch/canonical-contracts.js';
+import {
+  BatchContractError,
+  BatchItemIdentityDriftError,
+  BatchItemProjectionDriftError,
+  BatchItemResourceDriftError,
+  BatchItemResumeContractError,
+  BatchMutationReplayError,
+  BatchMutationRetryError,
+  BatchRunLockIdentityConflictError,
+  BatchRunLockTimeoutError,
+} from './lib/batch/errors.js';
+import { MAX_BATCH_CONCURRENCY } from './lib/batch/types.js';
 
-const SHA256_PATTERN = /^[a-f0-9]{64}$/u;
-export const MAX_BATCH_CONCURRENCY = 64 as const;
+export {
+  BatchContractError,
+  BatchItemIdentityDriftError,
+  BatchItemProjectionDriftError,
+  BatchItemResourceDriftError,
+  BatchItemResumeContractError,
+  BatchMutationReplayError,
+  BatchMutationRetryError,
+  BatchRunLockIdentityConflictError,
+  BatchRunLockTimeoutError,
+};
+export {
+  assertBatchContractMatches,
+  assertBatchItemContractMatches,
+  canonicalBatchJson,
+  createBatchContract,
+  createBatchItemContract,
+  parseBatchContract,
+  parseBatchItemContract,
+  sha256BatchBytes,
+  sha256BatchJson,
+};
+export { MAX_BATCH_CONCURRENCY };
+
 const DEFAULT_BATCH_RUN_LOCK_TIMEOUT_MS = 300_000;
-const MAX_NODE_TIMER_DELAY_MS = 2_147_483_647;
 type ActiveBatchRunLock = {
   scopeDepth: number;
   identitySha256: string;
@@ -308,129 +359,6 @@ export type RunBoundedBatchOptions<
   sleep?: BatchSleep;
 }>;
 
-export class BatchContractError extends Error {
-  constructor(message: string, options?: ErrorOptions) {
-    super(message, options);
-    this.name = 'BatchContractError';
-  }
-}
-
-export class BatchMutationRetryError extends BatchContractError {
-  constructor() {
-    super('Mutation batches reject automatic retry; use explicit readback recovery instead.');
-    this.name = 'BatchMutationRetryError';
-  }
-}
-
-export class BatchMutationReplayError extends Error {
-  constructor(itemId: string) {
-    super(
-      `Mutation item ${itemId} has a consumed incomplete attempt and cannot be replayed without explicit readback recovery.`,
-    );
-    this.name = 'BatchMutationReplayError';
-  }
-}
-
-export class BatchItemResumeContractError extends BatchContractError {
-  readonly itemId: string;
-
-  constructor(itemId: string) {
-    super(
-      `Batch resume item ${itemId} does not match the current item identity, content SHA-256, and policy SHA-256 triple.`,
-    );
-    this.name = 'BatchItemResumeContractError';
-    this.itemId = itemId;
-  }
-}
-
-export class BatchItemProjectionDriftError extends BatchContractError {
-  readonly itemId: string;
-
-  constructor(itemId: string) {
-    super(`Batch item ${itemId} content or policy projection drifted before claim.`);
-    this.name = 'BatchItemProjectionDriftError';
-    this.itemId = itemId;
-  }
-}
-
-export class BatchItemIdentityDriftError extends BatchContractError {
-  readonly itemId: string;
-
-  constructor(itemId: string) {
-    super(`Batch item ${itemId} identity drifted before claim.`);
-    this.name = 'BatchItemIdentityDriftError';
-    this.itemId = itemId;
-  }
-}
-
-export class BatchItemResourceDriftError extends BatchContractError {
-  readonly itemId: string;
-
-  constructor(itemId: string) {
-    super(`Batch item ${itemId} exclusive resource key drifted before claim.`);
-    this.name = 'BatchItemResourceDriftError';
-    this.itemId = itemId;
-  }
-}
-
-export class BatchRunLockTimeoutError extends Error {
-  readonly code = 'BATCH_RUN_LOCK_TIMEOUT' as const;
-  readonly runPath: string;
-  readonly lockPath: string;
-  readonly identitySha256: string;
-  readonly waitedMs: number;
-  readonly owner: Readonly<Record<string, unknown>> | null;
-
-  constructor(options: {
-    runPath: string;
-    lockPath: string;
-    identitySha256: string;
-    waitedMs: number;
-    owner: Readonly<Record<string, unknown>> | null;
-  }) {
-    super(`Timed out after ${options.waitedMs}ms acquiring batch run lock: ${options.lockPath}`);
-    this.name = 'BatchRunLockTimeoutError';
-    this.runPath = options.runPath;
-    this.lockPath = options.lockPath;
-    this.identitySha256 = options.identitySha256;
-    this.waitedMs = options.waitedMs;
-    this.owner = options.owner;
-  }
-}
-
-export class BatchRunLockIdentityConflictError extends Error {
-  readonly code = 'BATCH_RUN_LOCK_IDENTITY_CONFLICT' as const;
-  readonly runPath: string;
-  readonly activeIdentitySha256: string;
-  readonly requestedIdentitySha256: string;
-
-  constructor(options: {
-    runPath: string;
-    activeIdentitySha256: string;
-    requestedIdentitySha256: string;
-  }) {
-    super(
-      `Batch run path is already locked by another identity in this process: ${options.runPath}`,
-    );
-    this.name = 'BatchRunLockIdentityConflictError';
-    this.runPath = options.runPath;
-    this.activeIdentitySha256 = options.activeIdentitySha256;
-    this.requestedIdentitySha256 = options.requestedIdentitySha256;
-  }
-}
-
-export function canonicalBatchJson(value: BatchJsonValue): string {
-  return JSON.stringify(canonicalizeBatchValue(value, new Set<object>()));
-}
-
-export function sha256BatchBytes(value: string | Uint8Array): string {
-  return createHash('sha256').update(value).digest('hex');
-}
-
-export function sha256BatchJson(value: BatchJsonValue): string {
-  return sha256BatchBytes(canonicalBatchJson(value));
-}
-
 export function batchRunLockStatePath(runPath: string): string {
   return path.join(parseBatchRunPath(runPath), '.tiangong-lca-batch-run.state');
 }
@@ -519,113 +447,6 @@ export async function withBatchRunLock<T, TIdentity extends BatchJsonValue>(
       physicalOwner.release();
     }
   }
-}
-
-export function createBatchContract<TIdentity extends BatchJsonValue>(
-  options: CreateBatchContractOptions<TIdentity>,
-): BatchContract<TIdentity> {
-  const identity = freezeBatchJson(
-    canonicalizeBatchValue(options.identity, new Set<object>()),
-  ) as TIdentity;
-  return Object.freeze({
-    identity,
-    content_sha256: sha256BatchJson(options.content),
-    policy_sha256: sha256BatchJson(options.policy),
-  });
-}
-
-export function createBatchItemContract(
-  options: CreateBatchItemContractOptions,
-): BatchItemContract {
-  const itemId = parseItemIdentity(options.item_id, 'contract');
-  return Object.freeze({
-    item_id: itemId,
-    content_sha256: sha256BatchJson(options.content),
-    policy_sha256: sha256BatchJson(options.policy),
-  });
-}
-
-export function parseBatchItemContract(value: unknown): BatchItemContract {
-  if (
-    !isRecord(value) ||
-    typeof value.item_id !== 'string' ||
-    typeof value.content_sha256 !== 'string' ||
-    !SHA256_PATTERN.test(value.content_sha256) ||
-    typeof value.policy_sha256 !== 'string' ||
-    !SHA256_PATTERN.test(value.policy_sha256)
-  ) {
-    throw new BatchContractError(
-      'Batch item contract requires item_id plus valid content and policy SHA-256 values.',
-    );
-  }
-  return Object.freeze({
-    item_id: parseItemIdentity(value.item_id, 'contract'),
-    content_sha256: value.content_sha256,
-    policy_sha256: value.policy_sha256,
-  });
-}
-
-export function assertBatchItemContractMatches(
-  expectedValue: unknown,
-  actualValue: unknown,
-): BatchItemContract {
-  const expected = parseBatchItemContract(expectedValue);
-  const actual = parseBatchItemContract(actualValue);
-  if (!batchItemContractsMatch(expected, actual)) {
-    throw new BatchItemResumeContractError(expected.item_id);
-  }
-  return actual;
-}
-
-export function parseBatchContract<TIdentity extends BatchJsonValue = BatchJsonValue>(
-  value: unknown,
-): BatchContract<TIdentity> {
-  if (!isRecord(value) || !hasExactKeys(value, ['content_sha256', 'identity', 'policy_sha256'])) {
-    throw new BatchContractError(
-      'Batch contract must contain exact identity, content_sha256, and policy_sha256 keys.',
-    );
-  }
-  let identity: TIdentity;
-  try {
-    identity = freezeBatchJson(
-      canonicalizeBatchValue(value.identity, new Set<object>()),
-    ) as TIdentity;
-  } catch (error) {
-    throw new BatchContractError('Batch contract identity must be canonical JSON data.', {
-      cause: error,
-    });
-  }
-  if (
-    typeof value.content_sha256 !== 'string' ||
-    !SHA256_PATTERN.test(value.content_sha256) ||
-    typeof value.policy_sha256 !== 'string' ||
-    !SHA256_PATTERN.test(value.policy_sha256)
-  ) {
-    throw new BatchContractError('Batch contract content and policy SHA-256 values are malformed.');
-  }
-  return Object.freeze({
-    identity,
-    content_sha256: value.content_sha256,
-    policy_sha256: value.policy_sha256,
-  });
-}
-
-export function assertBatchContractMatches<TIdentity extends BatchJsonValue>(
-  expectedValue: unknown,
-  actualValue: unknown,
-): BatchContract<TIdentity> {
-  const expected = parseBatchContract<TIdentity>(expectedValue);
-  const actual = parseBatchContract<TIdentity>(actualValue);
-  if (
-    canonicalBatchJson(expected.identity) !== canonicalBatchJson(actual.identity) ||
-    expected.content_sha256 !== actual.content_sha256 ||
-    expected.policy_sha256 !== actual.policy_sha256
-  ) {
-    throw new BatchContractError(
-      'Batch resume requires an exact identity, content SHA-256, and policy SHA-256 match.',
-    );
-  }
-  return actual;
 }
 
 export async function runBoundedBatch<
@@ -1015,80 +836,6 @@ export async function runBoundedBatch<
   });
 }
 
-function canonicalizeBatchValue(value: unknown, ancestors: Set<object>): BatchJsonValue {
-  if (value === null || typeof value === 'string' || typeof value === 'boolean') return value;
-  if (typeof value === 'number') {
-    if (!Number.isFinite(value)) {
-      throw new BatchContractError('Canonical batch JSON rejects non-finite numbers.');
-    }
-    return value;
-  }
-  if (typeof value !== 'object') {
-    throw new BatchContractError('Canonical batch JSON accepts JSON data only.');
-  }
-  if (ancestors.has(value)) {
-    throw new BatchContractError('Canonical batch JSON rejects cyclic data.');
-  }
-  ancestors.add(value);
-  try {
-    if (Array.isArray(value)) {
-      return value.map((entry) => canonicalizeBatchValue(entry, ancestors));
-    }
-    const prototype = Object.getPrototypeOf(value);
-    if (prototype !== Object.prototype && prototype !== null) {
-      throw new BatchContractError('Canonical batch JSON accepts plain objects only.');
-    }
-    return Object.fromEntries(
-      Object.keys(value)
-        .sort()
-        .map((key) => [
-          key,
-          canonicalizeBatchValue((value as Record<string, unknown>)[key], ancestors),
-        ]),
-    );
-  } finally {
-    ancestors.delete(value);
-  }
-}
-
-function freezeBatchJson<T extends BatchJsonValue>(value: T): T {
-  if (value !== null && typeof value === 'object') {
-    for (const child of Object.values(value)) freezeBatchJson(child);
-    Object.freeze(value);
-  }
-  return value;
-}
-
-function isRecord(value: unknown): value is Record<string, unknown> {
-  return typeof value === 'object' && value !== null && !Array.isArray(value);
-}
-
-function parseBatchRunPath(value: unknown): string {
-  if (typeof value !== 'string' || value.length === 0 || /[\0\r\n]/u.test(value)) {
-    throw new BatchContractError('Batch runPath must be a non-empty single-line path.');
-  }
-  return path.resolve(value);
-}
-
-function parseBatchRunLockToken(value: unknown, label: string): string {
-  if (typeof value !== 'string' || value.length === 0 || /[\0\r\n]/u.test(value)) {
-    throw new BatchContractError(`Batch run-lock ${label} must be a non-empty single-line string.`);
-  }
-  return value;
-}
-
-function assertBatchTimerDelaySupported(value: number | undefined, label: string): void {
-  if (value === undefined) return;
-  if (!Number.isSafeInteger(value) || value < 0) {
-    throw new BatchContractError(`Batch ${label} must be a non-negative safe integer.`);
-  }
-  if (value > MAX_NODE_TIMER_DELAY_MS) {
-    throw new BatchContractError(
-      `Batch ${label} exceeds the maximum supported timer delay (${MAX_NODE_TIMER_DELAY_MS} ms).`,
-    );
-  }
-}
-
 function createActiveBatchRunLock(
   identitySha256: string,
   receipt: BatchRunLockReceipt,
@@ -1175,12 +922,6 @@ async function waitForActiveBatchRunLock<TIdentity extends BatchJsonValue>(
   }
 }
 
-function hasExactKeys(value: Record<string, unknown>, expectedKeys: readonly string[]): boolean {
-  const actual = Object.keys(value).sort();
-  const expected = [...expectedKeys].sort();
-  return actual.length === expected.length && actual.every((key, index) => key === expected[index]);
-}
-
 function validateBatchOptions<
   TInput,
   TOutput,
@@ -1213,23 +954,6 @@ function validateBatchOptions<
     throw new BatchContractError(
       `Batch retry maxAttempts must be positive and maxDelayMs must be a non-negative safe integer no greater than the maximum supported timer delay (${MAX_NODE_TIMER_DELAY_MS} ms).`,
     );
-  }
-}
-
-function parseItemIdentity(value: unknown, location: number | 'contract'): string {
-  if (typeof value !== 'string' || value.length === 0 || /[\0\r\n]/u.test(value)) {
-    throw new BatchContractError(
-      location === 'contract'
-        ? 'Batch item contract identity must be a non-empty single-line string.'
-        : `Batch item identity at input index ${location} must be a non-empty single-line string.`,
-    );
-  }
-  return value;
-}
-
-function assertUniqueItemIds(itemIds: readonly string[]): void {
-  if (new Set(itemIds).size !== itemIds.length) {
-    throw new BatchContractError('Batch item identities must be unique.');
   }
 }
 
@@ -1289,14 +1013,6 @@ function validateResume<TOutput, TIdentity extends BatchJsonValue>(
     }
   }
   return result;
-}
-
-function batchItemContractsMatch(left: BatchItemContract, right: BatchItemContract): boolean {
-  return (
-    left.item_id === right.item_id &&
-    left.content_sha256 === right.content_sha256 &&
-    left.policy_sha256 === right.policy_sha256
-  );
 }
 
 function projectBatchItemContract<
