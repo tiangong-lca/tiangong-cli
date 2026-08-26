@@ -478,6 +478,72 @@ test('exclusive resource key projection validates before work and rejects claim-
   assert.ok(failedError(drift.results_input_order[0]) instanceof BatchItemResourceDriftError);
   assert.equal(executeCalls, 0);
   assert.deepEqual(drift.claim_order, []);
+
+  const resumedItem = { id: 'resume-a', resource: 'before' };
+  const resumedDrift = await runBoundedBatch({
+    contract,
+    items: [resumedItem],
+    getItemIdentity: (value) => value.id,
+    projectItemContent: (value) => value.id,
+    projectItemPolicy: () => null,
+    getExclusiveKey: ({ item: value }) => value.resource,
+    mode: 'read',
+    maxConcurrency: 1,
+    resume: {
+      contract,
+      items: [
+        {
+          ...createBatchItemContract({ item_id: 'resume-a', content: 'resume-a', policy: null }),
+          state: 'completed',
+          outcome: 'succeeded',
+          value: 'old',
+          attempts: 1,
+        },
+      ],
+    },
+    eventSink: (event) => {
+      if (event.type === 'batch_started') resumedItem.resource = 'after';
+    },
+    execute: () => {
+      executeCalls += 1;
+      return 'forbidden';
+    },
+  });
+  assert.ok(
+    failedError(resumedDrift.results_input_order[0]) instanceof BatchItemResourceDriftError,
+  );
+  assert.equal(resumedDrift.results_input_order[0]?.attempts, 1);
+
+  for (const exclusiveKey of [null, undefined]) {
+    const unkeyed = await runBoundedBatch({
+      contract,
+      items: ['unkeyed'],
+      getItemIdentity: (value) => value,
+      projectItemContent: (value) => value,
+      projectItemPolicy: () => null,
+      getExclusiveKey: () => exclusiveKey,
+      mode: 'read',
+      maxConcurrency: 1,
+      execute: ({ exclusive_key: observed }) => observed,
+    });
+    assert.equal(unkeyed.results_input_order[0]?.exclusive_key, null);
+  }
+  for (const invalidKey of ['', 'bad\nkey']) {
+    await assert.rejects(
+      runBoundedBatch({
+        contract,
+        items: ['invalid-key'],
+        getItemIdentity: (value) => value,
+        projectItemContent: (value) => value,
+        projectItemPolicy: () => null,
+        getExclusiveKey: () => invalidKey,
+        mode: 'read',
+        maxConcurrency: 1,
+        execute: () => 'forbidden',
+      }),
+      BatchContractError,
+    );
+  }
 });
 
 test('pause is checked before claim and stop prevents later claims after in-flight work settles', async () => {
