@@ -25,8 +25,8 @@ checkPaths:
   - scripts/docpact-gate.sh
   - scripts/install-git-hooks.sh
 lastReviewedAt: 2026-08-26
-lastReviewedCommit: 3d67a14d81f06279251bc468917ef09c7245678b
-lastReviewedNote: 'Reviewed for Issue #233: bounded internal batch decomposition adds no secret, environment, dependency, lockfile, package-manager path, publisher, tag rule, credential, or alternate release setup.'
+lastReviewedCommit: c8c7ae860b4e0a85443abb5de0d37ce8b7d65634
+lastReviewedNote: 'Reviewed for Issue #236: exact pnpm 11.24.0 flows through the existing packageManager-driven CI setup and release consumer without new secrets, dependencies, lock bytes, workflows, tags, credentials, or publication paths.'
 related:
   - ../AGENTS.md
   - ../.docpact/config.yaml
@@ -48,17 +48,19 @@ Recommended model:
 - `publish.yml` publishes the package from that tag through npm Trusted Publishing
 - maintainers do not publish routinely from local workstations
 
-Review note, 2026-08-25: Issue #224 pins repository and workflow setup to Node 24, pnpm 11.23.0, TypeScript 7.0.2, type-aware Oxlint, the sole root `pnpm-workspace.yaml` / `pnpm-lock.yaml`, and immutable `pnpm/setup` v2.0.2. The publish job uses native pnpm OIDC with provenance and no long-lived npm token or npm fallback. The feature version remains 0.0.33; the maintainer/release compatibility boundary should be shipped later as a separate 0.1.0 release-only PR after all gates pass.
+Review note, 2026-08-25: Issue #224 pins repository and workflow setup to Node 24, pnpm 11.24.0, TypeScript 7.0.2, type-aware Oxlint, the sole root `pnpm-workspace.yaml` / `pnpm-lock.yaml`, and immutable `pnpm/setup` v2.0.2. The publish job uses native pnpm OIDC with provenance and no long-lived npm token or npm fallback. The feature version remains 0.0.33; the maintainer/release compatibility boundary should be shipped later as a separate 0.1.0 release-only PR after all gates pass.
 
 Review note, 2026-08-25: Issue #226 publishes that 0.1.0 compatibility boundary through the existing setup. It adds no secret, environment, dependency, runner, Trusted Publisher setting, workflow filename, tag rule, service-role credential, or fallback client; `TIANGONG_CLI_RELEASE_AUTOMATION_TOKEN`, immutable pnpm/setup v2.0.2, Node 24, and native pnpm OIDC/provenance remain unchanged.
 
 Review note, 2026-08-25: Issue #228 requires no GitHub secret, environment, Trusted Publisher setting, workflow filename, tag rule, dependency, service-role credential, or alternate publication path. `TIANGONG_LCA_TEST_API_KEY` belongs only to the ignored local Data Foundry env used by the explicit read-only case runner; it must not be copied into repository settings, Actions secrets, publish jobs, package assets, or provenance inputs.
 
-Review note, 2026-08-25: Issue #230 publishes 0.1.1 through the existing merge-triggered tag and native pnpm Trusted Publishing workflows. `.nvmrc`, engines, release detection, quality, tag, and publish jobs all pin Node 24.19.0. `quality-gate.yml` is a reusable exact-platform pre-tag dependency, and exact dev-only `sigstore@5.0.0` cryptographically verifies public provenance. The temporary consumer fixes pnpm 11.23.0, verifies registry signatures, and replaces user/global config with private public-registry-only files. It adds no secret, environment, runner class, Trusted Publisher setting, tag pattern, published dependency, service-role credential, test-account credential, or alternate authentication/publication surface.
+Review note, 2026-08-25: Issue #230 publishes 0.1.1 through the existing merge-triggered tag and native pnpm Trusted Publishing workflows. `.nvmrc`, engines, release detection, quality, tag, and publish jobs all pin Node 24.19.0. `quality-gate.yml` is a reusable exact-platform pre-tag dependency, and exact dev-only `sigstore@5.0.0` cryptographically verifies public provenance. The temporary consumer fixes pnpm 11.24.0, verifies registry signatures, and replaces user/global config with private public-registry-only files. It adds no secret, environment, runner class, Trusted Publisher setting, tag pattern, published dependency, service-role credential, test-account credential, or alternate authentication/publication surface.
 
 Review note, 2026-08-26: Issue #232 adds supported public subpaths and run-directory locking without changing release setup, secrets, dependencies, Trusted Publisher configuration, tag rules, or package version 0.1.1. Publication remains a separate release-only PR; its clean consumer must exercise launcher, CommandSpec, batch, run-lock, closed root/deep imports, and generated types.
 
-Review note, 2026-08-26: Issue #233 only decomposes the implementation behind the existing batch subpath. It adds no secret, environment, dependency, lockfile, package-manager path, Trusted Publisher setting, workflow, tag rule, or version change. The repository remains pnpm 11.23.0 and TypeScript 7.0.2 single-track; publication remains separate.
+Review note, 2026-08-26: Issue #233 only decomposes the implementation behind the existing batch subpath. It adds no secret, environment, dependency, lockfile, package-manager path, Trusted Publisher setting, workflow, tag rule, or version change. The repository remains pnpm 11.24.0 and TypeScript 7.0.2 single-track; publication remains separate.
+
+Review note, 2026-08-26: Issue #236 changes only the exact pnpm requirement to 11.24.0. The pinned `pnpm/setup` action continues to resolve that version from root `packageManager`, frozen installs keep the existing sole root lock byte-for-byte, and the public verifier uses the same exact version. No secret, environment, runner, dependency, Trusted Publisher setting, workflow filename, tag rule, credential, version, or alternate npm/Yarn publication path is added.
 
 Current workflow files:
 

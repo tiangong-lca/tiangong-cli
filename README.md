@@ -27,15 +27,15 @@ checkPaths:
   - test/auth-identity*.test.ts
   - test/lca-release*.test.ts
 lastReviewedAt: 2026-08-26
-lastReviewedCommit: 3d67a14d81f06279251bc468917ef09c7245678b
-lastReviewedNote: 'Reviewed for Issue #233: documents the move-only 62-line batch facade, bounded acyclic internals, exact public compatibility, pnpm-only tooling, closed root, and deferred release.'
+lastReviewedCommit: c8c7ae860b4e0a85443abb5de0d37ce8b7d65634
+lastReviewedNote: 'Reviewed for Issue #236: repository and public-release consumer guidance now pins exact pnpm 11.24.0 while Node 24.19.0, TypeScript 7.0.2, package 0.1.1, runtime, exports, dependencies, and release behavior stay fixed.'
 ---
 
 # TianGong LCA CLI
 
 Package: `@tiangong-lca/cli` Executable: `tiangong-lca` Current package version: `0.1.1` Node: `24.19.0`
 
-Repository development is single-track on pnpm `11.23.0` and TypeScript `7.0.2`. The published package remains a clean, package-manager-neutral consumer artifact: it contains runtime files only, not pnpm, TypeScript, Oxlint, tests, source-only tooling, or repository lockfiles.
+Repository development is single-track on pnpm `11.24.0` and TypeScript `7.0.2`. The published package remains a clean, package-manager-neutral consumer artifact: it contains runtime files only, not pnpm, TypeScript, Oxlint, tests, source-only tooling, or repository lockfiles.
 
 Review note, 2026-08-25: Issue #224 migrates repository development and release automation to the sole root `pnpm-workspace.yaml` / `pnpm-lock.yaml`, TypeScript 7.0.2, and type-aware Oxlint on Node 24. The feature change deliberately keeps version 0.0.33. A separate release-only PR should prepare 0.1.0 after the toolchain change merges and its full package/coverage/release gates pass.
 
@@ -43,11 +43,13 @@ Review note, 2026-08-25: Issue #226 publishes that 0.1.0 compatibility boundary 
 
 Review note, 2026-08-25: Issue #228 implements `auth identity-receipt` as a bounded read-only current-user proof. It checks expected project intent before session work, verifies the live user through `/auth/v1/user`, allows one auth-refresh replay after 401/403, and emits an exact-key canonical receipt without API keys, tokens, full email addresses, session paths, or credential-derived fingerprints. Production callers must pass both expected assertions and accept only `assertions.mode="intent-bound"`.
 
-Review note, 2026-08-25: Issue #230 publishes the merged identity receipt as `@tiangong-lca/cli@0.1.1`. Runtime logic and published dependencies remain unchanged; the sole pnpm lock changes only for exact dev-only `sigstore@5.0.0`. Local metadata, engines, and every workflow converge on Node 24.19.0. Release automation asserts actual platform/architecture across the reusable four-platform pre-tag matrix and provides `pnpm release:verify-published` for cryptographic Fulcio/CT/Rekor provenance, registry signatures, actual tarball integrity, isolated user/global package-manager configuration, exact pnpm 11.23.0, and credential-free bin/ESM/CJS consumer proof.
+Review note, 2026-08-25: Issue #230 publishes the merged identity receipt as `@tiangong-lca/cli@0.1.1`. Runtime logic and published dependencies remain unchanged; the sole pnpm lock changes only for exact dev-only `sigstore@5.0.0`. Local metadata, engines, and every workflow converge on Node 24.19.0. Release automation asserts actual platform/architecture across the reusable four-platform pre-tag matrix and provides `pnpm release:verify-published` for cryptographic Fulcio/CT/Rekor provenance, registry signatures, actual tarball integrity, isolated user/global package-manager configuration, exact pnpm 11.24.0, and credential-free bin/ESM/CJS consumer proof.
 
 Review note, 2026-08-26: Issue #232 adds two supported typed library subpaths without changing version `0.1.1`: `@tiangong-lca/cli/command-spec` owns the byte-compatible `tiangong-foundry.command-spec.v1` authority and shell-free execution adapters, while `@tiangong-lca/cli/batch` owns identity/content/policy-bound scheduling, resource-aware exclusive keys, explicit mutation readback recovery, and host-safe run-directory locks. Claim-time identity drift—including a throwing identity getter—is a stable item failure/event and every already-started worker is drained before return. Any escaping infrastructure callback error records one fatal cause, immediately closes new claims, drains only already-claimed workers, and rejects after all worker promises settle. A blocked resource stays unclaimed and consumes no worker while a later free resource may run; per-resource FIFO cursors and a private minimum-ready heap keep ordinary scheduling near `O(n log k)` rather than repeatedly scanning all pending items. Run-lock PID/host/timestamp ownership is derived internally and cannot be supplied by callers. Every public timer-backed timeout, poll, or retry delay is bounded by Node's `2_147_483_647ms` maximum. The package root remains unsupported and publication requires a later release-only delivery.
 
 Review note, 2026-08-26: Issue #233 changes only the internal shape of the batch subpath. `src/batch.ts` is now a 62-line facade over bounded, acyclic modules for types, errors/contracts, locking, projection, scheduler runtime, attempts/recovery, and the engine. Executable budgets keep the facade below 400 lines and every internal module below 800 while locking exact public export identities, declarations, errors, event/result bytes, packed consumers, and dataset dogfood. Package version, dependencies, pnpm-only TypeScript 7 development, and runtime behavior are unchanged.
+
+Review note, 2026-08-26: Issue #236 changes only the repository and clean-consumer package-manager requirement from exact pnpm 11.23.0 to 11.24.0. The sole root lock requires no byte change under pnpm 11.24.0; Node 24.19.0, TypeScript 7.0.2, package version 0.1.1, public commands and exports, dependencies, tags, provenance, and publication remain unchanged, with no npm/Yarn fallback.
 
 Review note, 2026-07-12: `dataset maintenance plan/apply/verify` provides current-user RLS-scoped exact-row maintenance with immutable plans, explicit approval, per-action logs, platform audit correlation, and independent readback. `merge-support-aliases` now runs only in `target_mode=owner_draft`: source/target support and all changed rows stay private `state_code=0`; publication is a separate future workflow.
 

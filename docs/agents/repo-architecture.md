@@ -31,8 +31,8 @@ checkPaths:
   - scripts/docpact-gate.sh
   - scripts/install-git-hooks.sh
 lastReviewedAt: 2026-08-26
-lastReviewedCommit: 3d67a14d81f06279251bc468917ef09c7245678b
-lastReviewedNote: 'Reviewed for Issue #233: records the 62-line facade, eight-module acyclic DAG, 445-line largest internal ceiling, exact public identities, dogfood, and closed 0.1.1 boundaries.'
+lastReviewedCommit: c8c7ae860b4e0a85443abb5de0d37ce8b7d65634
+lastReviewedNote: 'Reviewed for Issue #236: the exact pnpm 11.24.0 toolchain update changes no dependency graph, runtime cluster, public export, package version, tag, publication path, or repository ownership boundary.'
 related:
   - ../../AGENTS.md
   - ../../.docpact/config.yaml
@@ -58,6 +58,8 @@ Review note, 2026-08-25: Issue #230 advances the package compatibility identity 
 Review note, 2026-08-26: Issue #232 adds two provider-neutral public primitives without adding a dependency or changing package version 0.1.1. `src/command-spec.ts` is byte-compatible with the existing Foundry v1 authority, cleans external abort listeners even when an injected spawn adapter throws synchronously, and rejects timeouts outside Node's timer range. `src/batch.ts` owns run/item identity/content/policy contracts, complete projection preflight, guarded claim-time identity drift events, resource-aware bounded scheduling, per-result resume-stop decisions, mutation no-auto-retry, explicit readback recovery, and host-aware run-directory locking. A throwing identity getter becomes a zero-attempt item failure while other in-flight workers drain. A worker infrastructure error records the first fatal cause and closes claims before the scheduler lock releases when applicable; settled aggregation drains already-claimed workers and only then rejects. A blocked key remains unclaimed so it cannot consume a worker or evade a later stop; another free key may claim. Per-resource FIFO cursors expose only their head through a private binary minimum-ready heap, avoiding quadratic pending scans and exposing a same-key successor only after completion/rejection stop evaluation. Run-lock ownership metadata is derived internally rather than accepted from a public caller, and all timer-backed public inputs fail closed before Node can clamp them. The dataset execution-contract parallel suffix now uses this scheduler while its serial prefix and action-level durability remain unchanged.
 
 Review note, 2026-08-26: Issue #233 turns `src/batch.ts` into a stable 62-line facade without changing any public object. Eight modules under `src/lib/batch/` form an explicit DAG: `types` and `errors`; `canonical-contracts`; `run-lock` and `scheduler-runtime`; `item-projection` and `attempt-recovery`; then `engine`. The facade re-exports the owning runtime objects, so cross-import class identity and `instanceof` remain stable. `test/fixtures/public-batch-module-budgets.json` plus `test/public-batch-architecture.test.mjs` fix exact module inventory, semantic names, per-file shrink-only ceilings, allowed internal edges, forbidden upward imports, zero SCCs, declaration/runtime names, and byte-level characterization. Current ceilings are 62 lines for the facade and 445 lines for the largest internal module, below the 400/800 targets.
+
+Review note, 2026-08-26: Issue #236 changes only the exact package-manager compatibility pin to pnpm 11.24.0. The root workspace/lock architecture, Node 24.19.0 and TypeScript 7.0.2 single tracks, package version 0.1.1, dependency graph, public subpaths and object identities, command runtime, tag workflow, and native pnpm Trusted Publishing path remain unchanged; pnpm 11.24.0 requires no lockfile byte update for the existing graph.
 
 Review note, 2026-06-04: Foundry entity queue state now stays in the native CLI command family as `dataset curation-queue build/next/verify`; no secondary orchestration runtime was introduced.
 
