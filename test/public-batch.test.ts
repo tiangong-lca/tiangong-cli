@@ -2,12 +2,15 @@ import assert from 'node:assert/strict';
 import test from 'node:test';
 
 import {
+  MAX_BATCH_CONCURRENCY,
   BatchContractError,
+  BatchItemResumeContractError,
   BatchMutationReplayError,
   BatchMutationRetryError,
   assertBatchContractMatches,
   canonicalBatchJson,
   createBatchContract,
+  createBatchItemContract,
   parseBatchContract,
   runBoundedBatch,
   sha256BatchBytes,
@@ -20,6 +23,86 @@ const contract = createBatchContract({
   identity: { batch: 'fixture', revision: 1 },
   content: [{ id: 'a' }, { id: 'b' }, { id: 'c' }],
   policy: { max_parallel: 2, retry: 'read-only' },
+});
+
+test('per-item resume contracts isolate content or policy drift before claim', async () => {
+  const currentItems = [
+    { id: 'a', content: 'current-a', policy: 'policy-a' },
+    { id: 'b', content: 'current-b', policy: 'policy-b' },
+  ];
+  const resumed = await runBoundedBatch({
+    contract,
+    items: currentItems,
+    getItemIdentity: (item) => item.id,
+    projectItemContent: (item) => ({ content: item.content }),
+    projectItemPolicy: (item) => ({ policy: item.policy }),
+    mode: 'mutation',
+    maxConcurrency: 1,
+    resume: {
+      contract,
+      items: [
+        {
+          ...createBatchItemContract({
+            item_id: 'a',
+            content: { content: 'stale-a' },
+            policy: { policy: 'policy-a' },
+          }),
+          state: 'completed',
+          outcome: 'succeeded',
+          value: 'old-a',
+          attempts: 1,
+        },
+        {
+          ...createBatchItemContract({
+            item_id: 'b',
+            content: { content: 'current-b' },
+            policy: { policy: 'policy-b' },
+          }),
+          state: 'completed',
+          outcome: 'succeeded',
+          value: 'old-b',
+          attempts: 1,
+        },
+      ],
+    },
+    execute: () => {
+      throw new Error('completed resume items must never execute');
+    },
+  });
+
+  assert.deepEqual(resumed.claim_order, []);
+  assert.deepEqual(
+    resumed.results_input_order.map((item) => item.status),
+    ['failed', 'succeeded'],
+  );
+  assert.ok(failedError(resumed.results_input_order[0]) instanceof BatchItemResumeContractError);
+  assert.equal(resumed.results_input_order[1]?.resumed, true);
+  assert.deepEqual(resumed.results_input_order[1]?.item_contract, {
+    item_id: 'b',
+    content_sha256: sha256BatchJson({ content: 'current-b' }),
+    policy_sha256: sha256BatchJson({ policy: 'policy-b' }),
+  });
+});
+
+test('batch rejects concurrency above the public resource ceiling before projection or claim', async () => {
+  let projections = 0;
+  await assert.rejects(
+    runBoundedBatch({
+      contract,
+      items: ['a'],
+      getItemIdentity: (item) => item,
+      projectItemContent: (item) => {
+        projections += 1;
+        return item;
+      },
+      projectItemPolicy: () => null,
+      mode: 'read',
+      maxConcurrency: MAX_BATCH_CONCURRENCY + 1,
+      execute: ({ item }) => item,
+    }),
+    BatchContractError,
+  );
+  assert.equal(projections, 0);
 });
 
 test('batch contracts bind typed identity plus canonical content and policy digests', () => {
