@@ -156,6 +156,44 @@ test('same-process lock handoff keeps the physical lock through the queued sibli
   }
 });
 
+test('a detached nested helper retains the physical lock for its own active scope', async () => {
+  const root = mkdtempSync(path.join(os.tmpdir(), 'batch-run-lock-detached-nested-'));
+  const childFile = writeLockChildFile(root);
+  let releaseInner: (() => void) | undefined;
+  let innerEntered = false;
+  let detachedInner: Promise<void> | undefined;
+  let contender: ChildProcessWithoutNullStreams | undefined;
+  try {
+    await withBatchRunLock({ runPath: root, identity, reason: 'detached-outer' }, async () => {
+      detachedInner = withBatchRunLock(
+        { runPath: root, identity, reason: 'detached-inner' },
+        async () => {
+          innerEntered = true;
+          await new Promise<void>((resolve) => {
+            releaseInner = resolve;
+          });
+        },
+      );
+      await waitFor(() => innerEntered);
+    });
+
+    assert.equal(existsSync(batchRunLockPath(root)), true);
+    contender = spawnLockChild(childFile, root, identity);
+    const contenderAcquired = waitForOutput(contender, 'acquired\n');
+    await assertNoOutput(contender, 40);
+    releaseInner?.();
+    await detachedInner;
+    await contenderAcquired;
+    contender.stdin.end('release\n');
+    await waitForExit(contender);
+  } finally {
+    releaseInner?.();
+    await detachedInner?.catch(() => undefined);
+    contender?.kill();
+    rmSync(root, { recursive: true, force: true });
+  }
+});
+
 test('batch run lock preserves a live lock on timeout and recovers a stale lock', async () => {
   const root = mkdtempSync(path.join(os.tmpdir(), 'batch-run-lock-owner-'));
   const lockPath = batchRunLockPath(root);
