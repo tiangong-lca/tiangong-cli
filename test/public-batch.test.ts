@@ -4,6 +4,7 @@ import test from 'node:test';
 import {
   MAX_BATCH_CONCURRENCY,
   BatchContractError,
+  BatchItemProjectionDriftError,
   BatchItemResumeContractError,
   BatchMutationReplayError,
   BatchMutationRetryError,
@@ -201,6 +202,35 @@ test('batch rejects concurrency above the public resource ceiling before project
     BatchContractError,
   );
   assert.equal(projections, 0);
+});
+
+test('all item projections validate before any unsafe work starts', async () => {
+  let executeCalls = 0;
+  let eventCalls = 0;
+  await assert.rejects(
+    runBoundedBatch({
+      contract,
+      items: ['a', 'b'],
+      getItemIdentity: (item) => item,
+      projectItemContent: (item) => {
+        if (item === 'b') throw new Error('second projection failed');
+        return item;
+      },
+      projectItemPolicy: () => null,
+      mode: 'mutation',
+      maxConcurrency: 2,
+      eventSink: () => {
+        eventCalls += 1;
+      },
+      execute: ({ item }) => {
+        executeCalls += 1;
+        return item;
+      },
+    }),
+    /second projection failed/u,
+  );
+  assert.equal(executeCalls, 0);
+  assert.equal(eventCalls, 0, 'projection preflight must finish before batch_started');
 });
 
 test('batch contracts bind typed identity plus canonical content and policy digests', () => {
