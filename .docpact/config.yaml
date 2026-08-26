@@ -33,8 +33,9 @@ layout: repo
 # Review note, 2026-08-25: Issue #230 releases merged auth receipt PR #229 as 0.1.1 without changing runtime logic, published dependencies, command contract, or credentials. It pins local/CI/package-engine metadata to Node 24.19.0; adds dev-only `sigstore@5.0.0` and regenerates the sole pnpm lock for cryptographic DSSE/Fulcio/CT/Rekor proof; test-locks exact matrix platform/architecture; isolates user/global pnpm configuration; verifies registry signatures; scans all production dependency sections; and makes workspace integration continuation-owned. Existing package, lock, `.nvmrc`, `scripts/**`, `test/**`, workflow, and governed-doc triggers already own those paths, so routing and ownership do not change.
 # Review note, 2026-08-26: Issue #232 adds the supported `@tiangong-lca/cli/command-spec` and `@tiangong-lca/cli/batch` library surfaces. Public primitive sources have a dedicated routing intent/rule covering package exports and declaration config, canonical contracts, mutation no-replay, resource serialization, run-directory locking, packed consumers, and dataset save-draft dogfood. Version 0.1.1 remains unchanged; publication is separate tracked work.
 # Review note, 2026-08-26: Issue #232 re-review keeps the existing public-library ownership and routing graph unchanged while guarding throwing identity reprojection, draining in-flight workers, and replacing pending scans with per-resource FIFO cursors plus a private minimum-ready heap. The existing rule paths already cover runtime, scale proof, package consumers, dogfood, and synchronized source docs.
+# Review note, 2026-08-26: Issue #232 infrastructure-drain hardening keeps routing unchanged: escaping scheduler/event/stop callbacks now close claims immediately, drain already-claimed workers through settled aggregation, and reject with the first recorded error. Existing public-library runtime/test/doc triggers fully cover the change.
 lastReviewedAt: "2026-08-26"
-lastReviewedCommit: "d855b966e3894d490c1039ff0818bf2857293b5d"
+lastReviewedCommit: "d307a0fabe48da656dfc5b52f62a5b18e3cfc5ea"
 
 catalog:
   repos:
