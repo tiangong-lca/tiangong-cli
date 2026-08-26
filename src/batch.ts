@@ -623,6 +623,34 @@ export async function runBoundedBatch<
 
   await emitter.emit('batch_started');
 
+  const recordPreclaimResult = async (
+    result: BatchItemResult<TInput, TOutput>,
+    eventType:
+      | 'item_projection_drift'
+      | 'item_resource_drift'
+      | 'item_resume_rejected'
+      | 'item_resumed',
+  ): Promise<void> => {
+    resultsByIndex.set(result.input_index, result);
+    completionResults.push(result);
+    await emitter.emit(eventType, {
+      item_id: result.item_id,
+      input_index: result.input_index,
+      status: result.status,
+    });
+    if (
+      !stopped &&
+      (await shouldStopAfter(options, result, claimOrder, resultsByIndex, completionResults))
+    ) {
+      stopped = true;
+      await emitter.emit('batch_stopped', {
+        item_id: result.item_id,
+        input_index: result.input_index,
+        status: 'stopped',
+      });
+    }
+  };
+
   for (const [index, item] of options.items.entries()) {
     const resumeItem = resumeItems.get(itemIds[index]!);
     if (resumeItem?.state === 'completed') {
@@ -638,13 +666,7 @@ export async function runBoundedBatch<
           resumeItem,
           clock,
         );
-        resultsByIndex.set(index, result);
-        completionResults.push(result);
-        await emitter.emit('item_projection_drift', {
-          item_id: result.item_id,
-          input_index: result.input_index,
-          status: result.status,
-        });
+        await recordPreclaimResult(result, 'item_projection_drift');
         continue;
       }
       const currentExclusiveKey = projectExclusiveKey(options, item, index, currentItemContract);
@@ -657,13 +679,7 @@ export async function runBoundedBatch<
           resumeItem,
           clock,
         );
-        resultsByIndex.set(index, result);
-        completionResults.push(result);
-        await emitter.emit('item_resource_drift', {
-          item_id: result.item_id,
-          input_index: result.input_index,
-          status: result.status,
-        });
+        await recordPreclaimResult(result, 'item_resource_drift');
         continue;
       }
       if (!batchItemContractsMatch(itemContract, resumeItem)) {
@@ -675,13 +691,7 @@ export async function runBoundedBatch<
           resumeItem.attempts,
           clock,
         );
-        resultsByIndex.set(index, result);
-        completionResults.push(result);
-        await emitter.emit('item_resume_rejected', {
-          item_id: result.item_id,
-          input_index: result.input_index,
-          status: result.status,
-        });
+        await recordPreclaimResult(result, 'item_resume_rejected');
         continue;
       }
       const resumedResult = freezeResult({
@@ -697,25 +707,10 @@ export async function runBoundedBatch<
         status: resumeItem.outcome,
         value: resumeItem.value,
       });
-      resultsByIndex.set(index, resumedResult);
-      completionResults.push(resumedResult);
-      await emitter.emit('item_resumed', {
-        item_id: resumedResult.item_id,
-        input_index: resumedResult.input_index,
-        status: resumedResult.status,
-      });
+      await recordPreclaimResult(resumedResult, 'item_resumed');
     } else {
       pendingIndexes.push(index);
     }
-  }
-
-  const resumedLast = completionResults.at(-1);
-  if (
-    resumedLast &&
-    (await shouldStopAfter(options, resumedLast, claimOrder, resultsByIndex, completionResults))
-  ) {
-    stopped = true;
-    await emitter.emit('batch_stopped', { status: 'stopped' });
   }
 
   type Claim =
@@ -1200,7 +1195,7 @@ function projectExclusiveKey<
     input_index: index,
   });
   if (value === null || value === undefined) return null;
-  if (value.length === 0 || /[\0\r\n]/u.test(value)) {
+  if (typeof value !== 'string' || value.length === 0 || /[\0\r\n]/u.test(value)) {
     throw new BatchContractError(
       'Batch exclusive resource keys must be non-empty single-line strings.',
     );

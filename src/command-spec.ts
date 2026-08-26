@@ -441,39 +441,38 @@ export async function executeFoundryCommandSpec(
   const forwardAbort = () => controller.abort(options.signal?.reason);
   options.signal?.addEventListener('abort', forwardAbort, { once: true });
 
-  const spawnOptions: FoundryCommandSpecAsyncSpawnOptions = {
-    ...(options.cwd === undefined ? {} : { cwd: options.cwd }),
-    ...(options.env === undefined ? {} : { env: options.env }),
-    ...(options.maxBuffer === undefined ? {} : { maxBuffer: options.maxBuffer }),
-    encoding: 'utf8',
-    shell: false,
-    windowsHide: true,
-    signal: controller.signal,
-  };
-  const spawnImpl = options.spawnImpl ?? spawnCommandAsync;
-  const spawnPromise = spawnImpl(spec.executable, spec.argv, spawnOptions);
-  const abortPromise = new Promise<never>((_resolve, reject) => {
-    const rejectAbort = () => {
-      if (settled || controller.signal.reason === EXECUTION_COMPLETED) return;
-      const reason = controller.signal.reason;
-      reject(
-        reason instanceof FoundryCommandSpecTimeoutError
-          ? reason
-          : new FoundryCommandSpecAbortError(reason),
-      );
-    };
-    controller.signal.addEventListener('abort', rejectAbort, { once: true });
-  });
-  const timeoutPromise =
-    options.timeoutMs === undefined
-      ? new Promise<never>(() => undefined)
-      : sleep(options.timeoutMs, controller.signal).then(() => {
-          const error = new FoundryCommandSpecTimeoutError(options.timeoutMs!, startedAtMs);
-          controller.abort(error);
-          throw error;
-        });
-
   try {
+    const spawnOptions: FoundryCommandSpecAsyncSpawnOptions = {
+      ...(options.cwd === undefined ? {} : { cwd: options.cwd }),
+      ...(options.env === undefined ? {} : { env: options.env }),
+      ...(options.maxBuffer === undefined ? {} : { maxBuffer: options.maxBuffer }),
+      encoding: 'utf8',
+      shell: false,
+      windowsHide: true,
+      signal: controller.signal,
+    };
+    const spawnImpl = options.spawnImpl ?? spawnCommandAsync;
+    const spawnPromise = spawnImpl(spec.executable, spec.argv, spawnOptions);
+    const abortPromise = new Promise<never>((_resolve, reject) => {
+      const rejectAbort = () => {
+        if (settled || controller.signal.reason === EXECUTION_COMPLETED) return;
+        const reason = controller.signal.reason;
+        reject(
+          reason instanceof FoundryCommandSpecTimeoutError
+            ? reason
+            : new FoundryCommandSpecAbortError(reason),
+        );
+      };
+      controller.signal.addEventListener('abort', rejectAbort, { once: true });
+    });
+    const timeoutPromise =
+      options.timeoutMs === undefined
+        ? new Promise<never>(() => undefined)
+        : sleep(options.timeoutMs, controller.signal).then(() => {
+            const error = new FoundryCommandSpecTimeoutError(options.timeoutMs!, startedAtMs);
+            controller.abort(error);
+            throw error;
+          });
     const result = await Promise.race([spawnPromise, abortPromise, timeoutPromise]);
     settled = true;
     controller.abort(EXECUTION_COMPLETED);
