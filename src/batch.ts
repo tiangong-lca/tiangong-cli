@@ -622,7 +622,6 @@ export async function runBoundedBatch<
   const completionResults: BatchItemResult<TInput, TOutput>[] = [];
   const claimOrder: string[] = [];
   const pendingIndexes: number[] = [];
-  let pendingCursor = 0;
   let paused = false;
   let stopped = false;
 
@@ -730,45 +729,34 @@ export async function runBoundedBatch<
       pendingIndexes.push(index);
     }
   }
+  const unclaimedIndexes = new Set(pendingIndexes);
   const activeExclusiveKeys = new Set<string>();
 
-  type ClaimedWork = {
-    index: number;
-    itemContract: BatchItemContract;
-    exclusiveKey: TExclusiveKey | null;
-    resumeItem: BatchResumeItem<TOutput> | undefined;
-  };
   type Claim =
-    | ({ kind: 'claimed' } & ClaimedWork)
-    | { kind: 'queued' }
+    | {
+        kind: 'claimed';
+        index: number;
+        itemContract: BatchItemContract;
+        exclusiveKey: TExclusiveKey | null;
+        resumeItem: BatchResumeItem<TOutput> | undefined;
+      }
     | { kind: 'rejected'; result: BatchItemFailedResult<TInput> };
-  const waitingClaims: ClaimedWork[] = [];
 
   const claimNext = async (): Promise<Claim | null> =>
     schedulerLock(async () => {
-      const waitingIndex = waitingClaims.findIndex(
-        (claim) =>
-          claim.exclusiveKey !== null && !activeExclusiveKeys.has(claim.exclusiveKey),
-      );
-      if (waitingIndex >= 0) {
-        const work = waitingClaims.splice(waitingIndex, 1)[0]!;
-        const exclusiveKey = work.exclusiveKey!;
-        activeExclusiveKeys.add(exclusiveKey);
-        await emitter.emit('item_resource_acquired', {
-          item_id: work.itemContract.item_id,
-          input_index: work.index,
-          exclusive_key: exclusiveKey,
-        });
-        return { kind: 'claimed', ...work };
-      }
-      if (paused || stopped || pendingCursor >= pendingIndexes.length) return null;
-      const index = pendingIndexes[pendingCursor]!;
+      if (paused || stopped || unclaimedIndexes.size === 0) return null;
+      const index = pendingIndexes.find((candidateIndex) => {
+        if (!unclaimedIndexes.has(candidateIndex)) return false;
+        const exclusiveKey = preflightExclusiveKeys[candidateIndex]!;
+        return exclusiveKey === null || !activeExclusiveKeys.has(exclusiveKey);
+      });
+      if (index === undefined) return null;
       const item = options.items[index]!;
       const itemId = itemIds[index]!;
       const itemContract = preflightItemContracts[index]!;
       const exclusiveKey = preflightExclusiveKeys[index]!;
       if (!itemIdentityMatches(options, item, index, itemId)) {
-        pendingCursor += 1;
+        unclaimedIndexes.delete(index);
         const result = identityDriftFailure(
           item,
           itemContract,
@@ -787,7 +775,7 @@ export async function runBoundedBatch<
       const currentItemContract = projectBatchItemContract(options, item, index, itemId);
       const resumeItem = resumeItems.get(itemId);
       if (!batchItemContractsMatch(itemContract, currentItemContract)) {
-        pendingCursor += 1;
+        unclaimedIndexes.delete(index);
         const result = projectionDriftFailure(
           item,
           itemContract,
@@ -805,7 +793,7 @@ export async function runBoundedBatch<
       }
       const currentExclusiveKey = projectExclusiveKey(options, item, index, currentItemContract);
       if (exclusiveKey !== currentExclusiveKey) {
-        pendingCursor += 1;
+        unclaimedIndexes.delete(index);
         const result = resourceDriftFailure(
           item,
           itemContract,
@@ -822,7 +810,7 @@ export async function runBoundedBatch<
         return { kind: 'rejected', result };
       }
       if (resumeItem && !batchItemContractsMatch(itemContract, resumeItem)) {
-        pendingCursor += 1;
+        unclaimedIndexes.delete(index);
         const result = resumeContractFailure(
           item,
           itemContract,
@@ -858,27 +846,23 @@ export async function runBoundedBatch<
         });
         return null;
       }
-      pendingCursor += 1;
+      unclaimedIndexes.delete(index);
+      if (exclusiveKey !== null) activeExclusiveKeys.add(exclusiveKey);
       claimOrder.push(itemId);
       await emitter.emit('item_claimed', { item_id: itemId, input_index: index });
-      const work = { index, itemContract, exclusiveKey, resumeItem };
-      if (exclusiveKey === null) return { kind: 'claimed', ...work };
-      await emitter.emit('item_resource_queued', {
-        item_id: itemId,
-        input_index: index,
-        exclusive_key: exclusiveKey,
-      });
-      if (activeExclusiveKeys.has(exclusiveKey)) {
-        waitingClaims.push(work);
-        return { kind: 'queued' };
+      if (exclusiveKey !== null) {
+        await emitter.emit('item_resource_queued', {
+          item_id: itemId,
+          input_index: index,
+          exclusive_key: exclusiveKey,
+        });
+        await emitter.emit('item_resource_acquired', {
+          item_id: itemId,
+          input_index: index,
+          exclusive_key: exclusiveKey,
+        });
       }
-      activeExclusiveKeys.add(exclusiveKey);
-      await emitter.emit('item_resource_acquired', {
-        item_id: itemId,
-        input_index: index,
-        exclusive_key: exclusiveKey,
-      });
-      return { kind: 'claimed', ...work };
+      return { kind: 'claimed', index, itemContract, exclusiveKey, resumeItem };
     });
 
   const complete = async (
@@ -921,7 +905,6 @@ export async function runBoundedBatch<
     while (true) {
       const claim = await claimNext();
       if (!claim) return;
-      if (claim.kind === 'queued') continue;
       if (claim.kind === 'rejected') {
         await complete(claim.result, null);
         continue;
@@ -951,7 +934,9 @@ export async function runBoundedBatch<
   await emitter.emit('batch_completed', { status });
   await emitter.settled();
   const resultsInputOrder = inputOrderedResults(resultsByIndex);
-  const unclaimedItemIds = pendingIndexes.slice(pendingCursor).map((index) => itemIds[index]!);
+  const unclaimedItemIds = pendingIndexes
+    .filter((index) => unclaimedIndexes.has(index))
+    .map((index) => itemIds[index]!);
   return Object.freeze({
     contract,
     status,

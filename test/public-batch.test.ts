@@ -420,7 +420,7 @@ test('exclusive resource keys serialize matching items while preserving cross-ke
   releases.get('a-2')?.();
   const result = await running;
 
-  assert.deepEqual(result.claim_order, ['a-1', 'a-2', 'b-1']);
+  assert.deepEqual(result.claim_order, ['a-1', 'b-1', 'a-2']);
   assert.deepEqual(result.completion_order, ['b-1', 'a-1', 'a-2']);
   const eventSequence = (type: BatchEvent['type'], itemId: string) =>
     events.find((event) => event.type === type && event.item_id === itemId)?.sequence ?? 0;
@@ -479,7 +479,7 @@ test('resource-blocked items do not consume bounded worker capacity', async () =
     gates.get('a-2')!.release();
     const result = await running;
 
-    assert.deepEqual(result.claim_order, ['a-1', 'a-2', 'b-1']);
+    assert.deepEqual(result.claim_order, ['a-1', 'b-1', 'a-2']);
     const sequence = (type: BatchEvent['type'], itemId: string) =>
       events.find((event) => event.type === type && event.item_id === itemId)?.sequence ?? 0;
     assert.ok(
