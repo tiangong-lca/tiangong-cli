@@ -23,6 +23,41 @@ type BatchRunLockScope = {
 const ACTIVE_BATCH_RUN_LOCKS = new Map<string, ActiveBatchRunLock>();
 const BATCH_RUN_LOCK_CONTEXT = new AsyncLocalStorage<ReadonlyMap<string, BatchRunLockScope>>();
 
+class MinReadyIndexHeap {
+  private readonly values: number[] = [];
+
+  push(value: number): void {
+    this.values.push(value);
+    let child = this.values.length - 1;
+    while (child > 0) {
+      const parent = Math.floor((child - 1) / 2);
+      if (this.values[parent]! <= this.values[child]!) break;
+      [this.values[parent], this.values[child]] = [this.values[child]!, this.values[parent]!];
+      child = parent;
+    }
+  }
+
+  pop(): number | undefined {
+    if (this.values.length === 0) return undefined;
+    const minimum = this.values[0]!;
+    const last = this.values.pop()!;
+    if (this.values.length === 0) return minimum;
+    this.values[0] = last;
+    let parent = 0;
+    while (true) {
+      const left = parent * 2 + 1;
+      if (left >= this.values.length) break;
+      const right = left + 1;
+      const smallest =
+        right < this.values.length && this.values[right]! < this.values[left]! ? right : left;
+      if (this.values[parent]! <= this.values[smallest]!) break;
+      [this.values[parent], this.values[smallest]] = [this.values[smallest]!, this.values[parent]!];
+      parent = smallest;
+    }
+    return minimum;
+  }
+}
+
 export type BatchJsonPrimitive = boolean | null | number | string;
 export type BatchJsonValue = BatchJsonPrimitive | BatchJsonValue[] | BatchJsonObject;
 export type BatchJsonObject = { [key: string]: BatchJsonValue };
@@ -730,7 +765,20 @@ export async function runBoundedBatch<
     }
   }
   const unclaimedIndexes = new Set(pendingIndexes);
-  const activeExclusiveKeys = new Set<string>();
+  type PendingResourceKey = number | string;
+  type PendingResourceQueue = { indexes: number[]; cursor: number };
+  const resourceKeysByIndex = new Map<number, PendingResourceKey>();
+  const resourceQueues = new Map<PendingResourceKey, PendingResourceQueue>();
+  for (const index of pendingIndexes) {
+    const exclusiveKey = preflightExclusiveKeys[index]!;
+    const resourceKey: PendingResourceKey = exclusiveKey ?? index;
+    resourceKeysByIndex.set(index, resourceKey);
+    const queue = resourceQueues.get(resourceKey) ?? { indexes: [], cursor: 0 };
+    queue.indexes.push(index);
+    resourceQueues.set(resourceKey, queue);
+  }
+  const readyIndexes = new MinReadyIndexHeap();
+  for (const queue of resourceQueues.values()) readyIndexes.push(queue.indexes[0]!);
 
   type Claim =
     | {
@@ -738,19 +786,21 @@ export async function runBoundedBatch<
         index: number;
         itemContract: BatchItemContract;
         exclusiveKey: TExclusiveKey | null;
+        resourceKey: PendingResourceKey;
         resumeItem: BatchResumeItem<TOutput> | undefined;
       }
-    | { kind: 'rejected'; result: BatchItemFailedResult<TInput> };
+    | {
+        kind: 'rejected';
+        resourceKey: PendingResourceKey;
+        result: BatchItemFailedResult<TInput>;
+      };
 
   const claimNext = async (): Promise<Claim | null> =>
     schedulerLock(async () => {
       if (paused || stopped || unclaimedIndexes.size === 0) return null;
-      const index = pendingIndexes.find((candidateIndex) => {
-        if (!unclaimedIndexes.has(candidateIndex)) return false;
-        const exclusiveKey = preflightExclusiveKeys[candidateIndex]!;
-        return exclusiveKey === null || !activeExclusiveKeys.has(exclusiveKey);
-      });
+      const index = readyIndexes.pop();
       if (index === undefined) return null;
+      const resourceKey = resourceKeysByIndex.get(index)!;
       const item = options.items[index]!;
       const itemId = itemIds[index]!;
       const itemContract = preflightItemContracts[index]!;
@@ -770,7 +820,7 @@ export async function runBoundedBatch<
           input_index: result.input_index,
           status: result.status,
         });
-        return { kind: 'rejected', result };
+        return { kind: 'rejected', resourceKey, result };
       }
       const currentItemContract = projectBatchItemContract(options, item, index, itemId);
       const resumeItem = resumeItems.get(itemId);
@@ -789,7 +839,7 @@ export async function runBoundedBatch<
           input_index: result.input_index,
           status: result.status,
         });
-        return { kind: 'rejected', result };
+        return { kind: 'rejected', resourceKey, result };
       }
       const currentExclusiveKey = projectExclusiveKey(options, item, index, currentItemContract);
       if (exclusiveKey !== currentExclusiveKey) {
@@ -807,7 +857,7 @@ export async function runBoundedBatch<
           input_index: result.input_index,
           status: result.status,
         });
-        return { kind: 'rejected', result };
+        return { kind: 'rejected', resourceKey, result };
       }
       if (resumeItem && !batchItemContractsMatch(itemContract, resumeItem)) {
         unclaimedIndexes.delete(index);
@@ -824,7 +874,7 @@ export async function runBoundedBatch<
           input_index: result.input_index,
           status: result.status,
         });
-        return { kind: 'rejected', result };
+        return { kind: 'rejected', resourceKey, result };
       }
       if (
         options.shouldPauseBeforeClaim &&
@@ -844,10 +894,10 @@ export async function runBoundedBatch<
           input_index: index,
           status: 'paused',
         });
+        readyIndexes.push(index);
         return null;
       }
       unclaimedIndexes.delete(index);
-      if (exclusiveKey !== null) activeExclusiveKeys.add(exclusiveKey);
       claimOrder.push(itemId);
       await emitter.emit('item_claimed', { item_id: itemId, input_index: index });
       if (exclusiveKey !== null) {
@@ -862,24 +912,21 @@ export async function runBoundedBatch<
           exclusive_key: exclusiveKey,
         });
       }
-      return { kind: 'claimed', index, itemContract, exclusiveKey, resumeItem };
+      return { kind: 'claimed', index, itemContract, exclusiveKey, resourceKey, resumeItem };
     });
 
   const complete = async (
     result: BatchItemResult<TInput, TOutput>,
     exclusiveKey: string | null,
+    resourceKey: PendingResourceKey,
   ): Promise<void> =>
     schedulerLock(async () => {
       if (exclusiveKey !== null) {
-        try {
-          await emitter.emit('item_resource_released', {
-            item_id: result.item_id,
-            input_index: result.input_index,
-            exclusive_key: exclusiveKey,
-          });
-        } finally {
-          activeExclusiveKeys.delete(exclusiveKey);
-        }
+        await emitter.emit('item_resource_released', {
+          item_id: result.item_id,
+          input_index: result.input_index,
+          exclusive_key: exclusiveKey,
+        });
       }
       resultsByIndex.set(result.input_index, result);
       completionResults.push(result);
@@ -899,6 +946,10 @@ export async function runBoundedBatch<
           status: 'stopped',
         });
       }
+      const resourceQueue = resourceQueues.get(resourceKey)!;
+      resourceQueue.cursor += 1;
+      const nextIndex = resourceQueue.indexes[resourceQueue.cursor];
+      if (nextIndex !== undefined && !paused && !stopped) readyIndexes.push(nextIndex);
     });
 
   const worker = async () => {
@@ -906,7 +957,7 @@ export async function runBoundedBatch<
       const claim = await claimNext();
       if (!claim) return;
       if (claim.kind === 'rejected') {
-        await complete(claim.result, null);
+        await complete(claim.result, null, claim.resourceKey);
         continue;
       }
       const execute = () =>
@@ -921,7 +972,7 @@ export async function runBoundedBatch<
           emitter,
         });
       const result = await execute();
-      await complete(result, claim.exclusiveKey);
+      await complete(result, claim.exclusiveKey, claim.resourceKey);
     }
   };
 

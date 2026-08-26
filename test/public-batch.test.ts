@@ -560,7 +560,7 @@ test('resource scheduler uses near-linear ready operations at representative sca
 
   const originalFind = Array.prototype.find;
   let findPredicateCalls = 0;
-  Array.prototype.find = (function <T>(
+  Array.prototype.find = function <T>(
     this: T[],
     predicate: (value: T, index: number, obj: T[]) => unknown,
     thisArg?: unknown,
@@ -573,13 +573,15 @@ test('resource scheduler uses near-linear ready operations at representative sca
       },
       thisArg,
     ) as T | undefined;
-  }) as typeof Array.prototype.find;
+  } as typeof Array.prototype.find;
 
   const activeResources = new Set<string>();
   const executedByResource = new Map<string, string[]>();
   let active = 0;
   let maximumActive = 0;
-  let result: Awaited<ReturnType<typeof runBoundedBatch<(typeof items)[number], number, typeof contract.identity>>>;
+  let result: Awaited<
+    ReturnType<typeof runBoundedBatch<(typeof items)[number], number, typeof contract.identity>>
+  >;
   try {
     result = await runBoundedBatch({
       contract,
@@ -618,7 +620,10 @@ test('resource scheduler uses near-linear ready operations at representative sca
   );
   assert.equal(maximumActive <= 16, true);
   assert.equal(result.results_input_order.length, itemCount);
-  assert.equal(result.results_input_order.every((entry) => entry.status === 'succeeded'), true);
+  assert.equal(
+    result.results_input_order.every((entry) => entry.status === 'succeeded'),
+    true,
+  );
   assert.deepEqual(executedByResource, expectedByResource);
 
   const source = readFileSync(new URL('../src/batch.ts', import.meta.url), 'utf8');
@@ -1136,9 +1141,7 @@ test('claim-time identity getter failures become item drift and drain in-flight 
     assert.equal(outcome.result.results_input_order[1]?.attempts, 0);
     assert.equal(outcome.result.results_input_order[1]?.attempt_consumed, false);
     assert.deepEqual(
-      events
-        .filter((event) => event.type === 'item_identity_drift')
-        .map((event) => event.item_id),
+      events.filter((event) => event.type === 'item_identity_drift').map((event) => event.item_id),
       ['drift'],
     );
   } finally {
