@@ -39,7 +39,7 @@
     },
     {
       "path": "src/lib/batch/scheduler-runtime.ts",
-      "max_lines": 300,
+      "max_lines": 148,
       "allowed_internal_imports": ["src/lib/batch/errors.ts", "src/lib/batch/types.ts"]
     },
     {

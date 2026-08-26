@@ -658,10 +658,15 @@ test('resource scheduler uses near-linear ready operations at representative sca
   );
   assert.deepEqual(executedByResource, expectedByResource);
 
-  const source = readFileSync(new URL('../src/batch.ts', import.meta.url), 'utf8');
-  assert.doesNotMatch(source, /pendingIndexes\.find/u);
-  assert.match(source, /class MinReadyIndexHeap/u);
-  assert.match(source, /resourceQueues/u);
+  const facadeSource = readFileSync(new URL('../src/batch.ts', import.meta.url), 'utf8');
+  const schedulerSource = readFileSync(
+    new URL('../src/lib/batch/scheduler-runtime.ts', import.meta.url),
+    'utf8',
+  );
+  assert.doesNotMatch(facadeSource, /pendingIndexes\.find/u);
+  assert.doesNotMatch(schedulerSource, /pendingIndexes\.find/u);
+  assert.match(schedulerSource, /class MinReadyIndexHeap/u);
+  assert.match(facadeSource, /resourceQueues/u);
 });
 
 test('exclusive resource key projection validates before work and rejects claim-time drift', async () => {
