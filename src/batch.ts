@@ -685,10 +685,30 @@ function validateResume<TOutput, TIdentity extends BatchJsonValue>(
     if (result.has(itemContract.item_id)) {
       throw new BatchContractError('Batch resume item identities must be unique.');
     }
-    if (item.state === 'completed' && !['succeeded', 'recovered'].includes(String(item.outcome))) {
-      throw new BatchContractError('Completed batch resume items require a successful outcome.');
+    if (item.state === 'completed') {
+      if (!['succeeded', 'recovered'].includes(String(item.outcome))) {
+        throw new BatchContractError('Completed batch resume items require a successful outcome.');
+      }
+      result.set(
+        itemContract.item_id,
+        Object.freeze({
+          ...itemContract,
+          state: 'completed',
+          outcome: item.outcome,
+          value: item.value,
+          attempts: Number(item.attempts),
+        }),
+      );
+    } else {
+      result.set(
+        itemContract.item_id,
+        Object.freeze({
+          ...itemContract,
+          state: 'attempted',
+          attempts: Number(item.attempts),
+        }),
+      );
     }
-    result.set(itemContract.item_id, item);
   }
   return result;
 }

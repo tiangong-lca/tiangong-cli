@@ -29,11 +29,6 @@ const contract = createBatchContract({
   policy: { max_parallel: 2, retry: 'read-only' },
 });
 
-const stringItemProjections = {
-  projectItemContent: (item: string) => item,
-  projectItemPolicy: (_item: string) => null,
-};
-
 function stringItemContract(itemId: string) {
   return createBatchItemContract({ item_id: itemId, content: itemId, policy: null });
 }
@@ -152,6 +147,39 @@ test('per-item resume contracts isolate content or policy drift before claim', a
     ['failed', 'succeeded'],
   );
   assert.equal(recoveries, 0, 'a drifted attempt cannot enter recovery under a new item triple');
+
+  const mutableResume = {
+    ...createBatchItemContract({
+      item_id: 'a',
+      content: { content: 'stale-a' },
+      policy: { policy: 'policy-a' },
+    }),
+    state: 'completed' as const,
+    outcome: 'succeeded' as const,
+    value: 'old-a',
+    attempts: 1,
+  };
+  const snapshotProof = await runBoundedBatch({
+    contract,
+    items: [currentItems[0]!],
+    getItemIdentity: (item) => item.id,
+    projectItemContent: (item) => ({ content: item.content }),
+    projectItemPolicy: (item) => ({ policy: item.policy }),
+    mode: 'read',
+    maxConcurrency: 1,
+    resume: { contract, items: [mutableResume] },
+    eventSink: (event) => {
+      if (event.type === 'batch_started') {
+        mutableResume.content_sha256 = sha256BatchJson({ content: 'current-a' });
+      }
+    },
+    execute: () => {
+      throw new Error('post-validation resume mutation must not become eligible');
+    },
+  });
+  assert.ok(
+    failedError(snapshotProof.results_input_order[0]) instanceof BatchItemResumeContractError,
+  );
 });
 
 test('batch rejects concurrency above the public resource ceiling before projection or claim', async () => {
