@@ -968,6 +968,24 @@ test('identity is reprojected before resumed acceptance and every fresh claim', 
       .map((event) => event.item_id),
     ['resumed', 'fresh'],
   );
+
+  const invalidIdentityItem = { id: 'valid-at-preflight' };
+  const invalidIdentity = await runBoundedBatch({
+    contract,
+    items: [invalidIdentityItem],
+    getItemIdentity: (item) => item.id,
+    mode: 'read',
+    maxConcurrency: 1,
+    eventSink: (event) => {
+      if (event.type === 'batch_started') invalidIdentityItem.id = '';
+    },
+    execute: () => {
+      throw new Error('invalid claim-time identity must not execute');
+    },
+  });
+  assert.ok(
+    failedError(invalidIdentity.results_input_order[0]) instanceof BatchItemIdentityDriftError,
+  );
 });
 
 test('mutation transport is attempted once and only explicit readback may recover it', async () => {

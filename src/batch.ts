@@ -1265,9 +1265,8 @@ function itemIdentityMatches<
   const projected = options.getItemIdentity(item, index);
   try {
     return parseItemIdentity(projected, index) === expectedItemId;
-  } catch (error) {
-    if (error instanceof BatchContractError) return false;
-    throw error;
+  } catch {
+    return false;
   }
 }
 
