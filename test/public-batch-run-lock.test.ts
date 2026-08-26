@@ -144,7 +144,7 @@ test('batch run lock never stale-recovers a foreign-host owner', async () => {
   }
 });
 
-test('batch run lock excludes another process with the same run path and identity', async () => {
+test('batch run lock excludes another process for the run path across identities', async () => {
   const root = mkdtempSync(path.join(os.tmpdir(), 'batch-run-lock-process-'));
   const childFile = path.join(root, 'lock-child.mts');
   const batchModule = pathToFileURL(path.resolve('src/batch.ts')).href;
@@ -163,22 +163,27 @@ test('batch run lock excludes another process with the same run path and identit
     'utf8',
   );
 
-  const first = spawnLockChild(childFile, root, identity);
-  let second: ChildProcessWithoutNullStreams | undefined;
   try {
-    await waitForOutput(first, 'acquired\n');
-    second = spawnLockChild(childFile, root, { execution_id: 'different-process-identity' });
-    const secondAcquired = waitForOutput(second, 'acquired\n');
-    await assertNoOutput(second, 40);
-    first.stdin.end('release\n');
-    await waitForExit(first);
-    await secondAcquired;
-    second.stdin.end('release\n');
-    await waitForExit(second);
-    assert.equal(existsSync(batchRunLockPath(root)), false);
+    for (const contenderIdentity of [identity, { execution_id: 'different-process-identity' }]) {
+      const first = spawnLockChild(childFile, root, identity);
+      let second: ChildProcessWithoutNullStreams | undefined;
+      try {
+        await waitForOutput(first, 'acquired\n');
+        second = spawnLockChild(childFile, root, contenderIdentity);
+        const secondAcquired = waitForOutput(second, 'acquired\n');
+        await assertNoOutput(second, 40);
+        first.stdin.end('release\n');
+        await waitForExit(first);
+        await secondAcquired;
+        second.stdin.end('release\n');
+        await waitForExit(second);
+        assert.equal(existsSync(batchRunLockPath(root)), false);
+      } finally {
+        first.kill();
+        second?.kill();
+      }
+    }
   } finally {
-    first.kill();
-    second?.kill();
     rmSync(root, { recursive: true, force: true });
   }
 });
