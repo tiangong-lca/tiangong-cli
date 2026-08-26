@@ -27,13 +27,13 @@ checkPaths:
   - test/auth-identity*.test.ts
   - test/lca-release*.test.ts
 lastReviewedAt: 2026-08-26
-lastReviewedCommit: c8c7ae860b4e0a85443abb5de0d37ce8b7d65634
-lastReviewedNote: 'Reviewed for Issue #236: repository and public-release consumer guidance now pins exact pnpm 11.24.0 while Node 24.19.0, TypeScript 7.0.2, package 0.1.1, runtime, exports, dependencies, and release behavior stay fixed.'
+lastReviewedCommit: b9a99011fcc1d7388355e66649113ac5d4a7a9c8
+lastReviewedNote: 'Reviewed for Issue #237: identifies 0.1.2 as the release-only package identity for the bounded pnpm 11.24 public API while runtime, exports, dependencies, and release behavior stay fixed.'
 ---
 
 # TianGong LCA CLI
 
-Package: `@tiangong-lca/cli` Executable: `tiangong-lca` Current package version: `0.1.1` Node: `24.19.0`
+Package: `@tiangong-lca/cli` Executable: `tiangong-lca` Current package version: `0.1.2` Node: `24.19.0`
 
 Repository development is single-track on pnpm `11.24.0` and TypeScript `7.0.2`. The published package remains a clean, package-manager-neutral consumer artifact: it contains runtime files only, not pnpm, TypeScript, Oxlint, tests, source-only tooling, or repository lockfiles.
 
@@ -50,6 +50,8 @@ Review note, 2026-08-26: Issue #232 adds two supported typed library subpaths wi
 Review note, 2026-08-26: Issue #233 changes only the internal shape of the batch subpath. `src/batch.ts` is now a 62-line facade over bounded, acyclic modules for types, errors/contracts, locking, projection, scheduler runtime, attempts/recovery, and the engine. Executable budgets keep the facade below 400 lines and every internal module below 800 while locking exact public export identities, declarations, errors, event/result bytes, packed consumers, and dataset dogfood. Package version, dependencies, pnpm-only TypeScript 7 development, and runtime behavior are unchanged.
 
 Review note, 2026-08-26: Issue #236 changes only the repository and clean-consumer package-manager requirement from exact pnpm 11.23.0 to 11.24.0. The sole root lock requires no byte change under pnpm 11.24.0; Node 24.19.0, TypeScript 7.0.2, package version 0.1.1, public commands and exports, dependencies, tags, provenance, and publication remain unchanged, with no npm/Yarn fallback.
+
+Review note, 2026-08-26: Issue #237 releases the already reviewed bounded CommandSpec/batch runtime and pnpm 11.24 toolchain as `@tiangong-lca/cli@0.1.2`. The release changes only package metadata and four live CLI-version fixtures; runtime files, public subpaths and object identities, dependencies, the sole lock, Node 24.19.0, TypeScript 7.0.2, package-manager-neutral consumers, and automated provenance path remain unchanged.
 
 Review note, 2026-07-12: `dataset maintenance plan/apply/verify` provides current-user RLS-scoped exact-row maintenance with immutable plans, explicit approval, per-action logs, platform audit correlation, and independent readback. `merge-support-aliases` now runs only in `target_mode=owner_draft`: source/target support and all changed rows stay private `state_code=0`; publication is a separate future workflow.
 

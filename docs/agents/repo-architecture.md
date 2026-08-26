@@ -31,8 +31,8 @@ checkPaths:
   - scripts/docpact-gate.sh
   - scripts/install-git-hooks.sh
 lastReviewedAt: 2026-08-26
-lastReviewedCommit: c8c7ae860b4e0a85443abb5de0d37ce8b7d65634
-lastReviewedNote: 'Reviewed for Issue #236: the exact pnpm 11.24.0 toolchain update changes no dependency graph, runtime cluster, public export, package version, tag, publication path, or repository ownership boundary.'
+lastReviewedCommit: b9a99011fcc1d7388355e66649113ac5d4a7a9c8
+lastReviewedNote: 'Reviewed for Issue #237: the 0.1.2 release changes only package identity and four live fixtures, preserving the bounded runtime modules, public exports, dependency graph, lock, and publication architecture.'
 related:
   - ../../AGENTS.md
   - ../../.docpact/config.yaml
@@ -60,6 +60,8 @@ Review note, 2026-08-26: Issue #232 adds two provider-neutral public primitives 
 Review note, 2026-08-26: Issue #233 turns `src/batch.ts` into a stable 62-line facade without changing any public object. Eight modules under `src/lib/batch/` form an explicit DAG: `types` and `errors`; `canonical-contracts`; `run-lock` and `scheduler-runtime`; `item-projection` and `attempt-recovery`; then `engine`. The facade re-exports the owning runtime objects, so cross-import class identity and `instanceof` remain stable. `test/fixtures/public-batch-module-budgets.json` plus `test/public-batch-architecture.test.mjs` fix exact module inventory, semantic names, per-file shrink-only ceilings, allowed internal edges, forbidden upward imports, zero SCCs, declaration/runtime names, and byte-level characterization. Current ceilings are 62 lines for the facade and 445 lines for the largest internal module, below the 400/800 targets.
 
 Review note, 2026-08-26: Issue #236 changes only the exact package-manager compatibility pin to pnpm 11.24.0. The root workspace/lock architecture, Node 24.19.0 and TypeScript 7.0.2 single tracks, package version 0.1.1, dependency graph, public subpaths and object identities, command runtime, tag workflow, and native pnpm Trusted Publishing path remain unchanged; pnpm 11.24.0 requires no lockfile byte update for the existing graph.
+
+Review note, 2026-08-26: Issue #237 advances the package compatibility identity to 0.1.2 for the already merged bounded batch/CommandSpec implementation and pnpm 11.24 toolchain. Only `package.json` and the four live CLI-version fixtures change; the facade/internal DAG, runtime objects, generated declarations, package exports, dependencies, lock bytes, tag workflow, Trusted Publishing, provenance verification, and workspace integration architecture remain unchanged.
 
 Review note, 2026-06-04: Foundry entity queue state now stays in the native CLI command family as `dataset curation-queue build/next/verify`; no secondary orchestration runtime was introduced.
 
