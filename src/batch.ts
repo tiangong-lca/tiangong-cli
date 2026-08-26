@@ -6,17 +6,21 @@ import { StateLockTimeoutError, lockPathForState, withStateFileLock } from './li
 const SHA256_PATTERN = /^[a-f0-9]{64}$/u;
 export const MAX_BATCH_CONCURRENCY = 64 as const;
 const DEFAULT_BATCH_RUN_LOCK_TIMEOUT_MS = 300_000;
-const ACTIVE_BATCH_RUN_LOCKS = new Map<
-  string,
-  {
-    depth: number;
-    identitySha256: string;
-    receipt: BatchRunLockReceipt;
-    released: Promise<void>;
-    release: () => void;
-  }
->();
-const BATCH_RUN_LOCK_CONTEXT = new AsyncLocalStorage<ReadonlyMap<string, string>>();
+type ActiveBatchRunLock = {
+  scopeDepth: number;
+  identitySha256: string;
+  receipt: BatchRunLockReceipt;
+  drained: Promise<void>;
+  drain: () => void;
+  released: Promise<void>;
+  release: () => void;
+};
+type BatchRunLockScope = {
+  active: boolean;
+  owner: ActiveBatchRunLock;
+};
+const ACTIVE_BATCH_RUN_LOCKS = new Map<string, ActiveBatchRunLock>();
+const BATCH_RUN_LOCK_CONTEXT = new AsyncLocalStorage<ReadonlyMap<string, BatchRunLockScope>>();
 
 export type BatchJsonPrimitive = boolean | null | number | string;
 export type BatchJsonValue = BatchJsonPrimitive | BatchJsonValue[] | BatchJsonObject;
@@ -415,14 +419,15 @@ export async function withBatchRunLock<T, TIdentity extends BatchJsonValue>(
         requestedIdentitySha256: identitySha256,
       });
     }
-    const nestedIdentity = BATCH_RUN_LOCK_CONTEXT.getStore()?.get(statePath);
-    if (nestedIdentity !== identitySha256) {
-      await waitForActiveBatchRunLock(active, options, runPath, lockPath, identitySha256);
-      return withBatchRunLock(options, task);
+    const parentScope = BATCH_RUN_LOCK_CONTEXT.getStore()?.get(statePath);
+    if (parentScope?.active && parentScope.owner === active) {
+      return runBatchRunLockScope(statePath, active, task);
     }
+    await waitForActiveBatchRunLock(active, options, runPath, lockPath, identitySha256);
+    return withBatchRunLock(options, task);
   }
 
-  let physicalOwner: ReturnType<typeof createActiveBatchRunLock> | undefined;
+  let physicalOwner: ActiveBatchRunLock | undefined;
   try {
     const result = await withStateFileLock(
       statePath,
@@ -443,17 +448,13 @@ export async function withBatchRunLock<T, TIdentity extends BatchJsonValue>(
         ...(options.now === undefined ? {} : { now: options.now }),
       },
       async () => {
-        const current = ACTIVE_BATCH_RUN_LOCKS.get(statePath);
-        const owner = current ?? createActiveBatchRunLock(identitySha256, receipt);
-        if (!current) physicalOwner = owner;
-        owner.depth += 1;
+        const owner = createActiveBatchRunLock(identitySha256, receipt);
+        physicalOwner = owner;
         ACTIVE_BATCH_RUN_LOCKS.set(statePath, owner);
-        const context = new Map(BATCH_RUN_LOCK_CONTEXT.getStore() ?? []);
-        context.set(statePath, identitySha256);
         try {
-          return await BATCH_RUN_LOCK_CONTEXT.run(context, () => task(owner.receipt));
+          return await runBatchRunLockScope(statePath, owner, task);
         } finally {
-          owner.depth -= 1;
+          await owner.drained;
         }
       },
     );
@@ -956,18 +957,42 @@ function parseBatchRunLockToken(value: unknown, label: string): string {
 function createActiveBatchRunLock(
   identitySha256: string,
   receipt: BatchRunLockReceipt,
-): {
-  depth: number;
-  identitySha256: string;
-  receipt: BatchRunLockReceipt;
-  released: Promise<void>;
-  release: () => void;
-} {
+): ActiveBatchRunLock {
+  let drain: () => void = () => undefined;
+  const drained = new Promise<void>((resolve) => {
+    drain = resolve;
+  });
   let release: () => void = () => undefined;
   const released = new Promise<void>((resolve) => {
     release = resolve;
   });
-  return { depth: 0, identitySha256, receipt, released, release };
+  return {
+    scopeDepth: 0,
+    identitySha256,
+    receipt,
+    drained,
+    drain,
+    released,
+    release,
+  };
+}
+
+async function runBatchRunLockScope<T>(
+  statePath: string,
+  owner: ActiveBatchRunLock,
+  task: (receipt: BatchRunLockReceipt) => Promise<T> | T,
+): Promise<T> {
+  const scope: BatchRunLockScope = { active: true, owner };
+  owner.scopeDepth += 1;
+  const context = new Map(BATCH_RUN_LOCK_CONTEXT.getStore() ?? []);
+  context.set(statePath, scope);
+  try {
+    return await BATCH_RUN_LOCK_CONTEXT.run(context, () => task(owner.receipt));
+  } finally {
+    scope.active = false;
+    owner.scopeDepth -= 1;
+    if (owner.scopeDepth === 0) owner.drain();
+  }
 }
 
 async function waitForActiveBatchRunLock<TIdentity extends BatchJsonValue>(
