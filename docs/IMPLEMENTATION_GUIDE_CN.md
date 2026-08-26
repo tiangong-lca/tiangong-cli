@@ -21,8 +21,8 @@ checkPaths:
   - src/**
   - test/**
 lastReviewedAt: 2026-08-26
-lastReviewedCommit: fb8823a488909b6a309737684688867c6a0d064c
-lastReviewedNote: 'Reviewed for Issue #232: 记录 identity/content 绑定、resource-aware claim、内部锁 ownership、timer 上限与 dataset scheduler dogfood 边界。'
+lastReviewedCommit: d855b966e3894d490c1039ff0818bf2857293b5d
+lastReviewedNote: 'Reviewed for Issue #232: 记录 guarded identity、worker drain、per-resource FIFO/min-heap、锁 ownership、timer 与 dataset dogfood 边界。'
 related:
   - ../AGENTS.md
   - ../.docpact/config.yaml
@@ -39,7 +39,7 @@ Review note, 2026-08-25: Issue #228 把生产 case 前的认证边界收口为 `
 
 Review note, 2026-08-25: Issue #230 把本地、engines 和所有 Node workflow 的单轨版本从宽泛 Node 24 收敛为最新稳定 Node 24.19.0；这样 dev-only Sigstore 验证器、TS7/Oxlint、package test 与发布自动化共享同一个可复现的 minor 版本。
 
-Review note, 2026-08-26: Issue #232 在不新增依赖、不改 0.1.1 版本的前提下增加 `@tiangong-lca/cli/command-spec` 与 `@tiangong-lca/cli/batch`。前者保持 Foundry v1 exact-key/canonical SHA/artifact bytes 与 `shell:false` 执行兼容，并在注入 spawn 同步抛错时清理外部 abort listener；后者在任何工作前完成全部 item identity/content/policy/resource projection，并在 resumed acceptance 与 fresh claim 前重投影 identity/content/policy/resource。identity 变化稳定输出 `BatchItemIdentityDriftError` / `item_identity_drift` 且零执行。exclusive key 阻塞项保持 unclaimed、不占 worker，scheduler 扫描后续 free key，因此 claim order 反映真实资源调度，stop/pause 后的 `unclaimed_item_ids` 仍按输入顺序精确保留。mutation 自动重试仍被禁止。
+Review note, 2026-08-26: Issue #232 在不新增依赖、不改 0.1.1 版本的前提下增加 `@tiangong-lca/cli/command-spec` 与 `@tiangong-lca/cli/batch`。前者保持 Foundry v1 exact-key/canonical SHA/artifact bytes 与 `shell:false` 执行兼容，并在注入 spawn 同步抛错时清理外部 abort listener；后者在任何工作前完成全部 item identity/content/policy/resource projection，并在 resumed acceptance 与 fresh claim 前重投影 identity/content/policy/resource。identity 变化或 getter 抛错都稳定输出 `BatchItemIdentityDriftError` / `item_identity_drift` 且零执行，其他已启动 worker 必须 drain 后 batch 才返回。exclusive key 阻塞项保持 unclaimed、不占 worker，后续 free key 可先 claim，因此 claim order 反映真实资源调度，stop/pause 后的 `unclaimed_item_ids` 仍按输入顺序精确保留。每个资源使用 FIFO cursor，只把当前 head 放入私有 binary min-ready heap；完成或 pre-claim rejection 的 stop 判断结束后才暴露同 key 后继，使普通调度从反复全表扫描收敛到近 `O(n log k)`。mutation 自动重试仍被禁止。
 
 `withBatchRunLock` 以 canonical run directory 作为唯一跨进程锁域，只允许当前 holder 所属且仍存活的 scope 嵌套重入；顶层 Promise 等待 detached nested scope 全部排空，已完成 scope 遗留的 async context 不能重入后来的 owner；live/foreign-host 锁不回收，本地 waiter 只在物理锁清理后接棒。公共 options 不暴露 PID、host 或 ownership clock，metadata 只从 `process.pid`、`os.hostname()` 与当前系统时间内部派生，强制注入额外字段也不能伪造 foreign-host stale recovery。CommandSpec timeout、run-lock timeout/poll、read retry policy/backoff 全部限制在 Node `2_147_483_647ms` timer 上限内；公共 lock timing 还必须是非负 safe integer。
 

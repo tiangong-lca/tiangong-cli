@@ -26,7 +26,7 @@ checkPaths:
   - scripts/docpact-gate.sh
   - scripts/install-git-hooks.sh
 lastReviewedAt: 2026-08-26
-lastReviewedCommit: fb8823a488909b6a309737684688867c6a0d064c
+lastReviewedCommit: d855b966e3894d490c1039ff0818bf2857293b5d
 lastReviewedNote: 'Reviewed for Issue #232: feature delivery stays at 0.1.1; typed public primitives require a separate release-only PR and the existing matrix, provenance, registry, and integration gates.'
 related:
   - ../AGENTS.md
