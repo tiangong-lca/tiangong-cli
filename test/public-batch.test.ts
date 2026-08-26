@@ -509,9 +509,9 @@ test('event delivery is serialized and awaited before execution continues', asyn
   );
 });
 
-test('item content and policy projections are recomputed immediately before claim', async () => {
+test('claim-time projection drift fails the item before execution', async () => {
   const item = { id: 'a', content: 'before', policy: 'p1' };
-  let claimedContract: unknown;
+  let executeCalls = 0;
   const result = await runBoundedBatch({
     contract,
     items: [item],
@@ -526,17 +526,19 @@ test('item content and policy projections are recomputed immediately before clai
         item.policy = 'p2';
       }
     },
-    execute: ({ item_contract }) => {
-      claimedContract = item_contract;
+    execute: () => {
+      executeCalls += 1;
       return 'ok';
     },
   });
-  assert.deepEqual(claimedContract, {
+  assert.equal(executeCalls, 0);
+  assert.deepEqual(result.claim_order, []);
+  assert.ok(failedError(result.results_input_order[0]) instanceof BatchItemProjectionDriftError);
+  assert.deepEqual(result.results_input_order[0]?.item_contract, {
     item_id: 'a',
-    content_sha256: sha256BatchJson({ content: 'after' }),
-    policy_sha256: sha256BatchJson({ policy: 'p2' }),
+    content_sha256: sha256BatchJson({ content: 'before' }),
+    policy_sha256: sha256BatchJson({ policy: 'p1' }),
   });
-  assert.deepEqual(result.results_input_order[0]?.item_contract, claimedContract);
 });
 
 test('mutation transport is attempted once and only explicit readback may recover it', async () => {

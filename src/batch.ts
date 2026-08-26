@@ -45,6 +45,7 @@ export type BatchEventType =
   | 'batch_stopped'
   | 'item_claimed'
   | 'item_completed'
+  | 'item_projection_drift'
   | 'item_resume_rejected'
   | 'item_resumed'
   | 'recovery_failed'
@@ -245,6 +246,16 @@ export class BatchItemResumeContractError extends BatchContractError {
   }
 }
 
+export class BatchItemProjectionDriftError extends BatchContractError {
+  readonly itemId: string;
+
+  constructor(itemId: string) {
+    super(`Batch item ${itemId} content or policy projection drifted before claim.`);
+    this.name = 'BatchItemProjectionDriftError';
+    this.itemId = itemId;
+  }
+}
+
 export function canonicalBatchJson(value: BatchJsonValue): string {
   return JSON.stringify(canonicalizeBatchValue(value, new Set<object>()));
 }
@@ -373,6 +384,9 @@ export async function runBoundedBatch<TInput, TOutput, TIdentity extends BatchJs
     parseItemIdentity(options.getItemIdentity(item, index), index),
   );
   assertUniqueItemIds(itemIds);
+  const preflightItemContracts = options.items.map((item, index) =>
+    projectBatchItemContract(options, item, index, itemIds[index]!),
+  );
   const resumeItems = validateResume(options.resume, contract, itemIds);
   const clock = options.clock ?? { now: Date.now };
   const sleep = options.sleep ?? defaultBatchSleep;
@@ -391,7 +405,19 @@ export async function runBoundedBatch<TInput, TOutput, TIdentity extends BatchJs
   for (const [index, item] of options.items.entries()) {
     const resumeItem = resumeItems.get(itemIds[index]!);
     if (resumeItem?.state === 'completed') {
-      const itemContract = projectBatchItemContract(options, item, index, itemIds[index]!);
+      const itemContract = preflightItemContracts[index]!;
+      const currentItemContract = projectBatchItemContract(options, item, index, itemIds[index]!);
+      if (!batchItemContractsMatch(itemContract, currentItemContract)) {
+        const result = projectionDriftFailure(item, itemContract, index, resumeItem, clock);
+        resultsByIndex.set(index, result);
+        completionResults.push(result);
+        await emitter.emit('item_projection_drift', {
+          item_id: result.item_id,
+          input_index: result.input_index,
+          status: result.status,
+        });
+        continue;
+      }
       if (!batchItemContractsMatch(itemContract, resumeItem)) {
         const result = resumeContractFailure(item, itemContract, index, resumeItem.attempts, clock);
         resultsByIndex.set(index, result);
@@ -443,7 +469,7 @@ export async function runBoundedBatch<TInput, TOutput, TIdentity extends BatchJs
         itemContract: BatchItemContract;
         resumeItem: BatchResumeItem<TOutput> | undefined;
       }
-    | { kind: 'resume_rejected'; result: BatchItemFailedResult<TInput> };
+    | { kind: 'rejected'; result: BatchItemFailedResult<TInput> };
 
   const claimNext = async (): Promise<Claim | null> =>
     schedulerLock(async () => {
@@ -451,8 +477,19 @@ export async function runBoundedBatch<TInput, TOutput, TIdentity extends BatchJs
       const index = pendingIndexes[pendingCursor]!;
       const item = options.items[index]!;
       const itemId = itemIds[index]!;
-      const itemContract = projectBatchItemContract(options, item, index, itemId);
+      const itemContract = preflightItemContracts[index]!;
+      const currentItemContract = projectBatchItemContract(options, item, index, itemId);
       const resumeItem = resumeItems.get(itemId);
+      if (!batchItemContractsMatch(itemContract, currentItemContract)) {
+        pendingCursor += 1;
+        const result = projectionDriftFailure(item, itemContract, index, resumeItem, clock);
+        await emitter.emit('item_projection_drift', {
+          item_id: result.item_id,
+          input_index: result.input_index,
+          status: result.status,
+        });
+        return { kind: 'rejected', result };
+      }
       if (resumeItem && !batchItemContractsMatch(itemContract, resumeItem)) {
         pendingCursor += 1;
         const result = resumeContractFailure(item, itemContract, index, resumeItem.attempts, clock);
@@ -461,7 +498,7 @@ export async function runBoundedBatch<TInput, TOutput, TIdentity extends BatchJs
           input_index: result.input_index,
           status: result.status,
         });
-        return { kind: 'resume_rejected', result };
+        return { kind: 'rejected', result };
       }
       if (
         options.shouldPauseBeforeClaim &&
@@ -514,7 +551,7 @@ export async function runBoundedBatch<TInput, TOutput, TIdentity extends BatchJs
     while (true) {
       const claim = await claimNext();
       if (!claim) return;
-      if (claim.kind === 'resume_rejected') {
+      if (claim.kind === 'rejected') {
         await complete(claim.result);
         continue;
       }
@@ -732,6 +769,25 @@ function projectBatchItemContract<TInput, TOutput, TIdentity extends BatchJsonVa
     content: options.projectItemContent(item, index),
     policy: options.projectItemPolicy(item, index),
   });
+}
+
+function projectionDriftFailure<TInput, TOutput>(
+  item: TInput,
+  itemContract: BatchItemContract,
+  index: number,
+  resumeItem: BatchResumeItem<TOutput> | undefined,
+  clock: BatchClock,
+): BatchItemFailedResult<TInput> {
+  return failedResult(
+    item,
+    itemContract,
+    index,
+    resumeItem?.attempts ?? 0,
+    resumeItem !== undefined,
+    resumeItem !== undefined,
+    clock,
+    new BatchItemProjectionDriftError(itemContract.item_id),
+  );
 }
 
 function resumeContractFailure<TInput>(
