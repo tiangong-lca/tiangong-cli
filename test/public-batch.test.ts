@@ -478,10 +478,12 @@ test('resource-blocked items do not consume bounded worker capacity', async () =
     gates.get('a-2')!.release();
     const result = await running;
 
-    assert.deepEqual(result.claim_order, ['a-1', 'b-1', 'a-2']);
+    assert.deepEqual(result.claim_order, ['a-1', 'a-2', 'b-1']);
     const sequence = (type: BatchEvent['type'], itemId: string) =>
       events.find((event) => event.type === type && event.item_id === itemId)?.sequence ?? 0;
-    assert.ok(sequence('item_resource_released', 'a-1') < sequence('item_claimed', 'a-2'));
+    assert.ok(
+      sequence('item_resource_released', 'a-1') < sequence('item_resource_acquired', 'a-2'),
+    );
   } finally {
     for (const gate of gates.values()) gate.release();
     await running.catch(() => undefined);

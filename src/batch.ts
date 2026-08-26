@@ -614,7 +614,6 @@ export async function runBoundedBatch<
   const clock = options.clock ?? { now: Date.now };
   const sleep = options.sleep ?? defaultBatchSleep;
   const emitter = createEventEmitter(clock, options.eventSink);
-  const exclusiveCoordinator = createExclusiveCoordinator(emitter);
   const schedulerLock = createAsyncLock();
   const resultsByIndex = new Map<number, BatchItemResult<TInput, TOutput>>();
   const completionResults: BatchItemResult<TInput, TOutput>[] = [];
@@ -728,19 +727,37 @@ export async function runBoundedBatch<
       pendingIndexes.push(index);
     }
   }
+  const activeExclusiveKeys = new Set<string>();
 
+  type ClaimedWork = {
+    index: number;
+    itemContract: BatchItemContract;
+    exclusiveKey: TExclusiveKey | null;
+    resumeItem: BatchResumeItem<TOutput> | undefined;
+  };
   type Claim =
-    | {
-        kind: 'claimed';
-        index: number;
-        itemContract: BatchItemContract;
-        exclusiveKey: TExclusiveKey | null;
-        resumeItem: BatchResumeItem<TOutput> | undefined;
-      }
+    | ({ kind: 'claimed' } & ClaimedWork)
+    | { kind: 'queued' }
     | { kind: 'rejected'; result: BatchItemFailedResult<TInput> };
+  const waitingClaims: ClaimedWork[] = [];
 
   const claimNext = async (): Promise<Claim | null> =>
     schedulerLock(async () => {
+      const waitingIndex = waitingClaims.findIndex(
+        (claim) =>
+          claim.exclusiveKey !== null && !activeExclusiveKeys.has(claim.exclusiveKey),
+      );
+      if (waitingIndex >= 0) {
+        const work = waitingClaims.splice(waitingIndex, 1)[0]!;
+        const exclusiveKey = work.exclusiveKey!;
+        activeExclusiveKeys.add(exclusiveKey);
+        await emitter.emit('item_resource_acquired', {
+          item_id: work.itemContract.item_id,
+          input_index: work.index,
+          exclusive_key: exclusiveKey,
+        });
+        return { kind: 'claimed', ...work };
+      }
       if (paused || stopped || pendingCursor >= pendingIndexes.length) return null;
       const index = pendingIndexes[pendingCursor]!;
       const item = options.items[index]!;
@@ -841,11 +858,42 @@ export async function runBoundedBatch<
       pendingCursor += 1;
       claimOrder.push(itemId);
       await emitter.emit('item_claimed', { item_id: itemId, input_index: index });
-      return { kind: 'claimed', index, itemContract, exclusiveKey, resumeItem };
+      const work = { index, itemContract, exclusiveKey, resumeItem };
+      if (exclusiveKey === null) return { kind: 'claimed', ...work };
+      await emitter.emit('item_resource_queued', {
+        item_id: itemId,
+        input_index: index,
+        exclusive_key: exclusiveKey,
+      });
+      if (activeExclusiveKeys.has(exclusiveKey)) {
+        waitingClaims.push(work);
+        return { kind: 'queued' };
+      }
+      activeExclusiveKeys.add(exclusiveKey);
+      await emitter.emit('item_resource_acquired', {
+        item_id: itemId,
+        input_index: index,
+        exclusive_key: exclusiveKey,
+      });
+      return { kind: 'claimed', ...work };
     });
 
-  const complete = async (result: BatchItemResult<TInput, TOutput>): Promise<void> =>
+  const complete = async (
+    result: BatchItemResult<TInput, TOutput>,
+    exclusiveKey: string | null,
+  ): Promise<void> =>
     schedulerLock(async () => {
+      if (exclusiveKey !== null) {
+        try {
+          await emitter.emit('item_resource_released', {
+            item_id: result.item_id,
+            input_index: result.input_index,
+            exclusive_key: exclusiveKey,
+          });
+        } finally {
+          activeExclusiveKeys.delete(exclusiveKey);
+        }
+      }
       resultsByIndex.set(result.input_index, result);
       completionResults.push(result);
       await emitter.emit('item_completed', {
@@ -870,8 +918,9 @@ export async function runBoundedBatch<
     while (true) {
       const claim = await claimNext();
       if (!claim) return;
+      if (claim.kind === 'queued') continue;
       if (claim.kind === 'rejected') {
-        await complete(claim.result);
+        await complete(claim.result, null);
         continue;
       }
       const execute = () =>
@@ -885,16 +934,8 @@ export async function runBoundedBatch<
           sleep,
           emitter,
         });
-      const result =
-        claim.exclusiveKey === null
-          ? await execute()
-          : await exclusiveCoordinator.run(
-              claim.exclusiveKey,
-              claim.itemContract.item_id,
-              claim.index,
-              execute,
-            );
-      await complete(result);
+      const result = await execute();
+      await complete(result, claim.exclusiveKey);
     }
   };
 
@@ -1373,50 +1414,6 @@ function createEventEmitter(
       await delivery;
     },
     settled: () => tail,
-  };
-}
-
-function createExclusiveCoordinator(emitter: EventEmitter) {
-  const tails = new Map<string, Promise<void>>();
-  return {
-    run: async <T>(
-      exclusiveKey: string,
-      itemId: string,
-      inputIndex: number,
-      task: () => Promise<T>,
-    ): Promise<T> => {
-      await emitter.emit('item_resource_queued', {
-        item_id: itemId,
-        input_index: inputIndex,
-        exclusive_key: exclusiveKey,
-      });
-      const previous = tails.get(exclusiveKey) ?? Promise.resolve();
-      let release: () => void = () => undefined;
-      const turn = new Promise<void>((resolve) => {
-        release = resolve;
-      });
-      tails.set(exclusiveKey, turn);
-      await previous;
-      try {
-        await emitter.emit('item_resource_acquired', {
-          item_id: itemId,
-          input_index: inputIndex,
-          exclusive_key: exclusiveKey,
-        });
-        return await task();
-      } finally {
-        try {
-          await emitter.emit('item_resource_released', {
-            item_id: itemId,
-            input_index: inputIndex,
-            exclusive_key: exclusiveKey,
-          });
-        } finally {
-          release();
-          if (tails.get(exclusiveKey) === turn) tails.delete(exclusiveKey);
-        }
-      }
-    },
   };
 }
 
