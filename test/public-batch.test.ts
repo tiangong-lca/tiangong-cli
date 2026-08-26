@@ -946,7 +946,13 @@ test('identity is reprojected before resumed acceptance and every fresh claim', 
   });
 
   assert.equal(executeCalls, 0);
-  assert.deepEqual(identityCalls, new Map([['0', 2], ['1', 2]]));
+  assert.deepEqual(
+    identityCalls,
+    new Map([
+      ['0', 2],
+      ['1', 2],
+    ]),
+  );
   assert.deepEqual(result.claim_order, []);
   assert.deepEqual(
     result.results_input_order.map((entry) => entry.status),

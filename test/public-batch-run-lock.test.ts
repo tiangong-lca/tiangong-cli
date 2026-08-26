@@ -490,7 +490,10 @@ test('batch run lock ignores spoofed ownership metadata and preserves a foreign-
       now: new Date('2000-01-01T00:00:00.000Z'),
     } as unknown as BatchRunLockOptions<typeof identity>;
 
-    await assert.rejects(withBatchRunLock(spoofedOptions, () => 'never'), BatchRunLockTimeoutError);
+    await assert.rejects(
+      withBatchRunLock(spoofedOptions, () => 'never'),
+      BatchRunLockTimeoutError,
+    );
     assert.equal(existsSync(lockPath), true, 'caller input must not spoof stale ownership');
     assert.deepEqual(JSON.parse(readFileSync(lockPath, 'utf8')), {
       ownerPid: 999_999_999,
