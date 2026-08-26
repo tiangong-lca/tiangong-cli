@@ -2,7 +2,7 @@
   "schema": "tiangong-cli.public-batch-module-budgets.v1",
   "facade": {
     "path": "src/batch.ts",
-    "max_lines": 400,
+    "max_lines": 62,
     "allowed_internal_imports": [
       "src/lib/batch/canonical-contracts.ts",
       "src/lib/batch/engine.ts",
@@ -54,7 +54,7 @@
     },
     {
       "path": "src/lib/batch/attempt-recovery.ts",
-      "max_lines": 500,
+      "max_lines": 329,
       "allowed_internal_imports": [
         "src/lib/batch/canonical-contracts.ts",
         "src/lib/batch/errors.ts",
@@ -64,7 +64,7 @@
     },
     {
       "path": "src/lib/batch/engine.ts",
-      "max_lines": 800,
+      "max_lines": 445,
       "allowed_internal_imports": [
         "src/lib/batch/attempt-recovery.ts",
         "src/lib/batch/canonical-contracts.ts",
