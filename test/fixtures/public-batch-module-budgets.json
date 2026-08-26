@@ -30,7 +30,7 @@
     },
     {
       "path": "src/lib/batch/run-lock.ts",
-      "max_lines": 400,
+      "max_lines": 206,
       "allowed_internal_imports": [
         "src/lib/batch/canonical-contracts.ts",
         "src/lib/batch/errors.ts",
