@@ -208,6 +208,10 @@ test('batch contracts bind typed identity plus canonical content and policy dige
     () => parseBatchItemContract({ ...itemContract, policy_sha256: 'bad' }),
     BatchContractError,
   );
+  assert.throws(
+    () => createBatchItemContract({ item_id: '', content: null, policy: null }),
+    BatchContractError,
+  );
 
   const nullPrototype = Object.assign(Object.create(null) as Record<string, string>, { id: 'x' });
   assert.equal(canonicalBatchJson(nullPrototype), '{"id":"x"}');
@@ -705,6 +709,24 @@ test('batch validates concurrency, retry policy, identities, resume entries, and
       resume: {
         contract,
         items: [{ ...stringItemContract('missing'), state: 'attempted', attempts: 1 }],
+      },
+    }),
+    BatchContractError,
+  );
+  await assert.rejects(
+    runBoundedBatch({
+      ...base,
+      maxConcurrency: 1,
+      resume: {
+        contract,
+        items: [
+          {
+            ...stringItemContract('a'),
+            content_sha256: 'bad',
+            state: 'attempted',
+            attempts: 1,
+          } as never,
+        ],
       },
     }),
     BatchContractError,
