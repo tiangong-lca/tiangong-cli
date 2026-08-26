@@ -1,7 +1,22 @@
+import { AsyncLocalStorage } from 'node:async_hooks';
 import { createHash } from 'node:crypto';
+import path from 'node:path';
+import { StateLockTimeoutError, lockPathForState, withStateFileLock } from './lib/state-lock.js';
 
 const SHA256_PATTERN = /^[a-f0-9]{64}$/u;
 export const MAX_BATCH_CONCURRENCY = 64 as const;
+const DEFAULT_BATCH_RUN_LOCK_TIMEOUT_MS = 300_000;
+const ACTIVE_BATCH_RUN_LOCKS = new Map<
+  string,
+  {
+    depth: number;
+    identitySha256: string;
+    receipt: BatchRunLockReceipt;
+    released: Promise<void>;
+    release: () => void;
+  }
+>();
+const BATCH_RUN_LOCK_CONTEXT = new AsyncLocalStorage<ReadonlyMap<string, string>>();
 
 export type BatchJsonPrimitive = boolean | null | number | string;
 export type BatchJsonValue = BatchJsonPrimitive | BatchJsonValue[] | BatchJsonObject;
@@ -200,6 +215,25 @@ export type BatchStopContext<TInput, TOutput> = Readonly<{
 export type BatchClock = Readonly<{ now: () => number }>;
 export type BatchSleep = (milliseconds: number) => Promise<void>;
 
+export type BatchRunLockOptions<TIdentity extends BatchJsonValue> = Readonly<{
+  runPath: string;
+  identity: TIdentity;
+  reason: string;
+  timeoutMs?: number;
+  pollMs?: number;
+  sleep?: BatchSleep;
+  pid?: number;
+  host?: string;
+  now?: Date;
+}>;
+
+export type BatchRunLockReceipt = Readonly<{
+  run_path: string;
+  state_path: string;
+  lock_path: string;
+  identity_sha256: string;
+}>;
+
 export type BatchExclusiveKeyContext<TInput> = Readonly<{
   item: TInput;
   item_id: string;
@@ -291,6 +325,52 @@ export class BatchItemResourceDriftError extends BatchContractError {
   }
 }
 
+export class BatchRunLockTimeoutError extends Error {
+  readonly code = 'BATCH_RUN_LOCK_TIMEOUT' as const;
+  readonly runPath: string;
+  readonly lockPath: string;
+  readonly identitySha256: string;
+  readonly waitedMs: number;
+  readonly owner: Readonly<Record<string, unknown>> | null;
+
+  constructor(options: {
+    runPath: string;
+    lockPath: string;
+    identitySha256: string;
+    waitedMs: number;
+    owner: Readonly<Record<string, unknown>> | null;
+  }) {
+    super(`Timed out after ${options.waitedMs}ms acquiring batch run lock: ${options.lockPath}`);
+    this.name = 'BatchRunLockTimeoutError';
+    this.runPath = options.runPath;
+    this.lockPath = options.lockPath;
+    this.identitySha256 = options.identitySha256;
+    this.waitedMs = options.waitedMs;
+    this.owner = options.owner;
+  }
+}
+
+export class BatchRunLockIdentityConflictError extends Error {
+  readonly code = 'BATCH_RUN_LOCK_IDENTITY_CONFLICT' as const;
+  readonly runPath: string;
+  readonly activeIdentitySha256: string;
+  readonly requestedIdentitySha256: string;
+
+  constructor(options: {
+    runPath: string;
+    activeIdentitySha256: string;
+    requestedIdentitySha256: string;
+  }) {
+    super(
+      `Batch run path is already locked by another identity in this process: ${options.runPath}`,
+    );
+    this.name = 'BatchRunLockIdentityConflictError';
+    this.runPath = options.runPath;
+    this.activeIdentitySha256 = options.activeIdentitySha256;
+    this.requestedIdentitySha256 = options.requestedIdentitySha256;
+  }
+}
+
 export function canonicalBatchJson(value: BatchJsonValue): string {
   return JSON.stringify(canonicalizeBatchValue(value, new Set<object>()));
 }
@@ -301,6 +381,102 @@ export function sha256BatchBytes(value: string | Uint8Array): string {
 
 export function sha256BatchJson(value: BatchJsonValue): string {
   return sha256BatchBytes(canonicalBatchJson(value));
+}
+
+export function batchRunLockStatePath(runPath: string): string {
+  return path.join(parseBatchRunPath(runPath), '.tiangong-lca-batch-run.state');
+}
+
+export function batchRunLockPath(runPath: string): string {
+  return lockPathForState(batchRunLockStatePath(runPath));
+}
+
+export async function withBatchRunLock<T, TIdentity extends BatchJsonValue>(
+  options: BatchRunLockOptions<TIdentity>,
+  task: (receipt: BatchRunLockReceipt) => Promise<T> | T,
+): Promise<T> {
+  const runPath = parseBatchRunPath(options.runPath);
+  const reason = parseBatchRunLockToken(options.reason, 'reason');
+  const identitySha256 = sha256BatchJson(options.identity);
+  const statePath = batchRunLockStatePath(runPath);
+  const lockPath = lockPathForState(statePath);
+  const receipt = Object.freeze({
+    run_path: runPath,
+    state_path: statePath,
+    lock_path: lockPath,
+    identity_sha256: identitySha256,
+  });
+  const active = ACTIVE_BATCH_RUN_LOCKS.get(statePath);
+  if (active) {
+    if (active.identitySha256 !== identitySha256) {
+      throw new BatchRunLockIdentityConflictError({
+        runPath,
+        activeIdentitySha256: active.identitySha256,
+        requestedIdentitySha256: identitySha256,
+      });
+    }
+    const nestedIdentity = BATCH_RUN_LOCK_CONTEXT.getStore()?.get(statePath);
+    if (nestedIdentity !== identitySha256) {
+      await waitForActiveBatchRunLock(active, options, runPath, lockPath, identitySha256);
+      return withBatchRunLock(options, task);
+    }
+  }
+
+  try {
+    return await withStateFileLock(
+      statePath,
+      {
+        reason: `batch-run:${identitySha256}:${reason}`,
+        metadata: {
+          batch_identity_sha256: identitySha256,
+          batch_run_path: runPath,
+        },
+        stalePolicy: 'same-host-pid',
+        ...(options.timeoutMs === undefined ? {} : { timeoutMs: options.timeoutMs }),
+        ...(options.pollMs === undefined ? {} : { pollMs: options.pollMs }),
+        ...(options.sleep === undefined ? {} : { sleep: options.sleep }),
+        ...(options.pid === undefined ? {} : { pid: options.pid }),
+        ...(options.host === undefined
+          ? {}
+          : { host: parseBatchRunLockToken(options.host, 'host') }),
+        ...(options.now === undefined ? {} : { now: options.now }),
+      },
+      async () => {
+        const current = ACTIVE_BATCH_RUN_LOCKS.get(statePath);
+        if (current && current.identitySha256 !== identitySha256) {
+          throw new BatchRunLockIdentityConflictError({
+            runPath,
+            activeIdentitySha256: current.identitySha256,
+            requestedIdentitySha256: identitySha256,
+          });
+        }
+        const owner = current ?? createActiveBatchRunLock(identitySha256, receipt);
+        owner.depth += 1;
+        ACTIVE_BATCH_RUN_LOCKS.set(statePath, owner);
+        const context = new Map(BATCH_RUN_LOCK_CONTEXT.getStore() ?? []);
+        context.set(statePath, identitySha256);
+        try {
+          return await BATCH_RUN_LOCK_CONTEXT.run(context, () => task(owner.receipt));
+        } finally {
+          owner.depth -= 1;
+          if (owner.depth === 0) {
+            ACTIVE_BATCH_RUN_LOCKS.delete(statePath);
+            owner.release();
+          }
+        }
+      },
+    );
+  } catch (error) {
+    if (!(error instanceof StateLockTimeoutError)) throw error;
+    const details = isRecord(error.details) ? error.details : {};
+    throw new BatchRunLockTimeoutError({
+      runPath,
+      lockPath,
+      identitySha256,
+      waitedMs: typeof details.waitedMs === 'number' ? details.waitedMs : 0,
+      owner: isRecord(details.owner) ? Object.freeze({ ...details.owner }) : null,
+    });
+  }
 }
 
 export function createBatchContract<TIdentity extends BatchJsonValue>(
@@ -761,6 +937,82 @@ function freezeBatchJson<T extends BatchJsonValue>(value: T): T {
 
 function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === 'object' && value !== null && !Array.isArray(value);
+}
+
+function parseBatchRunPath(value: unknown): string {
+  if (typeof value !== 'string' || value.length === 0 || /[\0\r\n]/u.test(value)) {
+    throw new BatchContractError('Batch runPath must be a non-empty single-line path.');
+  }
+  return path.resolve(value);
+}
+
+function parseBatchRunLockToken(value: unknown, label: string): string {
+  if (typeof value !== 'string' || value.length === 0 || /[\0\r\n]/u.test(value)) {
+    throw new BatchContractError(`Batch run-lock ${label} must be a non-empty single-line string.`);
+  }
+  return value;
+}
+
+function createActiveBatchRunLock(
+  identitySha256: string,
+  receipt: BatchRunLockReceipt,
+): {
+  depth: number;
+  identitySha256: string;
+  receipt: BatchRunLockReceipt;
+  released: Promise<void>;
+  release: () => void;
+} {
+  let release: () => void = () => undefined;
+  const released = new Promise<void>((resolve) => {
+    release = resolve;
+  });
+  return { depth: 0, identitySha256, receipt, released, release };
+}
+
+async function waitForActiveBatchRunLock<TIdentity extends BatchJsonValue>(
+  active: {
+    released: Promise<void>;
+  },
+  options: BatchRunLockOptions<TIdentity>,
+  runPath: string,
+  lockPath: string,
+  identitySha256: string,
+): Promise<void> {
+  const timeoutMs = Math.max(options.timeoutMs ?? DEFAULT_BATCH_RUN_LOCK_TIMEOUT_MS, 0);
+  if (timeoutMs === 0) {
+    throw new BatchRunLockTimeoutError({
+      runPath,
+      lockPath,
+      identitySha256,
+      waitedMs: 0,
+      owner: null,
+    });
+  }
+  const startedAt = Date.now();
+  let timer: ReturnType<typeof setTimeout> | undefined;
+  try {
+    await Promise.race([
+      active.released,
+      new Promise<never>((_resolve, reject) => {
+        timer = setTimeout(
+          () =>
+            reject(
+              new BatchRunLockTimeoutError({
+                runPath,
+                lockPath,
+                identitySha256,
+                waitedMs: Date.now() - startedAt,
+                owner: null,
+              }),
+            ),
+          timeoutMs,
+        );
+      }),
+    ]);
+  } finally {
+    if (timer) clearTimeout(timer);
+  }
 }
 
 function hasExactKeys(value: Record<string, unknown>, expectedKeys: readonly string[]): boolean {

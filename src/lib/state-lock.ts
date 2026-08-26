@@ -20,6 +20,8 @@ export type StateLockMetadata = {
 
 export type StateLockOptions = {
   reason: string;
+  metadata?: Record<string, string | number | boolean | null>;
+  stalePolicy?: 'local-pid' | 'same-host-pid' | 'never';
   timeoutMs?: number;
   pollMs?: number;
   sleep?: (ms: number) => Promise<void>;
@@ -151,6 +153,7 @@ export async function withStateFileLock<T>(
     try {
       const fileDescriptor = openSync(lockPath, 'wx');
       const metadata: StateLockMetadata = {
+        ...options.metadata,
         ownerPid: options.pid ?? process.pid,
         ownerHost: options.host ?? os.hostname(),
         reason: options.reason,
@@ -182,7 +185,15 @@ export async function withStateFileLock<T>(
 
       const metadata = readStateLockMetadata(lockPath);
       const ownerPid = metadata?.ownerPid;
-      if (typeof ownerPid === 'number' && !isProcessAlive(ownerPid)) {
+      const stalePolicy = options.stalePolicy ?? 'local-pid';
+      const ownerHost = metadata?.ownerHost;
+      const currentHost = options.host ?? os.hostname();
+      const staleOwner =
+        stalePolicy !== 'never' &&
+        typeof ownerPid === 'number' &&
+        !isProcessAlive(ownerPid) &&
+        (stalePolicy === 'local-pid' || ownerHost === currentHost);
+      if (staleOwner) {
         try {
           unlinkSync(lockPath);
           continue;
