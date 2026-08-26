@@ -18,6 +18,7 @@ const BOOLEAN_FLAGS = new Set(['--commit', '--compare-root-payload', '--json']);
 const UNIQUE_FLAGS = new Set([...VALUE_FLAGS, ...BOOLEAN_FLAGS]);
 const INPUT_FLAG_ALIASES = new Set(['--input', '--input-file']);
 const DEFAULT_MAX_BUFFER = 1024 * 1024;
+const MAX_NODE_TIMER_DELAY_MS = 2_147_483_647;
 const EXECUTION_COMPLETED = Symbol('command-spec-execution-completed');
 
 type JsonRecord = Record<string, unknown>;
@@ -486,9 +487,13 @@ export async function executeFoundryCommandSpec(
 function validateAsyncExecutionOptions(options: ExecuteFoundryCommandSpecOptions): void {
   if (
     options.timeoutMs !== undefined &&
-    (!Number.isSafeInteger(options.timeoutMs) || options.timeoutMs <= 0)
+    (!Number.isSafeInteger(options.timeoutMs) ||
+      options.timeoutMs <= 0 ||
+      options.timeoutMs > MAX_NODE_TIMER_DELAY_MS)
   ) {
-    throw new Error('CommandSpec timeoutMs must be a positive safe integer.');
+    throw new Error(
+      `CommandSpec timeoutMs must be a positive safe integer no greater than the maximum supported timer delay (${MAX_NODE_TIMER_DELAY_MS} ms).`,
+    );
   }
   if (
     options.maxBuffer !== undefined &&

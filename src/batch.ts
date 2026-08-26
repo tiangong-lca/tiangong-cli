@@ -6,6 +6,7 @@ import { StateLockTimeoutError, lockPathForState, withStateFileLock } from './li
 const SHA256_PATTERN = /^[a-f0-9]{64}$/u;
 export const MAX_BATCH_CONCURRENCY = 64 as const;
 const DEFAULT_BATCH_RUN_LOCK_TIMEOUT_MS = 300_000;
+const MAX_NODE_TIMER_DELAY_MS = 2_147_483_647;
 type ActiveBatchRunLock = {
   scopeDepth: number;
   identitySha256: string;
@@ -409,6 +410,8 @@ export async function withBatchRunLock<T, TIdentity extends BatchJsonValue>(
 ): Promise<T> {
   const runPath = parseBatchRunPath(options.runPath);
   const reason = parseBatchRunLockToken(options.reason, 'reason');
+  assertBatchTimerDelaySupported(options.timeoutMs, 'timeoutMs');
+  assertBatchTimerDelaySupported(options.pollMs, 'pollMs');
   const identitySha256 = sha256BatchJson(options.identity);
   const statePath = batchRunLockStatePath(runPath);
   const lockPath = lockPathForState(statePath);
@@ -1023,6 +1026,14 @@ function parseBatchRunLockToken(value: unknown, label: string): string {
   return value;
 }
 
+function assertBatchTimerDelaySupported(value: number | undefined, label: string): void {
+  if (value !== undefined && value > MAX_NODE_TIMER_DELAY_MS) {
+    throw new BatchContractError(
+      `Batch ${label} exceeds the maximum supported timer delay (${MAX_NODE_TIMER_DELAY_MS} ms).`,
+    );
+  }
+}
+
 function createActiveBatchRunLock(
   identitySha256: string,
   receipt: BatchRunLockReceipt,
@@ -1141,10 +1152,11 @@ function validateBatchOptions<
     (!Number.isSafeInteger(options.retry.maxAttempts) ||
       options.retry.maxAttempts < 1 ||
       !Number.isSafeInteger(options.retry.maxDelayMs) ||
-      options.retry.maxDelayMs < 0)
+      options.retry.maxDelayMs < 0 ||
+      options.retry.maxDelayMs > MAX_NODE_TIMER_DELAY_MS)
   ) {
     throw new BatchContractError(
-      'Batch retry maxAttempts must be positive and maxDelayMs must be a non-negative safe integer.',
+      `Batch retry maxAttempts must be positive and maxDelayMs must be a non-negative safe integer no greater than the maximum supported timer delay (${MAX_NODE_TIMER_DELAY_MS} ms).`,
     );
   }
 }
@@ -1624,8 +1636,14 @@ async function executeClaim<
       let requestedDelay: number;
       try {
         requestedDelay = await options.retry.delayMs(retryContext);
-        if (!Number.isSafeInteger(requestedDelay) || requestedDelay < 0) {
-          throw new BatchContractError('Batch retry delay must be a non-negative safe integer.');
+        if (
+          !Number.isSafeInteger(requestedDelay) ||
+          requestedDelay < 0 ||
+          requestedDelay > MAX_NODE_TIMER_DELAY_MS
+        ) {
+          throw new BatchContractError(
+            `Batch retry delay must be a non-negative safe integer no greater than the maximum supported timer delay (${MAX_NODE_TIMER_DELAY_MS} ms).`,
+          );
         }
       } catch (delayError) {
         return failedResult(

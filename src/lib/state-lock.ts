@@ -38,6 +38,7 @@ type LocalLockOwner = {
 const LOCAL_LOCK_OWNERS = new Map<string, LocalLockOwner>();
 const DEFAULT_TIMEOUT_MS = 300_000;
 const DEFAULT_POLL_MS = 200;
+const MAX_NODE_TIMER_DELAY_MS = 2_147_483_647;
 
 function sleepMs(ms: number): Promise<void> {
   return new Promise((resolve) => {
@@ -55,6 +56,16 @@ function isErrnoException(error: unknown, code: string): boolean {
 }
 
 function normalizeLockTimings(options: StateLockOptions): { timeoutMs: number; pollMs: number } {
+  for (const [label, value] of [
+    ['timeoutMs', options.timeoutMs],
+    ['pollMs', options.pollMs],
+  ] as const) {
+    if (value !== undefined && value > MAX_NODE_TIMER_DELAY_MS) {
+      throw new RangeError(
+        `State lock ${label} exceeds the maximum supported timer delay (${MAX_NODE_TIMER_DELAY_MS} ms).`,
+      );
+    }
+  }
   return {
     timeoutMs: Math.max(options.timeoutMs ?? DEFAULT_TIMEOUT_MS, 0),
     pollMs: Math.max(options.pollMs ?? DEFAULT_POLL_MS, 10),
