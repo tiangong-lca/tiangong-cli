@@ -37,8 +37,8 @@ checkPaths:
   - scripts/docpact-gate.sh
   - scripts/install-git-hooks.sh
 lastReviewedAt: 2026-08-26
-lastReviewedCommit: c8c7ae860b4e0a85443abb5de0d37ce8b7d65634
-lastReviewedNote: 'Reviewed for Issue #236: exact pnpm 11.24.0 replaces 11.23.0 across the manifest, release verifier, tests, and active docs with no lock, dependency, runtime, export, version, tag, or publication change.'
+lastReviewedCommit: b9a99011fcc1d7388355e66649113ac5d4a7a9c8
+lastReviewedNote: 'Reviewed for Issue #237: CLI 0.1.2 advances only package metadata and four live version fixtures while preserving the bounded pnpm 11.24 runtime, dependency, export, release, and integration contracts.'
 related:
   - .docpact/config.yaml
   - docs/agents/repo-validation.md
@@ -63,6 +63,8 @@ Review note, 2026-08-26: Issue #232 makes `src/command-spec.ts` and `src/batch.t
 Review note, 2026-08-26: Issue #233 preserves that exact public batch API while making `src/batch.ts` a 62-line re-export facade over eight semantic modules under `src/lib/batch/`. The dependency graph is acyclic and executable architecture proof fixes the facade ceiling at 62 lines and the largest internal ceiling at 445 lines, both below the public 400 / internal 800 limits. The same proof locks exact runtime named exports, class/function object identity, declaration names, error/event/result bytes, forbidden upward imports, module inventory, and SCC absence. Package exports, version 0.1.1, dependencies, the pnpm-only Node 24/TS7 toolchain, run-lock behavior, and dataset save-draft dogfood remain unchanged.
 
 Review note, 2026-08-26: Issue #236 advances only the exact pnpm toolchain pin from 11.23.0 to 11.24.0. `packageManager`, `engines.pnpm`, the release verifier, static contracts, and active maintainer docs agree; pnpm 11.24.0 lockfile-only reconciliation produces no root lockfile byte change. Node 24.19.0, TypeScript 7.0.2 as the sole compiler graph, package version 0.1.1, dependencies, public exports/runtime behavior, tags, and publication remain unchanged, with no npm/Yarn fallback or alternate lock.
+
+Review note, 2026-08-26: Issue #237 publishes the bounded CommandSpec/batch implementation and pnpm 11.24 convergence as CLI 0.1.2 through a release-only package metadata and four-fixture change. It adds no command, dependency, runtime behavior, public export, credential, database/Foundry operation, tag rule, workflow, or alternate publication path. The four-platform gate, merge-triggered tag, native pnpm Trusted Publishing/provenance, credential-free public consumers, and exact released-commit workspace integration remain mandatory.
 
 Review note, 2026-06-04: `dataset curation-queue build/next/verify` is the CLI-owned state machine for Foundry entity queues; repo ownership boundaries remain unchanged.
 

@@ -32,8 +32,8 @@ checkPaths:
   - scripts/docpact-gate.sh
   - scripts/install-git-hooks.sh
 lastReviewedAt: 2026-08-26
-lastReviewedCommit: c8c7ae860b4e0a85443abb5de0d37ce8b7d65634
-lastReviewedNote: 'Reviewed for Issue #236: proof now requires exact pnpm 11.24.0 across the repository and clean release consumer while preserving frozen lock, TS7, package, coverage, CI, and publication contracts.'
+lastReviewedCommit: b9a99011fcc1d7388355e66649113ac5d4a7a9c8
+lastReviewedNote: 'Reviewed for Issue #237: 0.1.2 release proof retains exact pnpm 11.24, Node 24.19.0, TS 7.0.2, package 12/12, 100% coverage, four-platform, provenance, and public-consumer gates.'
 related:
   - ../../AGENTS.md
   - ../../.docpact/config.yaml
@@ -77,6 +77,8 @@ Review note, 2026-08-26: Issue #232 proof covers exact Foundry CommandSpec diffe
 Review note, 2026-08-26: Issue #233 adds move-only architecture characterization before decomposition, then requires the same behavior proof after every wave. The architecture suite locks the exact public runtime/type export sets, re-exported function/class object identities, generated declaration names, error own-key/message/code shapes, deterministic event/result JSON bytes, semantic module inventory, current shrink-only LOC ceilings, allowed dependency edges, forbidden upward imports, and zero SCCs. Final proof requires a facade of 62 lines, no internal module above 445 lines, unchanged packed ESM/CJS/TypeScript consumers, unchanged dataset save-draft dogfood, and exact 100% coverage for every new module.
 
 Review note, 2026-08-26: Issue #236 starts with a failing exact-version contract, then requires pnpm 11.24.0 for manifest/engine resolution and the clean public-release consumer. Proof includes a pnpm 11.24.0 frozen install, zero lockfile diff after lockfile-only reconciliation, the 12/12 package suite, the complete pre-push gate with exact 100% coverage, strict Docpact, and the reusable macOS arm64, Ubuntu x64/arm64, and Windows x64 quality matrix. Node 24.19.0, TypeScript 7.0.2, package 0.1.1, dependencies, exports/runtime, tags, and publication state must not move.
+
+Review note, 2026-08-26: Issue #237 release proof requires recorded pre-mutation npm 0.1.2 and `cli-v0.1.2` absence, a RED exact-version fixture commit before the package bump, exactly four live CLI-version fixtures at 0.1.2, and unchanged lock bytes/dependency graph/runtime/exports. Local proof uses Node 24.19.0, pnpm 11.24.0 frozen install, the 12/12 package suite, release-focused tests, the complete pre-push gate with exact 100% coverage, audit, and strict Docpact. Post-merge proof still requires the exact four-platform matrix, AI Doc Lint, merge-triggered tag, native pnpm Trusted Publishing/provenance, registry integrity/attestation, fresh credential-free ESM/CJS/TypeScript consumers, and exact release-merge workspace integration.
 
 When command-surface, release-gate, or governed docs change, also run the repo-local documentation governance gate:
 

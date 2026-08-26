@@ -25,8 +25,8 @@ checkPaths:
   - scripts/docpact-gate.sh
   - scripts/install-git-hooks.sh
 lastReviewedAt: 2026-08-26
-lastReviewedCommit: c8c7ae860b4e0a85443abb5de0d37ce8b7d65634
-lastReviewedNote: 'Reviewed for Issue #236: exact pnpm 11.24.0 flows through the existing packageManager-driven CI setup and release consumer without new secrets, dependencies, lock bytes, workflows, tags, credentials, or publication paths.'
+lastReviewedCommit: b9a99011fcc1d7388355e66649113ac5d4a7a9c8
+lastReviewedNote: 'Reviewed for Issue #237: CLI 0.1.2 uses the unchanged pnpm 11.24 merge-tag and Trusted Publishing setup with no new secret, dependency, lock byte, workflow, credential, or publication path.'
 related:
   - ../AGENTS.md
   - ../.docpact/config.yaml
@@ -61,6 +61,8 @@ Review note, 2026-08-26: Issue #232 adds supported public subpaths and run-direc
 Review note, 2026-08-26: Issue #233 only decomposes the implementation behind the existing batch subpath. It adds no secret, environment, dependency, lockfile, package-manager path, Trusted Publisher setting, workflow, tag rule, or version change. The repository remains pnpm 11.23.0 and TypeScript 7.0.2 single-track; publication remains separate.
 
 Review note, 2026-08-26: Issue #236 changes only the exact pnpm requirement to 11.24.0. The pinned `pnpm/setup` action continues to resolve that version from root `packageManager`, frozen installs keep the existing sole root lock byte-for-byte, and the public verifier uses the same exact version. No secret, environment, runner, dependency, Trusted Publisher setting, workflow filename, tag rule, credential, version, or alternate npm/Yarn publication path is added.
+
+Review note, 2026-08-26: Issue #237 publishes 0.1.2 through the existing merge-triggered tag and native pnpm Trusted Publishing workflows. It adds no secret, environment, runner, dependency, lockfile change, Trusted Publisher setting, workflow filename, tag rule, credential, service-role/test-account access, or alternate authentication/publication surface; only package metadata and four live CLI-version fixtures change.
 
 Current workflow files:
 

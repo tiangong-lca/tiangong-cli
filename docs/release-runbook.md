@@ -26,8 +26,8 @@ checkPaths:
   - scripts/docpact-gate.sh
   - scripts/install-git-hooks.sh
 lastReviewedAt: 2026-08-26
-lastReviewedCommit: c8c7ae860b4e0a85443abb5de0d37ce8b7d65634
-lastReviewedNote: 'Reviewed for Issue #236: release preparation and clean-consumer proof now require exact pnpm 11.24.0; package 0.1.1, lock bytes, dependencies, tags, provenance, publication, and integration mechanics are unchanged.'
+lastReviewedCommit: b9a99011fcc1d7388355e66649113ac5d4a7a9c8
+lastReviewedNote: 'Reviewed for Issue #237: 0.1.2 is the release-only package identity for the bounded pnpm 11.24 main, with unchanged lock, dependency, tag, provenance, publication, and integration mechanics.'
 related:
   - ../AGENTS.md
   - ../.docpact/config.yaml
@@ -52,6 +52,8 @@ Review note, 2026-08-26: Issue #232 is a feature delivery for typed CommandSpec/
 Review note, 2026-08-26: Issue #233 is an internal move-only prerequisite for that later release. It keeps version 0.1.1, package exports, dependencies, the sole pnpm lock, tag automation, and publication mechanics unchanged while decomposing the batch implementation behind the same public subpath. The later release must consume the same packed ESM/CJS/TypeScript and provenance gates; no release or local publish belongs to Issue #233.
 
 Review note, 2026-08-26: Issue #236 updates only the exact repository and public-release consumer pnpm requirement from 11.23.0 to 11.24.0. A pnpm 11.24.0 lockfile-only reconciliation confirms the sole root lock needs no byte change. Package version 0.1.1, Node 24.19.0, TypeScript 7.0.2, dependencies, runtime/exports, tag detection, native OIDC/provenance publication, registry state, and workspace follow-up remain unchanged; local publication and npm/Yarn fallback remain forbidden.
+
+Review note, 2026-08-26: Issue #237 is the dedicated 0.1.2 release for the bounded batch/CommandSpec implementation after pnpm 11.24 convergence. It changes only package metadata and four live CLI-version fixtures, keeps the sole lock, dependencies, runtime, exports, workflows, and setup unchanged, and must prove pre-mutation npm/tag absence plus local package/prepush/audit/Docpact gates. After merge it must prove `cli-v0.1.2`, native pnpm Trusted Publishing/provenance, registry integrity/attestation and exact `gitHead`, fresh credential-free bin/ESM/CJS/TypeScript consumers, and exact release-merge workspace integration. Local publication and manual tag creation remain forbidden.
 
 Review note, 2026-07-14: Issue #165 adds the guarded `dataset maintenance rebuild-derivatives` command profile but does not change the release procedure. Its command, contract, remote-adapter, asynchronous verification, and no-fallback tests must pass the existing pre-push/docpact gate before a later version-bump PR; the feature PR itself must not publish locally or alter package version metadata.
 
