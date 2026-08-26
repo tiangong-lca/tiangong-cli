@@ -1,4 +1,5 @@
 import assert from 'node:assert/strict';
+import { readFileSync } from 'node:fs';
 import test from 'node:test';
 
 import {
@@ -540,6 +541,90 @@ test('resource-blocked items remain unclaimed when an active item stops the batc
     releaseB1();
     await running.catch(() => undefined);
   }
+});
+
+test('resource scheduler uses near-linear ready operations at representative scale', async () => {
+  const itemCount = 5_000;
+  const resourceCount = 128;
+  const items = Array.from({ length: itemCount }, (_, index) => ({
+    id: `item-${index.toString().padStart(5, '0')}`,
+    index,
+    resource: `resource-${index % resourceCount}`,
+  }));
+  const expectedByResource = new Map<string, string[]>();
+  for (const item of items) {
+    const expected = expectedByResource.get(item.resource) ?? [];
+    expected.push(item.id);
+    expectedByResource.set(item.resource, expected);
+  }
+
+  const originalFind = Array.prototype.find;
+  let findPredicateCalls = 0;
+  Array.prototype.find = (function <T>(
+    this: T[],
+    predicate: (value: T, index: number, obj: T[]) => unknown,
+    thisArg?: unknown,
+  ): T | undefined {
+    return originalFind.call(
+      this,
+      (value, index, array) => {
+        findPredicateCalls += 1;
+        return predicate.call(thisArg, value, index, array);
+      },
+      thisArg,
+    ) as T | undefined;
+  }) as typeof Array.prototype.find;
+
+  const activeResources = new Set<string>();
+  const executedByResource = new Map<string, string[]>();
+  let active = 0;
+  let maximumActive = 0;
+  let result: Awaited<ReturnType<typeof runBoundedBatch<(typeof items)[number], number, typeof contract.identity>>>;
+  try {
+    result = await runBoundedBatch({
+      contract,
+      items,
+      getItemIdentity: (item) => item.id,
+      projectItemContent: (item) => item.id,
+      projectItemPolicy: () => null,
+      getExclusiveKey: ({ item }) => item.resource,
+      mode: 'read',
+      maxConcurrency: 16,
+      execute: async ({ item, exclusive_key: exclusiveKey }) => {
+        assert.equal(exclusiveKey, item.resource);
+        assert.equal(activeResources.has(item.resource), false, 'same-key execution overlapped');
+        activeResources.add(item.resource);
+        active += 1;
+        maximumActive = Math.max(maximumActive, active);
+        try {
+          const executed = executedByResource.get(item.resource) ?? [];
+          executed.push(item.id);
+          executedByResource.set(item.resource, executed);
+          await Promise.resolve();
+          return item.index;
+        } finally {
+          active -= 1;
+          activeResources.delete(item.resource);
+        }
+      },
+    });
+  } finally {
+    Array.prototype.find = originalFind;
+  }
+
+  assert.ok(
+    findPredicateCalls <= itemCount * 8,
+    `scheduler performed ${findPredicateCalls} linear find predicate calls for ${itemCount} items`,
+  );
+  assert.equal(maximumActive <= 16, true);
+  assert.equal(result.results_input_order.length, itemCount);
+  assert.equal(result.results_input_order.every((entry) => entry.status === 'succeeded'), true);
+  assert.deepEqual(executedByResource, expectedByResource);
+
+  const source = readFileSync(new URL('../src/batch.ts', import.meta.url), 'utf8');
+  assert.doesNotMatch(source, /pendingIndexes\.find/u);
+  assert.match(source, /class MinReadyIndexHeap/u);
+  assert.match(source, /resourceQueues/u);
 });
 
 test('exclusive resource key projection validates before work and rejects claim-time drift', async () => {
