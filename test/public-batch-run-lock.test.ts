@@ -12,9 +12,21 @@ import {
   batchRunLockPath,
   batchRunLockStatePath,
   withBatchRunLock,
+  type BatchJsonValue,
+  type BatchRunLockOptions,
 } from '../src/batch.js';
 
 const identity = { execution_id: 'run-1', revision: 1 };
+
+type AssertNever<T extends never> = T;
+type UnsafePublicOwnershipOverrides = Extract<
+  keyof BatchRunLockOptions<BatchJsonValue>,
+  'host' | 'now' | 'pid'
+>;
+type PublicRunLockOptionsHideOwnershipOverrides = AssertNever<UnsafePublicOwnershipOverrides>;
+const publicRunLockOptionsHideOwnershipOverrides: PublicRunLockOptionsHideOwnershipOverrides =
+  undefined as never;
+void publicRunLockOptionsHideOwnershipOverrides;
 
 test('batch run-lock paths are canonical and run-directory-bound', () => {
   const runPath = path.join(os.tmpdir(), 'batch-run-lock-path');
@@ -354,6 +366,34 @@ test('batch run lock never stale-recovers a foreign-host owner', async () => {
       BatchRunLockTimeoutError,
     );
     assert.equal(existsSync(lockPath), true);
+  } finally {
+    rmSync(root, { recursive: true, force: true });
+  }
+});
+
+test('batch run lock ignores spoofed ownership metadata and preserves a foreign-host lock', async () => {
+  const root = mkdtempSync(path.join(os.tmpdir(), 'batch-run-lock-spoofed-owner-'));
+  const lockPath = batchRunLockPath(root);
+  try {
+    writeLock(lockPath, 999_999_999, 'foreign-host.example');
+    const spoofedOptions = {
+      runPath: root,
+      identity,
+      reason: 'spoofed-foreign-host-contender',
+      timeoutMs: 0,
+      host: 'foreign-host.example',
+      pid: 999_999_999,
+      now: new Date('2000-01-01T00:00:00.000Z'),
+    } as unknown as BatchRunLockOptions<typeof identity>;
+
+    await assert.rejects(withBatchRunLock(spoofedOptions, () => 'never'), BatchRunLockTimeoutError);
+    assert.equal(existsSync(lockPath), true, 'caller input must not spoof stale ownership');
+    assert.deepEqual(JSON.parse(readFileSync(lockPath, 'utf8')), {
+      ownerPid: 999_999_999,
+      ownerHost: 'foreign-host.example',
+      reason: 'holder',
+      updatedAt: 'now',
+    });
   } finally {
     rmSync(root, { recursive: true, force: true });
   }
