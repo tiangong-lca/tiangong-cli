@@ -161,10 +161,12 @@ test('a detached nested helper retains the physical lock for its own active scop
   const childFile = writeLockChildFile(root);
   let releaseInner: (() => void) | undefined;
   let innerEntered = false;
+  let outerSettled = false;
   let detachedInner: Promise<void> | undefined;
+  let outer: Promise<void> | undefined;
   let contender: ChildProcessWithoutNullStreams | undefined;
   try {
-    await withBatchRunLock({ runPath: root, identity, reason: 'detached-outer' }, async () => {
+    outer = withBatchRunLock({ runPath: root, identity, reason: 'detached-outer' }, async () => {
       detachedInner = withBatchRunLock(
         { runPath: root, identity, reason: 'detached-inner' },
         async () => {
@@ -176,19 +178,32 @@ test('a detached nested helper retains the physical lock for its own active scop
       );
       await waitFor(() => innerEntered);
     });
+    void outer.then(
+      () => {
+        outerSettled = true;
+      },
+      () => {
+        outerSettled = true;
+      },
+    );
+    await waitFor(() => innerEntered);
+    await new Promise<void>((resolve) => setImmediate(resolve));
 
+    assert.equal(outerSettled, false);
     assert.equal(existsSync(batchRunLockPath(root)), true);
     contender = spawnLockChild(childFile, root, identity);
     const contenderAcquired = waitForOutput(contender, 'acquired\n');
     await assertNoOutput(contender, 40);
     releaseInner?.();
     await detachedInner;
+    await outer;
     await contenderAcquired;
     contender.stdin.end('release\n');
     await waitForExit(contender);
   } finally {
     releaseInner?.();
     await detachedInner?.catch(() => undefined);
+    await outer?.catch(() => undefined);
     contender?.kill();
     rmSync(root, { recursive: true, force: true });
   }
