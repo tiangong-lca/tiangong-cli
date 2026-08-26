@@ -330,6 +330,34 @@ test('CommandSpec async execution validates limits, clock, and pre-aborted signa
   assert.equal(spawnCalls, 0);
 });
 
+test('CommandSpec async execution removes external abort listeners after a synchronous spawn failure', async () => {
+  const spec = createFoundryCommandSpec({ executable: process.execPath, argv: ['fixture.js'] });
+  let listenerAdds = 0;
+  let listenerRemovals = 0;
+  const signal = {
+    aborted: false,
+    reason: undefined,
+    addEventListener: () => {
+      listenerAdds += 1;
+    },
+    removeEventListener: () => {
+      listenerRemovals += 1;
+    },
+  } as unknown as AbortSignal;
+  await assert.rejects(
+    executeFoundryCommandSpec(spec, {
+      resolveArtifactPath: () => null,
+      signal,
+      spawnImpl: () => {
+        throw new Error('synchronous spawn failure');
+      },
+    }),
+    /synchronous spawn failure/u,
+  );
+  assert.equal(listenerAdds, 1);
+  assert.equal(listenerRemovals, 1);
+});
+
 test('CommandSpec success and timeout races do not leak unhandled sleep or spawn rejections', async () => {
   const unhandled: unknown[] = [];
   const observeUnhandled = (reason: unknown) => unhandled.push(reason);

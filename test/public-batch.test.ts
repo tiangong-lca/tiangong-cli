@@ -528,7 +528,7 @@ test('exclusive resource key projection validates before work and rejects claim-
     });
     assert.equal(unkeyed.results_input_order[0]?.exclusive_key, null);
   }
-  for (const invalidKey of ['', 'bad\nkey']) {
+  for (const invalidKey of ['', 'bad\nkey', 1 as never]) {
     await assert.rejects(
       runBoundedBatch({
         contract,
@@ -608,6 +608,49 @@ test('pause is checked before claim and stop prevents later claims after in-flig
   assert.equal(resumedStop.status, 'stopped');
   assert.deepEqual(resumedStop.claim_order, []);
   assert.deepEqual(resumedStop.unclaimed_item_ids, ['b']);
+
+  const projectionCalls = new Map<string, number>();
+  const resumedFailureStop = await runBoundedBatch({
+    contract,
+    items: ['a', 'b', 'c'],
+    getItemIdentity: (item) => item,
+    projectItemContent: (item) => {
+      const call = (projectionCalls.get(item) ?? 0) + 1;
+      projectionCalls.set(item, call);
+      return item === 'a' && call > 1 ? 'a-drifted' : item;
+    },
+    projectItemPolicy: () => null,
+    mode: 'read',
+    maxConcurrency: 1,
+    resume: {
+      contract,
+      items: [
+        {
+          ...stringItemContract('a'),
+          state: 'completed',
+          outcome: 'succeeded',
+          value: 'A',
+          attempts: 1,
+        },
+        {
+          ...stringItemContract('b'),
+          state: 'completed',
+          outcome: 'succeeded',
+          value: 'B',
+          attempts: 1,
+        },
+      ],
+    },
+    shouldStop: ({ last_result }) => last_result.status === 'failed',
+    execute: () => {
+      throw new Error('a resumed projection failure must stop fresh claims');
+    },
+  });
+  assert.equal(resumedFailureStop.status, 'stopped');
+  assert.deepEqual(resumedFailureStop.claim_order, []);
+  assert.deepEqual(resumedFailureStop.unclaimed_item_ids, ['c']);
+  assert.equal(resumedFailureStop.results_input_order[0]?.status, 'failed');
+  assert.equal(resumedFailureStop.results_input_order[1]?.status, 'succeeded');
 
   const inFlightStop = await runBoundedBatch({
     contract,
