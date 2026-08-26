@@ -988,6 +988,80 @@ test('identity is reprojected before resumed acceptance and every fresh claim', 
   );
 });
 
+test('claim-time identity getter failures become item drift and drain in-flight mutations', async () => {
+  const items = [{ id: 'slow' }, { id: 'drift' }];
+  const identityCalls = new Map<string, number>();
+  const events: BatchEvent[] = [];
+  const executeCalls: string[] = [];
+  let releaseSlow: () => void = () => undefined;
+  const slowGate = new Promise<void>((resolve) => {
+    releaseSlow = resolve;
+  });
+  let slowStarted = false;
+  const running = runBoundedBatch({
+    contract,
+    items,
+    getItemIdentity: (item) => {
+      const calls = (identityCalls.get(item.id) ?? 0) + 1;
+      identityCalls.set(item.id, calls);
+      if (item.id === 'drift' && calls > 1) throw new Error('claim identity getter exploded');
+      return item.id;
+    },
+    mode: 'mutation',
+    maxConcurrency: 2,
+    eventSink: (event) => {
+      events.push(event);
+    },
+    execute: async ({ item }) => {
+      executeCalls.push(item.id);
+      if (item.id === 'slow') {
+        slowStarted = true;
+        await slowGate;
+      }
+      return item.id;
+    },
+  });
+  const observed = running.then(
+    (result) => ({ state: 'fulfilled' as const, result }),
+    (error: unknown) => ({ state: 'rejected' as const, error }),
+  );
+  let settled = false;
+  void observed.then(() => {
+    settled = true;
+  });
+
+  try {
+    await waitFor(() => slowStarted && identityCalls.get('drift') === 2);
+    await new Promise<void>((resolve) => setImmediate(resolve));
+    assert.equal(settled, false, 'the batch must drain the already-started mutation');
+
+    releaseSlow();
+    const outcome = await observed;
+    assert.equal(outcome.state, 'fulfilled');
+    assert.ok(outcome.state === 'fulfilled');
+    assert.deepEqual(executeCalls, ['slow']);
+    assert.deepEqual(outcome.result.claim_order, ['slow']);
+    assert.deepEqual(
+      outcome.result.results_input_order.map((entry) => entry.status),
+      ['succeeded', 'failed'],
+    );
+    assert.ok(
+      failedError(outcome.result.results_input_order[1]) instanceof BatchItemIdentityDriftError,
+    );
+    assert.equal(outcome.result.results_input_order[1]?.attempts, 0);
+    assert.equal(outcome.result.results_input_order[1]?.attempt_consumed, false);
+    assert.deepEqual(
+      events
+        .filter((event) => event.type === 'item_identity_drift')
+        .map((event) => event.item_id),
+      ['drift'],
+    );
+  } finally {
+    releaseSlow();
+    await observed;
+  }
+});
+
 test('mutation transport is attempted once and only explicit readback may recover it', async () => {
   let attempts = 0;
   let recoveries = 0;
