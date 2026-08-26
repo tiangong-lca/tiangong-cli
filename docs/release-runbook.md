@@ -26,8 +26,8 @@ checkPaths:
   - scripts/docpact-gate.sh
   - scripts/install-git-hooks.sh
 lastReviewedAt: 2026-08-26
-lastReviewedCommit: d307a0fabe48da656dfc5b52f62a5b18e3cfc5ea
-lastReviewedNote: 'Reviewed for Issue #232: feature delivery stays at 0.1.1; typed public primitives require a separate release-only PR and the existing matrix, provenance, registry, and integration gates.'
+lastReviewedCommit: 3d67a14d81f06279251bc468917ef09c7245678b
+lastReviewedNote: 'Reviewed for Issue #233: move-only batch decomposition stays at 0.1.1 with unchanged pnpm lock, dependencies, package exports, release automation, and later release-only gates.'
 related:
   - ../AGENTS.md
   - ../.docpact/config.yaml
@@ -48,6 +48,8 @@ Review note, 2026-08-25: Issue #228 adds a feature command and a local-only prod
 Review note, 2026-08-25: Issue #230 is that separate 0.1.1 release. It keeps the published runtime dependency graph unchanged while adding exact `sigstore@5.0.0` to the dev-only verification graph and regenerating the sole pnpm lock for that reviewed change. `.nvmrc`, engines, all workflows, tests, and active docs pin latest-stable Node 24.19.0. The four-platform workflow is reusable, asserts actual platform/architecture, and blocks tag creation. `release:verify-published` cryptographically verifies the SLSA bundle against the GitHub OIDC issuer, exact workflow/tag certificate identity, certificate transparency and Rekor, binds its `gitCommit` and tarball sha512, runs pnpm registry-signature verification, isolates user/global package-manager configuration, pins pnpm 11.23.0, scans all production dependency sections, and exercises clean bin/ESM/CJS consumers. The child finish continuation owns root integration create/reuse and child completion; operators never create a parallel task or finish the child twice. Local publication and manual tag creation remain forbidden.
 
 Review note, 2026-08-26: Issue #232 is a feature delivery for typed CommandSpec/batch/run-lock subpaths and keeps package version 0.1.1. It adds no dependency, secret, tag, or alternate publish path. A later release-only PR must advance the version and rerun the existing matrix, provenance, registry, packed ESM/CJS/TS public-subpath consumer, and exact workspace-integration gates before downstream repositories pin the new API.
+
+Review note, 2026-08-26: Issue #233 is an internal move-only prerequisite for that later release. It keeps version 0.1.1, package exports, dependencies, the sole pnpm lock, tag automation, and publication mechanics unchanged while decomposing the batch implementation behind the same public subpath. The later release must consume the same packed ESM/CJS/TypeScript and provenance gates; no release or local publish belongs to Issue #233.
 
 Review note, 2026-07-14: Issue #165 adds the guarded `dataset maintenance rebuild-derivatives` command profile but does not change the release procedure. Its command, contract, remote-adapter, asynchronous verification, and no-fallback tests must pass the existing pre-push/docpact gate before a later version-bump PR; the feature PR itself must not publish locally or alter package version metadata.
 

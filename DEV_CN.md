@@ -22,8 +22,8 @@ checkPaths:
   - scripts/**
   - .github/workflows/**
 lastReviewedAt: 2026-08-26
-lastReviewedCommit: d307a0fabe48da656dfc5b52f62a5b18e3cfc5ea
-lastReviewedNote: 'Reviewed for Issue #232: 记录 infrastructure fatal stop/allSettled drain、identity fail-close、FIFO/min-heap、锁 ownership 与 timer；不新增依赖或发布路径。'
+lastReviewedCommit: 3d67a14d81f06279251bc468917ef09c7245678b
+lastReviewedNote: 'Reviewed for Issue #233: 记录 62 行 batch facade、8 个有界无环模块、精确兼容与架构门；保持 pnpm/TS7 单轨且不新增依赖、版本或发布路径。'
 related:
   - AGENTS.md
   - .docpact/config.yaml
@@ -44,6 +44,8 @@ Review note, 2026-08-25: Issue #228 新增 `auth identity-receipt`。命令先�
 Review note, 2026-08-25: Issue #230 因最新稳定 `sigstore@5.0.0` 的 Node 引擎下限，进一步把 `.nvmrc`、package engines、所有 workflow、静态契约和维护文档统一到当前最新 Node 24 LTS `24.19.0`，不再宣称支持无法运行完整开发/发布门禁的旧 24.x minor。
 
 Review note, 2026-08-26: Issue #232 的公共 CommandSpec/batch 修复不新增 env、依赖或发布路径。batch 在 resumed acceptance 与 fresh claim 前重投影 item identity；identity getter 抛错也稳定输出 `BatchItemIdentityDriftError` / `item_identity_drift` 且零执行，已经启动的其他 worker 会 drain 后再返回。任一 scheduler/event/stop 基础设施回调逃逸时，首个错误会立即关闭新 claim，只 drain 已 claim worker，并在全部 worker settled 后拒绝。同 key 阻塞项保持 unclaimed、不占 worker，scheduler 可先执行后续 free key，stop 后精确保留未 claim 项。实现使用 per-resource FIFO cursor 与私有 minimum-ready binary heap，5,000 项结构测试拒绝旧 `12,502,500` 次线性 find，普通 ready 调度为近 `O(n log k)`。run-lock 的 PID/host/ownership time 只从当前进程与系统内部派生，公共调用方不能覆盖。CommandSpec timeout、run-lock timeout/poll、read retry/backoff 都拒绝超过 Node `2_147_483_647ms` 上限的值；公共 lock timing 另要求非负 safe integer。
+
+Review note, 2026-08-26: Issue #233 在不改变上述行为的前提下，把 `src/batch.ts` 收缩为 62 行 facade，并把 types、errors/contracts、run-lock、projection、scheduler runtime、attempt/recovery、engine 分到 `src/lib/batch/**` 的 8 个语义模块。架构测试固定精确导出/类型/对象身份/错误与 event/result 字节、模块清单、当前 LOC ceiling、依赖方向、禁止 upward import 与零 SCC；最大内部模块为 445 行。包版本、依赖、唯一 pnpm lock 与 pnpm 11.23.0 / TypeScript 7.0.2 单轨均不变。
 
 Review note, 2026-06-04: `dataset curation-queue next/verify` extends the existing CLI-native dataset command family and does not change maintainer runtime, env, or release guidance.
 

@@ -19,6 +19,31 @@ const TEST_DIR = dirname(fileURLToPath(import.meta.url));
 const REPOSITORY_ROOT = dirname(TEST_DIR);
 const PACKAGE_JSON_PATH = join(REPOSITORY_ROOT, 'package.json');
 const PACKAGE_JSON = readJson(PACKAGE_JSON_PATH);
+const EXPECTED_BATCH_RUNTIME_EXPORTS = Object.freeze([
+  'BatchContractError',
+  'BatchItemIdentityDriftError',
+  'BatchItemProjectionDriftError',
+  'BatchItemResourceDriftError',
+  'BatchItemResumeContractError',
+  'BatchMutationReplayError',
+  'BatchMutationRetryError',
+  'BatchRunLockIdentityConflictError',
+  'BatchRunLockTimeoutError',
+  'MAX_BATCH_CONCURRENCY',
+  'assertBatchContractMatches',
+  'assertBatchItemContractMatches',
+  'batchRunLockPath',
+  'batchRunLockStatePath',
+  'canonicalBatchJson',
+  'createBatchContract',
+  'createBatchItemContract',
+  'parseBatchContract',
+  'parseBatchItemContract',
+  'runBoundedBatch',
+  'sha256BatchBytes',
+  'sha256BatchJson',
+  'withBatchRunLock',
+]);
 const PACKAGE_MANAGER = 'pnpm@11.23.0';
 const PACKAGE_MANAGER_VERSION = PACKAGE_MANAGER.slice('pnpm@'.length);
 const NODE_VERSION = '24.19.0';
@@ -710,7 +735,9 @@ function assertModuleHostBehavior(consumerRoot, compilerRoot, expectedVersion) {
     [
       `import { resolveInvokedUrl, runFromBin } from '${launcherSpecifier}';`,
       `import { createFoundryCommandSpec } from '${commandSpecSpecifier}';`,
+      `import * as batchApi from '${batchSpecifier}';`,
       `import { createBatchContract, runBoundedBatch, withBatchRunLock } from '${batchSpecifier}';`,
+      `if (JSON.stringify(Object.keys(batchApi).sort()) !== ${JSON.stringify(JSON.stringify([...EXPECTED_BATCH_RUNTIME_EXPORTS].sort()))}) throw new Error('ESM batch named-export contract failed');`,
       "if (resolveInvokedUrl(null) !== null) throw new Error('ESM launcher resolver contract failed');",
       "const spec = createFoundryCommandSpec({ executable: 'tool', argv: ['--json'] });",
       "if (spec.schema !== 'tiangong-foundry.command-spec.v1') throw new Error('CommandSpec export failed');",
@@ -767,7 +794,9 @@ function assertModuleHostBehavior(consumerRoot, compilerRoot, expectedVersion) {
       '(async () => {',
       `  const { resolveInvokedUrl, runFromBin } = await import('${launcherSpecifier}');`,
       `  const { createFoundryCommandSpec } = await import('${commandSpecSpecifier}');`,
-      `  const { createBatchContract, runBoundedBatch, withBatchRunLock } = await import('${batchSpecifier}');`,
+      `  const batchApi = await import('${batchSpecifier}');`,
+      `  const { createBatchContract, runBoundedBatch, withBatchRunLock } = batchApi;`,
+      `  if (JSON.stringify(Object.keys(batchApi).sort()) !== ${JSON.stringify(JSON.stringify([...EXPECTED_BATCH_RUNTIME_EXPORTS].sort()))}) throw new Error('CJS batch named-export contract failed');`,
       "  if (resolveInvokedUrl(null) !== null) throw new Error('CJS launcher resolver contract failed');",
       "  const spec = createFoundryCommandSpec({ executable: 'tool', argv: ['--json'] });",
       "  if (spec.schema !== 'tiangong-foundry.command-spec.v1') throw new Error('CJS CommandSpec export failed');",

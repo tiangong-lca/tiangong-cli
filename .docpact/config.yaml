@@ -34,8 +34,9 @@ layout: repo
 # Review note, 2026-08-26: Issue #232 adds the supported `@tiangong-lca/cli/command-spec` and `@tiangong-lca/cli/batch` library surfaces. Public primitive sources have a dedicated routing intent/rule covering package exports and declaration config, canonical contracts, mutation no-replay, resource serialization, run-directory locking, packed consumers, and dataset save-draft dogfood. Version 0.1.1 remains unchanged; publication is separate tracked work.
 # Review note, 2026-08-26: Issue #232 re-review keeps the existing public-library ownership and routing graph unchanged while guarding throwing identity reprojection, draining in-flight workers, and replacing pending scans with per-resource FIFO cursors plus a private minimum-ready heap. The existing rule paths already cover runtime, scale proof, package consumers, dogfood, and synchronized source docs.
 # Review note, 2026-08-26: Issue #232 infrastructure-drain hardening keeps routing unchanged: escaping scheduler/event/stop callbacks now close claims immediately, drain already-claimed workers through settled aggregation, and reject with the first recorded error. Existing public-library runtime/test/doc triggers fully cover the change.
+# Review note, 2026-08-26: Issue #233 preserves the public batch subpath while moving its implementation into bounded semantic modules under `src/lib/batch/**`. The existing public-library contract is extended, rather than duplicated, so facade, internals, architecture budgets, package consumers, dataset dogfood, and governed source docs remain one review obligation.
 lastReviewedAt: "2026-08-26"
-lastReviewedCommit: "d307a0fabe48da656dfc5b52f62a5b18e3cfc5ea"
+lastReviewedCommit: "3d67a14d81f06279251bc468917ef09c7245678b"
 
 catalog:
   repos:
@@ -82,6 +83,7 @@ ownership:
         include:
           - src/batch.ts
           - src/command-spec.ts
+          - src/lib/batch/**
           - src/lib/artifacts.ts
           - src/lib/dataset-command.ts
           - src/lib/dataset-*.ts
@@ -255,6 +257,7 @@ routing:
         - tsconfig.build.json
         - src/batch.ts
         - src/command-spec.ts
+        - src/lib/batch/**
         - src/lib/state-lock.ts
         - src/lib/dataset-save-draft-run.ts
         - test/dataset-save-draft-execution-contract.test.ts
@@ -503,6 +506,8 @@ rules:
         kind: declaration-config
       - path: src/batch.ts
         kind: public-library-runtime
+      - path: src/lib/batch/**
+        kind: public-library-internal-runtime
       - path: src/command-spec.ts
         kind: public-library-runtime
       - path: src/lib/state-lock.ts

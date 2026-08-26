@@ -37,8 +37,8 @@ checkPaths:
   - scripts/docpact-gate.sh
   - scripts/install-git-hooks.sh
 lastReviewedAt: 2026-08-26
-lastReviewedCommit: d307a0fabe48da656dfc5b52f62a5b18e3cfc5ea
-lastReviewedNote: 'Reviewed for Issue #232: fatal infrastructure claim closure, settled worker drainage, guarded identity drift, FIFO/min-heap scheduling, lock/timer safety, dogfood, and declarations are documented at 0.1.1.'
+lastReviewedCommit: 3d67a14d81f06279251bc468917ef09c7245678b
+lastReviewedNote: 'Reviewed for Issue #233: the 62-line facade and eight bounded acyclic batch modules preserve exact exports, identities, bytes, declarations, dogfood, pnpm-only tooling, and 0.1.1 release boundaries.'
 related:
   - .docpact/config.yaml
   - docs/agents/repo-validation.md
@@ -59,6 +59,8 @@ Review note, 2026-08-25: Issue #228 implements `auth identity-receipt` as the CL
 Review note, 2026-08-25: Issue #230 publishes the merged Issue #228 runtime as CLI 0.1.1 without changing command logic, published dependencies, auth behavior, credentials, or dataset operations. It pins latest-stable `sigstore@5.0.0` in dev dependencies, regenerates the sole pnpm lock only for cryptographic release verification, and converges `.nvmrc`, package engines, workflows, tests, and active docs on latest-stable Node 24.19.0. Every reusable matrix job asserts actual platform/architecture before tag creation. `release:verify-published` verifies the SLSA DSSE signature, GitHub OIDC/Fulcio certificate identity, certificate transparency and Rekor before trusting exact tag/workflow/run/commit/tarball fields; the clean consumer fixes pnpm 11.23.0, verifies registry signatures, overrides user/global package-manager config, scans all production dependency sections, and receives no TianGong or registry credential. Workspace handoff begins and ends through child `task finish` around any required tracked root integration.
 
 Review note, 2026-08-26: Issue #232 makes `src/command-spec.ts` and `src/batch.ts` the CLI-owned public library boundary. The first preserves the exact Foundry v1 CommandSpec authority and shell-free sync/async execution, including abort-listener cleanup after synchronous adapter failure and a Node-safe timeout ceiling; the second owns identity/content/policy-bound item scheduling, resource-aware claims, per-result resume-stop decisions, explicit readback-only mutation recovery, and canonical cross-process run-directory locks. Blocked resource keys stay unclaimed and consume no worker; claim-time identity drift or getter failure is a stable zero-execution item failure, and in-flight workers drain before return. Any escaping infrastructure callback immediately closes new claims; worker aggregation drains all already-claimed work before throwing the first recorded error. Per-resource FIFO cursors plus a private minimum-ready heap avoid repeated full pending scans while preserving stop/pause/unclaimed semantics. Run-lock ownership metadata is internal-only, and all public timer-backed delays reject unsupported values. `dataset save-draft --execution-contract` dogfoods only the parallel suffix scheduler; its serial dependency prefix, durable attempt/readback authority, report bytes, and no-replay behavior remain command-owned. Package version stays 0.1.1 pending a separate release.
+
+Review note, 2026-08-26: Issue #233 preserves that exact public batch API while making `src/batch.ts` a 62-line re-export facade over eight semantic modules under `src/lib/batch/`. The dependency graph is acyclic and executable architecture proof fixes the facade ceiling at 62 lines and the largest internal ceiling at 445 lines, both below the public 400 / internal 800 limits. The same proof locks exact runtime named exports, class/function object identity, declaration names, error/event/result bytes, forbidden upward imports, module inventory, and SCC absence. Package exports, version 0.1.1, dependencies, the pnpm-only Node 24/TS7 toolchain, run-lock behavior, and dataset save-draft dogfood remain unchanged.
 
 Review note, 2026-06-04: `dataset curation-queue build/next/verify` is the CLI-owned state machine for Foundry entity queues; repo ownership boundaries remain unchanged.
 
@@ -158,7 +160,7 @@ This repo owns:
 - `bin/tiangong-lca.js` as the stable launcher entrypoint
 - `src/cli.ts` and `src/main.ts` for command dispatch, process entry, help, and exit behavior
 - `src/lib/**` for reusable CLI command logic, session handling, artifacts, and remote adapters
-- `src/command-spec.ts` and `src/batch.ts` for the supported typed package subpaths and their provider-neutral safety contracts
+- `src/command-spec.ts` and the `src/batch.ts` facade plus `src/lib/batch/**` internals for the supported typed package subpaths and their provider-neutral safety contracts
 - `test/**` and `scripts/assert-full-coverage.ts` for the hard validation gate
 - package metadata, build output contract, and tag/release checks in `package.json` and `scripts/ci/**`
 
