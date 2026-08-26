@@ -21,8 +21,8 @@ checkPaths:
   - src/**
   - test/**
 lastReviewedAt: 2026-08-26
-lastReviewedCommit: d307a0fabe48da656dfc5b52f62a5b18e3cfc5ea
-lastReviewedNote: 'Reviewed for Issue #232: 记录 infrastructure fatal stop/allSettled drain、guarded identity、per-resource FIFO/min-heap、锁/timer 与 dataset dogfood 边界。'
+lastReviewedCommit: 4a1507e69ca9493c1c964efd2c2549691a788d0b
+lastReviewedNote: 'Reviewed for Issue #233: 记录 batch facade/八模块 DAG、62/445 行 ceiling、精确对象/声明/字节兼容、pnpm 单轨与 dataset dogfood 边界。'
 related:
   - ../AGENTS.md
   - ../.docpact/config.yaml
@@ -44,6 +44,8 @@ Review note, 2026-08-26: Issue #232 在不新增依赖、不改 0.1.1 版本的�
 `withBatchRunLock` 以 canonical run directory 作为唯一跨进程锁域，只允许当前 holder 所属且仍存活的 scope 嵌套重入；顶层 Promise 等待 detached nested scope 全部排空，已完成 scope 遗留的 async context 不能重入后来的 owner；live/foreign-host 锁不回收，本地 waiter 只在物理锁清理后接棒。公共 options 不暴露 PID、host 或 ownership clock，metadata 只从 `process.pid`、`os.hostname()` 与当前系统时间内部派生，强制注入额外字段也不能伪造 foreign-host stale recovery。CommandSpec timeout、run-lock timeout/poll、read retry policy/backoff 全部限制在 Node `2_147_483_647ms` timer 上限内；公共 lock timing 还必须是非负 safe integer。
 
 `dataset save-draft --execution-contract` 只把 unique-target parallel suffix 的 resource-aware claim/fatal-stop 调度接入公共 batch engine。依赖 prefix 仍逐项串行；`executeAction` 继续独占 before-state、PREPARED、token renewal、DML、append-only attempt/outcome、exact readback 与 no-replay 判断。因此 rows 的输入顺序、progress/failures/summary 字节和 fatal worker 传播保持原契约；blocked target 不消耗 worker 或越过 stop claim 窗口。
+
+Review note, 2026-08-26: Issue #233 对公共 batch 做纯移动式模块化。`src/batch.ts` 只从内部 owner 逐项 re-export，因此函数/类对象身份与 `instanceof` 不变；`types`/`errors` 为叶层，`canonical-contracts` 向上提供 JSON/hash/contract，`run-lock` 与 `scheduler-runtime` 相互独立，`item-projection`/`attempt-recovery` 复用叶层，`engine` 是唯一协调顶层。`test/public-batch-architecture.test.mjs` 与 shrink-only budget fixture 固定 62 行 facade、最大 445 行内部模块、精确 allowed edges、禁止回引 facade/CLI/dataset owner、零 SCC，以及公开 runtime/type/declaration/error/event/result 契约。无新依赖、版本、lockfile、npm/yarn 或发布路径；pnpm 11.23.0 与 TS7 单轨不变。
 
 Review note, 2026-07-30: Issue #214 将 identity preflight 的远程检索参数收敛为单一 `lexical_weight`，并把 derivative snapshot/readback 依赖收敛到 `extracted_md`、`embedding_ft` 与 `embedding_ft_at`。既有 owner-draft、一次性 admission、独立 readback 与 fail-closed 规则保持不变。
 
