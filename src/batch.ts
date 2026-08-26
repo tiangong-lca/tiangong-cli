@@ -46,6 +46,10 @@ export type BatchEventType =
   | 'item_claimed'
   | 'item_completed'
   | 'item_projection_drift'
+  | 'item_resource_acquired'
+  | 'item_resource_drift'
+  | 'item_resource_queued'
+  | 'item_resource_released'
   | 'item_resume_rejected'
   | 'item_resumed'
   | 'recovery_failed'
@@ -63,12 +67,14 @@ export type BatchEvent = Readonly<{
   delay_ms?: number;
   status?: BatchItemResultStatus | BatchStatus;
   source?: BatchRecoverySource;
+  exclusive_key?: string;
 }>;
 
 type BatchItemResultCommon<TInput> = Readonly<{
   item: TInput;
   item_id: string;
   item_contract: BatchItemContract;
+  exclusive_key: string | null;
   input_index: number;
   attempts: number;
   attempt_consumed: boolean;
@@ -108,33 +114,38 @@ export type BatchRunResult<
   events: readonly BatchEvent[];
 }>;
 
-export type BatchExecutionContext<TInput> = Readonly<{
+export type BatchExecutionContext<TInput, TExclusiveKey extends string = string> = Readonly<{
   item: TInput;
   item_id: string;
   item_contract: BatchItemContract;
+  exclusive_key: TExclusiveKey | null;
   input_index: number;
   attempt: number;
   mode: BatchMode;
 }>;
 
-export type BatchRetryContext<TInput> = BatchExecutionContext<TInput> &
+export type BatchRetryContext<
+  TInput,
+  TExclusiveKey extends string = string,
+> = BatchExecutionContext<TInput, TExclusiveKey> &
   Readonly<{
     error: unknown;
   }>;
 
-export type BatchRetryPolicy<TInput> = Readonly<{
+export type BatchRetryPolicy<TInput, TExclusiveKey extends string = string> = Readonly<{
   maxAttempts: number;
   maxDelayMs: number;
-  shouldRetry: (context: BatchRetryContext<TInput>) => boolean | Promise<boolean>;
-  delayMs: (context: BatchRetryContext<TInput>) => number | Promise<number>;
+  shouldRetry: (context: BatchRetryContext<TInput, TExclusiveKey>) => boolean | Promise<boolean>;
+  delayMs: (context: BatchRetryContext<TInput, TExclusiveKey>) => number | Promise<number>;
 }>;
 
 export type BatchRecoverySource = 'execution_error' | 'resume_incomplete';
 
-export type BatchMutationRecoveryContext<TInput> = Readonly<{
+export type BatchMutationRecoveryContext<TInput, TExclusiveKey extends string = string> = Readonly<{
   item: TInput;
   item_id: string;
   item_contract: BatchItemContract;
+  exclusive_key: TExclusiveKey | null;
   input_index: number;
   attempts: number;
   error: unknown;
@@ -173,6 +184,7 @@ export type BatchPauseContext<TInput, TOutput> = Readonly<{
   item: TInput;
   item_id: string;
   item_contract: BatchItemContract;
+  exclusive_key: string | null;
   input_index: number;
   claimed_count: number;
   results_input_order: readonly BatchItemResult<TInput, TOutput>[];
@@ -188,18 +200,31 @@ export type BatchStopContext<TInput, TOutput> = Readonly<{
 export type BatchClock = Readonly<{ now: () => number }>;
 export type BatchSleep = (milliseconds: number) => Promise<void>;
 
-export type RunBoundedBatchOptions<TInput, TOutput, TIdentity extends BatchJsonValue> = Readonly<{
+export type BatchExclusiveKeyContext<TInput> = Readonly<{
+  item: TInput;
+  item_id: string;
+  item_contract: BatchItemContract;
+  input_index: number;
+}>;
+
+export type RunBoundedBatchOptions<
+  TInput,
+  TOutput,
+  TIdentity extends BatchJsonValue,
+  TExclusiveKey extends string = string,
+> = Readonly<{
   contract: BatchContract<TIdentity>;
   items: readonly TInput[];
   getItemIdentity: (item: TInput, inputIndex: number) => string;
   projectItemContent: (item: TInput, inputIndex: number) => BatchJsonValue;
   projectItemPolicy: (item: TInput, inputIndex: number) => BatchJsonValue;
+  getExclusiveKey?: (context: BatchExclusiveKeyContext<TInput>) => TExclusiveKey | null | undefined;
   mode: BatchMode;
   maxConcurrency: number;
-  execute: (context: BatchExecutionContext<TInput>) => TOutput | Promise<TOutput>;
-  retry?: BatchRetryPolicy<TInput>;
+  execute: (context: BatchExecutionContext<TInput, TExclusiveKey>) => TOutput | Promise<TOutput>;
+  retry?: BatchRetryPolicy<TInput, TExclusiveKey>;
   recoverMutation?: (
-    context: BatchMutationRecoveryContext<TInput>,
+    context: BatchMutationRecoveryContext<TInput, TExclusiveKey>,
   ) => BatchMutationRecoveryResult<TOutput> | Promise<BatchMutationRecoveryResult<TOutput>>;
   resume?: BatchResumeState<TOutput, TIdentity>;
   shouldPauseBeforeClaim?: (
@@ -252,6 +277,16 @@ export class BatchItemProjectionDriftError extends BatchContractError {
   constructor(itemId: string) {
     super(`Batch item ${itemId} content or policy projection drifted before claim.`);
     this.name = 'BatchItemProjectionDriftError';
+    this.itemId = itemId;
+  }
+}
+
+export class BatchItemResourceDriftError extends BatchContractError {
+  readonly itemId: string;
+
+  constructor(itemId: string) {
+    super(`Batch item ${itemId} exclusive resource key drifted before claim.`);
+    this.name = 'BatchItemResourceDriftError';
     this.itemId = itemId;
   }
 }
@@ -375,8 +410,13 @@ export function assertBatchContractMatches<TIdentity extends BatchJsonValue>(
   return actual;
 }
 
-export async function runBoundedBatch<TInput, TOutput, TIdentity extends BatchJsonValue>(
-  options: RunBoundedBatchOptions<TInput, TOutput, TIdentity>,
+export async function runBoundedBatch<
+  TInput,
+  TOutput,
+  TIdentity extends BatchJsonValue,
+  TExclusiveKey extends string = string,
+>(
+  options: RunBoundedBatchOptions<TInput, TOutput, TIdentity, TExclusiveKey>,
 ): Promise<BatchRunResult<TInput, TOutput, TIdentity>> {
   const contract = parseBatchContract<TIdentity>(options.contract);
   validateBatchOptions(options);
@@ -387,10 +427,14 @@ export async function runBoundedBatch<TInput, TOutput, TIdentity extends BatchJs
   const preflightItemContracts = options.items.map((item, index) =>
     projectBatchItemContract(options, item, index, itemIds[index]!),
   );
+  const preflightExclusiveKeys = options.items.map((item, index) =>
+    projectExclusiveKey(options, item, index, preflightItemContracts[index]!),
+  );
   const resumeItems = validateResume(options.resume, contract, itemIds);
   const clock = options.clock ?? { now: Date.now };
   const sleep = options.sleep ?? defaultBatchSleep;
   const emitter = createEventEmitter(clock, options.eventSink);
+  const exclusiveCoordinator = createExclusiveCoordinator(emitter);
   const schedulerLock = createAsyncLock();
   const resultsByIndex = new Map<number, BatchItemResult<TInput, TOutput>>();
   const completionResults: BatchItemResult<TInput, TOutput>[] = [];
@@ -406,9 +450,17 @@ export async function runBoundedBatch<TInput, TOutput, TIdentity extends BatchJs
     const resumeItem = resumeItems.get(itemIds[index]!);
     if (resumeItem?.state === 'completed') {
       const itemContract = preflightItemContracts[index]!;
+      const exclusiveKey = preflightExclusiveKeys[index]!;
       const currentItemContract = projectBatchItemContract(options, item, index, itemIds[index]!);
       if (!batchItemContractsMatch(itemContract, currentItemContract)) {
-        const result = projectionDriftFailure(item, itemContract, index, resumeItem, clock);
+        const result = projectionDriftFailure(
+          item,
+          itemContract,
+          exclusiveKey,
+          index,
+          resumeItem,
+          clock,
+        );
         resultsByIndex.set(index, result);
         completionResults.push(result);
         await emitter.emit('item_projection_drift', {
@@ -418,8 +470,34 @@ export async function runBoundedBatch<TInput, TOutput, TIdentity extends BatchJs
         });
         continue;
       }
+      const currentExclusiveKey = projectExclusiveKey(options, item, index, currentItemContract);
+      if (exclusiveKey !== currentExclusiveKey) {
+        const result = resourceDriftFailure(
+          item,
+          itemContract,
+          exclusiveKey,
+          index,
+          resumeItem,
+          clock,
+        );
+        resultsByIndex.set(index, result);
+        completionResults.push(result);
+        await emitter.emit('item_resource_drift', {
+          item_id: result.item_id,
+          input_index: result.input_index,
+          status: result.status,
+        });
+        continue;
+      }
       if (!batchItemContractsMatch(itemContract, resumeItem)) {
-        const result = resumeContractFailure(item, itemContract, index, resumeItem.attempts, clock);
+        const result = resumeContractFailure(
+          item,
+          itemContract,
+          exclusiveKey,
+          index,
+          resumeItem.attempts,
+          clock,
+        );
         resultsByIndex.set(index, result);
         completionResults.push(result);
         await emitter.emit('item_resume_rejected', {
@@ -433,6 +511,7 @@ export async function runBoundedBatch<TInput, TOutput, TIdentity extends BatchJs
         item,
         item_id: itemContract.item_id,
         item_contract: itemContract,
+        exclusive_key: exclusiveKey,
         input_index: index,
         attempts: resumeItem.attempts,
         attempt_consumed: true,
@@ -467,6 +546,7 @@ export async function runBoundedBatch<TInput, TOutput, TIdentity extends BatchJs
         kind: 'claimed';
         index: number;
         itemContract: BatchItemContract;
+        exclusiveKey: TExclusiveKey | null;
         resumeItem: BatchResumeItem<TOutput> | undefined;
       }
     | { kind: 'rejected'; result: BatchItemFailedResult<TInput> };
@@ -478,12 +558,38 @@ export async function runBoundedBatch<TInput, TOutput, TIdentity extends BatchJs
       const item = options.items[index]!;
       const itemId = itemIds[index]!;
       const itemContract = preflightItemContracts[index]!;
+      const exclusiveKey = preflightExclusiveKeys[index]!;
       const currentItemContract = projectBatchItemContract(options, item, index, itemId);
       const resumeItem = resumeItems.get(itemId);
       if (!batchItemContractsMatch(itemContract, currentItemContract)) {
         pendingCursor += 1;
-        const result = projectionDriftFailure(item, itemContract, index, resumeItem, clock);
+        const result = projectionDriftFailure(
+          item,
+          itemContract,
+          exclusiveKey,
+          index,
+          resumeItem,
+          clock,
+        );
         await emitter.emit('item_projection_drift', {
+          item_id: result.item_id,
+          input_index: result.input_index,
+          status: result.status,
+        });
+        return { kind: 'rejected', result };
+      }
+      const currentExclusiveKey = projectExclusiveKey(options, item, index, currentItemContract);
+      if (exclusiveKey !== currentExclusiveKey) {
+        pendingCursor += 1;
+        const result = resourceDriftFailure(
+          item,
+          itemContract,
+          exclusiveKey,
+          index,
+          resumeItem,
+          clock,
+        );
+        await emitter.emit('item_resource_drift', {
           item_id: result.item_id,
           input_index: result.input_index,
           status: result.status,
@@ -492,7 +598,14 @@ export async function runBoundedBatch<TInput, TOutput, TIdentity extends BatchJs
       }
       if (resumeItem && !batchItemContractsMatch(itemContract, resumeItem)) {
         pendingCursor += 1;
-        const result = resumeContractFailure(item, itemContract, index, resumeItem.attempts, clock);
+        const result = resumeContractFailure(
+          item,
+          itemContract,
+          exclusiveKey,
+          index,
+          resumeItem.attempts,
+          clock,
+        );
         await emitter.emit('item_resume_rejected', {
           item_id: result.item_id,
           input_index: result.input_index,
@@ -506,6 +619,7 @@ export async function runBoundedBatch<TInput, TOutput, TIdentity extends BatchJs
           item,
           item_id: itemId,
           item_contract: itemContract,
+          exclusive_key: exclusiveKey,
           input_index: index,
           claimed_count: claimOrder.length,
           results_input_order: inputOrderedResults(resultsByIndex),
@@ -522,7 +636,7 @@ export async function runBoundedBatch<TInput, TOutput, TIdentity extends BatchJs
       pendingCursor += 1;
       claimOrder.push(itemId);
       await emitter.emit('item_claimed', { item_id: itemId, input_index: index });
-      return { kind: 'claimed', index, itemContract, resumeItem };
+      return { kind: 'claimed', index, itemContract, exclusiveKey, resumeItem };
     });
 
   const complete = async (result: BatchItemResult<TInput, TOutput>): Promise<void> =>
@@ -555,15 +669,26 @@ export async function runBoundedBatch<TInput, TOutput, TIdentity extends BatchJs
         await complete(claim.result);
         continue;
       }
-      const result = await executeClaim({
-        options,
-        index: claim.index,
-        itemContract: claim.itemContract,
-        resumeItem: claim.resumeItem,
-        clock,
-        sleep,
-        emitter,
-      });
+      const execute = () =>
+        executeClaim({
+          options,
+          index: claim.index,
+          itemContract: claim.itemContract,
+          exclusiveKey: claim.exclusiveKey,
+          resumeItem: claim.resumeItem,
+          clock,
+          sleep,
+          emitter,
+        });
+      const result =
+        claim.exclusiveKey === null
+          ? await execute()
+          : await exclusiveCoordinator.run(
+              claim.exclusiveKey,
+              claim.itemContract.item_id,
+              claim.index,
+              execute,
+            );
       await complete(result);
     }
   };
@@ -644,9 +769,12 @@ function hasExactKeys(value: Record<string, unknown>, expectedKeys: readonly str
   return actual.length === expected.length && actual.every((key, index) => key === expected[index]);
 }
 
-function validateBatchOptions<TInput, TOutput, TIdentity extends BatchJsonValue>(
-  options: RunBoundedBatchOptions<TInput, TOutput, TIdentity>,
-): void {
+function validateBatchOptions<
+  TInput,
+  TOutput,
+  TIdentity extends BatchJsonValue,
+  TExclusiveKey extends string,
+>(options: RunBoundedBatchOptions<TInput, TOutput, TIdentity, TExclusiveKey>): void {
   if (
     !Number.isSafeInteger(options.maxConcurrency) ||
     options.maxConcurrency < 1 ||
@@ -758,8 +886,13 @@ function batchItemContractsMatch(left: BatchItemContract, right: BatchItemContra
   );
 }
 
-function projectBatchItemContract<TInput, TOutput, TIdentity extends BatchJsonValue>(
-  options: RunBoundedBatchOptions<TInput, TOutput, TIdentity>,
+function projectBatchItemContract<
+  TInput,
+  TOutput,
+  TIdentity extends BatchJsonValue,
+  TExclusiveKey extends string,
+>(
+  options: RunBoundedBatchOptions<TInput, TOutput, TIdentity, TExclusiveKey>,
   item: TInput,
   index: number,
   itemId: string,
@@ -771,9 +904,37 @@ function projectBatchItemContract<TInput, TOutput, TIdentity extends BatchJsonVa
   });
 }
 
+function projectExclusiveKey<
+  TInput,
+  TOutput,
+  TIdentity extends BatchJsonValue,
+  TExclusiveKey extends string,
+>(
+  options: RunBoundedBatchOptions<TInput, TOutput, TIdentity, TExclusiveKey>,
+  item: TInput,
+  index: number,
+  itemContract: BatchItemContract,
+): TExclusiveKey | null {
+  if (!options.getExclusiveKey) return null;
+  const value = options.getExclusiveKey({
+    item,
+    item_id: itemContract.item_id,
+    item_contract: itemContract,
+    input_index: index,
+  });
+  if (value === null || value === undefined) return null;
+  if (value.length === 0 || /[\0\r\n]/u.test(value)) {
+    throw new BatchContractError(
+      'Batch exclusive resource keys must be non-empty single-line strings.',
+    );
+  }
+  return value;
+}
+
 function projectionDriftFailure<TInput, TOutput>(
   item: TInput,
   itemContract: BatchItemContract,
+  exclusiveKey: string | null,
   index: number,
   resumeItem: BatchResumeItem<TOutput> | undefined,
   clock: BatchClock,
@@ -787,12 +948,35 @@ function projectionDriftFailure<TInput, TOutput>(
     resumeItem !== undefined,
     clock,
     new BatchItemProjectionDriftError(itemContract.item_id),
+    exclusiveKey,
+  );
+}
+
+function resourceDriftFailure<TInput, TOutput>(
+  item: TInput,
+  itemContract: BatchItemContract,
+  exclusiveKey: string | null,
+  index: number,
+  resumeItem: BatchResumeItem<TOutput> | undefined,
+  clock: BatchClock,
+): BatchItemFailedResult<TInput> {
+  return failedResult(
+    item,
+    itemContract,
+    index,
+    resumeItem?.attempts ?? 0,
+    resumeItem !== undefined,
+    resumeItem !== undefined,
+    clock,
+    new BatchItemResourceDriftError(itemContract.item_id),
+    exclusiveKey,
   );
 }
 
 function resumeContractFailure<TInput>(
   item: TInput,
   itemContract: BatchItemContract,
+  exclusiveKey: string | null,
   index: number,
   attempts: number,
   clock: BatchClock,
@@ -806,6 +990,7 @@ function resumeContractFailure<TInput>(
     true,
     clock,
     new BatchItemResumeContractError(itemContract.item_id),
+    exclusiveKey,
   );
 }
 
@@ -845,6 +1030,50 @@ function createEventEmitter(
   };
 }
 
+function createExclusiveCoordinator(emitter: EventEmitter) {
+  const tails = new Map<string, Promise<void>>();
+  return {
+    run: async <T>(
+      exclusiveKey: string,
+      itemId: string,
+      inputIndex: number,
+      task: () => Promise<T>,
+    ): Promise<T> => {
+      await emitter.emit('item_resource_queued', {
+        item_id: itemId,
+        input_index: inputIndex,
+        exclusive_key: exclusiveKey,
+      });
+      const previous = tails.get(exclusiveKey) ?? Promise.resolve();
+      let release: () => void = () => undefined;
+      const turn = new Promise<void>((resolve) => {
+        release = resolve;
+      });
+      tails.set(exclusiveKey, turn);
+      await previous;
+      try {
+        await emitter.emit('item_resource_acquired', {
+          item_id: itemId,
+          input_index: inputIndex,
+          exclusive_key: exclusiveKey,
+        });
+        return await task();
+      } finally {
+        try {
+          await emitter.emit('item_resource_released', {
+            item_id: itemId,
+            input_index: inputIndex,
+            exclusive_key: exclusiveKey,
+          });
+        } finally {
+          release();
+          if (tails.get(exclusiveKey) === turn) tails.delete(exclusiveKey);
+        }
+      }
+    },
+  };
+}
+
 function readClock(clock: BatchClock): number {
   const value = clock.now();
   if (!Number.isFinite(value)) {
@@ -876,8 +1105,13 @@ function inputOrderedResults<TInput, TOutput>(
   return [...results.entries()].sort(([left], [right]) => left - right).map(([, result]) => result);
 }
 
-async function shouldStopAfter<TInput, TOutput, TIdentity extends BatchJsonValue>(
-  options: RunBoundedBatchOptions<TInput, TOutput, TIdentity>,
+async function shouldStopAfter<
+  TInput,
+  TOutput,
+  TIdentity extends BatchJsonValue,
+  TExclusiveKey extends string,
+>(
+  options: RunBoundedBatchOptions<TInput, TOutput, TIdentity, TExclusiveKey>,
   lastResult: BatchItemResult<TInput, TOutput>,
   claimOrder: readonly string[],
   resultsByIndex: Map<number, BatchItemResult<TInput, TOutput>>,
@@ -892,16 +1126,22 @@ async function shouldStopAfter<TInput, TOutput, TIdentity extends BatchJsonValue
   });
 }
 
-async function executeClaim<TInput, TOutput, TIdentity extends BatchJsonValue>(input: {
-  options: RunBoundedBatchOptions<TInput, TOutput, TIdentity>;
+async function executeClaim<
+  TInput,
+  TOutput,
+  TIdentity extends BatchJsonValue,
+  TExclusiveKey extends string,
+>(input: {
+  options: RunBoundedBatchOptions<TInput, TOutput, TIdentity, TExclusiveKey>;
   index: number;
   itemContract: BatchItemContract;
+  exclusiveKey: TExclusiveKey | null;
   resumeItem: BatchResumeItem<TOutput> | undefined;
   clock: BatchClock;
   sleep: BatchSleep;
   emitter: EventEmitter;
 }): Promise<BatchItemResult<TInput, TOutput>> {
-  const { options, index, itemContract, resumeItem, clock, sleep, emitter } = input;
+  const { options, index, itemContract, exclusiveKey, resumeItem, clock, sleep, emitter } = input;
   const itemId = itemContract.item_id;
   const item = options.items[index]!;
   const resumed = resumeItem?.state === 'attempted';
@@ -909,12 +1149,23 @@ async function executeClaim<TInput, TOutput, TIdentity extends BatchJsonValue>(i
   if (resumed && options.mode === 'mutation') {
     const error = new BatchMutationReplayError(itemId);
     if (!options.recoverMutation) {
-      return failedResult(item, itemContract, index, baseAttempts, true, true, clock, error);
+      return failedResult(
+        item,
+        itemContract,
+        index,
+        baseAttempts,
+        true,
+        true,
+        clock,
+        error,
+        exclusiveKey,
+      );
     }
     return recoverMutation({
       options,
       item,
       itemContract,
+      exclusiveKey,
       index,
       attempts: baseAttempts,
       error,
@@ -928,10 +1179,11 @@ async function executeClaim<TInput, TOutput, TIdentity extends BatchJsonValue>(i
   const maxAttempts = options.retry?.maxAttempts ?? 1;
   for (let invocationAttempt = 1; ; invocationAttempt += 1) {
     const attempt = baseAttempts + invocationAttempt;
-    const context: BatchExecutionContext<TInput> = {
+    const context: BatchExecutionContext<TInput, TExclusiveKey> = {
       item,
       item_id: itemId,
       item_contract: itemContract,
+      exclusive_key: exclusiveKey,
       input_index: index,
       attempt,
       mode: options.mode,
@@ -944,6 +1196,7 @@ async function executeClaim<TInput, TOutput, TIdentity extends BatchJsonValue>(i
         item,
         item_id: itemId,
         item_contract: itemContract,
+        exclusive_key: exclusiveKey,
         input_index: index,
         attempts: attempt,
         attempt_consumed: true,
@@ -956,12 +1209,23 @@ async function executeClaim<TInput, TOutput, TIdentity extends BatchJsonValue>(i
       await emitter.emit('attempt_failed', { item_id: itemId, input_index: index, attempt });
       if (options.mode === 'mutation') {
         if (!options.recoverMutation) {
-          return failedResult(item, itemContract, index, attempt, true, resumed, clock, error);
+          return failedResult(
+            item,
+            itemContract,
+            index,
+            attempt,
+            true,
+            resumed,
+            clock,
+            error,
+            exclusiveKey,
+          );
         }
         return recoverMutation({
           options,
           item,
           itemContract,
+          exclusiveKey,
           index,
           attempts: attempt,
           error,
@@ -972,9 +1236,19 @@ async function executeClaim<TInput, TOutput, TIdentity extends BatchJsonValue>(i
         });
       }
       if (!options.retry || invocationAttempt >= maxAttempts) {
-        return failedResult(item, itemContract, index, attempt, true, resumed, clock, error);
+        return failedResult(
+          item,
+          itemContract,
+          index,
+          attempt,
+          true,
+          resumed,
+          clock,
+          error,
+          exclusiveKey,
+        );
       }
-      const retryContext: BatchRetryContext<TInput> = { ...context, error };
+      const retryContext: BatchRetryContext<TInput, TExclusiveKey> = { ...context, error };
       let retry = false;
       try {
         retry = await options.retry.shouldRetry(retryContext);
@@ -988,10 +1262,21 @@ async function executeClaim<TInput, TOutput, TIdentity extends BatchJsonValue>(i
           resumed,
           clock,
           classificationError,
+          exclusiveKey,
         );
       }
       if (!retry) {
-        return failedResult(item, itemContract, index, attempt, true, resumed, clock, error);
+        return failedResult(
+          item,
+          itemContract,
+          index,
+          attempt,
+          true,
+          resumed,
+          clock,
+          error,
+          exclusiveKey,
+        );
       }
       let requestedDelay: number;
       try {
@@ -1000,7 +1285,17 @@ async function executeClaim<TInput, TOutput, TIdentity extends BatchJsonValue>(i
           throw new BatchContractError('Batch retry delay must be a non-negative safe integer.');
         }
       } catch (delayError) {
-        return failedResult(item, itemContract, index, attempt, true, resumed, clock, delayError);
+        return failedResult(
+          item,
+          itemContract,
+          index,
+          attempt,
+          true,
+          resumed,
+          clock,
+          delayError,
+          exclusiveKey,
+        );
       }
       const delay = Math.min(requestedDelay, options.retry.maxDelayMs);
       await emitter.emit('retry_scheduled', {
@@ -1012,16 +1307,32 @@ async function executeClaim<TInput, TOutput, TIdentity extends BatchJsonValue>(i
       try {
         await sleep(delay);
       } catch (sleepError) {
-        return failedResult(item, itemContract, index, attempt, true, resumed, clock, sleepError);
+        return failedResult(
+          item,
+          itemContract,
+          index,
+          attempt,
+          true,
+          resumed,
+          clock,
+          sleepError,
+          exclusiveKey,
+        );
       }
     }
   }
 }
 
-async function recoverMutation<TInput, TOutput, TIdentity extends BatchJsonValue>(input: {
-  options: RunBoundedBatchOptions<TInput, TOutput, TIdentity>;
+async function recoverMutation<
+  TInput,
+  TOutput,
+  TIdentity extends BatchJsonValue,
+  TExclusiveKey extends string,
+>(input: {
+  options: RunBoundedBatchOptions<TInput, TOutput, TIdentity, TExclusiveKey>;
   item: TInput;
   itemContract: BatchItemContract;
+  exclusiveKey: TExclusiveKey | null;
   index: number;
   attempts: number;
   error: unknown;
@@ -1030,8 +1341,19 @@ async function recoverMutation<TInput, TOutput, TIdentity extends BatchJsonValue
   clock: BatchClock;
   emitter: EventEmitter;
 }): Promise<BatchItemResult<TInput, TOutput>> {
-  const { options, item, itemContract, index, attempts, error, source, resumed, clock, emitter } =
-    input;
+  const {
+    options,
+    item,
+    itemContract,
+    exclusiveKey,
+    index,
+    attempts,
+    error,
+    source,
+    resumed,
+    clock,
+    emitter,
+  } = input;
   const itemId = itemContract.item_id;
   await emitter.emit('recovery_started', {
     item_id: itemId,
@@ -1044,6 +1366,7 @@ async function recoverMutation<TInput, TOutput, TIdentity extends BatchJsonValue
       item,
       item_id: itemId,
       item_contract: itemContract,
+      exclusive_key: exclusiveKey,
       input_index: index,
       attempts,
       error,
@@ -1060,6 +1383,7 @@ async function recoverMutation<TInput, TOutput, TIdentity extends BatchJsonValue
         item,
         item_id: itemId,
         item_contract: itemContract,
+        exclusive_key: exclusiveKey,
         input_index: index,
         attempts,
         attempt_consumed: true,
@@ -1087,6 +1411,7 @@ async function recoverMutation<TInput, TOutput, TIdentity extends BatchJsonValue
       resumed,
       clock,
       recovery.error ?? error,
+      exclusiveKey,
     );
   } catch (recoveryError) {
     await emitter.emit('recovery_failed', {
@@ -1095,7 +1420,17 @@ async function recoverMutation<TInput, TOutput, TIdentity extends BatchJsonValue
       attempt: attempts,
       source,
     });
-    return failedResult(item, itemContract, index, attempts, true, resumed, clock, recoveryError);
+    return failedResult(
+      item,
+      itemContract,
+      index,
+      attempts,
+      true,
+      resumed,
+      clock,
+      recoveryError,
+      exclusiveKey,
+    );
   }
 }
 
@@ -1108,11 +1443,13 @@ function failedResult<TInput>(
   resumed: boolean,
   clock: BatchClock,
   error: unknown,
+  exclusiveKey: string | null = null,
 ): BatchItemFailedResult<TInput> {
   return freezeResult({
     item,
     item_id: itemContract.item_id,
     item_contract: itemContract,
+    exclusive_key: exclusiveKey,
     input_index: inputIndex,
     attempts,
     attempt_consumed: attemptConsumed,
