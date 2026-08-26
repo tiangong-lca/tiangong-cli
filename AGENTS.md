@@ -37,7 +37,7 @@ checkPaths:
   - scripts/docpact-gate.sh
   - scripts/install-git-hooks.sh
 lastReviewedAt: 2026-08-26
-lastReviewedCommit: 4a1507e69ca9493c1c964efd2c2549691a788d0b
+lastReviewedCommit: 3d67a14d81f06279251bc468917ef09c7245678b
 lastReviewedNote: 'Reviewed for Issue #233: the 62-line facade and eight bounded acyclic batch modules preserve exact exports, identities, bytes, declarations, dogfood, pnpm-only tooling, and 0.1.1 release boundaries.'
 related:
   - .docpact/config.yaml

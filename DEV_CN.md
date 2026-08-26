@@ -22,7 +22,7 @@ checkPaths:
   - scripts/**
   - .github/workflows/**
 lastReviewedAt: 2026-08-26
-lastReviewedCommit: 4a1507e69ca9493c1c964efd2c2549691a788d0b
+lastReviewedCommit: 3d67a14d81f06279251bc468917ef09c7245678b
 lastReviewedNote: 'Reviewed for Issue #233: 记录 62 行 batch facade、8 个有界无环模块、精确兼容与架构门；保持 pnpm/TS7 单轨且不新增依赖、版本或发布路径。'
 related:
   - AGENTS.md

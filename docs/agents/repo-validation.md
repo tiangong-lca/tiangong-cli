@@ -32,7 +32,7 @@ checkPaths:
   - scripts/docpact-gate.sh
   - scripts/install-git-hooks.sh
 lastReviewedAt: 2026-08-26
-lastReviewedCommit: 4a1507e69ca9493c1c964efd2c2549691a788d0b
+lastReviewedCommit: 3d67a14d81f06279251bc468917ef09c7245678b
 lastReviewedNote: 'Reviewed for Issue #233: proof covers facade/internal LOC budgets, exact edges and zero SCCs, export/class/declaration/byte compatibility, packed consumers, dogfood, pnpm-only tooling, and 100% coverage.'
 related:
   - ../../AGENTS.md

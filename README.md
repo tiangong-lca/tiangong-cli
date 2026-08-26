@@ -27,7 +27,7 @@ checkPaths:
   - test/auth-identity*.test.ts
   - test/lca-release*.test.ts
 lastReviewedAt: 2026-08-26
-lastReviewedCommit: 4a1507e69ca9493c1c964efd2c2549691a788d0b
+lastReviewedCommit: 3d67a14d81f06279251bc468917ef09c7245678b
 lastReviewedNote: 'Reviewed for Issue #233: documents the move-only 62-line batch facade, bounded acyclic internals, exact public compatibility, pnpm-only tooling, closed root, and deferred release.'
 ---
 

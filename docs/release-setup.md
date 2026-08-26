@@ -25,7 +25,7 @@ checkPaths:
   - scripts/docpact-gate.sh
   - scripts/install-git-hooks.sh
 lastReviewedAt: 2026-08-26
-lastReviewedCommit: 4a1507e69ca9493c1c964efd2c2549691a788d0b
+lastReviewedCommit: 3d67a14d81f06279251bc468917ef09c7245678b
 lastReviewedNote: 'Reviewed for Issue #233: bounded internal batch decomposition adds no secret, environment, dependency, lockfile, package-manager path, publisher, tag rule, credential, or alternate release setup.'
 related:
   - ../AGENTS.md
