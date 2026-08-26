@@ -44,7 +44,7 @@
     },
     {
       "path": "src/lib/batch/item-projection.ts",
-      "max_lines": 500,
+      "max_lines": 270,
       "allowed_internal_imports": [
         "src/lib/batch/canonical-contracts.ts",
         "src/lib/batch/errors.ts",
