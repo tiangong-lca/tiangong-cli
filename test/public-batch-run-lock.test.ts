@@ -7,6 +7,7 @@ import { pathToFileURL } from 'node:url';
 import test from 'node:test';
 
 import {
+  BatchRunLockIdentityConflictError,
   BatchRunLockTimeoutError,
   batchRunLockPath,
   batchRunLockStatePath,
@@ -15,20 +16,10 @@ import {
 
 const identity = { execution_id: 'run-1', revision: 1 };
 
-test('batch run-lock paths are canonical and identity-bound', () => {
+test('batch run-lock paths are canonical and run-directory-bound', () => {
   const runPath = path.join(os.tmpdir(), 'batch-run-lock-path');
-  assert.equal(
-    batchRunLockStatePath(runPath, { revision: 1, execution_id: 'run-1' }),
-    batchRunLockStatePath(runPath, identity),
-  );
-  assert.notEqual(
-    batchRunLockStatePath(runPath, { execution_id: 'run-2', revision: 1 }),
-    batchRunLockStatePath(runPath, identity),
-  );
-  assert.equal(
-    batchRunLockPath(runPath, identity),
-    `${batchRunLockStatePath(runPath, identity)}.lock`,
-  );
+  assert.equal(batchRunLockStatePath(path.join(runPath, '.')), batchRunLockStatePath(runPath));
+  assert.equal(batchRunLockPath(runPath), `${batchRunLockStatePath(runPath)}.lock`);
 });
 
 test('batch run lock is reentrant for the same run path and identity', async () => {
@@ -44,20 +35,28 @@ test('batch run lock is reentrant for the same run path and identity', async () 
         now: new Date('2026-08-26T00:00:00.000Z'),
       },
       async (outer) => {
-        assert.equal(outer.lock_path, batchRunLockPath(root, identity));
+        assert.equal(outer.lock_path, batchRunLockPath(root));
         assert.equal(existsSync(outer.lock_path), true);
         const metadataBefore = readFileSync(outer.lock_path, 'utf8');
+        assert.equal(JSON.parse(metadataBefore).batch_identity_sha256, outer.identity_sha256);
         const inner = await withBatchRunLock(
           { runPath: root, identity, reason: 'inner' },
           (receipt) => receipt,
         );
         assert.deepEqual(inner, outer);
         assert.equal(readFileSync(outer.lock_path, 'utf8'), metadataBefore);
+        await assert.rejects(
+          withBatchRunLock(
+            { runPath: root, identity: { execution_id: 'other' }, reason: 'foreign-inner' },
+            () => 'forbidden',
+          ),
+          BatchRunLockIdentityConflictError,
+        );
         return 'done';
       },
     );
     assert.equal(result, 'done');
-    assert.equal(existsSync(batchRunLockPath(root, identity)), false);
+    assert.equal(existsSync(batchRunLockPath(root)), false);
   } finally {
     rmSync(root, { recursive: true, force: true });
   }
@@ -65,7 +64,7 @@ test('batch run lock is reentrant for the same run path and identity', async () 
 
 test('batch run lock preserves a live lock on timeout and recovers a stale lock', async () => {
   const root = mkdtempSync(path.join(os.tmpdir(), 'batch-run-lock-owner-'));
-  const lockPath = batchRunLockPath(root, identity);
+  const lockPath = batchRunLockPath(root);
   try {
     writeLock(lockPath, process.pid);
     await assert.rejects(
@@ -104,7 +103,8 @@ test('batch run lock excludes another process with the same run path and identit
     [
       `import { withBatchRunLock } from ${JSON.stringify(batchModule)};`,
       `const runPath = process.argv[2];`,
-      `await withBatchRunLock({ runPath, identity: ${JSON.stringify(identity)}, reason: 'child', timeoutMs: 2000, pollMs: 10 }, async () => {`,
+      `const identity = JSON.parse(process.argv[3]);`,
+      `await withBatchRunLock({ runPath, identity, reason: 'child', timeoutMs: 2000, pollMs: 10 }, async () => {`,
       `  process.stdout.write('acquired\\n');`,
       `  await new Promise((resolve) => process.stdin.once('data', resolve));`,
       `});`,
@@ -113,18 +113,18 @@ test('batch run lock excludes another process with the same run path and identit
     'utf8',
   );
 
-  const first = spawnLockChild(childFile, root);
+  const first = spawnLockChild(childFile, root, identity);
   let second: ChildProcessWithoutNullStreams | undefined;
   try {
     await waitForOutput(first, 'acquired\n');
-    second = spawnLockChild(childFile, root);
+    second = spawnLockChild(childFile, root, { execution_id: 'different-process-identity' });
     await assertNoOutput(second, 40);
     first.stdin.write('release\n');
     await waitForExit(first);
     await waitForOutput(second, 'acquired\n');
     second.stdin.write('release\n');
     await waitForExit(second);
-    assert.equal(existsSync(batchRunLockPath(root, identity)), false);
+    assert.equal(existsSync(batchRunLockPath(root)), false);
   } finally {
     first.kill();
     second?.kill();
@@ -140,12 +140,20 @@ function writeLock(lockPath: string, ownerPid: number): void {
   );
 }
 
-function spawnLockChild(childFile: string, runPath: string): ChildProcessWithoutNullStreams {
-  return spawn(process.execPath, ['--import', 'tsx', childFile, runPath], {
-    cwd: process.cwd(),
-    env: process.env,
-    stdio: ['pipe', 'pipe', 'pipe'],
-  });
+function spawnLockChild(
+  childFile: string,
+  runPath: string,
+  childIdentity: object,
+): ChildProcessWithoutNullStreams {
+  return spawn(
+    process.execPath,
+    ['--import', 'tsx', childFile, runPath, JSON.stringify(childIdentity)],
+    {
+      cwd: process.cwd(),
+      env: process.env,
+      stdio: ['pipe', 'pipe', 'pipe'],
+    },
+  );
 }
 
 async function waitForOutput(
