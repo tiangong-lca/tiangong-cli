@@ -1182,6 +1182,83 @@ test('claim-time identity getter failures become item drift and drain in-flight 
   }
 });
 
+test('infrastructure callback failures stop new claims and drain in-flight mutations before rejection', async () => {
+  const infrastructureError = new Error('shouldStop infrastructure failed');
+  let releaseA: () => void = () => undefined;
+  const aGate = new Promise<void>((resolve) => {
+    releaseA = resolve;
+  });
+  let markAFinished: () => void = () => undefined;
+  const aFinishedSignal = new Promise<void>((resolve) => {
+    markAFinished = resolve;
+  });
+  let aStarted = false;
+  let aFinished = false;
+  const executeCalls: string[] = [];
+  const stopCalls: string[] = [];
+  const events: BatchEvent[] = [];
+  const running = runBoundedBatch({
+    contract,
+    items: ['a', 'b', 'c'],
+    getItemIdentity: (item) => item,
+    mode: 'mutation',
+    maxConcurrency: 2,
+    eventSink: (event) => {
+      events.push(event);
+    },
+    execute: async ({ item }) => {
+      executeCalls.push(item);
+      if (item === 'a') {
+        aStarted = true;
+        await aGate;
+        aFinished = true;
+        markAFinished();
+        return 'A';
+      }
+      throw new Error(`mutation ${item} failed`);
+    },
+    shouldStop: ({ last_result: lastResult }) => {
+      stopCalls.push(lastResult.item_id);
+      if (lastResult.item_id === 'b') throw infrastructureError;
+      return false;
+    },
+  });
+  const observed = running.then(
+    (result) => ({ state: 'fulfilled' as const, result }),
+    (error: unknown) => ({ state: 'rejected' as const, error }),
+  );
+  let settled = false;
+  void observed.then(() => {
+    settled = true;
+  });
+
+  try {
+    await waitFor(() => aStarted && stopCalls.includes('b'));
+    await new Promise<void>((resolve) => setImmediate(resolve));
+    assert.equal(settled, false, 'top-level rejection must wait for in-flight mutation a');
+    assert.equal(aFinished, false);
+    assert.deepEqual(executeCalls, ['a', 'b']);
+
+    releaseA();
+    const outcome = await observed;
+    assert.equal(outcome.state, 'rejected');
+    assert.ok(outcome.state === 'rejected');
+    assert.equal(outcome.error, infrastructureError);
+    assert.equal(aFinished, true);
+    assert.deepEqual(stopCalls, ['b']);
+    assert.deepEqual(executeCalls, ['a', 'b'], 'fatal infrastructure state must leave c unclaimed');
+    assert.deepEqual(
+      events
+        .filter((event) => event.type === 'item_completed')
+        .map((event) => event.item_id),
+      ['b', 'a'],
+    );
+  } finally {
+    releaseA();
+    await Promise.all([observed, aFinishedSignal]);
+  }
+});
+
 test('mutation transport is attempted once and only explicit readback may recover it', async () => {
   let attempts = 0;
   let recoveries = 0;
