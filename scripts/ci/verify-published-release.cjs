@@ -8,7 +8,7 @@ const path = require('node:path');
 const { verify: verifySigstore } = require('sigstore');
 
 const PACKAGE_NAME = '@tiangong-lca/cli';
-const PACKAGE_MANAGER = 'pnpm@11.23.0';
+const PACKAGE_MANAGER = 'pnpm@11.24.0';
 const REGISTRY_ORIGIN = 'https://registry.npmjs.org';
 const REPOSITORY_URL = 'https://github.com/tiangong-lca/tiangong-cli';
 const PUBLISH_WORKFLOW_PATH = '.github/workflows/publish.yml';
