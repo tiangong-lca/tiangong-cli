@@ -62,6 +62,38 @@ test('batch run lock is reentrant for the same run path and identity', async () 
   }
 });
 
+test('same-process sibling calls are exclusive rather than implicitly reentrant', async () => {
+  const root = mkdtempSync(path.join(os.tmpdir(), 'batch-run-lock-sibling-'));
+  let releaseOuter: (() => void) | undefined;
+  let outerStarted = false;
+  let siblingEntered = false;
+  try {
+    const outer = withBatchRunLock(
+      { runPath: root, identity, reason: 'outer-sibling-proof' },
+      async () => {
+        outerStarted = true;
+        await new Promise<void>((resolve) => {
+          releaseOuter = resolve;
+        });
+      },
+    );
+    await waitFor(() => outerStarted);
+    await assert.rejects(
+      withBatchRunLock({ runPath: root, identity, reason: 'sibling', timeoutMs: 0 }, () => {
+        siblingEntered = true;
+      }),
+      BatchRunLockTimeoutError,
+    );
+    assert.equal(siblingEntered, false);
+    assert.equal(existsSync(batchRunLockPath(root)), true);
+    releaseOuter?.();
+    await outer;
+  } finally {
+    releaseOuter?.();
+    rmSync(root, { recursive: true, force: true });
+  }
+});
+
 test('batch run lock preserves a live lock on timeout and recovers a stale lock', async () => {
   const root = mkdtempSync(path.join(os.tmpdir(), 'batch-run-lock-owner-'));
   const lockPath = batchRunLockPath(root);
@@ -82,13 +114,31 @@ test('batch run lock preserves a live lock on timeout and recovers a stale lock'
     assert.equal(existsSync(lockPath), true, 'a live lock must never be deleted by a contender');
 
     unlinkSync(lockPath);
-    writeLock(lockPath, 999_999_999);
+    writeLock(lockPath, 999_999_999, os.hostname());
     const recovered = await withBatchRunLock(
       { runPath: root, identity, reason: 'stale-recovery', timeoutMs: 50, pollMs: 10 },
       () => 'recovered',
     );
     assert.equal(recovered, 'recovered');
     assert.equal(existsSync(lockPath), false);
+  } finally {
+    rmSync(root, { recursive: true, force: true });
+  }
+});
+
+test('batch run lock never stale-recovers a foreign-host owner', async () => {
+  const root = mkdtempSync(path.join(os.tmpdir(), 'batch-run-lock-foreign-host-'));
+  const lockPath = batchRunLockPath(root);
+  try {
+    writeLock(lockPath, 999_999_999, 'foreign-host.example');
+    await assert.rejects(
+      withBatchRunLock(
+        { runPath: root, identity, reason: 'foreign-host-contender', timeoutMs: 0 },
+        () => 'never',
+      ),
+      BatchRunLockTimeoutError,
+    );
+    assert.equal(existsSync(lockPath), true);
   } finally {
     rmSync(root, { recursive: true, force: true });
   }
@@ -118,11 +168,12 @@ test('batch run lock excludes another process with the same run path and identit
   try {
     await waitForOutput(first, 'acquired\n');
     second = spawnLockChild(childFile, root, { execution_id: 'different-process-identity' });
+    const secondAcquired = waitForOutput(second, 'acquired\n');
     await assertNoOutput(second, 40);
-    first.stdin.write('release\n');
+    first.stdin.end('release\n');
     await waitForExit(first);
-    await waitForOutput(second, 'acquired\n');
-    second.stdin.write('release\n');
+    await secondAcquired;
+    second.stdin.end('release\n');
     await waitForExit(second);
     assert.equal(existsSync(batchRunLockPath(root)), false);
   } finally {
@@ -132,10 +183,10 @@ test('batch run lock excludes another process with the same run path and identit
   }
 });
 
-function writeLock(lockPath: string, ownerPid: number): void {
+function writeLock(lockPath: string, ownerPid: number, ownerHost = 'test-host'): void {
   writeFileSync(
     lockPath,
-    `${JSON.stringify({ ownerPid, ownerHost: 'test-host', reason: 'holder', updatedAt: 'now' })}\n`,
+    `${JSON.stringify({ ownerPid, ownerHost, reason: 'holder', updatedAt: 'now' })}\n`,
     'utf8',
   );
 }
@@ -205,4 +256,12 @@ async function waitForExit(child: ChildProcessWithoutNullStreams): Promise<void>
 
 function readChildError(child: ChildProcessWithoutNullStreams): string {
   return child.stderr.read()?.toString('utf8') ?? '';
+}
+
+async function waitFor(predicate: () => boolean): Promise<void> {
+  for (let attempt = 0; attempt < 100; attempt += 1) {
+    if (predicate()) return;
+    await new Promise<void>((resolve) => setImmediate(resolve));
+  }
+  throw new Error('Timed out waiting for run-lock test state.');
 }
