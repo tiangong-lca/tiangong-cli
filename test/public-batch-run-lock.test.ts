@@ -194,6 +194,55 @@ test('a detached nested helper retains the physical lock for its own active scop
   }
 });
 
+test('a completed async scope cannot reenter a later physical owner', async () => {
+  const root = mkdtempSync(path.join(os.tmpdir(), 'batch-run-lock-stale-context-'));
+  let startStaleAttempt: (() => void) | undefined;
+  let releaseSibling: (() => void) | undefined;
+  let siblingEntered = false;
+  let staleEntered = false;
+  let staleAttempt: Promise<void> | undefined;
+  const staleAttemptGate = new Promise<void>((resolve) => {
+    startStaleAttempt = resolve;
+  });
+  try {
+    await withBatchRunLock({ runPath: root, identity, reason: 'stale-context-outer' }, () => {
+      staleAttempt = (async () => {
+        await staleAttemptGate;
+        await assert.rejects(
+          withBatchRunLock(
+            { runPath: root, identity, reason: 'stale-context-attempt', timeoutMs: 0 },
+            () => {
+              staleEntered = true;
+            },
+          ),
+          BatchRunLockTimeoutError,
+        );
+      })();
+    });
+
+    const sibling = withBatchRunLock(
+      { runPath: root, identity, reason: 'stale-context-sibling' },
+      async () => {
+        siblingEntered = true;
+        await new Promise<void>((resolve) => {
+          releaseSibling = resolve;
+        });
+      },
+    );
+    await waitFor(() => siblingEntered);
+    startStaleAttempt?.();
+    await staleAttempt;
+    assert.equal(staleEntered, false);
+    releaseSibling?.();
+    await sibling;
+  } finally {
+    startStaleAttempt?.();
+    releaseSibling?.();
+    await staleAttempt?.catch(() => undefined);
+    rmSync(root, { recursive: true, force: true });
+  }
+});
+
 test('batch run lock preserves a live lock on timeout and recovers a stale lock', async () => {
   const root = mkdtempSync(path.join(os.tmpdir(), 'batch-run-lock-owner-'));
   const lockPath = batchRunLockPath(root);
