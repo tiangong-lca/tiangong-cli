@@ -1262,8 +1262,8 @@ function itemIdentityMatches<
   index: number,
   expectedItemId: string,
 ): boolean {
-  const projected = options.getItemIdentity(item, index);
   try {
+    const projected = options.getItemIdentity(item, index);
     return parseItemIdentity(projected, index) === expectedItemId;
   } catch {
     return false;
