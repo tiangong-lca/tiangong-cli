@@ -31,8 +31,8 @@ checkPaths:
   - scripts/docpact-gate.sh
   - scripts/install-git-hooks.sh
 lastReviewedAt: 2026-08-29
-lastReviewedCommit: a82ee857cc322357907d770b11d6e1aca3b3bf2b
-lastReviewedNote: 'Reviewed for Issue #237: the 0.1.2 release changes only package identity and four live fixtures, preserving the bounded runtime modules, public exports, dependency graph, lock, and publication architecture.'
+lastReviewedCommit: f460f0567faac6e89e53d259fbd29d1dfccd058d
+lastReviewedNote: 'Reviewed for Issue #242: the 0.1.3 release changes only package identity and four live fixtures, preserving the bounded runtime modules, public exports, dependency graph, lock, and publication architecture.'
 related:
   - ../../AGENTS.md
   - ../../.docpact/config.yaml
@@ -64,6 +64,8 @@ Review note, 2026-08-26: Issue #236 changes only the exact package-manager compa
 Review note, 2026-08-26: Issue #237 advances the package compatibility identity to 0.1.2 for the already merged bounded batch/CommandSpec implementation and pnpm 11.24 toolchain. Only `package.json` and the four live CLI-version fixtures change; the facade/internal DAG, runtime objects, generated declarations, package exports, dependencies, lock bytes, tag workflow, Trusted Publishing, provenance verification, and workspace integration architecture remain unchanged.
 
 Review note, 2026-08-29: Issue #240 adds a third typed public subpath, `src/auth-identity-receipt.ts`, as a direct bounded re-export over the existing auth receipt semantic owner. Package-root/internal paths remain closed, declarations stay generated from source, and no session, network, credential, dependency, or release architecture changes.
+
+Review note, 2026-08-29: Issue #242 advances only the package compatibility identity to 0.1.3 for that already merged public parser. The facade/internal DAG, generated declarations, strict export map, dependencies, pnpm lock bytes, command runtime, tag workflow, native Trusted Publishing, provenance verifier, and exact workspace integration architecture do not change.
 
 Review note, 2026-06-04: Foundry entity queue state now stays in the native CLI command family as `dataset curation-queue build/next/verify`; no secondary orchestration runtime was introduced.
 

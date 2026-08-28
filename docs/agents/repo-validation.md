@@ -32,8 +32,8 @@ checkPaths:
   - scripts/docpact-gate.sh
   - scripts/install-git-hooks.sh
 lastReviewedAt: 2026-08-29
-lastReviewedCommit: a82ee857cc322357907d770b11d6e1aca3b3bf2b
-lastReviewedNote: 'Reviewed for Issue #237: 0.1.2 release proof retains exact pnpm 11.24, Node 24.19.0, TS 7.0.2, package 12/12, 100% coverage, four-platform, provenance, and public-consumer gates.'
+lastReviewedCommit: f460f0567faac6e89e53d259fbd29d1dfccd058d
+lastReviewedNote: 'Reviewed for Issue #242: 0.1.3 release proof retains exact pnpm 11.24, Node 24.19.0, TS 7.0.2, package, 100% coverage, four-platform, provenance, and public-consumer gates.'
 related:
   - ../../AGENTS.md
   - ../../.docpact/config.yaml
@@ -81,6 +81,8 @@ Review note, 2026-08-26: Issue #236 starts with a failing exact-version contract
 Review note, 2026-08-26: Issue #237 release proof requires recorded pre-mutation npm 0.1.2 and `cli-v0.1.2` absence, a RED exact-version fixture commit before the package bump, exactly four live CLI-version fixtures at 0.1.2, and unchanged lock bytes/dependency graph/runtime/exports. Local proof uses Node 24.19.0, pnpm 11.24.0 frozen install, the 12/12 package suite, release-focused tests, the complete pre-push gate with exact 100% coverage, audit, and strict Docpact. Post-merge proof still requires the exact four-platform matrix, AI Doc Lint, merge-triggered tag, native pnpm Trusted Publishing/provenance, registry integrity/attestation, fresh credential-free ESM/CJS/TypeScript consumers, and exact release-merge workspace integration.
 
 Review note, 2026-08-29: Issue #240 proof requires exact runtime object identity between the new public auth parser and its existing semantic owner, exact runtime/type exports, invalid-receipt fail-close, generated declarations, clean packed ESM/CJS/TS consumers, and continued rejection of package-root/internal deep imports. Existing auth behavior tests and the exact 100% gate remain authoritative; package version stays 0.1.2 until a separate patch release.
+
+Review note, 2026-08-29: Issue #242 release proof records pre-mutation npm 0.1.3 and `cli-v0.1.3` absence, commits the four RED exact-version fixtures before the package bump, and requires byte-identical lock/dependency/runtime/export/workflow state. Local proof remains frozen pnpm 11.24.0 install, package/tarball consumers, the complete pre-push gate with exact 100% coverage, audit, and strict Docpact; remote proof remains the exact four-platform matrix, merge-tag workflow, native Trusted Publishing, cryptographic provenance/integrity verification, and fresh public `./batch` plus `./auth-identity-receipt` consumers.
 
 When command-surface, release-gate, or governed docs change, also run the repo-local documentation governance gate:
 
