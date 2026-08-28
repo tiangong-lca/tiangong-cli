@@ -37,8 +37,9 @@ layout: repo
 # Review note, 2026-08-26: Issue #233 preserves the public batch subpath while moving its implementation into bounded semantic modules under `src/lib/batch/**`. The existing public-library contract is extended, rather than duplicated, so facade, internals, architecture budgets, package consumers, dataset dogfood, and governed source docs remain one review obligation.
 # Review note, 2026-08-26: Issue #236 updates only the exact pnpm pin to 11.24.0 across the existing validation/release paths and governed source docs. The current rules already cover the manifest, sole root lock, verifier, tests, workflows, and active documentation; no ownership, routing, dependency, runtime, export, release, or integration rule changes are required.
 # Review note, 2026-08-26: Issue #237 is the dedicated 0.1.2 release-only delivery for the bounded public batch/CommandSpec surface on pnpm 11.24.0. It changes package version metadata and four live CLI-version fixtures only; existing package, test, release, and governed-doc rules cover the change, while ownership, routing, lock bytes, dependencies, runtime, exports, tag automation, Trusted Publishing, provenance, and workspace integration remain unchanged.
-lastReviewedAt: "2026-08-26"
-lastReviewedCommit: "b9a99011fcc1d7388355e66649113ac5d4a7a9c8"
+# Review note, 2026-08-29: Issue #240 adds a bounded public auth identity-receipt parser subpath after CLI 0.1.2 closed deep imports. The wrapper directly re-exports the existing semantic owner and is covered by public-library, remote-session, packed-consumer, declaration, validation, and release routes without exposing the remote runner or test internals.
+lastReviewedAt: '2026-08-29'
+lastReviewedCommit: 'a82ee857cc322357907d770b11d6e1aca3b3bf2b'
 
 catalog:
   repos:
@@ -84,6 +85,7 @@ ownership:
       paths:
         include:
           - src/batch.ts
+          - src/auth-identity-receipt.ts
           - src/command-spec.ts
           - src/lib/batch/**
           - src/lib/artifacts.ts
@@ -217,6 +219,7 @@ routing:
         - README.md
     remote-session:
       paths:
+        - src/auth-identity-receipt.ts
         - src/lib/auth-identity-receipt.ts
         - src/lib/dotenv.ts
         - src/lib/env.ts
@@ -257,12 +260,14 @@ routing:
       paths:
         - package.json
         - tsconfig.build.json
+        - src/auth-identity-receipt.ts
         - src/batch.ts
         - src/command-spec.ts
         - src/lib/batch/**
         - src/lib/state-lock.ts
         - src/lib/dataset-save-draft-run.ts
         - test/dataset-save-draft-execution-contract.test.ts
+        - test/public-auth-identity-receipt.test.ts
         - test/public-batch*.test.ts
         - test/public-command-spec.test.ts
         - test/toolchain-contract.test.mjs
@@ -506,6 +511,8 @@ rules:
         kind: package-exports
       - path: tsconfig.build.json
         kind: declaration-config
+      - path: src/auth-identity-receipt.ts
+        kind: public-library-runtime
       - path: src/batch.ts
         kind: public-library-runtime
       - path: src/lib/batch/**
@@ -518,6 +525,8 @@ rules:
         kind: public-library-dogfood
       - path: test/dataset-save-draft-execution-contract.test.ts
         kind: public-library-dogfood-proof
+      - path: test/public-auth-identity-receipt.test.ts
+        kind: public-library-proof
       - path: test/public-batch*.test.ts
         kind: public-library-proof
       - path: test/public-command-spec.test.ts
@@ -540,6 +549,8 @@ rules:
     scope: repo
     repo: cli
     triggers:
+      - path: src/auth-identity-receipt.ts
+        kind: auth-public-parser
       - path: src/lib/auth-identity-receipt.ts
         kind: auth-runtime
       - path: src/lib/dotenv.ts

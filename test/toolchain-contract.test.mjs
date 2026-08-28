@@ -44,6 +44,11 @@ const EXPECTED_BATCH_RUNTIME_EXPORTS = Object.freeze([
   'sha256BatchJson',
   'withBatchRunLock',
 ]);
+const EXPECTED_AUTH_IDENTITY_RUNTIME_EXPORTS = Object.freeze([
+  'AUTH_IDENTITY_MAX_TIMEOUT_MS',
+  'AUTH_IDENTITY_RECEIPT_SCHEMA',
+  'parseAuthIdentityReceipt',
+]);
 const PACKAGE_MANAGER = 'pnpm@11.24.0';
 const PACKAGE_MANAGER_VERSION = PACKAGE_MANAGER.slice('pnpm@'.length);
 const NODE_VERSION = '24.19.0';
@@ -550,6 +555,10 @@ test('the runtime SDK floor is 0.2.0 and published dependencies contain no toolc
 test('the package exposes only the launcher and typed public primitive subpaths', () => {
   assert.deepEqual(PACKAGE_JSON.exports, {
     './bin/tiangong-lca.js': './bin/tiangong-lca.js',
+    './auth-identity-receipt': {
+      types: './dist/src/auth-identity-receipt.d.ts',
+      import: './dist/src/auth-identity-receipt.js',
+    },
     './command-spec': {
       types: './dist/src/command-spec.d.ts',
       import: './dist/src/command-spec.js',
@@ -721,11 +730,13 @@ function assertRootBinBehavior(binPath, cwd, expectedVersion) {
 
 function assertModuleHostBehavior(consumerRoot, compilerRoot, expectedVersion) {
   const launcherSpecifier = `${PACKAGE_JSON.name}/bin/tiangong-lca.js`;
+  const authIdentitySpecifier = `${PACKAGE_JSON.name}/auth-identity-receipt`;
   const commandSpecSpecifier = `${PACKAGE_JSON.name}/command-spec`;
   const batchSpecifier = `${PACKAGE_JSON.name}/batch`;
   const esmHostPath = join(consumerRoot, 'esm-host.mjs');
   const cjsHostPath = join(consumerRoot, 'cjs-host.cjs');
   const rootHostPath = join(consumerRoot, 'root-host.mjs');
+  const deepAuthHostPath = join(consumerRoot, 'deep-auth-host.mjs');
   const typescriptHostPath = join(consumerRoot, 'typescript-host.mts');
   const emptyTypeRoots = join(consumerRoot, 'empty-types');
   mkdirSync(emptyTypeRoots);
@@ -734,10 +745,14 @@ function assertModuleHostBehavior(consumerRoot, compilerRoot, expectedVersion) {
     esmHostPath,
     [
       `import { resolveInvokedUrl, runFromBin } from '${launcherSpecifier}';`,
+      `import * as authIdentityApi from '${authIdentitySpecifier}';`,
+      `import { parseAuthIdentityReceipt } from '${authIdentitySpecifier}';`,
       `import { createFoundryCommandSpec } from '${commandSpecSpecifier}';`,
       `import * as batchApi from '${batchSpecifier}';`,
       `import { createBatchContract, runBoundedBatch, withBatchRunLock } from '${batchSpecifier}';`,
       `if (JSON.stringify(Object.keys(batchApi).sort()) !== ${JSON.stringify(JSON.stringify([...EXPECTED_BATCH_RUNTIME_EXPORTS].sort()))}) throw new Error('ESM batch named-export contract failed');`,
+      `if (JSON.stringify(Object.keys(authIdentityApi).sort()) !== ${JSON.stringify(JSON.stringify([...EXPECTED_AUTH_IDENTITY_RUNTIME_EXPORTS].sort()))}) throw new Error('ESM auth identity named-export contract failed');`,
+      "let authRejected = false; try { parseAuthIdentityReceipt({}); } catch (error) { authRejected = error?.code === 'AUTH_IDENTITY_RECEIPT_INVALID'; } if (!authRejected) throw new Error('Auth identity parser failed open');",
       "if (resolveInvokedUrl(null) !== null) throw new Error('ESM launcher resolver contract failed');",
       "const spec = createFoundryCommandSpec({ executable: 'tool', argv: ['--json'] });",
       "if (spec.schema !== 'tiangong-foundry.command-spec.v1') throw new Error('CommandSpec export failed');",
@@ -765,10 +780,18 @@ function assertModuleHostBehavior(consumerRoot, compilerRoot, expectedVersion) {
     flag: 'wx',
   });
   writeFileSync(
+    deepAuthHostPath,
+    [`await import('${PACKAGE_JSON.name}/dist/src/lib/auth-identity-receipt.js');`, ''].join('\n'),
+    { encoding: 'utf8', flag: 'wx' },
+  );
+  writeFileSync(
     typescriptHostPath,
     [
       `import { createFoundryCommandSpec, type FoundryCommandSpec } from '${commandSpecSpecifier}';`,
+      `import { parseAuthIdentityReceipt, type AuthIdentityReceipt } from '${authIdentitySpecifier}';`,
       `import { createBatchContract, runBoundedBatch, withBatchRunLock, type BatchRunLockReceipt, type BatchRunResult } from '${batchSpecifier}';`,
+      'const parseReceipt: (value: unknown) => AuthIdentityReceipt = parseAuthIdentityReceipt;',
+      'void parseReceipt;',
       "const spec: FoundryCommandSpec = createFoundryCommandSpec({ executable: 'tool', argv: ['--json'] });",
       "const contract = createBatchContract({ identity: { id: 'typed' }, content: ['a'], policy: { parallel: 1 } });",
       'const result: BatchRunResult<string, string, { id: string }> = await runBoundedBatch({',
@@ -793,10 +816,14 @@ function assertModuleHostBehavior(consumerRoot, compilerRoot, expectedVersion) {
     [
       '(async () => {',
       `  const { resolveInvokedUrl, runFromBin } = await import('${launcherSpecifier}');`,
+      `  const authIdentityApi = await import('${authIdentitySpecifier}');`,
+      `  const { parseAuthIdentityReceipt } = authIdentityApi;`,
       `  const { createFoundryCommandSpec } = await import('${commandSpecSpecifier}');`,
       `  const batchApi = await import('${batchSpecifier}');`,
       `  const { createBatchContract, runBoundedBatch, withBatchRunLock } = batchApi;`,
       `  if (JSON.stringify(Object.keys(batchApi).sort()) !== ${JSON.stringify(JSON.stringify([...EXPECTED_BATCH_RUNTIME_EXPORTS].sort()))}) throw new Error('CJS batch named-export contract failed');`,
+      `  if (JSON.stringify(Object.keys(authIdentityApi).sort()) !== ${JSON.stringify(JSON.stringify([...EXPECTED_AUTH_IDENTITY_RUNTIME_EXPORTS].sort()))}) throw new Error('CJS auth identity named-export contract failed');`,
+      "  let authRejected = false; try { parseAuthIdentityReceipt({}); } catch (error) { authRejected = error?.code === 'AUTH_IDENTITY_RECEIPT_INVALID'; } if (!authRejected) throw new Error('CJS auth identity parser failed open');",
       "  if (resolveInvokedUrl(null) !== null) throw new Error('CJS launcher resolver contract failed');",
       "  const spec = createFoundryCommandSpec({ executable: 'tool', argv: ['--json'] });",
       "  if (spec.schema !== 'tiangong-foundry.command-spec.v1') throw new Error('CJS CommandSpec export failed');",
@@ -836,6 +863,18 @@ function assertModuleHostBehavior(consumerRoot, compilerRoot, expectedVersion) {
   assert.ifError(rootImport.error);
   assert.notEqual(rootImport.status, 0, 'the package root import must remain unsupported');
   assert.match(rootImport.stderr, /ERR_PACKAGE_PATH_NOT_EXPORTED/u);
+  const deepAuthImport = spawnSync(
+    process.execPath,
+    [deepAuthHostPath],
+    commandOptions(consumerRoot),
+  );
+  assert.ifError(deepAuthImport.error);
+  assert.notEqual(
+    deepAuthImport.status,
+    0,
+    'the internal auth deep import must remain unsupported',
+  );
+  assert.match(deepAuthImport.stderr, /ERR_PACKAGE_PATH_NOT_EXPORTED/u);
   execFileSync(
     'pnpm',
     [
@@ -874,6 +913,10 @@ function assertPackedFiles(fileMetadata) {
   assert.ok(
     packedFiles.includes('dist/src/command-spec.d.ts'),
     'the packed CommandSpec declaration is missing',
+  );
+  assert.ok(
+    packedFiles.includes('dist/src/auth-identity-receipt.d.ts'),
+    'the packed auth identity declaration is missing',
   );
   assert.ok(packedFiles.includes('dist/src/batch.d.ts'), 'the packed batch declaration is missing');
   assert.deepEqual(

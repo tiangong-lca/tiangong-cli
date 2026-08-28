@@ -19,15 +19,17 @@ checkPaths:
   - bin/**
   - src/cli.ts
   - src/main.ts
+  - src/auth-identity-receipt.ts
   - src/batch.ts
   - src/command-spec.ts
   - src/lib/auth-identity-receipt.ts
   - src/lib/lca-release.ts
   - scripts/run-auth-identity-production-case.ts
   - test/auth-identity*.test.ts
+  - test/public-auth-identity-receipt.test.ts
   - test/lca-release*.test.ts
-lastReviewedAt: 2026-08-26
-lastReviewedCommit: b9a99011fcc1d7388355e66649113ac5d4a7a9c8
+lastReviewedAt: 2026-08-29
+lastReviewedCommit: a82ee857cc322357907d770b11d6e1aca3b3bf2b
 lastReviewedNote: 'Reviewed for Issue #237: identifies 0.1.2 as the release-only package identity for the bounded pnpm 11.24 public API while runtime, exports, dependencies, and release behavior stay fixed.'
 ---
 
@@ -52,6 +54,8 @@ Review note, 2026-08-26: Issue #233 changes only the internal shape of the batch
 Review note, 2026-08-26: Issue #236 changes only the repository and clean-consumer package-manager requirement from exact pnpm 11.23.0 to 11.24.0. The sole root lock requires no byte change under pnpm 11.24.0; Node 24.19.0, TypeScript 7.0.2, package version 0.1.1, public commands and exports, dependencies, tags, provenance, and publication remain unchanged, with no npm/Yarn fallback.
 
 Review note, 2026-08-26: Issue #237 releases the already reviewed bounded CommandSpec/batch runtime and pnpm 11.24 toolchain as `@tiangong-lca/cli@0.1.2`. The release changes only package metadata and four live CLI-version fixtures; runtime files, public subpaths and object identities, dependencies, the sole lock, Node 24.19.0, TypeScript 7.0.2, package-manager-neutral consumers, and automated provenance path remain unchanged.
+
+Review note, 2026-08-29: Issue #240 adds the typed `@tiangong-lca/cli/auth-identity-receipt` public parser entry without changing package version 0.1.2 or auth behavior. It directly re-exports the existing strict parser, schema/timeout constants, and receipt types; the remote runner and test internals stay private, and the previous `dist/src/lib/**` deep path remains blocked.
 
 Review note, 2026-07-12: `dataset maintenance plan/apply/verify` provides current-user RLS-scoped exact-row maintenance with immutable plans, explicit approval, per-action logs, platform audit correlation, and independent readback. `merge-support-aliases` now runs only in `target_mode=owner_draft`: source/target support and all changed rows stay private `state_code=0`; publication is a separate future workflow.
 
@@ -108,11 +112,12 @@ node ./bin/tiangong-lca.js --help
 
 The package exposes only these supported module APIs in addition to the executable launcher subpath:
 
+- `@tiangong-lca/cli/auth-identity-receipt` parses the exact safe receipt projection offline and exports its schema, Node-safe timeout ceiling, and receipt types. It does not expose session resolution, network execution, or test internals; callers that need a fresh receipt still invoke the CLI command.
 - `@tiangong-lca/cli/command-spec` parses, creates, artifact-binds, and executes exact `tiangong-foundry.command-spec.v1` objects. `display` is diagnostic only; executable plus argv and binding bytes/SHA-256 form the canonical authority. Sync and async execution always use `shell:false`; async callers may inject resolver, clock, sleep, spawn, timeout, and abort adapters. `timeoutMs` must fit Node's maximum timer delay.
 - `@tiangong-lca/cli/batch` runs bounded generic work with an overall run contract and a required per-item `{ item_id, content_sha256, policy_sha256 }` contract. Every identity/content/policy/resource projection is validated before work starts and rechecked before resumed acceptance or a fresh claim. Identity changes or getter failures emit `item_identity_drift` with `BatchItemIdentityDriftError`, execute zero attempts, and do not let the batch return before other in-flight items drain. An escaping scheduler/event/stop callback records the first infrastructure error, closes further claims, awaits all worker settlements, then rejects. Input order, truthful resource-aware claim order, completion order, pause/stop behavior, awaited monotonic events, and exception isolation are explicit. Optional exclusive keys serialize only matching resources; a blocked key remains unclaimed and consumes no worker while later free keys may use the public ceiling of 64 workers. Per-resource FIFO queues expose only their head through an ordered binary min-heap, giving near `O(n log k)` ready scheduling for `k` resources.
 - Mutation batches reject automatic retry. A consumed or ambiguous mutation can continue only through an explicitly supplied readback-recovery callback; resume requires exact run and item contracts, and each resumed or rejected result participates in stop decisions before fresh claims. Retry/backoff values must be non-negative safe integers within Node's timer limit. Exclusive keys must be runtime strings. `withBatchRunLock` gives one canonical run directory one cross-process lock domain, permits reentrancy only from a still-live scope owned by the current holder, keeps the top-level promise pending until detached nested scopes drain, rejects completed-context reentry into a later owner, preserves live or foreign-host locks, and stale-recovers only a same-host dead PID. Public lock callers cannot set PID, host, or ownership time; timeout/poll values are non-negative safe integers within Node's timer limit.
 
-The packed ESM, CJS dynamic-import, and TypeScript consumers exercise both public subpaths and generated declarations. Deep imports and `import '@tiangong-lca/cli'` remain unsupported.
+The packed ESM, CJS dynamic-import, and TypeScript consumers exercise every public subpath and generated declaration. Deep imports and `import '@tiangong-lca/cli'` remain unsupported.
 
 ## Env
 

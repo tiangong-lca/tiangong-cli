@@ -30,8 +30,8 @@ checkPaths:
   - scripts/docpact
   - scripts/docpact-gate.sh
   - scripts/install-git-hooks.sh
-lastReviewedAt: 2026-08-26
-lastReviewedCommit: b9a99011fcc1d7388355e66649113ac5d4a7a9c8
+lastReviewedAt: 2026-08-29
+lastReviewedCommit: a82ee857cc322357907d770b11d6e1aca3b3bf2b
 lastReviewedNote: 'Reviewed for Issue #237: the 0.1.2 release changes only package identity and four live fixtures, preserving the bounded runtime modules, public exports, dependency graph, lock, and publication architecture.'
 related:
   - ../../AGENTS.md
@@ -62,6 +62,8 @@ Review note, 2026-08-26: Issue #233 turns `src/batch.ts` into a stable 62-line f
 Review note, 2026-08-26: Issue #236 changes only the exact package-manager compatibility pin to pnpm 11.24.0. The root workspace/lock architecture, Node 24.19.0 and TypeScript 7.0.2 single tracks, package version 0.1.1, dependency graph, public subpaths and object identities, command runtime, tag workflow, and native pnpm Trusted Publishing path remain unchanged; pnpm 11.24.0 requires no lockfile byte update for the existing graph.
 
 Review note, 2026-08-26: Issue #237 advances the package compatibility identity to 0.1.2 for the already merged bounded batch/CommandSpec implementation and pnpm 11.24 toolchain. Only `package.json` and the four live CLI-version fixtures change; the facade/internal DAG, runtime objects, generated declarations, package exports, dependencies, lock bytes, tag workflow, Trusted Publishing, provenance verification, and workspace integration architecture remain unchanged.
+
+Review note, 2026-08-29: Issue #240 adds a third typed public subpath, `src/auth-identity-receipt.ts`, as a direct bounded re-export over the existing auth receipt semantic owner. Package-root/internal paths remain closed, declarations stay generated from source, and no session, network, credential, dependency, or release architecture changes.
 
 Review note, 2026-06-04: Foundry entity queue state now stays in the native CLI command family as `dataset curation-queue build/next/verify`; no secondary orchestration runtime was introduced.
 
@@ -134,6 +136,7 @@ Review note, 2026-07-25: Issue #208 adds only an admission artifact path: an ext
 | `bin/tiangong-lca.js` | stable launcher entrypoint exposed as the public `tiangong-lca` executable |
 | `src/main.ts` | process entry, dotenv loading, stdout and stderr wiring |
 | `src/cli.ts` | top-level command dispatch, parsing, and help routing |
+| `src/auth-identity-receipt.ts` | supported offline parser/constants/types package subpath for safe identity receipts |
 | `src/command-spec.ts` | supported content-bound CommandSpec package subpath |
 | `src/batch.ts` | stable re-export facade for the supported batch package subpath |
 | `src/lib/batch/**` | bounded acyclic owners for batch types, contracts/errors, run locks, projection, scheduler runtime, attempts/recovery, and engine coordination |
@@ -156,8 +159,9 @@ If a task changes help output, exit behavior, or how subcommands are registered,
 
 ### Typed public primitives
 
-The package root remains intentionally unsupported. Two explicit module subpaths are owned here:
+The package root remains intentionally unsupported. Three explicit module subpaths are owned here:
 
+- `@tiangong-lca/cli/auth-identity-receipt` directly re-exports the exact safe-projection parser, schema/timeout constants, and receipt types from the existing auth owner. It exposes no fresh-session/network runner or test internals; internal `dist/src/lib/**` remains unreachable through package exports.
 - `@tiangong-lca/cli/command-spec` preserves `tiangong-foundry.command-spec.v1` exact keys and canonical authority over executable, argv, and artifact bindings. `display` never executes. Artifact bytes and SHA-256 are revalidated before sync or async `shell:false` spawn; timeout, abort, clock, sleep, resolver, and spawn are injectable, but timeout values must fit Node's timer maximum.
 - `@tiangong-lca/cli/batch` separates overall run identity from exact per-item identity/content/policy contracts. It preflights every projection before unsafe work and rechecks identity/content/policy/resource before resumed acceptance or claim. Identity drift or getter failure yields `BatchItemIdentityDriftError` plus `item_identity_drift` without execution, while every already-started worker drains before return. Escaping infrastructure errors atomically mark the scheduler fatal where serialized, close new claims, drain all claimed workers with `allSettled`, and reject with the first recorded cause. It caps concurrency at 64 and serializes matching exclusive keys through per-resource FIFO cursors whose heads enter a private binary min-heap. Blocked items remain unclaimed, later free keys can run, stop/rejection gates same-key successor exposure, and normal ready scheduling is near `O(n log k)`. It exposes input, resource-aware claim, and completion order and awaits a monotonic event sink. Read retry is explicitly classified and timer-capped; mutation retry is configuration-invalid, and consumed attempts can proceed only through explicit readback recovery.
 - The same batch subpath exposes one run-directory lock domain independent of identity. It uses a physical create-only state lock across processes and an owner/scope token in async context: only a still-live scope owned by the current holder may reenter, while siblings and callbacks inherited from a completed scope contend. The physical owner and top-level promise stay active until detached nested scopes drain; local waiters wake only after physical cleanup, and live or foreign-host locks are never stale-deleted. Public callers supply no PID, host, or ownership clock; timeout/poll inputs must be non-negative safe integers within Node's timer maximum.
