@@ -20,8 +20,8 @@ checkPaths:
   - .oxlintrc.json
   - src/**
   - test/**
-lastReviewedAt: 2026-08-26
-lastReviewedCommit: c8c7ae860b4e0a85443abb5de0d37ce8b7d65634
+lastReviewedAt: 2026-08-29
+lastReviewedCommit: a82ee857cc322357907d770b11d6e1aca3b3bf2b
 lastReviewedNote: 'Reviewed for Issue #236: 实现与验证工具链精确升级到 pnpm 11.24.0，保持 Node 24.19.0、TS 7.0.2、0.1.1 包版本、依赖、公开行为与发布边界。'
 related:
   - ../AGENTS.md

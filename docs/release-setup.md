@@ -24,8 +24,8 @@ checkPaths:
   - scripts/docpact
   - scripts/docpact-gate.sh
   - scripts/install-git-hooks.sh
-lastReviewedAt: 2026-08-26
-lastReviewedCommit: b9a99011fcc1d7388355e66649113ac5d4a7a9c8
+lastReviewedAt: 2026-08-29
+lastReviewedCommit: a82ee857cc322357907d770b11d6e1aca3b3bf2b
 lastReviewedNote: 'Reviewed for Issue #237: CLI 0.1.2 uses the unchanged pnpm 11.24 merge-tag and Trusted Publishing setup with no new secret, dependency, lock byte, workflow, credential, or publication path.'
 related:
   - ../AGENTS.md
@@ -63,6 +63,8 @@ Review note, 2026-08-26: Issue #233 only decomposes the implementation behind th
 Review note, 2026-08-26: Issue #236 changes only the exact pnpm requirement to 11.24.0. The pinned `pnpm/setup` action continues to resolve that version from root `packageManager`, frozen installs keep the existing sole root lock byte-for-byte, and the public verifier uses the same exact version. No secret, environment, runner, dependency, Trusted Publisher setting, workflow filename, tag rule, credential, version, or alternate npm/Yarn publication path is added.
 
 Review note, 2026-08-26: Issue #237 publishes 0.1.2 through the existing merge-triggered tag and native pnpm Trusted Publishing workflows. It adds no secret, environment, runner, dependency, lockfile change, Trusted Publisher setting, workflow filename, tag rule, credential, service-role/test-account access, or alternate authentication/publication surface; only package metadata and four live CLI-version fixtures change.
+
+Review note, 2026-08-29: Issue #240 adds a public parser subpath and requires no new secret, environment, runner, dependency, lockfile, Trusted Publisher setting, workflow, tag rule, credential, or alternate publication path. Its later patch release uses the existing release-prep PR and merge-triggered Trusted Publishing setup.
 
 Current workflow files:
 

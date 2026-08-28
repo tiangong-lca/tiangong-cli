@@ -21,8 +21,8 @@ checkPaths:
   - src/**
   - scripts/**
   - .github/workflows/**
-lastReviewedAt: 2026-08-26
-lastReviewedCommit: c8c7ae860b4e0a85443abb5de0d37ce8b7d65634
+lastReviewedAt: 2026-08-29
+lastReviewedCommit: a82ee857cc322357907d770b11d6e1aca3b3bf2b
 lastReviewedNote: 'Reviewed for Issue #236: pnpm 单轨精确升级到 11.24.0；Node 24.19.0、TypeScript 7.0.2、0.1.1 包版本、依赖、公开行为与发布路径不变。'
 related:
   - AGENTS.md
@@ -48,6 +48,8 @@ Review note, 2026-08-26: Issue #232 的公共 CommandSpec/batch 修复不新增 
 Review note, 2026-08-26: Issue #233 在不改变上述行为的前提下，把 `src/batch.ts` 收缩为 62 行 facade，并把 types、errors/contracts、run-lock、projection、scheduler runtime、attempt/recovery、engine 分到 `src/lib/batch/**` 的 8 个语义模块。架构测试固定精确导出/类型/对象身份/错误与 event/result 字节、模块清单、当前 LOC ceiling、依赖方向、禁止 upward import 与零 SCC；最大内部模块为 445 行。包版本、依赖、唯一 pnpm lock 与 pnpm 11.23.0 / TypeScript 7.0.2 单轨均不变。
 
 Review note, 2026-08-26: Issue #236 只把仓库与发布验证 consumer 的精确 pnpm 版本从 11.23.0 升级到 11.24.0。pnpm 11.24.0 的 lockfile-only reconciliation 不产生根 lock 字节变化；Node 24.19.0、唯一 TypeScript 7.0.2 图、包版本 0.1.1、依赖、公开 exports/行为、tag 与 Trusted Publishing 流程全部不变，也不新增 npm/Yarn fallback 或其他 lockfile。
+
+Review note, 2026-08-29: Issue #240 新增 `@tiangong-lca/cli/auth-identity-receipt` 公开解析入口，直接复用既有 strict parser/类型，不公开 remote runner 或 test internals。包版本暂保持 0.1.2，深路径继续关闭，后续通过独立 patch release 发布。
 
 Review note, 2026-06-04: `dataset curation-queue next/verify` extends the existing CLI-native dataset command family and does not change maintainer runtime, env, or release guidance.
 

@@ -36,8 +36,8 @@ checkPaths:
   - scripts/docpact
   - scripts/docpact-gate.sh
   - scripts/install-git-hooks.sh
-lastReviewedAt: 2026-08-26
-lastReviewedCommit: b9a99011fcc1d7388355e66649113ac5d4a7a9c8
+lastReviewedAt: 2026-08-29
+lastReviewedCommit: a82ee857cc322357907d770b11d6e1aca3b3bf2b
 lastReviewedNote: 'Reviewed for Issue #237: CLI 0.1.2 advances only package metadata and four live version fixtures while preserving the bounded pnpm 11.24 runtime, dependency, export, release, and integration contracts.'
 related:
   - .docpact/config.yaml
@@ -65,6 +65,8 @@ Review note, 2026-08-26: Issue #233 preserves that exact public batch API while 
 Review note, 2026-08-26: Issue #236 advances only the exact pnpm toolchain pin from 11.23.0 to 11.24.0. `packageManager`, `engines.pnpm`, the release verifier, static contracts, and active maintainer docs agree; pnpm 11.24.0 lockfile-only reconciliation produces no root lockfile byte change. Node 24.19.0, TypeScript 7.0.2 as the sole compiler graph, package version 0.1.1, dependencies, public exports/runtime behavior, tags, and publication remain unchanged, with no npm/Yarn fallback or alternate lock.
 
 Review note, 2026-08-26: Issue #237 publishes the bounded CommandSpec/batch implementation and pnpm 11.24 convergence as CLI 0.1.2 through a release-only package metadata and four-fixture change. It adds no command, dependency, runtime behavior, public export, credential, database/Foundry operation, tag rule, workflow, or alternate publication path. The four-platform gate, merge-triggered tag, native pnpm Trusted Publishing/provenance, credential-free public consumers, and exact released-commit workspace integration remain mandatory.
+
+Review note, 2026-08-29: Issue #240 adds `src/auth-identity-receipt.ts` and the supported `@tiangong-lca/cli/auth-identity-receipt` parser/type subpath after the 0.1.2 exports map correctly closed internal deep imports. The entry directly re-exports the existing parser/constants/types, exposes neither remote execution nor test internals, adds no dependency or auth behavior, and keeps package version 0.1.2 pending a separate patch release.
 
 Review note, 2026-06-04: `dataset curation-queue build/next/verify` is the CLI-owned state machine for Foundry entity queues; repo ownership boundaries remain unchanged.
 
@@ -164,7 +166,7 @@ This repo owns:
 - `bin/tiangong-lca.js` as the stable launcher entrypoint
 - `src/cli.ts` and `src/main.ts` for command dispatch, process entry, help, and exit behavior
 - `src/lib/**` for reusable CLI command logic, session handling, artifacts, and remote adapters
-- `src/command-spec.ts` and the `src/batch.ts` facade plus `src/lib/batch/**` internals for the supported typed package subpaths and their provider-neutral safety contracts
+- `src/auth-identity-receipt.ts`, `src/command-spec.ts`, and the `src/batch.ts` facade plus `src/lib/batch/**` internals for the supported typed package subpaths and their provider-neutral safety contracts
 - `test/**` and `scripts/assert-full-coverage.ts` for the hard validation gate
 - package metadata, build output contract, and tag/release checks in `package.json` and `scripts/ci/**`
 
@@ -189,10 +191,10 @@ Route those tasks to:
 - Compiler and lint: `typescript@7.0.2` plus type-aware Oxlint; no TypeScript 5/6 or ESLint bridge
 - Node baseline: exact local/CI `24.19.0`; package engine range `>=24.19.0 <25`
 - Runtime style: TypeScript source, Node-native CLI, direct REST and Edge Function access only
-- Public library surface: `@tiangong-lca/cli/command-spec` and `@tiangong-lca/cli/batch`; the package root is intentionally not an API. CommandSpec `display` is non-authoritative, execution is shell-free, and bound artifacts are rehashed before spawn.
+- Public library surface: `@tiangong-lca/cli/auth-identity-receipt`, `@tiangong-lca/cli/command-spec`, and `@tiangong-lca/cli/batch`; the package root and internal deep paths are intentionally not APIs. The auth entry exports only the strict parser/constants/types, while CommandSpec `display` remains non-authoritative, execution is shell-free, and bound artifacts are rehashed before spawn.
 - Public batch safety: all item identity/content/policy/resource projections validate before work and again before resumed acceptance or fresh claim; identity drift or getter failure has an explicit error/event and zero execution, and every in-flight worker drains before return. Escaping scheduler/event/stop infrastructure errors synchronously close new claims, drain only already-claimed workers through settled aggregation, and rethrow the first recorded cause. Exclusive keys must be runtime strings; per-resource FIFO cursors expose only the earliest ready heads through a private ordered min-heap, so same keys serialize, blocked keys remain unclaimed without occupying workers, later free keys retain bounded concurrency, and ordinary scheduling stays near `O(n log k)`. Mutation retry is rejected, incomplete attempts require explicit readback recovery, resume requires exact run/item contracts, every pre-claim result can trigger stop before its same-key successor becomes ready, and event delivery is monotonic plus awaited. Retry policy/backoff delays cannot exceed Node's timer maximum.
 - Public run-lock safety: one canonical run directory is one file-lock domain across identities and processes. Reentrancy is limited to a live nested scope owned by the current holder; completed async contexts and siblings contend. The top-level promise remains pending until every nested scope drains, foreign-host or live locks are never stale-deleted, and local waiters wake only after physical lock cleanup. PID, host, and ownership time are internal facts, not public options; timeout/poll inputs are non-negative safe integers within Node's timer maximum.
-- `auth identity-receipt` belongs to `src/cli.ts` plus `src/lib/auth-identity-receipt.ts`. It is read-only and must live-verify `/auth/v1/user`; cache email, local JWT decode, raw response bodies, and credential-derived fingerprints are not identity evidence. Production callers must supply both expected assertions and accept only `intent-bound` receipts.
+- `auth identity-receipt` belongs to `src/cli.ts` plus `src/lib/auth-identity-receipt.ts`. It is read-only and must live-verify `/auth/v1/user`; cache email, local JWT decode, raw response bodies, and credential-derived fingerprints are not identity evidence. Production callers must supply both expected assertions and accept only `intent-bound` receipts. Offline consumers parse that exact safe projection through the public `./auth-identity-receipt` entry rather than an internal path.
 - Newly added process-maintenance commands such as `process identity-preflight`, `process build-plan`, `process scope-statistics`, `process dedup-review`, `process refresh-references`, and `process verify-rows` still belong to the native CLI command surface in `src/cli.ts` and `src/lib/process-*.ts` / shared CLI-native helpers.
 - `process save-draft` now has a local `ProcessSchema` validation gate before any commit path writes remote state, and `--target-user-id` is a hard current-session/visible-draft owner guard for account-scoped batch imports.
 - Dataset-level local governance commands such as `dataset validate`, `dataset curation-queue build/next/verify`, and `dataset references rewrite` belong to the same native CLI command surface in `src/cli.ts` and `src/lib/dataset-*.ts`.
