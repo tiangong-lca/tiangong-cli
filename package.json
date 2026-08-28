@@ -17,6 +17,10 @@
   },
   "exports": {
     "./bin/tiangong-lca.js": "./bin/tiangong-lca.js",
+    "./auth-identity-receipt": {
+      "types": "./dist/src/auth-identity-receipt.d.ts",
+      "import": "./dist/src/auth-identity-receipt.js"
+    },
     "./command-spec": {
       "types": "./dist/src/command-spec.d.ts",
       "import": "./dist/src/command-spec.js"
