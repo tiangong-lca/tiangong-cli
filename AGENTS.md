@@ -37,8 +37,8 @@ checkPaths:
   - scripts/docpact-gate.sh
   - scripts/install-git-hooks.sh
 lastReviewedAt: 2026-08-29
-lastReviewedCommit: a82ee857cc322357907d770b11d6e1aca3b3bf2b
-lastReviewedNote: 'Reviewed for Issue #237: CLI 0.1.2 advances only package metadata and four live version fixtures while preserving the bounded pnpm 11.24 runtime, dependency, export, release, and integration contracts.'
+lastReviewedCommit: f460f0567faac6e89e53d259fbd29d1dfccd058d
+lastReviewedNote: 'Reviewed for Issue #242: CLI 0.1.3 publishes the already reviewed public auth receipt parser through a release-only metadata and four-fixture change, with runtime, lock, dependency, export, release, and integration contracts unchanged.'
 related:
   - .docpact/config.yaml
   - docs/agents/repo-validation.md
@@ -67,6 +67,8 @@ Review note, 2026-08-26: Issue #236 advances only the exact pnpm toolchain pin f
 Review note, 2026-08-26: Issue #237 publishes the bounded CommandSpec/batch implementation and pnpm 11.24 convergence as CLI 0.1.2 through a release-only package metadata and four-fixture change. It adds no command, dependency, runtime behavior, public export, credential, database/Foundry operation, tag rule, workflow, or alternate publication path. The four-platform gate, merge-triggered tag, native pnpm Trusted Publishing/provenance, credential-free public consumers, and exact released-commit workspace integration remain mandatory.
 
 Review note, 2026-08-29: Issue #240 adds `src/auth-identity-receipt.ts` and the supported `@tiangong-lca/cli/auth-identity-receipt` parser/type subpath after the 0.1.2 exports map correctly closed internal deep imports. The entry directly re-exports the existing parser/constants/types, exposes neither remote execution nor test internals, adds no dependency or auth behavior, and keeps package version 0.1.2 pending a separate patch release.
+
+Review note, 2026-08-29: Issue #242 publishes that reviewed public parser as CLI 0.1.3. The release delta is limited to `package.json` and four existing exact-version fixtures; the pnpm lock, runtime, public export identities, dependencies, auth behavior, commands, credentials, tag automation, Trusted Publishing/provenance, and workspace integration contract are unchanged.
 
 Review note, 2026-06-04: `dataset curation-queue build/next/verify` is the CLI-owned state machine for Foundry entity queues; repo ownership boundaries remain unchanged.
 
