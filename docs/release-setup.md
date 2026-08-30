@@ -24,8 +24,8 @@ checkPaths:
   - scripts/docpact
   - scripts/docpact-gate.sh
   - scripts/install-git-hooks.sh
-lastReviewedAt: 2026-08-29
-lastReviewedCommit: f460f0567faac6e89e53d259fbd29d1dfccd058d
+lastReviewedAt: 2026-08-31
+lastReviewedCommit: ff028627c4672f7274c96fa8271d425464b15f54
 lastReviewedNote: 'Reviewed for Issue #242: CLI 0.1.3 uses the unchanged pnpm 11.24 merge-tag and Trusted Publishing setup with no new secret, dependency, lock byte, workflow, credential, or publication path.'
 related:
   - ../AGENTS.md

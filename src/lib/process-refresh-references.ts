@@ -24,7 +24,7 @@ import {
   resolveDataApiCapability,
 } from './supabase-data-api-contract.js';
 import { resolveSupabaseUserSession } from './supabase-session.js';
-import { redactEmail, requireUserApiKeyCredentials } from './user-api-key.js';
+import { redactEmail } from './user-api-key.js';
 
 type JsonObject = Record<string, unknown>;
 
@@ -624,7 +624,7 @@ async function resolveRemoteAuth(options: {
     publishableKey: runtime.publishableKey,
     accessToken: session.accessToken,
     userId,
-    maskedUserEmail: redactEmail(requireUserApiKeyCredentials(runtime.userApiKey).email),
+    maskedUserEmail: redactEmail(session.userEmail),
   };
 }
 

@@ -15,6 +15,10 @@ export type ResolvedEnv = {
 export const ENV_KEYS = {
   apiBaseUrl: 'TIANGONG_LCA_API_BASE_URL',
   apiKey: 'TIANGONG_LCA_API_KEY',
+  authMode: 'TIANGONG_LCA_AUTH_MODE',
+  oauthClientId: 'TIANGONG_LCA_OAUTH_CLIENT_ID',
+  oauthRedirectUri: 'TIANGONG_LCA_OAUTH_REDIRECT_URI',
+  accessToken: 'TIANGONG_LCA_ACCESS_TOKEN',
   region: 'TIANGONG_LCA_REGION',
   supabasePublishableKey: 'TIANGONG_LCA_SUPABASE_PUBLISHABLE_KEY',
   sessionFile: 'TIANGONG_LCA_SESSION_FILE',
@@ -30,8 +34,8 @@ export const ENV_SPECS: EnvSpec[] = [
   },
   {
     key: ENV_KEYS.apiKey,
-    required: true,
-    description: 'Main TianGong LCA API key',
+    required: false,
+    description: 'Deprecated legacy email/password API key bootstrap',
   },
   {
     key: ENV_KEYS.region,
@@ -61,6 +65,26 @@ export const ENV_SPECS: EnvSpec[] = [
     description: 'Ignore cached sessions and force a fresh login when set to true',
     defaultValue: 'false',
   },
+  {
+    key: ENV_KEYS.authMode,
+    required: false,
+    description: 'Optional explicit auth mode: oauth, access-token, or legacy-user-api-key',
+  },
+  {
+    key: ENV_KEYS.oauthClientId,
+    required: false,
+    description: 'Registered public Supabase OAuth client ID',
+  },
+  {
+    key: ENV_KEYS.oauthRedirectUri,
+    required: false,
+    description: 'Exact registered CLI loopback OAuth redirect URI',
+  },
+  {
+    key: ENV_KEYS.accessToken,
+    required: false,
+    description: 'Explicit short-lived actor access token for headless execution',
+  },
 ];
 
 export type DoctorCheck = {
@@ -83,6 +107,10 @@ export type DoctorReport = {
 export type RuntimeEnv = {
   apiBaseUrl: string | null;
   apiKey: string | null;
+  authMode: string | null;
+  oauthClientId: string | null;
+  oauthRedirectUri: string | null;
+  accessToken: string | null;
   region: string;
   supabasePublishableKey: string | null;
   sessionFile: string | null;
@@ -142,10 +170,18 @@ export function readRuntimeEnv(env: NodeJS.ProcessEnv): RuntimeEnv {
   const sessionFile = resolveEnv(ENV_SPECS[4], env).value;
   const disableSessionCache = parseBooleanEnv(resolveEnv(ENV_SPECS[5], env).value);
   const forceReauth = parseBooleanEnv(resolveEnv(ENV_SPECS[6], env).value);
+  const authMode = resolveEnv(ENV_SPECS[7], env).value;
+  const oauthClientId = resolveEnv(ENV_SPECS[8], env).value;
+  const oauthRedirectUri = resolveEnv(ENV_SPECS[9], env).value;
+  const accessToken = resolveEnv(ENV_SPECS[10], env).value;
 
   return {
     apiBaseUrl,
     apiKey,
+    authMode,
+    oauthClientId,
+    oauthRedirectUri,
+    accessToken,
     region,
     supabasePublishableKey,
     sessionFile,
@@ -181,7 +217,11 @@ export function buildDoctorReport(
   });
 
   return {
-    ok: checks.every((check) => !check.required || check.present),
+    ok:
+      checks.every((check) => !check.required || check.present) &&
+      [ENV_KEYS.oauthClientId, ENV_KEYS.accessToken, ENV_KEYS.apiKey].some(
+        (key) => checks.find((check) => check.key === key)?.present,
+      ),
     loadedDotEnv: dotEnvStatus.loaded,
     dotEnvPath: dotEnvStatus.path,
     dotEnvKeysLoaded: dotEnvStatus.count,

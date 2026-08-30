@@ -12,6 +12,7 @@ whenToUpdate:
   - when maintainer-facing runtime, env, release, or development guidance changes
 checkPaths:
   - DEV_CN.md
+  - .env.example
   - README.md
   - package.json
   - pnpm-workspace.yaml
@@ -21,9 +22,9 @@ checkPaths:
   - src/**
   - scripts/**
   - .github/workflows/**
-lastReviewedAt: 2026-08-29
-lastReviewedCommit: a82ee857cc322357907d770b11d6e1aca3b3bf2b
-lastReviewedNote: 'Reviewed for Issue #236: pnpm 单轨精确升级到 11.24.0；Node 24.19.0、TypeScript 7.0.2、0.1.1 包版本、依赖、公开行为与发布路径不变。'
+lastReviewedAt: 2026-08-31
+lastReviewedCommit: 9f0660b115e32f2f800b95c7b0d7cd3426d5bab3
+lastReviewedNote: 'Reviewed for Issue #244: CLI 默认认证改为 Supabase OAuth 2.1 PKCE、本地私有 refresh session、local status、live redacted whoami/doctor-auth 与显式 headless access token；旧 API key 仅保留迁移兼容。'
 related:
   - AGENTS.md
   - .docpact/config.yaml
@@ -204,21 +205,27 @@ pnpm add --global @tiangong-lca/cli
 
 本项目会自动加载仓库根目录下的 `.env` 文件。
 
+Review note, 2026-08-31: Issue #244 新增 `auth login|status|whoami|doctor-auth|logout`。交互登录使用注册过的 public OAuth client、S256 PKCE、随机 state、精确固定端口 `127.0.0.1` 回调与无 shell 系统浏览器；verifier/code 不落盘，OAuth access/rotating refresh token 在现有进程锁与文件锁下原子写入 schema-v2 私有 session。`status` 只读本地 metadata 且明确不是 online verification；`whoami` 复用 live redacted identity receipt；`doctor-auth` 缺少本地 session 时先返回 human login handoff，ready 后才做 live read。`TIANGONG_LCA_ACCESS_TOKEN` 是只在进程内缓存、在线校验且不自动 refresh 的 headless 入口。旧可逆 `TIANGONG_LCA_API_KEY` 仅在没有 OAuth/headless 配置或显式 `legacy-user-api-key` 模式时作为迁移兼容；OAuth 失败绝不回退密码登录。
+
 初始化时，把 `.env.example` 复制成仓库根目录下的 `.env`。推荐直接用编辑器或文件管理器完成这一步，这样 macOS / Linux / Windows 都不需要自行翻译 shell 命令。
 
 当前统一 CLI 的公开命令面必需环境变量是这一组：
 
 ```bash
 TIANGONG_LCA_API_BASE_URL=
-TIANGONG_LCA_API_KEY=
-TIANGONG_LCA_REGION=us-east-1
 TIANGONG_LCA_SUPABASE_PUBLISHABLE_KEY=
+TIANGONG_LCA_OAUTH_CLIENT_ID=
+TIANGONG_LCA_REGION=us-east-1
+TIANGONG_LCA_AUTH_MODE=oauth
+TIANGONG_LCA_OAUTH_REDIRECT_URI=http://127.0.0.1:49191/oauth/callback
 TIANGONG_LCA_SESSION_FILE=
 TIANGONG_LCA_DISABLE_SESSION_CACHE=false
 TIANGONG_LCA_FORCE_REAUTH=false
 ```
 
-`TIANGONG_LCA_API_KEY` 是账户页生成的 TianGong 用户 API Key，不是 Supabase project key。CLI 只把它当作 bootstrap 凭证，配合 `TIANGONG_LCA_SUPABASE_PUBLISHABLE_KEY` 在本地换取用户 session，然后统一用解析出的 access token 访问 Edge Functions 和 direct Supabase。
+`TIANGONG_LCA_OAUTH_CLIENT_ID` 是环境专属、已注册的 public client ID，不是 secret。先在可信终端运行 `tiangong-lca auth login`；后续 Edge Functions 与 direct Supabase 命令统一使用 OAuth access token，过期前按需旋转 refresh token。默认回调必须与 OAuth client 中登记的完整 URI 完全一致；OAuth client redirect URI 不支持 wildcard。
+
+headless 任务可显式设置 `TIANGONG_LCA_AUTH_MODE=access-token` 与短期 `TIANGONG_LCA_ACCESS_TOKEN`。该 token 在线校验后只在当前进程复用，不写 session 文件，也不做 refresh/replay。迁移期旧调用方可显式设置 `TIANGONG_LCA_AUTH_MODE=legacy-user-api-key` 与 `TIANGONG_LCA_API_KEY`；这是 password-equivalent 兼容面，不得用于新集成。
 
 此外，只有在显式启用 `tiangong-lca review process --enable-llm` 或 `tiangong-lca review flow --enable-llm` 时，才会额外使用这一组可选变量。这一整组配置默认都是 optional；只有打开 review LLM 模式时才需要填写。`TIANGONG_LCA_REVIEW_LLM_BASE_URL` 应指向一个 OpenAI-compatible Responses API 根地址，CLI 会向 `<base_url>/responses` 发请求：
 
@@ -243,7 +250,7 @@ TIANGONG_LCA_UNSTRUCTURED_CHUNK_TYPE=false
 TIANGONG_LCA_UNSTRUCTURED_RETURN_TXT=true
 ```
 
-当前也不需要额外配置通用的 `SUPABASE_URL`、`SUPABASE_KEY` 或 `TIANGONG_LCA_TIDAS_SDK_DIR`。CLI 会从 `TIANGONG_LCA_API_BASE_URL` 派生原生 `@supabase/supabase-js` client，用 `TIANGONG_LCA_API_KEY + TIANGONG_LCA_SUPABASE_PUBLISHABLE_KEY` 换取用户 session，并直接从 `package.json` 依赖加载 `@tiangong-lca/tidas-sdk`。
+当前也不需要额外配置通用的 `SUPABASE_URL`、`SUPABASE_KEY` 或 `TIANGONG_LCA_TIDAS_SDK_DIR`。CLI 会从 `TIANGONG_LCA_API_BASE_URL` 派生原生 `@supabase/supabase-js` client，复用 OAuth/headless/迁移兼容解析出的 actor access token，并直接从 `package.json` 依赖加载 `@tiangong-lca/tidas-sdk`。
 
 Data API schema 不依赖 PostgREST 的默认 `public`。默认且唯一支持的配置为 `TIANGONG_LCA_DATA_API_PROFILE=api-contract-v1`；省略变量时也解析为该冻结合同，旧 `legacy-public-v1` 会在发送前失败。九张核心实体表继续显式使用 `public`，16 个 CLI RPC 则全部显式使用 `api`。当前合同固定到 database-engine commit `0a97cc761f8127ca379ab7d4df4395dab255707a`、migration head `20260807103000`，并在 manifest 中保存 migration tree 与关键 migration 的精确 hash。`private.cmd_dataset_alias_plan_guarded(jsonb)` 是不可暴露的内部 executor，不再是 CLI Data API capability；生产 alias 执行只使用 `run-protected` 的 preflight/gate/admit/read 四个 `api` façade。CLI 不接受 anon 或 service-role Data API 身份；GET/HEAD 与 manifest 明确分类为 read 的 RPC 仅在 401/403 后最多 refresh/replay 一次，relation write、mutation/unknown RPC 均不自动重放。
 
@@ -257,38 +264,45 @@ Data API schema 不依赖 PostgREST 的默认 `public`。默认且唯一支持�
 - CLI 仓库内部虽然已经有 `kb-search` / `unstructured` 模块，但当前没有任何公开命令消费这些 env
 - `.env.example` 会把这类 key 标成 internal/preparatory，防止代码和文档脱节，也防止调用方误认为它们已经是稳定公开 contract
 
+下表的“远程认证环境”指上面的 `API_BASE_URL + SUPABASE_PUBLISHABLE_KEY + OAuth client/已登录 session`，或显式 headless access token；迁移兼容模式另需显式 legacy mode 与旧 API key。
+
 命令级 env 现实如下：
 
 | 命令组 | 必需 env |
 | --- | --- |
 | `doctor` | 无 |
-| `auth identity-receipt` | `TIANGONG_LCA_API_BASE_URL`、`TIANGONG_LCA_API_KEY`、`TIANGONG_LCA_SUPABASE_PUBLISHABLE_KEY`；生产 guard 必须从 argv 同时给出 expected project/user，不能把 `observed` 回执当授权证明 |
-| `search flow \| process \| lifecyclemodel` | `TIANGONG_LCA_API_BASE_URL`、`TIANGONG_LCA_API_KEY`、`TIANGONG_LCA_SUPABASE_PUBLISHABLE_KEY`（`TIANGONG_LCA_REGION` 可选） |
-| `admin embedding-run` | `TIANGONG_LCA_API_BASE_URL`、`TIANGONG_LCA_API_KEY`、`TIANGONG_LCA_SUPABASE_PUBLISHABLE_KEY`（`TIANGONG_LCA_REGION` 可选） |
-| `process get \| list` | `TIANGONG_LCA_API_BASE_URL`、`TIANGONG_LCA_API_KEY`、`TIANGONG_LCA_SUPABASE_PUBLISHABLE_KEY` |
-| `process identity-preflight` | 默认无；若启用 `--remote-candidates` 或输入 `remote_candidate_search.enabled=true`，则需要 `TIANGONG_LCA_API_BASE_URL`、`TIANGONG_LCA_API_KEY`、`TIANGONG_LCA_SUPABASE_PUBLISHABLE_KEY`（`TIANGONG_LCA_REGION` 可选） |
+| `auth login` | `TIANGONG_LCA_API_BASE_URL`、`TIANGONG_LCA_SUPABASE_PUBLISHABLE_KEY`、`TIANGONG_LCA_OAUTH_CLIENT_ID` |
+| `auth status` | 远程认证环境；只检查本地 readiness，不访问网络或 refresh |
+| `auth whoami` | 远程认证环境；执行 live redacted identity receipt |
+| `auth doctor-auth` | 远程认证环境；local readiness + live redacted identity |
+| `auth logout` | 远程认证环境；只删除匹配的本地 session，服务端 grant 在 Next Connected applications 中撤销 |
+| `auth identity-receipt` | 远程认证环境；生产 guard 必须从 argv 同时给出 expected project/user，不能把 `observed` 回执当授权证明 |
+| `search flow \| process \| lifecyclemodel` | 远程认证环境（`TIANGONG_LCA_REGION` 可选） |
+| `admin embedding-run` | 远程认证环境（`TIANGONG_LCA_REGION` 可选） |
+| `process get \| list` | 远程认证环境 |
+| `process identity-preflight` | 默认无；启用 remote candidates 时需要远程认证环境（`TIANGONG_LCA_REGION` 可选） |
 | `process auto-build \| resume-build \| publish-build \| batch-build` | 无 |
 | `dataset validate` | 无 |
 | `dataset classification children/path/audit/apply` | 无 |
 | `dataset curation-queue build` | 无 |
-| `dataset references rewrite` | 本地 rewrite 默认无；若 `--commit` 写入 patched rows，则需要 `TIANGONG_LCA_API_BASE_URL`、`TIANGONG_LCA_API_KEY`、`TIANGONG_LCA_SUPABASE_PUBLISHABLE_KEY` |
-| `dataset save-draft` | 本地 dry-run 默认无；`--commit`（包括 `--execution-contract` 模式）需要 `TIANGONG_LCA_API_BASE_URL`、`TIANGONG_LCA_API_KEY`、`TIANGONG_LCA_SUPABASE_PUBLISHABLE_KEY`。execution ledger 默认写入平台用户状态目录，可由 `XDG_STATE_HOME` 改变根目录 |
-| `dataset maintenance plan/apply/freeze-protected/run-protected/verify` | 都需要 `TIANGONG_LCA_API_BASE_URL`、`TIANGONG_LCA_API_KEY`、`TIANGONG_LCA_SUPABASE_PUBLISHABLE_KEY`；`plan`/`verify` 只读，`freeze-protected` 仅允许显式确认的 production project 只读冻结，`apply` 必须提供 plan hash 与当前账号邮箱；`run-protected` 的 commit 模式还必须提供 freeze、人工 approval 与 approved execution hash，恢复时使用 `--status-only` |
+| `dataset references rewrite` | 本地 rewrite 默认无；`--commit` 需要远程认证环境 |
+| `dataset save-draft` | 本地 dry-run 默认无；`--commit`（包括 execution contract）需要远程认证环境；ledger 仍在平台用户状态目录 |
+| `dataset maintenance plan/apply/freeze-protected/run-protected/verify` | 需要远程认证环境；既有 plan/approval/production/status-only 护栏不变 |
 | `dataset maintenance seal-protected-approval` | 无；完全离线，只读取 canonical freeze/request 与人类返回的原始 UTF-8 文本，并要求显式 freeze-file/request/text/account/timestamp 绑定 |
 | `lifecyclemodel auto-build \| validate-build \| publish-build \| graph \| orchestrate` | 无 |
-| `lifecyclemodel save-draft` | 本地 dry-run 默认无；若 `--commit` 写入 lifecyclemodel draft，则需要 `TIANGONG_LCA_API_BASE_URL`、`TIANGONG_LCA_API_KEY`、`TIANGONG_LCA_SUPABASE_PUBLISHABLE_KEY` |
-| `lifecyclemodel build-resulting-process` | 本地运行默认无；若 request 打开 `process_sources.allow_remote_lookup=true`，则需要 `TIANGONG_LCA_API_BASE_URL`、`TIANGONG_LCA_API_KEY`、`TIANGONG_LCA_SUPABASE_PUBLISHABLE_KEY` |
+| `lifecyclemodel save-draft` | 本地 dry-run 默认无；`--commit` 需要远程认证环境 |
+| `lifecyclemodel build-resulting-process` | 本地默认无；开启 remote lookup 时需要远程认证环境 |
 | `lifecyclemodel publish-resulting-process` | 无 |
 | `review process` | 纯规则 review 默认无；若显式启用 `--enable-llm`，则需要 `TIANGONG_LCA_REVIEW_LLM_BASE_URL`、`TIANGONG_LCA_REVIEW_LLM_API_KEY`、`TIANGONG_LCA_REVIEW_LLM_MODEL` |
 | `review flow` | 纯规则 review 默认无；若显式启用 `--enable-llm`，则需要 `TIANGONG_LCA_REVIEW_LLM_BASE_URL`、`TIANGONG_LCA_REVIEW_LLM_API_KEY`、`TIANGONG_LCA_REVIEW_LLM_MODEL` |
 | `review lifecyclemodel` | 无 |
-| `flow get` | `TIANGONG_LCA_API_BASE_URL`、`TIANGONG_LCA_API_KEY`、`TIANGONG_LCA_SUPABASE_PUBLISHABLE_KEY` |
-| `flow list` | `TIANGONG_LCA_API_BASE_URL`、`TIANGONG_LCA_API_KEY`、`TIANGONG_LCA_SUPABASE_PUBLISHABLE_KEY` |
-| `flow identity-preflight` | 默认无；若启用 `--remote-candidates` 或输入 `remote_candidate_search.enabled=true`，则需要 `TIANGONG_LCA_API_BASE_URL`、`TIANGONG_LCA_API_KEY`、`TIANGONG_LCA_SUPABASE_PUBLISHABLE_KEY`（`TIANGONG_LCA_REGION` 可选） |
+| `flow get` | 远程认证环境 |
+| `flow list` | 远程认证环境 |
+| `flow identity-preflight` | 默认无；启用 remote candidates 时需要远程认证环境（region 可选） |
 | `flow remediate` | 无 |
-| `flow publish-version` | `TIANGONG_LCA_API_BASE_URL`、`TIANGONG_LCA_API_KEY`、`TIANGONG_LCA_SUPABASE_PUBLISHABLE_KEY` |
-| `flow publish-reviewed-data` | 本地 dry-run 默认无；若 `--commit` 发布 prepared flow/process rows，则需要 `TIANGONG_LCA_API_BASE_URL`、`TIANGONG_LCA_API_KEY`、`TIANGONG_LCA_SUPABASE_PUBLISHABLE_KEY` |
-| `release *` | `TIANGONG_LCA_API_BASE_URL`、`TIANGONG_LCA_API_KEY`、`TIANGONG_LCA_SUPABASE_PUBLISHABLE_KEY`；写操作与私有结果读取还要求该 session 对应账号具备服务端 `data_product_manager` 权限，禁止配置 service-role |
+| `flow publish-version` | 远程认证环境 |
+| `flow publish-reviewed-data` | 本地 dry-run 默认无；`--commit` 需要远程认证环境 |
+| `release *` | 远程认证环境；服务端仍要求 `data_product_manager`，禁止 service-role；请求体不再包含 credential fingerprint |
 | `flow build-alias-map` | 无 |
 | `flow scan-process-flow-refs` | 无 |
 | `flow plan-process-flow-repairs` | 无 |

@@ -183,8 +183,16 @@ function requireRemoteProcessLookupRuntime(env: NodeJS.ProcessEnv) {
     missing.push('TIANGONG_LCA_API_BASE_URL');
   }
 
-  if (typeof env.TIANGONG_LCA_API_KEY !== 'string' || !env.TIANGONG_LCA_API_KEY.trim()) {
-    missing.push('TIANGONG_LCA_API_KEY');
+  if (
+    ![
+      env.TIANGONG_LCA_OAUTH_CLIENT_ID,
+      env.TIANGONG_LCA_ACCESS_TOKEN,
+      env.TIANGONG_LCA_API_KEY,
+    ].some((value) => typeof value === 'string' && value.trim())
+  ) {
+    missing.push(
+      'TIANGONG_LCA_OAUTH_CLIENT_ID or TIANGONG_LCA_ACCESS_TOKEN or TIANGONG_LCA_API_KEY',
+    );
   }
 
   if (

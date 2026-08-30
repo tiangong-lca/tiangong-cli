@@ -167,12 +167,12 @@ export function hasSupabaseRestRuntime(env: NodeJS.ProcessEnv | undefined): bool
   if (!env) {
     return false;
   }
-
-  return Boolean(
-    trimToken(env.TIANGONG_LCA_API_BASE_URL) &&
-    trimToken(env.TIANGONG_LCA_API_KEY) &&
-    trimToken(env.TIANGONG_LCA_SUPABASE_PUBLISHABLE_KEY),
-  );
+  try {
+    requireSupabaseRestRuntime(env);
+    return true;
+  } catch {
+    return false;
+  }
 }
 
 export async function syncSupabaseJsonOrderedRecord(options: {
