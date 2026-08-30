@@ -1,6 +1,5 @@
 import {
   closeSync,
-  existsSync,
   mkdirSync,
   openSync,
   readFileSync,
@@ -115,11 +114,15 @@ export function lockPathForState(statePath: string): string {
 }
 
 export function readStateLockMetadata(lockPath: string): Record<string, unknown> | null {
-  if (!existsSync(lockPath)) {
-    return null;
+  let text: string;
+  try {
+    text = readFileSync(lockPath, 'utf8').trim();
+  } catch (error) {
+    if (isErrnoException(error, 'ENOENT')) {
+      return null;
+    }
+    throw error;
   }
-
-  const text = readFileSync(lockPath, 'utf8').trim();
   if (!text) {
     return null;
   }
