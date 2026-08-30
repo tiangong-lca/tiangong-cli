@@ -324,10 +324,13 @@ function toResolvedSession(
   };
 }
 
-function readCachedSessionRecord(sessionFilePath: string): CachedSupabaseSessionRecord | null {
+function readCachedSessionRecord(
+  sessionFilePath: string,
+  platform: NodeJS.Platform = process.platform,
+): CachedSupabaseSessionRecord | null {
   try {
     const stat = statSync(sessionFilePath);
-    if (!stat.isFile() || (process.platform !== 'win32' && (stat.mode & 0o077) !== 0)) {
+    if (!stat.isFile() || (platform !== 'win32' && (stat.mode & 0o077) !== 0)) {
       return null;
     }
     const text = readFileSync(sessionFilePath, 'utf8').trim();
@@ -344,12 +347,13 @@ function readCachedSessionRecord(sessionFilePath: string): CachedSupabaseSession
 function writeCachedSessionRecord(
   sessionFilePath: string,
   record: CachedSupabaseSessionRecord,
+  platform: NodeJS.Platform = process.platform,
 ): void {
   mkdirSync(path.dirname(sessionFilePath), {
     recursive: true,
     mode: 0o700,
   });
-  if (process.platform !== 'win32') {
+  if (platform !== 'win32') {
     chmodSync(path.dirname(sessionFilePath), 0o700);
   }
 
