@@ -33,8 +33,8 @@ checkPaths:
   - test/public-auth-identity-receipt.test.ts
   - test/lca-release*.test.ts
 lastReviewedAt: 2026-08-31
-lastReviewedCommit: 9f0660b115e32f2f800b95c7b0d7cd3426d5bab3
-lastReviewedNote: 'Reviewed for Issue #244: documents browser PKCE login, non-mutating local status, live redacted whoami/doctor-auth, local logout, private rotating OAuth sessions, short-lived headless access tokens, and bounded legacy API-key compatibility.'
+lastReviewedCommit: 38a85ab7dc01b9f6cdee02ab4c681a1976d02cfa
+lastReviewedNote: 'Reviewed for Issue #247: private OAuth/session state-lock metadata now tolerates only the normal concurrent-release ENOENT race while preserving all other fail-closed lock behavior.'
 ---
 
 # TianGong LCA CLI
@@ -64,6 +64,8 @@ Review note, 2026-08-29: Issue #240 adds the typed `@tiangong-lca/cli/auth-ident
 Review note, 2026-08-29: Issue #242 releases that public parser as `@tiangong-lca/cli@0.1.3`. Only package identity and four existing exact-version fixtures change; `./batch`, `./command-spec`, `./auth-identity-receipt`, the executable, dependencies, pnpm lock, Node 24.19.0 / TypeScript 7.0.2 toolchain, and package-manager-neutral consumer contract are otherwise unchanged.
 
 Review note, 2026-08-31: Issue #244 adds Supabase OAuth 2.1 Authorization Code + S256 PKCE without adding a dependency or changing package version/exports. `auth login` uses a registered public client, exact literal-`127.0.0.1` callback, state validation, and shell-free system browser; it atomically stores rotating access/refresh tokens in a private session file. `auth status` performs no network request and reveals no credential or session path; `auth whoami` and `auth doctor-auth` use the live redacted identity receipt. `auth logout` deletes only that matching local session; Connected applications owns grant revocation. `TIANGONG_LCA_ACCESS_TOKEN` is a short-lived, online-verified, memory-only headless option. The reversible API key remains only as a transition fallback and is never used by OAuth mode.
+
+Review note, 2026-08-31: Issue #247 prevents a second CLI process from failing when the first process removes `session.json.lock` between contention and metadata read. Only an absent lock is treated as released; permission, I/O, malformed-owner, timeout, and stale-owner safety behavior is unchanged.
 
 Review note, 2026-07-12: `dataset maintenance plan/apply/verify` provides current-user RLS-scoped exact-row maintenance with immutable plans, explicit approval, per-action logs, platform audit correlation, and independent readback. `merge-support-aliases` now runs only in `target_mode=owner_draft`: source/target support and all changed rows stay private `state_code=0`; publication is a separate future workflow.
 

@@ -23,8 +23,8 @@ checkPaths:
   - scripts/**
   - .github/workflows/**
 lastReviewedAt: 2026-08-31
-lastReviewedCommit: 9f0660b115e32f2f800b95c7b0d7cd3426d5bab3
-lastReviewedNote: 'Reviewed for Issue #244: CLI 默认认证改为 Supabase OAuth 2.1 PKCE、本地私有 refresh session、local status、live redacted whoami/doctor-auth 与显式 headless access token；旧 API key 仅保留迁移兼容。'
+lastReviewedCommit: 38a85ab7dc01b9f6cdee02ab4c681a1976d02cfa
+lastReviewedNote: 'Reviewed for Issue #247: OAuth/session state-lock metadata 使用单次读取，将并发释放产生的 ENOENT 视为锁已消失，其他读取错误仍 fail closed。'
 related:
   - AGENTS.md
   - .docpact/config.yaml
@@ -206,6 +206,8 @@ pnpm add --global @tiangong-lca/cli
 本项目会自动加载仓库根目录下的 `.env` 文件。
 
 Review note, 2026-08-31: Issue #244 新增 `auth login|status|whoami|doctor-auth|logout`。交互登录使用注册过的 public OAuth client、S256 PKCE、随机 state、精确固定端口 `127.0.0.1` 回调与无 shell 系统浏览器；verifier/code 不落盘，OAuth access/rotating refresh token 在现有进程锁与文件锁下原子写入 schema-v2 私有 session。`status` 只读本地 metadata 且明确不是 online verification；`whoami` 复用 live redacted identity receipt；`doctor-auth` 缺少本地 session 时先返回 human login handoff，ready 后才做 live read。`TIANGONG_LCA_ACCESS_TOKEN` 是只在进程内缓存、在线校验且不自动 refresh 的 headless 入口。旧可逆 `TIANGONG_LCA_API_KEY` 仅在没有 OAuth/headless 配置或显式 `legacy-user-api-key` 模式时作为迁移兼容；OAuth 失败绝不回退密码登录。
+
+Review note, 2026-08-31: Issue #247 修复并发 CLI 进程交接 `session.json.lock` 时的 metadata TOCTOU。读取操作不再先检查存在性；`readFileSync` 返回 `ENOENT` 表示前一 owner 已完成释放，权限/I/O 等其他错误继续原样失败。锁创建、metadata schema、stale owner、timeout、reentrancy、cleanup、session bytes 与认证选择均不变。
 
 初始化时，把 `.env.example` 复制成仓库根目录下的 `.env`。推荐直接用编辑器或文件管理器完成这一步，这样 macOS / Linux / Windows 都不需要自行翻译 shell 命令。
 

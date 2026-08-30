@@ -22,8 +22,8 @@ checkPaths:
   - src/**
   - test/**
 lastReviewedAt: 2026-08-31
-lastReviewedCommit: 9f0660b115e32f2f800b95c7b0d7cd3426d5bab3
-lastReviewedNote: 'Reviewed for Issue #244: 远程 session 结论更新为 OAuth 2.1 PKCE、固定 loopback、私有 refresh rotation、本地 status、live redacted whoami/doctor-auth、显式 headless token 与迁移期 legacy fallback。'
+lastReviewedCommit: 38a85ab7dc01b9f6cdee02ab4c681a1976d02cfa
+lastReviewedNote: 'Reviewed for Issue #247: OAuth/session state lock 通过单次 metadata 读取识别并发释放的 ENOENT，其他读取错误、stale owner、timeout 与 cleanup 仍 fail closed。'
 related:
   - ../AGENTS.md
   - ../.docpact/config.yaml
@@ -43,6 +43,8 @@ Review note, 2026-08-25: Issue #230 把本地、engines 和所有 Node workflow 
 Review note, 2026-08-26: Issue #232 在不新增依赖、不改 0.1.1 版本的前提下增加 `@tiangong-lca/cli/command-spec` 与 `@tiangong-lca/cli/batch`。前者保持 Foundry v1 exact-key/canonical SHA/artifact bytes 与 `shell:false` 执行兼容，并在注入 spawn 同步抛错时清理外部 abort listener；后者在任何工作前完成全部 item identity/content/policy/resource projection，并在 resumed acceptance 与 fresh claim 前重投影 identity/content/policy/resource。identity 变化或 getter 抛错都稳定输出 `BatchItemIdentityDriftError` / `item_identity_drift` 且零执行，其他已启动 worker 必须 drain 后 batch 才返回。任一 worker 的 scheduler/event/stop 基础设施异常会同步设置 fatal/stop、禁止后续 claim；聚合器以 `allSettled` 排空已 claim worker，再抛首个记录错误。exclusive key 阻塞项保持 unclaimed、不占 worker，后续 free key 可先 claim，因此 claim order 反映真实资源调度，stop/pause 后的 `unclaimed_item_ids` 仍按输入顺序精确保留。每个资源使用 FIFO cursor，只把当前 head 放入私有 binary min-ready heap；完成或 pre-claim rejection 的 stop 判断结束后才暴露同 key 后继，使普通调度从反复全表扫描收敛到近 `O(n log k)`。mutation 自动重试仍被禁止。
 
 `withBatchRunLock` 以 canonical run directory 作为唯一跨进程锁域，只允许当前 holder 所属且仍存活的 scope 嵌套重入；顶层 Promise 等待 detached nested scope 全部排空，已完成 scope 遗留的 async context 不能重入后来的 owner；live/foreign-host 锁不回收，本地 waiter 只在物理锁清理后接棒。公共 options 不暴露 PID、host 或 ownership clock，metadata 只从 `process.pid`、`os.hostname()` 与当前系统时间内部派生，强制注入额外字段也不能伪造 foreign-host stale recovery。CommandSpec timeout、run-lock timeout/poll、read retry policy/backoff 全部限制在 Node `2_147_483_647ms` timer 上限内；公共 lock timing 还必须是非负 safe integer。
+
+Issue #247 将 OAuth/session 与普通状态文件共用的 `readStateLockMetadata()` 从 `existsSync` + `readFileSync` 改为一次读取：读取时 `ENOENT` 只表示并发 owner 已完成物理释放；权限、I/O 等其他错误继续原样抛出。空/损坏 metadata、stale owner、reentrancy、timeout、unlink cleanup 与文件权限合同均不变。
 
 `dataset save-draft --execution-contract` 只把 unique-target parallel suffix 的 resource-aware claim/fatal-stop 调度接入公共 batch engine。依赖 prefix 仍逐项串行；`executeAction` 继续独占 before-state、PREPARED、token renewal、DML、append-only attempt/outcome、exact readback 与 no-replay 判断。因此 rows 的输入顺序、progress/failures/summary 字节和 fatal worker 传播保持原契约；blocked target 不消耗 worker 或越过 stop claim 窗口。
 
