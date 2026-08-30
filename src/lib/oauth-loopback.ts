@@ -29,6 +29,11 @@ export type OAuthLoopbackBinding = {
   pathname: typeof CALLBACK_PATH;
 };
 
+export const SYSTEM_BROWSER_OPTIONS = {
+  platform: process.platform,
+  spawnImpl: spawn as unknown as BrowserSpawn,
+} satisfies { platform: NodeJS.Platform; spawnImpl: BrowserSpawn };
+
 function trimString(value: unknown): string {
   return typeof value === 'string' ? value.trim() : '';
 }
@@ -299,5 +304,4 @@ export const __testInternals = {
   safeStateEqual,
   trimString,
   writeResponse,
-  defaultBrowserSpawn: spawn as unknown as BrowserSpawn,
 };

@@ -62,12 +62,42 @@ test('readRuntimeEnv returns the canonical TianGong LCA runtime config', () => {
   assert.deepEqual(runtime, {
     apiBaseUrl: 'https://example.com/functions/v1',
     apiKey: 'secret-token',
+    authMode: null,
+    oauthClientId: null,
+    oauthRedirectUri: null,
+    accessToken: null,
     region: 'us-east-1',
     supabasePublishableKey: 'sb-publishable-key',
     sessionFile: null,
     disableSessionCache: false,
     forceReauth: false,
   });
+});
+
+test('readRuntimeEnv includes OAuth and headless configuration', () => {
+  assert.deepEqual(
+    readRuntimeEnv({
+      TIANGONG_LCA_API_BASE_URL: 'https://example.com',
+      TIANGONG_LCA_AUTH_MODE: 'oauth',
+      TIANGONG_LCA_OAUTH_CLIENT_ID: 'client-id',
+      TIANGONG_LCA_OAUTH_REDIRECT_URI: 'http://127.0.0.1:49191/oauth/callback',
+      TIANGONG_LCA_ACCESS_TOKEN: 'actor-token',
+      TIANGONG_LCA_SUPABASE_PUBLISHABLE_KEY: 'publishable',
+    }),
+    {
+      apiBaseUrl: 'https://example.com',
+      apiKey: null,
+      authMode: 'oauth',
+      oauthClientId: 'client-id',
+      oauthRedirectUri: 'http://127.0.0.1:49191/oauth/callback',
+      accessToken: 'actor-token',
+      region: 'us-east-1',
+      supabasePublishableKey: 'publishable',
+      sessionFile: null,
+      disableSessionCache: false,
+      forceReauth: false,
+    },
+  );
 });
 
 test('maskSecret leaves short values unchanged and masks longer values', () => {
@@ -102,4 +132,17 @@ test('buildDoctorReport records canonical TianGong LCA env keys', () => {
     (check) => check.key === 'TIANGONG_LCA_SUPABASE_PUBLISHABLE_KEY',
   );
   assert.equal(publishableCheck?.source, 'env');
+
+  assert.equal(buildDoctorReport({}, { loaded: false, path: '', count: 0 }).ok, false);
+  assert.equal(
+    buildDoctorReport(
+      {
+        TIANGONG_LCA_API_BASE_URL: 'https://example.com',
+        TIANGONG_LCA_OAUTH_CLIENT_ID: 'client-id',
+        TIANGONG_LCA_SUPABASE_PUBLISHABLE_KEY: 'publishable',
+      },
+      { loaded: false, path: '', count: 0 },
+    ).ok,
+    true,
+  );
 });

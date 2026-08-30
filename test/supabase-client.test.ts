@@ -41,7 +41,11 @@ test('requireSupabaseRestRuntime, URL derivation, and auth headers follow the sh
     } as NodeJS.ProcessEnv),
     {
       apiBaseUrl: 'https://example.supabase.co/functions/v1',
+      authMode: 'legacy_user_api_key',
       userApiKey: 'secret-token',
+      oauthClientId: null,
+      oauthRedirectUri: null,
+      accessToken: null,
       publishableKey: 'sb-publishable-key',
       sessionFile: null,
       disableSessionCache: false,
@@ -58,7 +62,7 @@ test('requireSupabaseRestRuntime, URL derivation, and auth headers follow the sh
         JSON.stringify({
           missing: [
             'TIANGONG_LCA_API_BASE_URL',
-            'TIANGONG_LCA_API_KEY',
+            'TIANGONG_LCA_OAUTH_CLIENT_ID or TIANGONG_LCA_ACCESS_TOKEN or TIANGONG_LCA_API_KEY',
             'TIANGONG_LCA_SUPABASE_PUBLISHABLE_KEY',
           ],
         }),
@@ -105,7 +109,11 @@ test('requireSupabaseRestRuntime, URL derivation, and auth headers follow the sh
     } as NodeJS.ProcessEnv),
     {
       apiBaseUrl: 'https://example.supabase.co/functions/v1',
+      authMode: 'legacy_user_api_key',
       userApiKey: 'secret-token',
+      oauthClientId: null,
+      oauthRedirectUri: null,
+      accessToken: null,
       publishableKey: 'sb-publishable-key',
       sessionFile: null,
       disableSessionCache: true,
@@ -123,7 +131,11 @@ test('requireSupabaseRestRuntime, URL derivation, and auth headers follow the sh
     } as NodeJS.ProcessEnv),
     {
       apiBaseUrl: 'https://example.supabase.co/functions/v1',
+      authMode: 'legacy_user_api_key',
       userApiKey: 'secret-token',
+      oauthClientId: null,
+      oauthRedirectUri: null,
+      accessToken: null,
       publishableKey: 'sb-publishable-key',
       sessionFile: null,
       disableSessionCache: true,
@@ -141,12 +153,106 @@ test('requireSupabaseRestRuntime, URL derivation, and auth headers follow the sh
     } as NodeJS.ProcessEnv),
     {
       apiBaseUrl: 'https://example.supabase.co/functions/v1',
+      authMode: 'legacy_user_api_key',
       userApiKey: 'secret-token',
+      oauthClientId: null,
+      oauthRedirectUri: null,
+      accessToken: null,
       publishableKey: 'sb-publishable-key',
       sessionFile: null,
       disableSessionCache: false,
       forceReauth: false,
     },
+  );
+});
+
+test('Supabase runtime prefers OAuth/access-token modes and keeps legacy bootstrap explicit', () => {
+  const base = {
+    TIANGONG_LCA_API_BASE_URL: 'https://example.supabase.co/functions/v1',
+    TIANGONG_LCA_SUPABASE_PUBLISHABLE_KEY: 'sb-publishable-key',
+  };
+  assert.deepEqual(
+    requireSupabaseRestRuntime({
+      ...base,
+      TIANGONG_LCA_OAUTH_CLIENT_ID: '123E4567-E89B-42D3-A456-426614174000',
+    }),
+    {
+      apiBaseUrl: base.TIANGONG_LCA_API_BASE_URL,
+      authMode: 'oauth',
+      userApiKey: null,
+      oauthClientId: '123e4567-e89b-42d3-a456-426614174000',
+      oauthRedirectUri: 'http://127.0.0.1:49191/oauth/callback',
+      accessToken: null,
+      publishableKey: base.TIANGONG_LCA_SUPABASE_PUBLISHABLE_KEY,
+      sessionFile: null,
+      disableSessionCache: false,
+      forceReauth: false,
+    },
+  );
+  assert.deepEqual(
+    requireSupabaseRestRuntime({
+      ...base,
+      TIANGONG_LCA_ACCESS_TOKEN: ' access-token ',
+      TIANGONG_LCA_OAUTH_CLIENT_ID: '123e4567-e89b-42d3-a456-426614174000',
+      TIANGONG_LCA_API_KEY: 'legacy-key',
+    }),
+    {
+      apiBaseUrl: base.TIANGONG_LCA_API_BASE_URL,
+      authMode: 'access_token',
+      userApiKey: null,
+      oauthClientId: null,
+      oauthRedirectUri: null,
+      accessToken: 'access-token',
+      publishableKey: base.TIANGONG_LCA_SUPABASE_PUBLISHABLE_KEY,
+      sessionFile: null,
+      disableSessionCache: false,
+      forceReauth: false,
+    },
+  );
+  const customRedirect = requireSupabaseRestRuntime({
+    ...base,
+    TIANGONG_LCA_AUTH_MODE: 'oauth',
+    TIANGONG_LCA_OAUTH_CLIENT_ID: '123e4567-e89b-42d3-a456-426614174000',
+    TIANGONG_LCA_OAUTH_REDIRECT_URI: 'http://127.0.0.1:55000/oauth/callback',
+  });
+  assert.equal(customRedirect.oauthRedirectUri, 'http://127.0.0.1:55000/oauth/callback');
+  assert.equal(
+    requireSupabaseRestRuntime({
+      ...base,
+      TIANGONG_LCA_AUTH_MODE: 'legacy-user-api-key',
+      TIANGONG_LCA_API_KEY: 'legacy-key',
+    }).authMode,
+    'legacy_user_api_key',
+  );
+});
+
+test('explicit Supabase auth modes fail closed when configuration is incomplete', () => {
+  const base = {
+    TIANGONG_LCA_API_BASE_URL: 'https://example.supabase.co/functions/v1',
+    TIANGONG_LCA_SUPABASE_PUBLISHABLE_KEY: 'sb-publishable-key',
+  };
+  for (const [mode, code] of [
+    ['oauth', 'SUPABASE_OAUTH_CLIENT_ID_REQUIRED'],
+    ['access-token', 'SUPABASE_ACCESS_TOKEN_REQUIRED'],
+    ['legacy-user-api-key', 'SUPABASE_LEGACY_API_KEY_REQUIRED'],
+  ] as const) {
+    assert.throws(
+      () => requireSupabaseRestRuntime({ ...base, TIANGONG_LCA_AUTH_MODE: mode }),
+      (error) => error instanceof CliError && error.code === code,
+    );
+  }
+  assert.throws(
+    () => requireSupabaseRestRuntime({ ...base, TIANGONG_LCA_AUTH_MODE: 'unknown' }),
+    (error) => error instanceof CliError && error.code === 'SUPABASE_AUTH_MODE_INVALID',
+  );
+  assert.throws(
+    () =>
+      requireSupabaseRestRuntime({
+        ...base,
+        TIANGONG_LCA_AUTH_MODE: 'oauth',
+        TIANGONG_LCA_OAUTH_CLIENT_ID: 'not-a-client',
+      }),
+    (error) => error instanceof CliError && error.code === 'OAUTH_CLIENT_ID_INVALID',
   );
 });
 

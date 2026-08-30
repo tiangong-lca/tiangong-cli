@@ -11,6 +11,7 @@ import {
   refreshOAuthTokens,
   requireOAuthClientId,
 } from '../src/lib/oauth-pkce.js';
+import { loadDistModule } from './helpers/load-dist-module.js';
 
 const CLIENT_ID = '123e4567-e89b-42d3-a456-426614174000';
 const USER_ID = '223e4567-e89b-42d3-a456-426614174000';
@@ -396,4 +397,21 @@ test('OAuth UserInfo verifies server identity and never accepts a missing token'
       expectCliCode('OAUTH_USERINFO_INVALID'),
     );
   }
+});
+
+test('OAuth PKCE protocol behaves identically from the built runtime', async () => {
+  const built =
+    await loadDistModule<typeof import('../src/lib/oauth-pkce.js')>('src/lib/oauth-pkce.js');
+  assert.equal(built.requireOAuthClientId(CLIENT_ID), CLIENT_ID);
+  const values = built.createOAuthPkceValues((size) => new Uint8Array(size).fill(9));
+  assert.match(
+    built.buildOAuthAuthorizationUrl({
+      projectBaseUrl: PROJECT_URL,
+      clientId: CLIENT_ID,
+      redirectUri: REDIRECT_URI,
+      codeChallenge: values.codeChallenge,
+      state: values.state,
+    }),
+    /\/auth\/v1\/oauth\/authorize/u,
+  );
 });

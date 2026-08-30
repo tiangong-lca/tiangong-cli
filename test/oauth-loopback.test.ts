@@ -10,6 +10,7 @@ import {
   requireOAuthLoopbackRedirectUri,
   type BrowserSpawn,
 } from '../src/lib/oauth-loopback.js';
+import { loadDistModule } from './helpers/load-dist-module.js';
 
 const STATE = 's'.repeat(43);
 
@@ -351,4 +352,14 @@ test('constant-time state helper covers equal, unequal, and length-mismatch inpu
   assert.equal(__testInternals.trimString(' value '), 'value');
   const error = __testInternals.callbackError('message', 'CODE');
   assert.equal(error.code, 'CODE');
+});
+
+test('OAuth loopback redirect validation behaves identically from the built runtime', async () => {
+  const built = await loadDistModule<typeof import('../src/lib/oauth-loopback.js')>(
+    'src/lib/oauth-loopback.js',
+  );
+  assert.equal(
+    built.requireOAuthLoopbackRedirectUri('http://127.0.0.1:49191/oauth/callback').port,
+    49191,
+  );
 });

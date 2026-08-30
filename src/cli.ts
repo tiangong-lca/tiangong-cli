@@ -5,6 +5,9 @@ import { CliError, toErrorPayload } from './lib/errors.js';
 import type { FetchLike } from './lib/http.js';
 import { stringifyJson } from './lib/io.js';
 import { loadCliPackageVersion } from './lib/package-version.js';
+import { requireSupabaseRestRuntime } from './lib/supabase-client.js';
+import { loginWithSupabaseOAuth, logoutSupabaseUserSession } from './lib/supabase-session.js';
+import { OAUTH_LOGIN_TIMEOUT_MAX_MS } from './lib/oauth-loopback.js';
 import {
   AUTH_IDENTITY_MAX_TIMEOUT_MS,
   AUTH_IDENTITY_RECEIPT_SCHEMA,
@@ -324,6 +327,8 @@ export type CliDeps = {
   runAuthIdentityReceiptImpl?: (
     options: RunAuthIdentityReceiptOptions,
   ) => Promise<AuthIdentityReceipt>;
+  loginWithSupabaseOAuthImpl?: typeof loginWithSupabaseOAuth;
+  logoutSupabaseUserSessionImpl?: typeof logoutSupabaseUserSession;
   runPublishImpl?: (options: RunPublishOptions) => Promise<PublishReport>;
   runValidationImpl?: (options: RunValidationOptions) => Promise<ValidationRunReport>;
   runLcaReleaseImpl?: (options: RunLcaReleaseOptions) => Promise<LcaReleaseReport>;
@@ -541,7 +546,7 @@ Usage:
 Commands:
 Implemented Commands:
   doctor     show environment diagnostics
-  auth       identity-receipt
+  auth       login | logout | identity-receipt
   search     flow | process | lifecyclemodel
   process    get | list | identity-preflight | build-plan | scope-statistics | dedup-review | auto-build | resume-build | publish-build | complete-required-fields | save-draft | batch-build | refresh-references | verify-rows
   dataset    contract get | context-pack | classification children/path/audit/apply | curation-queue build/next/verify | import-lca convert | author | patch apply | save-draft | source upload-attachments | validate | verify-remote | bilingual extract/apply/validate | evidence-search plan/run | references rewrite/refresh-remote | maintenance clear-account/plan/apply/verify/flow-identity
@@ -561,6 +566,8 @@ Planned commands currently print an explicit "not implemented yet" message and e
 
 Examples:
   tiangong-lca doctor
+  tiangong-lca auth login
+  tiangong-lca auth logout
   tiangong-lca auth identity-receipt --expected-project-ref <project-ref> --expected-user-id <user-id> --json
   tiangong-lca search flow --input ./request.json
   tiangong-lca search process --input ./request.json --dry-run
@@ -640,15 +647,52 @@ Environment:
 
 function renderAuthHelp(): string {
   return `Usage:
-  tiangong-lca auth identity-receipt [options]
+  tiangong-lca auth <login|logout|identity-receipt> [options]
 
 Implemented Subcommands:
+  login             Authorize the registered public CLI through browser PKCE and store a private rotating session
+  logout            Remove only this local CLI session; revoke the connected-app grant from the account page
   identity-receipt  Live, read-only proof of the authenticated account and Supabase project
 
 Planned Subcommands:
   whoami | doctor-auth
 
-Use "tiangong-lca auth identity-receipt --help" for the machine-receipt contract.
+Use "tiangong-lca auth <subcommand> --help" for details.
+`.trim();
+}
+
+function renderAuthLoginHelp(): string {
+  return `Usage:
+  tiangong-lca auth login [options]
+
+Options:
+  --timeout-ms <n>  Browser callback timeout 1..${OAUTH_LOGIN_TIMEOUT_MAX_MS} ms (default: 180000)
+  --json            Print compact JSON; default output is pretty JSON
+  -h, --help
+
+Required env:
+  TIANGONG_LCA_API_BASE_URL
+  TIANGONG_LCA_SUPABASE_PUBLISHABLE_KEY
+  TIANGONG_LCA_OAUTH_CLIENT_ID
+
+Optional env:
+  TIANGONG_LCA_AUTH_MODE=oauth
+  TIANGONG_LCA_OAUTH_REDIRECT_URI (default: exact registered 127.0.0.1 callback)
+  TIANGONG_LCA_SESSION_FILE
+
+The CLI binds only 127.0.0.1, opens the system browser without a shell, verifies state and S256
+PKCE, and atomically writes access/rotating refresh tokens to a private session file. It never
+accepts a username, password, authorization code, access token, or refresh token as an argv value.
+`.trim();
+}
+
+function renderAuthLogoutHelp(): string {
+  return `Usage:
+  tiangong-lca auth logout [--json]
+
+Removes only the locally cached session bound to the current project/client. To revoke the OAuth
+grant and every refresh token, disconnect TianGong CLI from Connected applications in the account
+page. An explicit TIANGONG_LCA_ACCESS_TOKEN is never persisted and therefore has nothing to delete.
 `.trim();
 }
 
@@ -674,8 +718,14 @@ Safety:
 
 Required env:
   TIANGONG_LCA_API_BASE_URL
-  TIANGONG_LCA_API_KEY
   TIANGONG_LCA_SUPABASE_PUBLISHABLE_KEY
+  TIANGONG_LCA_OAUTH_CLIENT_ID and a prior "tiangong-lca auth login"
+
+Headless alternative:
+  TIANGONG_LCA_ACCESS_TOKEN (short-lived actor token; never cached or refreshed)
+
+Legacy compatibility:
+  TIANGONG_LCA_AUTH_MODE=legacy-user-api-key plus TIANGONG_LCA_API_KEY
 
 Optional session env:
   TIANGONG_LCA_SESSION_FILE
@@ -2937,6 +2987,74 @@ function parseAuthIdentityReceiptFlags(args: string[]): {
         : null,
     timeoutMs,
   };
+}
+
+function parseAuthLoginFlags(args: string[]): {
+  help: boolean;
+  json: boolean;
+  timeoutMs: number;
+} {
+  let parsed: ReturnType<typeof parseArgs>;
+  try {
+    parsed = parseArgs({
+      args,
+      allowPositionals: false,
+      strict: true,
+      tokens: true,
+      options: {
+        help: { type: 'boolean', short: 'h' },
+        json: { type: 'boolean' },
+        'timeout-ms': { type: 'string' },
+      },
+    });
+  } catch (error) {
+    throw new CliError(String(error), { code: 'INVALID_ARGS', exitCode: 2 });
+  }
+
+  const timeoutOccurrences = parsed.tokens!.filter(
+    (entry) => entry.kind === 'option' && entry.name === 'timeout-ms',
+  ).length;
+  if (timeoutOccurrences > 1) {
+    throw new CliError('Option --timeout-ms may be provided only once.', {
+      code: 'INVALID_ARGS',
+      exitCode: 2,
+    });
+  }
+  const timeoutText = parsed.values['timeout-ms'];
+  const timeoutMs = typeof timeoutText === 'string' ? Number(timeoutText) : 180_000;
+  if (
+    !Number.isSafeInteger(timeoutMs) ||
+    timeoutMs <= 0 ||
+    timeoutMs > OAUTH_LOGIN_TIMEOUT_MAX_MS
+  ) {
+    throw new CliError(
+      `Expected --timeout-ms to be an integer between 1 and ${OAUTH_LOGIN_TIMEOUT_MAX_MS}.`,
+      { code: 'INVALID_TIMEOUT', exitCode: 2 },
+    );
+  }
+
+  return {
+    help: Boolean(parsed.values.help),
+    json: Boolean(parsed.values.json),
+    timeoutMs,
+  };
+}
+
+function parseAuthLogoutFlags(args: string[]): { help: boolean; json: boolean } {
+  try {
+    const { values } = parseArgs({
+      args,
+      allowPositionals: false,
+      strict: true,
+      options: {
+        help: { type: 'boolean', short: 'h' },
+        json: { type: 'boolean' },
+      },
+    });
+    return { help: Boolean(values.help), json: Boolean(values.json) };
+  } catch (error) {
+    throw new CliError(String(error), { code: 'INVALID_ARGS', exitCode: 2 });
+  }
 }
 
 function parseRemoteFlags(args: string[]): {
@@ -7010,6 +7128,8 @@ export async function executeCli(argv: string[], deps: CliDeps): Promise<CliResu
   try {
     const { flags, command, subcommand, commandArgs } = parseCommandLine(argv);
     const authIdentityReceiptImpl = deps.runAuthIdentityReceiptImpl ?? runAuthIdentityReceipt;
+    const oauthLoginImpl = deps.loginWithSupabaseOAuthImpl ?? loginWithSupabaseOAuth;
+    const oauthLogoutImpl = deps.logoutSupabaseUserSessionImpl ?? logoutSupabaseUserSession;
     const publishImpl = deps.runPublishImpl ?? runPublish;
     const validationImpl = deps.runValidationImpl ?? runValidation;
     const lcaReleaseImpl = deps.runLcaReleaseImpl ?? runLcaRelease;
@@ -7186,6 +7306,28 @@ export async function executeCli(argv: string[], deps: CliDeps): Promise<CliResu
         stdout: stringifyJson(receipt, authFlags.json),
         stderr: '',
       };
+    }
+
+    if (command === 'auth' && subcommand === 'login') {
+      const authFlags = parseAuthLoginFlags(commandArgs);
+      if (authFlags.help) {
+        return { exitCode: 0, stdout: `${renderAuthLoginHelp()}\n`, stderr: '' };
+      }
+      const receipt = await oauthLoginImpl({
+        runtime: requireSupabaseRestRuntime(deps.env),
+        fetchImpl: deps.fetchImpl,
+        loginTimeoutMs: authFlags.timeoutMs,
+      });
+      return { exitCode: 0, stdout: stringifyJson(receipt, authFlags.json), stderr: '' };
+    }
+
+    if (command === 'auth' && subcommand === 'logout') {
+      const authFlags = parseAuthLogoutFlags(commandArgs);
+      if (authFlags.help) {
+        return { exitCode: 0, stdout: `${renderAuthLogoutHelp()}\n`, stderr: '' };
+      }
+      const receipt = await oauthLogoutImpl({ runtime: requireSupabaseRestRuntime(deps.env) });
+      return { exitCode: 0, stdout: stringifyJson(receipt, authFlags.json), stderr: '' };
     }
 
     if (command === 'search' && !subcommand && commandArgs.includes('--help')) {

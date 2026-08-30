@@ -194,8 +194,7 @@ test('dry-run builds every direct release command and masks credentials', async 
       assert.doesNotMatch(JSON.stringify(report), /release-password/u);
       if (action === 'publish') {
         const body = report.request?.body as Record<string, unknown>;
-        assert.match(String(body.credentialFingerprint), /^[0-9a-f]{64}$/u);
-        assert.notEqual(body.credentialFingerprint, 'bad');
+        assert.equal('credentialFingerprint' in body, false);
       }
     }
   } finally {
