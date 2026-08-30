@@ -39,9 +39,9 @@ layout: repo
 # Review note, 2026-08-26: Issue #237 is the dedicated 0.1.2 release-only delivery for the bounded public batch/CommandSpec surface on pnpm 11.24.0. It changes package version metadata and four live CLI-version fixtures only; existing package, test, release, and governed-doc rules cover the change, while ownership, routing, lock bytes, dependencies, runtime, exports, tag automation, Trusted Publishing, provenance, and workspace integration remain unchanged.
 # Review note, 2026-08-29: Issue #240 adds a bounded public auth identity-receipt parser subpath after CLI 0.1.2 closed deep imports. The wrapper directly re-exports the existing semantic owner and is covered by public-library, remote-session, packed-consumer, declaration, validation, and release routes without exposing the remote runner or test internals.
 # Review note, 2026-08-29: Issue #242 is the dedicated 0.1.3 release-only delivery for that public parser. It changes package identity and four existing exact-version fixtures only; current package, test, release, and governed-doc rules cover the change while ownership, routing, lock bytes, dependencies, runtime, exports, tag automation, Trusted Publishing, provenance, and workspace integration remain unchanged.
-# Review note, 2026-08-31: Issue #244 adds internal OAuth PKCE/loopback helpers, login/logout command dispatch, schema-v2 session rotation, and explicit headless access-token support inside the existing command-surface and remote-session ownership. The remote-session intent/rule now names both OAuth modules explicitly; no dependency, public library export, package version, tag, or publication route changes.
+# Review note, 2026-08-31: Issue #244 adds internal OAuth PKCE/loopback helpers, login/status/whoami/doctor-auth/logout command dispatch, schema-v2 session rotation, and explicit headless access-token support inside the existing command-surface and remote-session ownership. The remote-session intent/rule names both OAuth modules explicitly; no dependency, public library export, package version, tag, or publication route changes.
 lastReviewedAt: '2026-08-31'
-lastReviewedCommit: 'ff028627c4672f7274c96fa8271d425464b15f54'
+lastReviewedCommit: '9f0660b115e32f2f800b95c7b0d7cd3426d5bab3'
 
 catalog:
   repos:

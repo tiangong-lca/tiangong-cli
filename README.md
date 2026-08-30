@@ -33,8 +33,8 @@ checkPaths:
   - test/public-auth-identity-receipt.test.ts
   - test/lca-release*.test.ts
 lastReviewedAt: 2026-08-31
-lastReviewedCommit: ff028627c4672f7274c96fa8271d425464b15f54
-lastReviewedNote: 'Reviewed for Issue #244: documents browser PKCE login, local logout, private rotating OAuth sessions, short-lived headless access tokens, and bounded legacy API-key compatibility.'
+lastReviewedCommit: 9f0660b115e32f2f800b95c7b0d7cd3426d5bab3
+lastReviewedNote: 'Reviewed for Issue #244: documents browser PKCE login, non-mutating local status, live redacted whoami/doctor-auth, local logout, private rotating OAuth sessions, short-lived headless access tokens, and bounded legacy API-key compatibility.'
 ---
 
 # TianGong LCA CLI
@@ -63,7 +63,7 @@ Review note, 2026-08-29: Issue #240 adds the typed `@tiangong-lca/cli/auth-ident
 
 Review note, 2026-08-29: Issue #242 releases that public parser as `@tiangong-lca/cli@0.1.3`. Only package identity and four existing exact-version fixtures change; `./batch`, `./command-spec`, `./auth-identity-receipt`, the executable, dependencies, pnpm lock, Node 24.19.0 / TypeScript 7.0.2 toolchain, and package-manager-neutral consumer contract are otherwise unchanged.
 
-Review note, 2026-08-31: Issue #244 adds Supabase OAuth 2.1 Authorization Code + S256 PKCE without adding a dependency or changing package version/exports. `auth login` uses a registered public client, exact literal-`127.0.0.1` callback, state validation, and shell-free system browser; it atomically stores rotating access/refresh tokens in a private session file. `auth logout` deletes only that matching local session; Connected applications owns grant revocation. `TIANGONG_LCA_ACCESS_TOKEN` is a short-lived, online-verified, memory-only headless option. The reversible API key remains only as a transition fallback and is never used by OAuth mode.
+Review note, 2026-08-31: Issue #244 adds Supabase OAuth 2.1 Authorization Code + S256 PKCE without adding a dependency or changing package version/exports. `auth login` uses a registered public client, exact literal-`127.0.0.1` callback, state validation, and shell-free system browser; it atomically stores rotating access/refresh tokens in a private session file. `auth status` performs no network request and reveals no credential or session path; `auth whoami` and `auth doctor-auth` use the live redacted identity receipt. `auth logout` deletes only that matching local session; Connected applications owns grant revocation. `TIANGONG_LCA_ACCESS_TOKEN` is a short-lived, online-verified, memory-only headless option. The reversible API key remains only as a transition fallback and is never used by OAuth mode.
 
 Review note, 2026-07-12: `dataset maintenance plan/apply/verify` provides current-user RLS-scoped exact-row maintenance with immutable plans, explicit approval, per-action logs, platform audit correlation, and independent readback. `merge-support-aliases` now runs only in `target_mode=owner_draft`: source/target support and all changed rows stay private `state_code=0`; publication is a separate future workflow.
 
@@ -156,14 +156,19 @@ TIANGONG_LCA_DISABLE_SESSION_CACHE=false
 TIANGONG_LCA_FORCE_REAUTH=false
 ```
 
-## OAuth Login And Logout
+## OAuth Session Commands
 
 ```text
 tiangong-lca auth login
+tiangong-lca auth status --json
+tiangong-lca auth whoami --json
+tiangong-lca auth doctor-auth --json
 tiangong-lca auth logout
 ```
 
 The callback URI must exactly match the URI registered with the selected Supabase OAuth client. The default is `http://127.0.0.1:49191/oauth/callback`; OAuth client redirect URIs do not support wildcards. Login never accepts a username, password, authorization code, access token, refresh token, or PKCE verifier through argv. On POSIX, the app directory is `0700` and `session.json` is `0600`; writes and refresh-token rotation use a temporary file, atomic rename, and the existing cross-process state lock. Windows callers must keep the selected parent ACL current-user-only because chmod bits are not an ACL.
+
+`auth status` is intentionally local-only and non-mutating. It reports whether a matching session can be used or refreshed, but sets `onlineVerified: false`; it never prints email, tokens, a session path, or a credential fingerprint. `auth whoami` performs the live redacted identity receipt. `auth doctor-auth` first checks local readiness, then performs that live check; a missing OAuth session returns `login-required` so a human can run `auth login`. An AI agent must never ask for or handle the user's password, authorization code, access token, or refresh token.
 
 Local logout does not revoke the server grant. To invalidate every refresh token for the CLI client, open Account → Connected applications and disconnect TianGong CLI.
 

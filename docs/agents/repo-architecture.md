@@ -31,8 +31,8 @@ checkPaths:
   - scripts/docpact-gate.sh
   - scripts/install-git-hooks.sh
 lastReviewedAt: 2026-08-31
-lastReviewedCommit: ff028627c4672f7274c96fa8271d425464b15f54
-lastReviewedNote: 'Reviewed for Issue #244: the remote session cluster now owns OAuth 2.1 PKCE, fixed loopback browser authorization, private refresh rotation, explicit headless tokens, and isolated legacy compatibility.'
+lastReviewedCommit: 9f0660b115e32f2f800b95c7b0d7cd3426d5bab3
+lastReviewedNote: 'Reviewed for Issue #244: the remote session cluster now owns OAuth 2.1 PKCE, fixed loopback browser authorization, private refresh rotation, local status, live redacted whoami/doctor-auth, explicit headless tokens, and isolated legacy compatibility.'
 related:
   - ../../AGENTS.md
   - ../../.docpact/config.yaml
@@ -191,7 +191,7 @@ The CLI talks to remote services directly through helper modules such as:
 
 This is where the CLI-owned remote access contract lives.
 
-The preferred interactive path is `auth login`: a registered public OAuth client opens the browser, keeps state/verifier/code only in memory, receives one exact fixed-port `127.0.0.1` callback, exchanges the code with S256 PKCE, verifies UserInfo, and writes a schema-v2 access/refresh session atomically under the existing state lock. Refreshes use the OAuth token endpoint, replace rotated refresh tokens, and never fall back to password sign-in. `auth logout` removes only a matching local project/client session; the Next Connected applications surface owns grant revocation.
+The preferred interactive path is `auth login`: a registered public OAuth client opens the browser, keeps state/verifier/code only in memory, receives one exact fixed-port `127.0.0.1` callback, exchanges the code with S256 PKCE, verifies UserInfo, and writes a schema-v2 access/refresh session atomically under the existing state lock. Refreshes use the OAuth token endpoint, replace rotated refresh tokens, and never fall back to password sign-in. `auth status` examines only the bound local record and marks itself not online-verified; `auth whoami` reuses the live redacted identity receipt; `auth doctor-auth` combines local readiness and live identity, returning a human login handoff before network access when the local OAuth session is missing. `auth logout` removes only a matching local project/client session; the Next Connected applications surface owns grant revocation.
 
 `TIANGONG_LCA_ACCESS_TOKEN` is the explicit headless path. It is verified against Auth, cached only in process memory, never written to the session file, and has no automatic refresh/replay path. The reversible `TIANGONG_LCA_API_KEY` remains only as a bounded compatibility bootstrap when no OAuth/access-token configuration is selected or `legacy-user-api-key` is explicit. All remote command families consume the same resolved access-token interface, so OAuth does not fork database/Edge request code.
 

@@ -23,8 +23,8 @@ checkPaths:
   - scripts/**
   - .github/workflows/**
 lastReviewedAt: 2026-08-31
-lastReviewedCommit: ff028627c4672f7274c96fa8271d425464b15f54
-lastReviewedNote: 'Reviewed for Issue #244: CLI 默认认证改为 Supabase OAuth 2.1 PKCE、本地私有 refresh session 与显式 headless access token；旧 API key 仅保留迁移兼容。'
+lastReviewedCommit: 9f0660b115e32f2f800b95c7b0d7cd3426d5bab3
+lastReviewedNote: 'Reviewed for Issue #244: CLI 默认认证改为 Supabase OAuth 2.1 PKCE、本地私有 refresh session、local status、live redacted whoami/doctor-auth 与显式 headless access token；旧 API key 仅保留迁移兼容。'
 related:
   - AGENTS.md
   - .docpact/config.yaml
@@ -205,7 +205,7 @@ pnpm add --global @tiangong-lca/cli
 
 本项目会自动加载仓库根目录下的 `.env` 文件。
 
-Review note, 2026-08-31: Issue #244 新增 `auth login|logout`。交互登录使用注册过的 public OAuth client、S256 PKCE、随机 state、精确固定端口 `127.0.0.1` 回调与无 shell 系统浏览器；verifier/code 不落盘，OAuth access/rotating refresh token 在现有进程锁与文件锁下原子写入 schema-v2 私有 session。`TIANGONG_LCA_ACCESS_TOKEN` 是只在进程内缓存、在线校验且不自动 refresh 的 headless 入口。旧可逆 `TIANGONG_LCA_API_KEY` 仅在没有 OAuth/headless 配置或显式 `legacy-user-api-key` 模式时作为迁移兼容；OAuth 失败绝不回退密码登录。
+Review note, 2026-08-31: Issue #244 新增 `auth login|status|whoami|doctor-auth|logout`。交互登录使用注册过的 public OAuth client、S256 PKCE、随机 state、精确固定端口 `127.0.0.1` 回调与无 shell 系统浏览器；verifier/code 不落盘，OAuth access/rotating refresh token 在现有进程锁与文件锁下原子写入 schema-v2 私有 session。`status` 只读本地 metadata 且明确不是 online verification；`whoami` 复用 live redacted identity receipt；`doctor-auth` 缺少本地 session 时先返回 human login handoff，ready 后才做 live read。`TIANGONG_LCA_ACCESS_TOKEN` 是只在进程内缓存、在线校验且不自动 refresh 的 headless 入口。旧可逆 `TIANGONG_LCA_API_KEY` 仅在没有 OAuth/headless 配置或显式 `legacy-user-api-key` 模式时作为迁移兼容；OAuth 失败绝不回退密码登录。
 
 初始化时，把 `.env.example` 复制成仓库根目录下的 `.env`。推荐直接用编辑器或文件管理器完成这一步，这样 macOS / Linux / Windows 都不需要自行翻译 shell 命令。
 
@@ -272,6 +272,9 @@ Data API schema 不依赖 PostgREST 的默认 `public`。默认且唯一支持�
 | --- | --- |
 | `doctor` | 无 |
 | `auth login` | `TIANGONG_LCA_API_BASE_URL`、`TIANGONG_LCA_SUPABASE_PUBLISHABLE_KEY`、`TIANGONG_LCA_OAUTH_CLIENT_ID` |
+| `auth status` | 远程认证环境；只检查本地 readiness，不访问网络或 refresh |
+| `auth whoami` | 远程认证环境；执行 live redacted identity receipt |
+| `auth doctor-auth` | 远程认证环境；local readiness + live redacted identity |
 | `auth logout` | 远程认证环境；只删除匹配的本地 session，服务端 grant 在 Next Connected applications 中撤销 |
 | `auth identity-receipt` | 远程认证环境；生产 guard 必须从 argv 同时给出 expected project/user，不能把 `observed` 回执当授权证明 |
 | `search flow \| process \| lifecyclemodel` | 远程认证环境（`TIANGONG_LCA_REGION` 可选） |

@@ -22,8 +22,8 @@ checkPaths:
   - src/**
   - test/**
 lastReviewedAt: 2026-08-31
-lastReviewedCommit: ff028627c4672f7274c96fa8271d425464b15f54
-lastReviewedNote: 'Reviewed for Issue #244: 远程 session 结论更新为 OAuth 2.1 PKCE、固定 loopback、私有 refresh rotation、显式 headless token 与迁移期 legacy fallback。'
+lastReviewedCommit: 9f0660b115e32f2f800b95c7b0d7cd3426d5bab3
+lastReviewedNote: 'Reviewed for Issue #244: 远程 session 结论更新为 OAuth 2.1 PKCE、固定 loopback、私有 refresh rotation、本地 status、live redacted whoami/doctor-auth、显式 headless token 与迁移期 legacy fallback。'
 related:
   - ../AGENTS.md
   - ../.docpact/config.yaml
@@ -358,7 +358,7 @@ tiangong-lca
 - 已实现的 `flow apply-process-flow-repairs` 把治理链中的独立 deterministic repair apply 切片收口到 CLI，固定与 planning 相同的输入契约，直接写出 `patched-processes.json` / `process-patches/**`，并可在 `--process-pool-file` 下同步本地 pool
 - 已实现的 `flow regen-product` 把治理后的 process-side 再生产物链收口到 CLI，在一个命令下固定 `scan -> repair plan -> optional apply -> optional validate` 契约，并把退出码 `1` 保留给 `--apply` 之后的本地校验失败
 - 已实现的 `flow validate-processes` 把治理后 patched process rows 的独立校验切片收口到 CLI，固定 original/patched/scope 三类输入契约，并直接写出 `validation-report.json` / `validation-failures.jsonl`
-- 现有命令族里已经没有残留的 Python / shell validation fallback；review / build / publish 与 `auth identity-receipt` 已进入可执行状态，未实现的只剩 `auth whoami` / `auth doctor-auth` 与 `job` placeholder surface
+- 现有命令族里已经没有残留的 Python / shell validation fallback；review / build / publish 与 `auth login|status|whoami|doctor-auth|logout|identity-receipt` 已进入可执行状态，未实现的只剩 `job` placeholder surface
 - 这样做的目的不是“假装已完成”，而是先固定命令树，再逐个把 workflow 迁入 TypeScript CLI
 
 ### 2.1.1 `dataset maintenance plan/apply/freeze-protected/seal-protected-approval/run-protected/verify` v1 契约
@@ -1090,6 +1090,8 @@ outputs/evidence-search-declaration.json
 
 Issue #244（2026-08-31）把 active session 设计从 password-equivalent bootstrap 升级为 Supabase OAuth 2.1。`auth login` 使用 public client、S256 PKCE、state、固定 `127.0.0.1` 回调和无 shell 浏览器；token refresh 在原有进程/文件锁下原子更新 schema-v2 私有文件。headless 可显式注入短期 actor access token；旧 API key 仅是迁移兼容，OAuth 失败不回退密码。
 
+`auth status` 只读取当前 project/client 绑定的本地 session metadata，不发网络请求、不 refresh，并明确输出 `onlineVerified: false`；`auth whoami` 复用 live redacted identity receipt；`auth doctor-auth` 先做 local status，缺失 session 时直接返回 `login-required` 并把终端交还人类，ready 时才做 live receipt。三者都不输出完整邮箱、token、session path 或 credential fingerprint，也不接受密码/code/token argv。
+
 公开命令面的标准变量名：
 
 ```bash
@@ -1163,6 +1165,9 @@ TIANGONG_LCA_COVERAGE=0
 | --- | --- | --- | --- | --- |
 | `doctor` | 无 |
 | `auth login` | API base、publishable key、OAuth client ID |
+| `auth status` | 同一远程认证环境；只检查本地 session readiness |
+| `auth whoami` | 同一远程认证环境；执行 live redacted identity receipt |
+| `auth doctor-auth` | 同一远程认证环境；local readiness + live redacted identity |
 | `auth logout` | 远程认证环境；只清理本地 session，grant 在 Next Connected applications 撤销 |
 | `auth identity-receipt` | 远程认证环境；生产 guard 还必须通过 argv 同时给出 expected project/user |
 | `search flow | process | lifecyclemodel` | 远程认证环境（region 可选） |
@@ -1336,7 +1341,7 @@ CLI 现在额外有一条独立于质量门的 npm 发布链路：
 ### 后续只保留原生增量，不再叫“遗留迁移”
 
 - lifecyclemodel 的 discovery / AI 选择逻辑，只有在产品面确认需要时才继续抽象成新的 CLI 子命令
-- `auth identity-receipt` 已由真实生产 case 需求实现；`auth whoami` / `auth doctor-auth` 与 `job` placeholder 仍只在出现独立真实场景时补齐，而不是为了对称性先做
+- `auth identity-receipt`、`auth status`、`auth whoami` 与 `auth doctor-auth` 已由 OAuth/agent human-handoff 场景实现；`job` placeholder 仍只在出现独立真实场景时补齐，而不是为了对称性先做
 - 任何新增能力都必须先定义成 `tiangong-lca <noun> <verb>`，再决定是否要进一步服务化
 
 ## 10. 结论
