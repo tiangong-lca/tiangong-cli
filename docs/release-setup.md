@@ -25,8 +25,8 @@ checkPaths:
   - scripts/docpact-gate.sh
   - scripts/install-git-hooks.sh
 lastReviewedAt: 2026-08-31
-lastReviewedCommit: ff028627c4672f7274c96fa8271d425464b15f54
-lastReviewedNote: 'Reviewed for Issue #242: CLI 0.1.3 uses the unchanged pnpm 11.24 merge-tag and Trusted Publishing setup with no new secret, dependency, lock byte, workflow, credential, or publication path.'
+lastReviewedCommit: 38a85ab7dc01b9f6cdee02ab4c681a1976d02cfa
+lastReviewedNote: 'Reviewed for Issue #247: the session-lock race repair requires no new secret, dependency, lock byte, workflow, credential, Trusted Publisher setting, or publication path.'
 related:
   - ../AGENTS.md
   - ../.docpact/config.yaml
@@ -67,6 +67,8 @@ Review note, 2026-08-26: Issue #237 publishes 0.1.2 through the existing merge-t
 Review note, 2026-08-29: Issue #240 adds a public parser subpath and requires no new secret, environment, runner, dependency, lockfile, Trusted Publisher setting, workflow, tag rule, credential, or alternate publication path. Its later patch release uses the existing release-prep PR and merge-triggered Trusted Publishing setup.
 
 Review note, 2026-08-29: Issue #242 publishes 0.1.3 through that unchanged merge-triggered tag and native pnpm Trusted Publishing path. It adds no secret, environment, runner, dependency, lockfile change, Trusted Publisher setting, workflow filename, tag rule, service-role/test-account access, local credential, or alternate authentication/publication surface.
+
+Review note, 2026-08-31: Issue #247 changes only local state-lock read behavior and adds no secret, environment, runner, dependency, lockfile change, Trusted Publisher setting, workflow filename, tag rule, service-role/test-account access, local credential, OAuth credential, or alternate authentication/publication surface.
 
 Current workflow files:
 

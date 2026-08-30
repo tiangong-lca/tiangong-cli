@@ -40,8 +40,9 @@ layout: repo
 # Review note, 2026-08-29: Issue #240 adds a bounded public auth identity-receipt parser subpath after CLI 0.1.2 closed deep imports. The wrapper directly re-exports the existing semantic owner and is covered by public-library, remote-session, packed-consumer, declaration, validation, and release routes without exposing the remote runner or test internals.
 # Review note, 2026-08-29: Issue #242 is the dedicated 0.1.3 release-only delivery for that public parser. It changes package identity and four existing exact-version fixtures only; current package, test, release, and governed-doc rules cover the change while ownership, routing, lock bytes, dependencies, runtime, exports, tag automation, Trusted Publishing, provenance, and workspace integration remain unchanged.
 # Review note, 2026-08-31: Issue #244 adds internal OAuth PKCE/loopback helpers, login/status/whoami/doctor-auth/logout command dispatch, schema-v2 session rotation, and explicit headless access-token support inside the existing command-surface and remote-session ownership. The remote-session intent/rule names both OAuth modules explicitly; no dependency, public library export, package version, tag, or publication route changes.
+# Review note, 2026-08-31: Issue #247 removes the state-lock metadata existence/read TOCTOU exposed by the OAuth 0.1.4 release gate. Existing command-family, state-lock, test, release, and governed-doc rules already cover the narrow ENOENT-as-released behavior; ownership, routing, dependencies, exports, package version, and publication mechanics do not change.
 lastReviewedAt: '2026-08-31'
-lastReviewedCommit: '9f0660b115e32f2f800b95c7b0d7cd3426d5bab3'
+lastReviewedCommit: '38a85ab7dc01b9f6cdee02ab4c681a1976d02cfa'
 
 catalog:
   repos:

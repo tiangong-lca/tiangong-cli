@@ -26,8 +26,8 @@ checkPaths:
   - scripts/docpact-gate.sh
   - scripts/install-git-hooks.sh
 lastReviewedAt: 2026-08-31
-lastReviewedCommit: ff028627c4672f7274c96fa8271d425464b15f54
-lastReviewedNote: 'Reviewed for Issue #242: 0.1.3 is the release-only package identity for the public auth receipt parser, with unchanged lock, dependency, tag, provenance, publication, and integration mechanics.'
+lastReviewedCommit: 38a85ab7dc01b9f6cdee02ab4c681a1976d02cfa
+lastReviewedNote: 'Reviewed for Issue #247: the session-lock race repair changes no package version, dependency, tag, provenance, publication, or integration mechanics; release 0.1.4 resumes only after this fix merges.'
 related:
   - ../AGENTS.md
   - ../.docpact/config.yaml
@@ -58,6 +58,8 @@ Review note, 2026-08-26: Issue #237 is the dedicated 0.1.2 release for the bound
 Review note, 2026-08-29: Issue #240 is a feature delivery for the bounded public auth receipt parser and keeps package version 0.1.2. After it merges and all public/tarball/coverage/Docpact gates pass, publish the repair only through a separate patch version-bump PR (expected 0.1.3), the unchanged four-platform merge-tag workflow, Trusted Publishing/provenance verification, fresh public consumers, and exact workspace integration.
 
 Review note, 2026-08-29: Issue #242 is that dedicated 0.1.3 patch release. It changes only package identity and four live CLI-version fixtures, keeps the sole lock, dependencies, runtime, strict exports, workflows, and setup unchanged, and must prove pre-mutation npm/tag absence plus local package/prepush/audit/Docpact gates. After merge it must prove `cli-v0.1.3`, native pnpm Trusted Publishing/provenance, registry integrity, fresh credential-free bin/ESM/CJS/TypeScript consumers for `./batch` and `./auth-identity-receipt`, and exact release-merge workspace integration. Local publication and manual tag creation remain forbidden.
+
+Review note, 2026-08-31: Issue #247 is a release-blocking runtime prerequisite discovered by the 0.1.4 full gate. It fixes only concurrent state-lock metadata disappearance, keeps package version 0.1.3, dependencies, lock bytes, exports, and workflows unchanged, and must merge with exact 100% proof before Issue #246 rebases and resumes the normal 0.1.4 release path.
 
 Review note, 2026-07-14: Issue #165 adds the guarded `dataset maintenance rebuild-derivatives` command profile but does not change the release procedure. Its command, contract, remote-adapter, asynchronous verification, and no-fallback tests must pass the existing pre-push/docpact gate before a later version-bump PR; the feature PR itself must not publish locally or alter package version metadata.
 
