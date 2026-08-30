@@ -406,11 +406,18 @@ test('session cache permission behavior is platform-injected on every host', () 
   const chmodModes: number[] = [];
 
   try {
-    mutableFs.statSync = (() =>
-      ({
-        isFile: () => true,
-        mode: 0o100644,
-      }) as ReturnType<typeof mutableFs.statSync>) as typeof mutableFs.statSync;
+    assert.equal(
+      Reflect.set(
+        mutableFs,
+        'statSync',
+        (() =>
+          ({
+            isFile: () => true,
+            mode: 0o100644,
+          }) as ReturnType<typeof mutableFs.statSync>) as typeof mutableFs.statSync,
+      ),
+      true,
+    );
     mutableFs.chmodSync = ((_filePath, mode) => {
       chmodModes.push(Number(mode));
     }) as typeof mutableFs.chmodSync;
@@ -427,7 +434,7 @@ test('session cache permission behavior is platform-injected on every host', () 
     __testInternals.writeCachedSessionRecord(windowsSessionFile, record, 'win32');
     assert.deepEqual(chmodModes, [0o600]);
   } finally {
-    mutableFs.statSync = originalStatSync;
+    assert.equal(Reflect.set(mutableFs, 'statSync', originalStatSync), true);
     mutableFs.chmodSync = originalChmodSync;
     syncBuiltinESMExports();
     clearSessionState();
