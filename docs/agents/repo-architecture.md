@@ -30,9 +30,9 @@ checkPaths:
   - scripts/docpact
   - scripts/docpact-gate.sh
   - scripts/install-git-hooks.sh
-lastReviewedAt: 2026-08-29
-lastReviewedCommit: f460f0567faac6e89e53d259fbd29d1dfccd058d
-lastReviewedNote: 'Reviewed for Issue #242: the 0.1.3 release changes only package identity and four live fixtures, preserving the bounded runtime modules, public exports, dependency graph, lock, and publication architecture.'
+lastReviewedAt: 2026-08-31
+lastReviewedCommit: ff028627c4672f7274c96fa8271d425464b15f54
+lastReviewedNote: 'Reviewed for Issue #244: the remote session cluster now owns OAuth 2.1 PKCE, fixed loopback browser authorization, private refresh rotation, explicit headless tokens, and isolated legacy compatibility.'
 related:
   - ../../AGENTS.md
   - ../../.docpact/config.yaml
@@ -142,6 +142,8 @@ Review note, 2026-07-25: Issue #208 adds only an admission artifact path: an ext
 | `src/command-spec.ts` | supported content-bound CommandSpec package subpath |
 | `src/batch.ts` | stable re-export facade for the supported batch package subpath |
 | `src/lib/batch/**` | bounded acyclic owners for batch types, contracts/errors, run locks, projection, scheduler runtime, attempts/recovery, and engine coordination |
+| `src/lib/oauth-pkce.ts` | strict Supabase public-client authorize/token/refresh/UserInfo protocol with S256 PKCE and bounded responses |
+| `src/lib/oauth-loopback.ts` | exact literal-loopback callback, state/code validation, and shell-free platform browser launch |
 | `src/lib/**` | command-family implementations plus shared auth, IO, artifact, and remote helpers |
 | `test/**` | unit and launcher tests that back the coverage gate |
 | `scripts/assert-full-coverage.ts` | strict coverage enforcement |
@@ -177,6 +179,8 @@ The CLI talks to remote services directly through helper modules such as:
 - `src/lib/env.ts`
 - `src/lib/dotenv.ts`
 - `src/lib/user-api-key.ts`
+- `src/lib/oauth-pkce.ts`
+- `src/lib/oauth-loopback.ts`
 - `src/lib/supabase-session.ts`
 - `src/lib/auth-identity-receipt.ts`
 - `src/lib/supabase-client.ts`
@@ -186,6 +190,10 @@ The CLI talks to remote services directly through helper modules such as:
 - `src/lib/http.ts`
 
 This is where the CLI-owned remote access contract lives.
+
+The preferred interactive path is `auth login`: a registered public OAuth client opens the browser, keeps state/verifier/code only in memory, receives one exact fixed-port `127.0.0.1` callback, exchanges the code with S256 PKCE, verifies UserInfo, and writes a schema-v2 access/refresh session atomically under the existing state lock. Refreshes use the OAuth token endpoint, replace rotated refresh tokens, and never fall back to password sign-in. `auth logout` removes only a matching local project/client session; the Next Connected applications surface owns grant revocation.
+
+`TIANGONG_LCA_ACCESS_TOKEN` is the explicit headless path. It is verified against Auth, cached only in process memory, never written to the session file, and has no automatic refresh/replay path. The reversible `TIANGONG_LCA_API_KEY` remains only as a bounded compatibility bootstrap when no OAuth/access-token configuration is selected or `legacy-user-api-key` is explicit. All remote command families consume the same resolved access-token interface, so OAuth does not fork database/Edge request code.
 
 ### Workflow command families
 
@@ -207,7 +215,7 @@ These files own the public CLI semantics for those workflows.
 `src/lib/lca-release.ts` is deliberately a narrow authenticated adapter, not a second release control plane:
 
 - `src/cli.ts` owns `release prepare|upload|finalize|approve|publish|readback-verify|unpublish|status|current|calculation-bundle|calculation-artifact|artifact-download` parsing, help, and human/JSON rendering.
-- The normal `TIANGONG_LCA_API_KEY` bootstrap is exchanged for a user session; no service-role credential or release-specific API key is accepted.
+- The normal OAuth session supplies the user access token; the explicit headless actor token and bounded legacy bootstrap use the same request adapter. No service-role credential or release-specific API key is accepted, and release payloads contain no credential-derived fingerprint.
 - Edge/Database assert the live `data_product_manager` role for private and mutating actions. CLI-side checks are input and integrity checks, never an authorization substitute.
 - Upload requires exactly the Unit Process and standalone LifecycleModel+Result profiles in both TIDAS and ILCD. Local size, SHA-256, media type, and profile/format cardinality are validated before requesting signed upload URLs.
 - Calculation Bundle projections, chunks, and ZIPs are file-first. The CLI writes atomically with private permissions, refuses overwrite without `--force`, and exposes downloaded bytes only after exact size and SHA-256 verification.

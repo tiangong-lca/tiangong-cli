@@ -22,6 +22,7 @@ checkPaths:
   - .docpact/config.yaml
   - docs/agents/**
   - .gitignore
+  - .env.example
   - package.json
   - pnpm-workspace.yaml
   - pnpm-lock.yaml
@@ -36,9 +37,9 @@ checkPaths:
   - scripts/docpact
   - scripts/docpact-gate.sh
   - scripts/install-git-hooks.sh
-lastReviewedAt: 2026-08-29
-lastReviewedCommit: f460f0567faac6e89e53d259fbd29d1dfccd058d
-lastReviewedNote: 'Reviewed for Issue #242: CLI 0.1.3 publishes the already reviewed public auth receipt parser through a release-only metadata and four-fixture change, with runtime, lock, dependency, export, release, and integration contracts unchanged.'
+lastReviewedAt: 2026-08-31
+lastReviewedCommit: ff028627c4672f7274c96fa8271d425464b15f54
+lastReviewedNote: 'Reviewed for Issue #244: CLI authentication now prefers Supabase OAuth 2.1 Authorization Code with S256 PKCE, private atomic refresh-token sessions, explicit headless access tokens, and bounded legacy bootstrap compatibility.'
 related:
   - .docpact/config.yaml
   - docs/agents/repo-validation.md
@@ -53,6 +54,8 @@ related:
 ## Repo Contract
 
 `tiangong-lca-cli` owns the checked-in public `tiangong-lca` CLI contract: command nouns and verbs, launcher behavior, local artifact workflow, remote session/auth handling, and the repo-level release gate. Start here when the task may change what the CLI does or how it is validated.
+
+Review note, 2026-08-31: Issue #244 implements `auth login|logout` and makes a registered public Supabase OAuth client the preferred session source. Login uses Authorization Code + S256 PKCE, a cryptographic state value, one exact `http://127.0.0.1:<registered-port>/oauth/callback`, and a shell-free system browser. The verifier and authorization code remain memory-only; the token response is byte-bounded; OAuth refresh-token rotation happens under the existing process/file locks and is atomically persisted as schema v2 in a private `0700` directory / `0600` file on POSIX. Normal commands consume the access token. `TIANGONG_LCA_ACCESS_TOKEN` is an explicit short-lived headless path that is verified online, memoized only for the process, never persisted, and never auto-refreshed. The old reversible `TIANGONG_LCA_API_KEY` remains only as a compatibility fallback when OAuth/access-token configuration is absent or the explicit legacy mode is selected. OAuth failures never fall back to password sign-in. Package version, dependency graph, public library exports, and release automation remain unchanged.
 
 Review note, 2026-08-25: Issue #228 implements `auth identity-receipt` as the CLI-owned live identity proof. It resolves the existing API-key/session chain, safely validates the canonical Supabase project before credential decode or network work, performs a redirect-disabled and incrementally byte-bounded `/auth/v1/user` lookup for a canonical user UUID, caps timeout values to Node's supported timer range, retries only one 401/403 through forced session refresh, and emits an exact-key receipt containing no credential, token, full email, session path, or credential-derived fingerprint. A production guard is valid only with both expected project and user argv assertions and `assertions.mode=intent-bound`. The companion pnpm case command owns the single clean TS7 build before its plain-Node runner starts; callers must not add a redundant prebuild. The runner rejects alternate entrypoints, single-reads/hashes source/config/lock and generated runtime/runner bytes, snapshots the exact built runtime privately before exposing three allowlisted env values, cleans the snapshot before publishing any passed/failed evidence, disables cache, uses an exclusively created clean cwd and argv-array spawn, and never persists raw child output. POSIX modes are enforced; Windows callers must choose a current-user-restricted parent ACL.
 
@@ -197,6 +200,8 @@ Route those tasks to:
 - Public batch safety: all item identity/content/policy/resource projections validate before work and again before resumed acceptance or fresh claim; identity drift or getter failure has an explicit error/event and zero execution, and every in-flight worker drains before return. Escaping scheduler/event/stop infrastructure errors synchronously close new claims, drain only already-claimed workers through settled aggregation, and rethrow the first recorded cause. Exclusive keys must be runtime strings; per-resource FIFO cursors expose only the earliest ready heads through a private ordered min-heap, so same keys serialize, blocked keys remain unclaimed without occupying workers, later free keys retain bounded concurrency, and ordinary scheduling stays near `O(n log k)`. Mutation retry is rejected, incomplete attempts require explicit readback recovery, resume requires exact run/item contracts, every pre-claim result can trigger stop before its same-key successor becomes ready, and event delivery is monotonic plus awaited. Retry policy/backoff delays cannot exceed Node's timer maximum.
 - Public run-lock safety: one canonical run directory is one file-lock domain across identities and processes. Reentrancy is limited to a live nested scope owned by the current holder; completed async contexts and siblings contend. The top-level promise remains pending until every nested scope drains, foreign-host or live locks are never stale-deleted, and local waiters wake only after physical lock cleanup. PID, host, and ownership time are internal facts, not public options; timeout/poll inputs are non-negative safe integers within Node's timer maximum.
 - `auth identity-receipt` belongs to `src/cli.ts` plus `src/lib/auth-identity-receipt.ts`. It is read-only and must live-verify `/auth/v1/user`; cache email, local JWT decode, raw response bodies, and credential-derived fingerprints are not identity evidence. Production callers must supply both expected assertions and accept only `intent-bound` receipts. Offline consumers parse that exact safe projection through the public `./auth-identity-receipt` entry rather than an internal path.
+- `auth login|logout`, `src/lib/oauth-pkce.ts`, `src/lib/oauth-loopback.ts`, and `src/lib/supabase-session.ts` own the CLI OAuth boundary. OAuth client IDs and redirect URIs are public configuration; authorization codes and PKCE verifiers never enter argv or disk; access/refresh tokens never enter stdout, reports, or command artifacts. Logout deletes only the matching local session; grant revocation remains the Connected applications action in Next.
+- Auth selection is deterministic: explicit `TIANGONG_LCA_AUTH_MODE` wins; otherwise short-lived access token, OAuth client, then legacy API key are considered in that order. OAuth mode never decodes or signs in with a legacy API key. Headless access-token mode has no disk cache and no refresh replay.
 - Newly added process-maintenance commands such as `process identity-preflight`, `process build-plan`, `process scope-statistics`, `process dedup-review`, `process refresh-references`, and `process verify-rows` still belong to the native CLI command surface in `src/cli.ts` and `src/lib/process-*.ts` / shared CLI-native helpers.
 - `process save-draft` now has a local `ProcessSchema` validation gate before any commit path writes remote state, and `--target-user-id` is a hard current-session/visible-draft owner guard for account-scoped batch imports.
 - Dataset-level local governance commands such as `dataset validate`, `dataset curation-queue build/next/verify`, and `dataset references rewrite` belong to the same native CLI command surface in `src/cli.ts` and `src/lib/dataset-*.ts`.
@@ -219,6 +224,8 @@ Route those tasks to:
 ## Hard Boundaries
 
 - Do not add orchestration frameworks or new runtime/package dependencies without explicit approval
+- Do not accept usernames, passwords, authorization codes, access tokens, or refresh tokens through CLI argv. Interactive OAuth owns browser authorization; headless automation may inject only the explicit short-lived actor token through its approved environment/secret boundary.
+- Do not reintroduce password sign-in as an OAuth fallback, persist PKCE verifier/state/authorization code, bind a callback outside literal `127.0.0.1`, use a wildcard/dynamic redirect, launch a browser through a shell, or store an OAuth session without the existing atomic file lock and private-file contract.
 - Do not add automatic mutation retry, infer idempotency from a transport result, weaken per-item content/policy binding, or turn run-directory locks into identity-specific paths. Ambiguous mutation progress remains readback-only and one run directory remains one exclusive lock domain.
 - Do not add another package manager, nested lockfile, TypeScript 5/6 compatibility track, ESLint bridge, or Compiler API lint path. This repository has one package graph: pnpm 11.24.0 with the root workspace and lockfile.
 - Do not publish `@tiangong-lca/cli` from a local workstation for routine releases; local npm auth state is not part of the release contract.
