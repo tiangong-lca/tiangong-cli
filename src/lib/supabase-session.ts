@@ -755,6 +755,83 @@ export type OAuthLogoutReceipt = {
   removed: boolean;
 };
 
+export type AuthStatusReceipt = {
+  schemaVersion: 'tiangong.cli-auth-status.v1';
+  status: 'ready' | 'login-required';
+  authMethod: ResolvedSupabaseUserSession['authMethod'];
+  sessionState: 'fresh' | 'refresh-required' | 'memory-only' | 'transition-only' | 'missing';
+  sessionCache: 'private-file' | 'disabled' | 'memory-only';
+  expiresAt: number | null;
+  grantedScopes: string[];
+  onlineVerified: false;
+};
+
+export function inspectSupabaseAuthStatus(options: {
+  runtime: SupabaseRestRuntime;
+  now?: Date;
+}): AuthStatusReceipt {
+  const runtimeIdentity = buildRuntimeIdentity(options.runtime);
+  const now = options.now ?? new Date();
+
+  if (options.runtime.authMode === 'access_token') {
+    return {
+      schemaVersion: 'tiangong.cli-auth-status.v1',
+      status: 'ready',
+      authMethod: 'access_token',
+      sessionState: 'memory-only',
+      sessionCache: 'memory-only',
+      expiresAt: null,
+      grantedScopes: [],
+      onlineVerified: false,
+    };
+  }
+
+  if (options.runtime.authMode === 'legacy_user_api_key') {
+    return {
+      schemaVersion: 'tiangong.cli-auth-status.v1',
+      status: 'ready',
+      authMethod: 'legacy_user_api_key',
+      sessionState: 'transition-only',
+      sessionCache: runtimeIdentity.sessionFilePath ? 'private-file' : 'disabled',
+      expiresAt: null,
+      grantedScopes: [],
+      onlineVerified: false,
+    };
+  }
+
+  const memoized = getMemoizedRecord(runtimeIdentity);
+  const cached =
+    memoized && recordMatchesRuntime(memoized, runtimeIdentity)
+      ? memoized
+      : runtimeIdentity.sessionFilePath
+        ? readCachedSessionRecord(runtimeIdentity.sessionFilePath)
+        : null;
+  const matching = cached && recordMatchesRuntime(cached, runtimeIdentity) ? cached : null;
+  if (!matching || !trimToken(matching.refresh_token)) {
+    return {
+      schemaVersion: 'tiangong.cli-auth-status.v1',
+      status: 'login-required',
+      authMethod: 'oauth',
+      sessionState: 'missing',
+      sessionCache: runtimeIdentity.sessionFilePath ? 'private-file' : 'disabled',
+      expiresAt: null,
+      grantedScopes: [],
+      onlineVerified: false,
+    };
+  }
+
+  return {
+    schemaVersion: 'tiangong.cli-auth-status.v1',
+    status: 'ready',
+    authMethod: 'oauth',
+    sessionState: isSessionFresh(matching, now) ? 'fresh' : 'refresh-required',
+    sessionCache: 'private-file',
+    expiresAt: matching.expires_at,
+    grantedScopes: matching.granted_scopes,
+    onlineVerified: false,
+  };
+}
+
 export async function loginWithSupabaseOAuth(options: {
   runtime: SupabaseRestRuntime;
   fetchImpl: FetchLike;

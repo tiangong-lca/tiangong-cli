@@ -10,10 +10,12 @@ import type { SupabaseRestRuntime } from '../src/lib/supabase-client.js';
 import {
   __testInternals,
   createSupabaseDataRuntime,
+  inspectSupabaseAuthStatus,
   loginWithSupabaseOAuth,
   logoutSupabaseUserSession,
   resolveSupabaseUserSession,
 } from '../src/lib/supabase-session.js';
+import { loadDistModule } from './helpers/load-dist-module.js';
 
 const CLIENT_ID = '123e4567-e89b-42d3-a456-426614174000';
 const USER_ID = '223e4567-e89b-42d3-a456-426614174000';
@@ -68,6 +70,155 @@ async function freePort(): Promise<number> {
 function expectCliCode(code: string): (error: unknown) => boolean {
   return (error) => error instanceof CliError && error.code === code;
 }
+
+test('auth status inspects only bound local metadata and never exposes credential state', async () => {
+  __testInternals.SESSION_MEMORY_CACHE.clear();
+  const dir = mkdtempSync(path.join(os.tmpdir(), 'tg-cli-oauth-status-'));
+  const sessionFile = path.join(dir, 'session.json');
+  const oauthRuntime = runtime({ sessionFile });
+  try {
+    assert.deepEqual(inspectSupabaseAuthStatus({ runtime: oauthRuntime, now: NOW }), {
+      schemaVersion: 'tiangong.cli-auth-status.v1',
+      status: 'login-required',
+      authMethod: 'oauth',
+      sessionState: 'missing',
+      sessionCache: 'private-file',
+      expiresAt: null,
+      grantedScopes: [],
+      onlineVerified: false,
+    });
+
+    const identity = __testInternals.buildRuntimeIdentity(oauthRuntime);
+    const fresh = __testInternals.buildCachedSessionRecord({
+      runtime: identity,
+      session: {
+        access_token: 'status-access-secret',
+        refresh_token: 'status-refresh-secret',
+        expires_at: Math.floor(NOW.getTime() / 1_000) + 3_600,
+        expires_in: 3_600,
+      },
+      userEmail: 'status-user@example.com',
+      grantedScopes: ['profile', 'email'],
+      now: NOW,
+    });
+    __testInternals.writeCachedSessionRecord(sessionFile, fresh);
+    const ready = inspectSupabaseAuthStatus({ runtime: oauthRuntime, now: NOW });
+    assert.deepEqual(ready, {
+      schemaVersion: 'tiangong.cli-auth-status.v1',
+      status: 'ready',
+      authMethod: 'oauth',
+      sessionState: 'fresh',
+      sessionCache: 'private-file',
+      expiresAt: Math.floor(NOW.getTime() / 1_000) + 3_600,
+      grantedScopes: ['email', 'profile'],
+      onlineVerified: false,
+    });
+    assert.doesNotMatch(
+      JSON.stringify(ready),
+      /status-access|status-refresh|status-user|session\.json/u,
+    );
+
+    __testInternals.memoizeRecord(identity, fresh);
+    assert.equal(
+      inspectSupabaseAuthStatus({ runtime: oauthRuntime, now: NOW }).sessionState,
+      'fresh',
+    );
+    __testInternals.dropMemoizedRecord(identity);
+
+    __testInternals.memoizeRecord(identity, { ...fresh, refresh_token: '' });
+    assert.equal(
+      inspectSupabaseAuthStatus({ runtime: oauthRuntime, now: NOW }).status,
+      'login-required',
+    );
+    __testInternals.dropMemoizedRecord(identity);
+
+    const stale = { ...fresh, expires_at: 1 };
+    __testInternals.writeCachedSessionRecord(sessionFile, stale);
+    assert.equal(
+      inspectSupabaseAuthStatus({ runtime: oauthRuntime, now: NOW }).sessionState,
+      'refresh-required',
+    );
+
+    const foreignRuntime = runtime({
+      sessionFile,
+      oauthClientId: '323e4567-e89b-42d3-a456-426614174000',
+    });
+    const foreignIdentity = __testInternals.buildRuntimeIdentity(foreignRuntime);
+    const foreign = __testInternals.buildCachedSessionRecord({
+      runtime: foreignIdentity,
+      session: {
+        access_token: 'foreign-access',
+        refresh_token: 'foreign-refresh',
+        expires_at: Math.floor(NOW.getTime() / 1_000) + 3_600,
+        expires_in: 3_600,
+      },
+      userEmail: 'foreign@example.com',
+      now: NOW,
+    });
+    __testInternals.writeCachedSessionRecord(sessionFile, foreign);
+    assert.equal(
+      inspectSupabaseAuthStatus({ runtime: oauthRuntime, now: NOW }).status,
+      'login-required',
+    );
+
+    const disabledStatus = inspectSupabaseAuthStatus({
+      runtime: runtime({ disableSessionCache: true }),
+      now: NOW,
+    });
+    assert.equal(disabledStatus.status, 'login-required');
+    assert.equal(disabledStatus.sessionCache, 'disabled');
+
+    assert.equal(
+      inspectSupabaseAuthStatus({
+        runtime: runtime({
+          authMode: 'access_token',
+          oauthClientId: null,
+          oauthRedirectUri: null,
+          accessToken: 'headless-secret',
+        }),
+      }).sessionState,
+      'memory-only',
+    );
+    const legacyRuntime = runtime({
+      authMode: 'legacy_user_api_key',
+      oauthClientId: null,
+      oauthRedirectUri: null,
+      userApiKey: 'legacy-secret',
+    });
+    assert.equal(
+      inspectSupabaseAuthStatus({ runtime: legacyRuntime }).sessionCache,
+      'private-file',
+    );
+    const legacyStatus = inspectSupabaseAuthStatus({
+      runtime: runtime({
+        authMode: 'legacy_user_api_key',
+        oauthClientId: null,
+        oauthRedirectUri: null,
+        userApiKey: 'legacy-secret',
+        disableSessionCache: true,
+      }),
+    });
+    assert.equal(legacyStatus.sessionState, 'transition-only');
+    assert.equal(legacyStatus.sessionCache, 'disabled');
+
+    const dist = await loadDistModule<typeof import('../src/lib/supabase-session.js')>(
+      'src/lib/supabase-session.js',
+    );
+    assert.equal(
+      dist.inspectSupabaseAuthStatus({ runtime: legacyRuntime }).sessionCache,
+      'private-file',
+    );
+    assert.equal(
+      dist.inspectSupabaseAuthStatus({
+        runtime: { ...legacyRuntime, disableSessionCache: true },
+      }).sessionCache,
+      'disabled',
+    );
+  } finally {
+    __testInternals.SESSION_MEMORY_CACHE.clear();
+    rmSync(dir, { recursive: true, force: true });
+  }
+});
 
 test('OAuth login runs real PKCE/loopback/token flow and persists a private rotating session', async () => {
   __testInternals.SESSION_MEMORY_CACHE.clear();
