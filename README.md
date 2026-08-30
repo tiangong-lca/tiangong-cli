@@ -33,13 +33,13 @@ checkPaths:
   - test/public-auth-identity-receipt.test.ts
   - test/lca-release*.test.ts
 lastReviewedAt: 2026-08-31
-lastReviewedCommit: 38a85ab7dc01b9f6cdee02ab4c681a1976d02cfa
-lastReviewedNote: 'Reviewed for Issue #247: private OAuth/session state-lock metadata now tolerates only the normal concurrent-release ENOENT race while preserving all other fail-closed lock behavior.'
+lastReviewedCommit: 028efb78359fd15b789467d20e1ea2ae7c8dd5b7
+lastReviewedNote: 'Reviewed for Issue #246: identifies 0.1.4 as the release identity for the merged OAuth runtime plus #247 lock repair while exports, dependencies, and release behavior stay fixed.'
 ---
 
 # TianGong LCA CLI
 
-Package: `@tiangong-lca/cli` Executable: `tiangong-lca` Current package version: `0.1.3` Node: `24.19.0`
+Package: `@tiangong-lca/cli` Executable: `tiangong-lca` Current package version: `0.1.4` Node: `24.19.0`
 
 Repository development is single-track on pnpm `11.24.0` and TypeScript `7.0.2`. The published package remains a clean, package-manager-neutral consumer artifact: it contains runtime files only, not pnpm, TypeScript, Oxlint, tests, source-only tooling, or repository lockfiles.
 
@@ -66,6 +66,8 @@ Review note, 2026-08-29: Issue #242 releases that public parser as `@tiangong-lc
 Review note, 2026-08-31: Issue #244 adds Supabase OAuth 2.1 Authorization Code + S256 PKCE without adding a dependency or changing package version/exports. `auth login` uses a registered public client, exact literal-`127.0.0.1` callback, state validation, and shell-free system browser; it atomically stores rotating access/refresh tokens in a private session file. `auth status` performs no network request and reveals no credential or session path; `auth whoami` and `auth doctor-auth` use the live redacted identity receipt. `auth logout` deletes only that matching local session; Connected applications owns grant revocation. `TIANGONG_LCA_ACCESS_TOKEN` is a short-lived, online-verified, memory-only headless option. The reversible API key remains only as a transition fallback and is never used by OAuth mode.
 
 Review note, 2026-08-31: Issue #247 prevents a second CLI process from failing when the first process removes `session.json.lock` between contention and metadata read. Only an absent lock is treated as released; permission, I/O, malformed-owner, timeout, and stale-owner safety behavior is unchanged.
+
+Review note, 2026-08-31: Issue #246 releases that OAuth runtime as `@tiangong-lca/cli@0.1.4`. Only package identity and four existing exact-version fixtures change; the executable and public subpaths, dependencies, pnpm lock, Node 24.19.0 / TypeScript 7.0.2 toolchain, auth behavior, and package-manager-neutral consumer contract are otherwise unchanged.
 
 Review note, 2026-07-12: `dataset maintenance plan/apply/verify` provides current-user RLS-scoped exact-row maintenance with immutable plans, explicit approval, per-action logs, platform audit correlation, and independent readback. `merge-support-aliases` now runs only in `target_mode=owner_draft`: source/target support and all changed rows stay private `state_code=0`; publication is a separate future workflow.
 

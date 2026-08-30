@@ -32,8 +32,8 @@ checkPaths:
   - scripts/docpact-gate.sh
   - scripts/install-git-hooks.sh
 lastReviewedAt: 2026-08-31
-lastReviewedCommit: 38a85ab7dc01b9f6cdee02ab4c681a1976d02cfa
-lastReviewedNote: 'Reviewed for Issue #247: state-lock proof deterministically covers concurrent ENOENT release and non-ENOENT read failure while retaining the complete OAuth, package, and exact 100% gates.'
+lastReviewedCommit: 028efb78359fd15b789467d20e1ea2ae7c8dd5b7
+lastReviewedNote: 'Reviewed for Issue #246: 0.1.4 release proof includes the merged #247 ENOENT/EACCES regression and retains exact pnpm, Node/TS, package, 100% coverage, matrix, provenance, consumer, and OAuth gates.'
 related:
   - ../../AGENTS.md
   - ../../.docpact/config.yaml
@@ -87,6 +87,8 @@ Review note, 2026-08-29: Issue #242 release proof records pre-mutation npm 0.1.3
 Review note, 2026-08-31: Issue #244 proof requires exact public-client authorization/token/refresh forms, 64-byte verifier entropy and S256 challenge, cryptographic state, exact registered literal-`127.0.0.1` callback, state/code/error/timeout/occupied-port failures, no-shell macOS/Linux/Windows browser commands, bounded JSON, rotating refresh token, UserInfo identity, schema-v2 project/client binding, v1 legacy-cache compatibility, process/file serialization, POSIX `0700`/`0600`, foreign/broad-mode cache rejection, OAuth-no-password-fallback, local-only logout, and online-verified memory-only headless access tokens. `auth status` must be local-only, non-mutating, and explicitly not online-verified; `whoami` must reuse the redacted live receipt; `doctor-auth` must perform no live request when status is login-required and must never bootstrap a password. `auth login|status|whoami|doctor-auth|logout|identity-receipt`, command adapters, identity receipt, and release requests must emit no credential, authorization code, PKCE verifier/state, token, full email, or session path. Full proof remains `pnpm prepush:gate`, package contract, and exact 100% source coverage; no live OAuth client or grant is required for repository tests.
 
 Review note, 2026-08-31: Issue #247 proof injects an `ENOENT` metadata read after lock contention and requires a null/retry-safe classification, then injects `EACCES` and requires the original failure to escape. Missing, empty, malformed, primitive, valid, stale-owner, live-owner, timeout, reentrancy, cleanup, and unexpected acquisition cases remain covered. The regression must also rerun the complete OAuth/session suite and the authoritative `pnpm prepush:gate` with exact 100% source coverage.
+
+Review note, 2026-08-31: Issue #246 release proof records pre-mutation npm 0.1.4 and `cli-v0.1.4` absence, commits the four RED exact-version fixtures before the package bump, and requires byte-identical lock/dependency/runtime/export/workflow state. Local proof remains frozen pnpm 11.24.0 install, package/tarball consumers, the complete pre-push gate with exact 100% coverage, audit, and strict Docpact; remote proof remains the exact four-platform matrix, merge-tag workflow, native Trusted Publishing, cryptographic provenance/integrity verification, fresh OAuth command/identity consumers, and the Skills pin to the immutable 0.1.4 publication.
 
 When command-surface, release-gate, or governed docs change, also run the repo-local documentation governance gate:
 
