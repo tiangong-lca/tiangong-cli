@@ -26,8 +26,8 @@ checkPaths:
   - scripts/docpact-gate.sh
   - scripts/install-git-hooks.sh
 lastReviewedAt: 2026-08-31
-lastReviewedCommit: 38a85ab7dc01b9f6cdee02ab4c681a1976d02cfa
-lastReviewedNote: 'Reviewed for Issue #247: the session-lock race repair changes no package version, dependency, tag, provenance, publication, or integration mechanics; release 0.1.4 resumes only after this fix merges.'
+lastReviewedCommit: 028efb78359fd15b789467d20e1ea2ae7c8dd5b7
+lastReviewedNote: 'Reviewed for Issue #246: 0.1.4 releases OAuth on the merged #247 lock repair with unchanged dependency, tag, provenance, publication, and integration mechanics.'
 related:
   - ../AGENTS.md
   - ../.docpact/config.yaml
@@ -60,6 +60,8 @@ Review note, 2026-08-29: Issue #240 is a feature delivery for the bounded public
 Review note, 2026-08-29: Issue #242 is that dedicated 0.1.3 patch release. It changes only package identity and four live CLI-version fixtures, keeps the sole lock, dependencies, runtime, strict exports, workflows, and setup unchanged, and must prove pre-mutation npm/tag absence plus local package/prepush/audit/Docpact gates. After merge it must prove `cli-v0.1.3`, native pnpm Trusted Publishing/provenance, registry integrity, fresh credential-free bin/ESM/CJS/TypeScript consumers for `./batch` and `./auth-identity-receipt`, and exact release-merge workspace integration. Local publication and manual tag creation remain forbidden.
 
 Review note, 2026-08-31: Issue #247 is a release-blocking runtime prerequisite discovered by the 0.1.4 full gate. It fixes only concurrent state-lock metadata disappearance, keeps package version 0.1.3, dependencies, lock bytes, exports, and workflows unchanged, and must merge with exact 100% proof before Issue #246 rebases and resumes the normal 0.1.4 release path.
+
+Review note, 2026-08-31: Issue #246 is the dedicated 0.1.4 patch release for merged OAuth Issue #244. It changes only package identity and four live CLI-version fixtures, keeps the sole lock, dependencies, runtime, strict exports, workflows, and setup unchanged, and must prove pre-mutation npm/tag absence plus local package/prepush/audit/Docpact gates. After merge it must prove `cli-v0.1.4`, native pnpm Trusted Publishing/provenance, registry integrity, fresh credential-free bin/ESM/CJS/TypeScript consumers including OAuth help/status, the immutable Skills 0.1.4 pin, and exact release-merge workspace integration. Local publication and manual tag creation remain forbidden.
 
 Review note, 2026-07-14: Issue #165 adds the guarded `dataset maintenance rebuild-derivatives` command profile but does not change the release procedure. Its command, contract, remote-adapter, asynchronous verification, and no-fallback tests must pass the existing pre-push/docpact gate before a later version-bump PR; the feature PR itself must not publish locally or alter package version metadata.
 

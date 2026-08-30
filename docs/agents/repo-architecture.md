@@ -31,8 +31,8 @@ checkPaths:
   - scripts/docpact-gate.sh
   - scripts/install-git-hooks.sh
 lastReviewedAt: 2026-08-31
-lastReviewedCommit: 38a85ab7dc01b9f6cdee02ab4c681a1976d02cfa
-lastReviewedNote: 'Reviewed for Issue #247: the shared state-lock layer now reads owner metadata atomically enough to classify a concurrent ENOENT release without weakening non-ENOENT, stale-owner, timeout, or cleanup boundaries.'
+lastReviewedCommit: 028efb78359fd15b789467d20e1ea2ae7c8dd5b7
+lastReviewedNote: 'Reviewed for Issue #246: the 0.1.4 release advances package identity on the merged #247 lock repair while preserving OAuth/session modules, exports, dependencies, lock bytes, and publication architecture.'
 related:
   - ../../AGENTS.md
   - ../../.docpact/config.yaml
@@ -68,6 +68,8 @@ Review note, 2026-08-29: Issue #240 adds a third typed public subpath, `src/auth
 Review note, 2026-08-29: Issue #242 advances only the package compatibility identity to 0.1.3 for that already merged public parser. The facade/internal DAG, generated declarations, strict export map, dependencies, pnpm lock bytes, command runtime, tag workflow, native Trusted Publishing, provenance verifier, and exact workspace integration architecture do not change.
 
 Review note, 2026-08-31: Issue #247 keeps `src/lib/state-lock.ts` as the single session/artifact lock owner while removing its existence/read TOCTOU. Metadata is read once; `ENOENT` is the expected concurrent-release state, and all other read errors propagate. Lock creation, metadata schema, stale-owner recovery, same-process reentrancy, physical cleanup, and every consuming command/session architecture stay unchanged.
+
+Review note, 2026-08-31: Issue #246 advances only the package compatibility identity to 0.1.4 for the already merged OAuth command/session runtime. The remote-session modules, generated declarations, strict export map, dependencies, pnpm lock bytes, command runtime, tag workflow, native Trusted Publishing, provenance verifier, and exact workspace integration architecture do not change.
 
 Review note, 2026-06-04: Foundry entity queue state now stays in the native CLI command family as `dataset curation-queue build/next/verify`; no secondary orchestration runtime was introduced.
 
