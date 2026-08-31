@@ -529,13 +529,10 @@ test('Oxlint is the only JavaScript and TypeScript linter and uses type-aware TS
   );
 });
 
-test('the latest Node 24-compatible graph retains the TIDAS 0.2 runtime floor', () => {
+test('the latest Node 24-compatible graph pins the reviewed TIDAS 0.2 runtime', () => {
   const sdkRange = PACKAGE_JSON.dependencies?.['@tiangong-lca/tidas-sdk'];
-  assert.equal(typeof sdkRange, 'string');
-  assert.ok(
-    compareVersions(firstVersion(sdkRange), [0, 2, 0]) >= 0,
-    `@tiangong-lca/tidas-sdk must be >=0.2.0, received ${sdkRange}`,
-  );
+  assert.equal(sdkRange, '0.2.0');
+  assert.equal(compareVersions(firstVersion(sdkRange), [0, 2, 0]), 0);
   assert.equal(PACKAGE_JSON.dependencies?.['@supabase/supabase-js'], '^2.112.4');
   assert.equal(PACKAGE_JSON.devDependencies?.['@types/node'], '^24.13.3');
   assert.equal(PACKAGE_JSON.devDependencies?.['lint-staged'], '^17.4.1');
