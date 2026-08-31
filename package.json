@@ -61,8 +61,9 @@
     "test:package": "node --test test/toolchain-contract.test.mjs",
     "test:coverage": "pnpm build && node ./scripts/run-test-coverage.cjs",
     "test:coverage:assert-full": "node ./dist/scripts/assert-full-coverage.js",
+    "peers:check": "pnpm peers check",
     "case:auth-identity:production": "pnpm build && node ./dist/scripts/run-auth-identity-production-case.js",
-    "prepush:gate": "pnpm lint && pnpm test:package && pnpm test:coverage && pnpm test:coverage:assert-full",
+    "prepush:gate": "pnpm lint && pnpm peers:check && pnpm test:package && pnpm test:coverage && pnpm test:coverage:assert-full",
     "release:check-tag": "node ./scripts/ci/check-release-tag.cjs cli",
     "release:assert-unpublished": "node ./scripts/ci/release-version.cjs assert-unpublished",
     "release:verify-published": "node ./scripts/ci/verify-published-release.cjs",
@@ -88,16 +89,16 @@
   "devDependencies": {
     "@types/node": "^24.13.3",
     "c8": "^12.0.0",
-    "lint-staged": "^17.3.0",
+    "lint-staged": "^17.4.1",
     "oxlint": "^1.80.0",
     "oxlint-tsgolint": "^7.0.2001",
-    "prettier": "3.8.1",
+    "prettier": "3.9.6",
     "sigstore": "5.0.0",
-    "tsx": "^4.23.12",
+    "tsx": "^4.23.13",
     "typescript": "^7.0.2"
   },
   "dependencies": {
-    "@supabase/supabase-js": "^2.101.1",
+    "@supabase/supabase-js": "^2.112.4",
     "@tiangong-lca/tidas-sdk": "^0.2.0"
   }
 }
