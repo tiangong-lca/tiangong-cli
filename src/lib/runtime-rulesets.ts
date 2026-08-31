@@ -29,7 +29,7 @@ export type RuntimeRuleset = {
   rule_ids: string[];
 };
 
-export const RUNTIME_RULESET_SOURCE_VERSION = '2026.05.23';
+export const RUNTIME_RULESET_SOURCE_VERSION = '2026.08.31';
 export const RUNTIME_RULESET_VERSION = '1';
 
 const RUNTIME_RULES = [
@@ -56,6 +56,13 @@ const RUNTIME_RULES = [
   },
   {
     id: 'tidas.process.exchange.amount.required',
+    dataset_type: 'process',
+    severity: 'blocker',
+    default_blocker: true,
+    phases: ['build-plan', 'materialize', 'publish-build', 'save-draft', 'publish-run'],
+  },
+  {
+    id: 'tidas.process.exchange.same-reference-flow-input.block',
     dataset_type: 'process',
     severity: 'blocker',
     default_blocker: true,
@@ -152,6 +159,7 @@ const RULESETS = [
       'tidas.process.name.qualifiers.structured',
       'tidas.process.quantitative-reference.required',
       'tidas.process.exchange.amount.required',
+      'tidas.process.exchange.same-reference-flow-input.block',
       'tidas.process.evidence.field-bindings.required',
     ],
   },
@@ -164,6 +172,7 @@ const RULESETS = [
     rule_ids: [
       'tidas.process.quantitative-reference.required',
       'tidas.process.exchange.amount.required',
+      'tidas.process.exchange.same-reference-flow-input.block',
       'tidas.process.evidence.field-bindings.required',
       'tidas.process.version.format',
     ],
@@ -178,6 +187,7 @@ const RULESETS = [
       'tidas.process.name.base-name.align-reference-flow',
       'tidas.process.quantitative-reference.required',
       'tidas.process.exchange.amount.required',
+      'tidas.process.exchange.same-reference-flow-input.block',
       'tidas.process.evidence.field-bindings.required',
       'tidas.process.version.format',
     ],
@@ -248,6 +258,11 @@ const LOCAL_RULE_ID_MAP: Partial<Record<RuntimeRulesetId, Record<string, string>
     process_missing_functional_unit: 'tidas.process.quantitative-reference.required',
     process_missing_quantitative_reference: 'tidas.process.quantitative-reference.required',
     process_missing_exchange_amount: 'tidas.process.exchange.amount.required',
+    process_same_reference_flow_input: 'tidas.process.exchange.same-reference-flow-input.block',
+    process_same_reference_flow_input_exempted:
+      'tidas.process.exchange.same-reference-flow-input.block',
+    process_same_reference_flow_input_identity_incomplete:
+      'tidas.process.exchange.same-reference-flow-input.block',
     process_material_balance_deviation: 'tidas.process.exchange.amount.required',
     process_missing_system_boundary: 'tidas.process.evidence.field-bindings.required',
     process_missing_time: 'tidas.process.evidence.field-bindings.required',
@@ -261,6 +276,7 @@ const LOCAL_RULE_ID_MAP: Partial<Record<RuntimeRulesetId, Record<string, string>
   },
   'process-publish/default': {
     process_schema_failed: 'tidas.process.evidence.field-bindings.required',
+    process_same_reference_flow_input: 'tidas.process.exchange.same-reference-flow-input.block',
   },
   'flow-authoring/strict': {
     missing_type_of_dataset: 'tidas.flow.type.required',

@@ -21,8 +21,8 @@ checkPaths:
   - src/**
   - scripts/**
   - .github/workflows/**
-lastReviewedAt: 2026-08-29
-lastReviewedCommit: a82ee857cc322357907d770b11d6e1aca3b3bf2b
+lastReviewedAt: 2026-08-31
+lastReviewedCommit: bcdb7c5522a7fda92e16115ac08ef1a2d3def67d
 lastReviewedNote: 'Reviewed for Issue #236: pnpm 单轨精确升级到 11.24.0；Node 24.19.0、TypeScript 7.0.2、0.1.1 包版本、依赖、公开行为与发布路径不变。'
 related:
   - AGENTS.md

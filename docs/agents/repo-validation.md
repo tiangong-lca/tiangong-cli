@@ -31,8 +31,8 @@ checkPaths:
   - scripts/docpact
   - scripts/docpact-gate.sh
   - scripts/install-git-hooks.sh
-lastReviewedAt: 2026-08-29
-lastReviewedCommit: f460f0567faac6e89e53d259fbd29d1dfccd058d
+lastReviewedAt: 2026-08-31
+lastReviewedCommit: bcdb7c5522a7fda92e16115ac08ef1a2d3def67d
 lastReviewedNote: 'Reviewed for Issue #242: 0.1.3 release proof retains exact pnpm 11.24, Node 24.19.0, TS 7.0.2, package, 100% coverage, four-platform, provenance, and public-consumer gates.'
 related:
   - ../../AGENTS.md

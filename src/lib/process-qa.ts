@@ -4,6 +4,11 @@ import { writeJsonArtifact, writeJsonLinesArtifact, writeTextArtifact } from './
 import { CliError } from './errors.js';
 import type { FetchLike } from './http.js';
 import { readJsonInput } from './io.js';
+import {
+  collectProcessStageFlowGuardIssues,
+  flowReferenceIdentity,
+  stageFlowSelfProviderExemptions,
+} from './process-stage-flow-guard.js';
 import { getRuntimeRuleset, resolveRuntimeRuleId } from './runtime-rulesets.js';
 
 type JsonRecord = Record<string, unknown>;
@@ -1177,6 +1182,17 @@ export async function runProcessQa(options: RunProcessQaOptions): Promise<Proces
     const fileName = path.basename(filePath);
     baseRows.push([fileName, base]);
     ruleFindings.push(...reviewFindingsForBase(fileName, base));
+    ruleFindings.push(
+      ...collectProcessStageFlowGuardIssues(processPayload).map((issue) =>
+        createProcessQaFinding({
+          processFile: fileName,
+          severity: issue.severity,
+          code: issue.code,
+          message: issue.message,
+          evidence: issue.evidence,
+        }),
+      ),
+    );
 
     let rawInput = 0;
     let product = 0;
@@ -1442,6 +1458,9 @@ export const __testInternals = {
   classifyExchange,
   unitIssueCheck,
   hasNumericAmount,
+  flowReferenceIdentity,
+  stageFlowSelfProviderExemptions,
+  collectProcessStageFlowGuardIssues,
   createProcessQaFinding,
   reviewFindingsForBase,
   processRulesetGate,

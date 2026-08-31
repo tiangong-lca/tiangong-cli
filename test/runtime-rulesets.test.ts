@@ -15,8 +15,12 @@ test('runtime ruleset registry exposes stable metadata and local rule mappings',
 
   const processPublish = getRuntimeRuleset('process-publish/default');
   assert.equal(processPublish.version, '1');
-  assert.equal(processPublish.source_version, '2026.05.23');
+  assert.equal(processPublish.source_version, '2026.08.31');
   assert.equal(processPublish.rule_ids.includes('tidas.process.version.format'), true);
+  assert.equal(
+    processPublish.rule_ids.includes('tidas.process.exchange.same-reference-flow-input.block'),
+    true,
+  );
   assert.deepEqual(runtimeRuleIds('process-dedup/default'), [
     'tidas.process.identity.duplicate-fingerprint.block',
   ]);
@@ -37,6 +41,10 @@ test('runtime ruleset registry exposes stable metadata and local rule mappings',
   assert.equal(
     resolveRuntimeRuleId('process-authoring/strict', 'process_missing_exchange_amount'),
     'tidas.process.exchange.amount.required',
+  );
+  assert.equal(
+    resolveRuntimeRuleId('process-authoring/strict', 'process_same_reference_flow_input'),
+    'tidas.process.exchange.same-reference-flow-input.block',
   );
   assert.equal(resolveRuntimeRuleId('flow-authoring/strict', 'unknown_local_rule'), null);
   assert.equal(resolveRuntimeRuleId('flow-authoring/strict', null), null);

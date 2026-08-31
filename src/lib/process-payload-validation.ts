@@ -9,11 +9,12 @@ import {
   collectProcessPlaceholderIssues,
   collectProcessRequiredFieldIssues,
 } from './process-required-fields.js';
+import { collectProcessStageFlowGuardIssues } from './process-stage-flow-guard.js';
 
 type JsonObject = Record<string, unknown>;
 
 const PROCESS_SCHEMA_VALIDATOR =
-  '@tiangong-lca/tidas-sdk/ProcessSchema+tiangong/process-authoring-required-fields';
+  '@tiangong-lca/tidas-sdk/ProcessSchema+tiangong/process-authoring-required-fields+tiangong/process-stage-flow-self-provider';
 
 export type ProcessPayloadValidationIssue = {
   path: string;
@@ -70,8 +71,20 @@ export function validateProcessPayload(
   const outcome = validateSchemaWithDeepFallback(schema, payload, createEntity);
   const requiredFieldIssues = collectProcessRequiredFieldIssues(payload);
   const placeholderIssues = collectProcessPlaceholderIssues(payload);
+  const stageFlowIssues = collectProcessStageFlowGuardIssues(payload)
+    .filter((issue) => issue.severity === 'blocker')
+    .map((issue) => ({
+      path: 'processDataSet.exchanges.exchange',
+      message: issue.message,
+      code: issue.code,
+    }));
 
-  if (outcome.success && requiredFieldIssues.length === 0 && placeholderIssues.length === 0) {
+  if (
+    outcome.success &&
+    requiredFieldIssues.length === 0 &&
+    placeholderIssues.length === 0 &&
+    stageFlowIssues.length === 0
+  ) {
     return {
       ok: true,
       validator: PROCESS_SCHEMA_VALIDATOR,
@@ -88,6 +101,7 @@ export function validateProcessPayload(
     })),
     ...requiredFieldIssues,
     ...placeholderIssues,
+    ...stageFlowIssues,
   ];
 
   return {

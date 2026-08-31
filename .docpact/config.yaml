@@ -39,8 +39,8 @@ layout: repo
 # Review note, 2026-08-26: Issue #237 is the dedicated 0.1.2 release-only delivery for the bounded public batch/CommandSpec surface on pnpm 11.24.0. It changes package version metadata and four live CLI-version fixtures only; existing package, test, release, and governed-doc rules cover the change, while ownership, routing, lock bytes, dependencies, runtime, exports, tag automation, Trusted Publishing, provenance, and workspace integration remain unchanged.
 # Review note, 2026-08-29: Issue #240 adds a bounded public auth identity-receipt parser subpath after CLI 0.1.2 closed deep imports. The wrapper directly re-exports the existing semantic owner and is covered by public-library, remote-session, packed-consumer, declaration, validation, and release routes without exposing the remote runner or test internals.
 # Review note, 2026-08-29: Issue #242 is the dedicated 0.1.3 release-only delivery for that public parser. It changes package identity and four existing exact-version fixtures only; current package, test, release, and governed-doc rules cover the change while ownership, routing, lock bytes, dependencies, runtime, exports, tag automation, Trusted Publishing, provenance, and workspace integration remain unchanged.
-lastReviewedAt: '2026-08-29'
-lastReviewedCommit: 'f460f0567faac6e89e53d259fbd29d1dfccd058d'
+lastReviewedAt: "2026-08-31"
+lastReviewedCommit: "bcdb7c5522a7fda92e16115ac08ef1a2d3def67d"
 
 catalog:
   repos:

@@ -56,7 +56,8 @@ test('process payload validation summarizes ok and failure results with normaliz
     const okResult = validateProcessPayload(validProcessPayload());
     assert.deepEqual(okResult, {
       ok: true,
-      validator: '@tiangong-lca/tidas-sdk/ProcessSchema+tiangong/process-authoring-required-fields',
+      validator:
+        '@tiangong-lca/tidas-sdk/ProcessSchema+tiangong/process-authoring-required-fields+tiangong/process-stage-flow-self-provider',
       issue_count: 0,
       issues: [],
     });
@@ -118,11 +119,54 @@ test('process payload validation summarizes ok and failure results with normaliz
     tidasSdk.ProcessSchema.safeParse = undefined as unknown as typeof originalSafeParse;
     assert.throws(
       () => validateProcessPayload(validProcessPayload()),
-      /@tiangong-lca\/tidas-sdk\/ProcessSchema\+tiangong\/process-authoring-required-fields is unavailable/u,
+      /@tiangong-lca\/tidas-sdk\/ProcessSchema\+tiangong\/process-authoring-required-fields\+tiangong\/process-stage-flow-self-provider is unavailable/u,
     );
   } finally {
     tidasSdk.ProcessSchema.safeParse = originalSafeParse;
   }
+});
+
+test('process payload validation blocks an exact same-flow self-provider before save or publish', () => {
+  const schema = {
+    safeParse: () => ({ success: true as const, data: {} }),
+  };
+  const result = validateProcessPayload(
+    {
+      processDataSet: {
+        processInformation: {
+          quantitativeReference: { referenceToReferenceFlow: 'output-1' },
+        },
+        modellingAndValidation: validProcessPayload().processDataSet.modellingAndValidation,
+        exchanges: {
+          exchange: [
+            {
+              '@dataSetInternalID': 'input-1',
+              exchangeDirection: 'Input',
+              referenceToFlowDataSet: {
+                '@refObjectId': 'flow-1',
+                '@version': '01.00.001',
+              },
+            },
+            {
+              '@dataSetInternalID': 'output-1',
+              exchangeDirection: 'Output',
+              referenceToFlowDataSet: {
+                '@refObjectId': 'flow-1',
+                '@version': '01.00.001',
+              },
+            },
+          ],
+        },
+      },
+    },
+    schema,
+    null,
+  );
+
+  assert.equal(result.ok, false);
+  assert.equal(result.issue_count, 1);
+  assert.equal(result.issues[0]?.code, 'process_same_reference_flow_input');
+  assert.equal(result.issues[0]?.path, 'processDataSet.exchanges.exchange');
 });
 
 test('process payload validation falls back to deep SDK validation only after fast failure', () => {

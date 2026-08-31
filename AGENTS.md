@@ -36,8 +36,8 @@ checkPaths:
   - scripts/docpact
   - scripts/docpact-gate.sh
   - scripts/install-git-hooks.sh
-lastReviewedAt: 2026-08-29
-lastReviewedCommit: f460f0567faac6e89e53d259fbd29d1dfccd058d
+lastReviewedAt: 2026-08-31
+lastReviewedCommit: bcdb7c5522a7fda92e16115ac08ef1a2d3def67d
 lastReviewedNote: 'Reviewed for Issue #242: CLI 0.1.3 publishes the already reviewed public auth receipt parser through a release-only metadata and four-fixture change, with runtime, lock, dependency, export, release, and integration contracts unchanged.'
 related:
   - .docpact/config.yaml

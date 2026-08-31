@@ -19,14 +19,18 @@ function createExchange(options: {
   amount?: number | string;
   comment?: string;
   flowId?: string;
+  flowVersion?: string;
+  internalId?: string;
   shortDescription?: unknown;
 }): JsonRecord {
   return {
+    ...(options.internalId ? { '@dataSetInternalID': options.internalId } : {}),
     exchangeDirection: options.direction,
     meanAmount: options.amount ?? 0,
     commonComment: options.comment ?? '',
     referenceToFlowDataSet: {
       '@refObjectId': options.flowId ?? 'flow-001',
+      ...(options.flowVersion ? { '@version': options.flowVersion } : {}),
       'common:shortDescription': options.shortDescription ?? '',
     },
   };
@@ -40,6 +44,8 @@ function createProcessPayload(options?: {
   typeOfDataSet?: unknown;
   administrativeInformation?: unknown;
   exchanges?: unknown;
+  referenceFlowInternalId?: string;
+  dataSetOther?: unknown;
 }): JsonRecord {
   return {
     processDataSet: {
@@ -51,9 +57,13 @@ function createProcessPayload(options?: {
               { '@xml:lang': 'en', '#text': 'English name' },
             ],
           },
+          ...(options?.dataSetOther ? { 'common:other': options.dataSetOther } : {}),
         },
         quantitativeReference: {
           functionalUnitOrOther: options?.functionalUnit ?? '1 kg product',
+          ...(options?.referenceFlowInternalId
+            ? { referenceToReferenceFlow: options.referenceFlowInternalId }
+            : {}),
         },
         geography: {
           mixAndLocationTypes: options?.geography ?? 'CN',
@@ -228,6 +238,300 @@ test('runProcessQa writes artifact-first local QA outputs without LLM', async ()
     assert.equal(findings[0]?.methodology_rule_id, 'tidas.process.exchange.amount.required');
   } finally {
     rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+test('runProcessQa blocks an exact quantitative-reference flow input and preserves identity evidence', async () => {
+  const dir = mkdtempSync(path.join(os.tmpdir(), 'tg-cli-process-qa-stage-flow-'));
+  const runRoot = path.join(dir, 'run-root');
+  const processDir = path.join(runRoot, 'exports', 'processes');
+  const outDir = path.join(dir, 'review');
+  writeJson(
+    path.join(processDir, 'same-flow.json'),
+    createProcessPayload({
+      referenceFlowInternalId: 'output-1',
+      exchanges: [
+        createExchange({
+          direction: 'Input',
+          internalId: 'input-1',
+          flowId: 'shared-flow',
+          flowVersion: '01.00.001',
+        }),
+        createExchange({
+          direction: 'Output',
+          internalId: 'output-1',
+          flowId: 'shared-flow',
+          flowVersion: '01.00.001',
+        }),
+      ],
+    }),
+  );
+
+  try {
+    const report = await runProcessQa({ runRoot, outDir });
+    assert.equal(report.ruleset_gate?.status, 'blocked');
+    assert.equal(report.blocker_count, 1);
+    const blocker = report.ruleset_gate?.blockers[0];
+    assert.equal(blocker?.code, 'process_same_reference_flow_input');
+    assert.equal(
+      blocker?.methodology_rule_id,
+      'tidas.process.exchange.same-reference-flow-input.block',
+    );
+    assert.deepEqual(blocker?.evidence, {
+      reference_exchange_internal_id: 'output-1',
+      input_exchange_internal_id: 'input-1',
+      reference_flow_id: 'shared-flow',
+      reference_flow_version: '01.00.001',
+      input_flow_version: '01.00.001',
+      required_action:
+        'Reference the evidence-backed predecessor flow, create a distinct intermediate flow, collapse the unsupported stage, or add a reviewed structured closed-loop exemption.',
+    });
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+test('stage-flow self-provider detection honors version boundaries and structured exemptions', () => {
+  const exchanges = [
+    createExchange({
+      direction: 'Input',
+      internalId: 'input-1',
+      flowId: 'shared-flow',
+      flowVersion: '01.00.001',
+    }),
+    createExchange({
+      direction: 'Output',
+      internalId: 'output-1',
+      flowId: 'shared-flow',
+      flowVersion: '01.00.001',
+    }),
+  ];
+  const exemptedPayload = createProcessPayload({
+    referenceFlowInternalId: 'output-1',
+    exchanges,
+    dataSetOther: {
+      'tiangongfoundry:stageFlowSelfProviderExemption': {
+        schemaVersion: '1',
+        inputExchangeInternalId: 'input-1',
+        referenceFlowId: 'shared-flow',
+        referenceFlowVersion: '01.00.001',
+        reasonCode: 'documented_closed_loop_recirculation',
+        sourceEvidence: {
+          sourceId: 'source-1',
+          locator: 'p. 14, closed-loop recycle diagram',
+          claim: 'The unchanged carrier is recirculated inside the same unit process.',
+        },
+        modelingJustification: 'The carrier remains physically and functionally unchanged.',
+        reviewDecisionId: 'data-foundry#95-review-7',
+      },
+    },
+  });
+  const exempted = __testInternals.collectProcessStageFlowGuardIssues(exemptedPayload);
+  assert.equal(exempted.length, 1);
+  assert.equal(exempted[0]?.severity, 'info');
+  assert.equal(exempted[0]?.code, 'process_same_reference_flow_input_exempted');
+
+  const differentVersion = __testInternals.collectProcessStageFlowGuardIssues(
+    createProcessPayload({
+      referenceFlowInternalId: 'output-1',
+      exchanges: [
+        createExchange({
+          direction: 'Input',
+          internalId: 'input-1',
+          flowId: 'shared-flow',
+          flowVersion: '01.00.002',
+        }),
+        exchanges[1] as JsonRecord,
+      ],
+    }),
+  );
+  assert.deepEqual(differentVersion, []);
+
+  const missingVersion = __testInternals.collectProcessStageFlowGuardIssues(
+    createProcessPayload({
+      referenceFlowInternalId: 'output-1',
+      exchanges: [
+        createExchange({
+          direction: 'Input',
+          internalId: 'input-1',
+          flowId: 'shared-flow',
+        }),
+        exchanges[1] as JsonRecord,
+      ],
+    }),
+  );
+  assert.equal(missingVersion.length, 1);
+  assert.equal(missingVersion[0]?.severity, 'warning');
+  assert.equal(missingVersion[0]?.code, 'process_same_reference_flow_input_identity_incomplete');
+
+  const malformedExemption = __testInternals.collectProcessStageFlowGuardIssues(
+    createProcessPayload({
+      referenceFlowInternalId: 'output-1',
+      exchanges,
+      dataSetOther: {
+        'tiangongfoundry:stageFlowSelfProviderExemption': {
+          schemaVersion: '1',
+          inputExchangeInternalId: 'input-1',
+          referenceFlowId: 'shared-flow',
+          referenceFlowVersion: '01.00.001',
+          reasonCode: 'documented_closed_loop_recirculation',
+          sourceEvidence: [],
+          modelingJustification: 'Missing evidence must not pass.',
+          reviewDecisionId: 'review-1',
+        },
+      },
+    }),
+  );
+  assert.equal(malformedExemption[0]?.severity, 'blocker');
+});
+
+test('stage-flow guard fails closed across sparse identities and malformed exemptions', () => {
+  assert.deepEqual(__testInternals.flowReferenceIdentity({ referenceToFlowDataSet: [] }), {
+    id: '',
+    version: '',
+  });
+  assert.deepEqual(
+    __testInternals.flowReferenceIdentity({ referenceToFlowDataSet: 'not-an-object' }),
+    { id: '', version: '' },
+  );
+  assert.deepEqual(__testInternals.collectProcessStageFlowGuardIssues({}), []);
+  assert.deepEqual(
+    __testInternals.collectProcessStageFlowGuardIssues(
+      createProcessPayload({ referenceFlowInternalId: 'missing-output', exchanges: [] }),
+    ),
+    [],
+  );
+  assert.deepEqual(
+    __testInternals.collectProcessStageFlowGuardIssues(
+      createProcessPayload({
+        referenceFlowInternalId: 'input-1',
+        exchanges: [
+          createExchange({
+            direction: 'Input',
+            internalId: 'input-1',
+            flowId: 'shared-flow',
+            flowVersion: '01.00.001',
+          }),
+        ],
+      }),
+    ),
+    [],
+  );
+
+  const outputWithoutFlowIdentity = createProcessPayload({
+    referenceFlowInternalId: 'output-1',
+    exchanges: [
+      createExchange({ direction: 'Input', internalId: 'input-1', flowId: 'other-flow' }),
+      {
+        '@dataSetInternalID': 'output-1',
+        exchangeDirection: 'Output',
+        referenceToFlowDataSet: {},
+      },
+    ],
+  });
+  assert.deepEqual(
+    __testInternals.collectProcessStageFlowGuardIssues(outputWithoutFlowIdentity),
+    [],
+  );
+
+  const noMatchingInputs = createProcessPayload({
+    referenceFlowInternalId: 'output-1',
+    exchanges: [
+      {
+        '@dataSetInternalID': 'input-without-flow',
+        exchangeDirection: 'Input',
+      },
+      createExchange({
+        direction: 'Input',
+        internalId: 'different-input',
+        flowId: 'different-flow',
+        flowVersion: '01.00.001',
+      }),
+      createExchange({
+        direction: 'Output',
+        internalId: 'output-1',
+        flowId: 'shared-flow',
+        flowVersion: '01.00.001',
+      }),
+    ],
+  });
+  assert.deepEqual(__testInternals.collectProcessStageFlowGuardIssues(noMatchingInputs), []);
+
+  const missingReferenceVersion = __testInternals.collectProcessStageFlowGuardIssues(
+    createProcessPayload({
+      referenceFlowInternalId: 'output-1',
+      exchanges: [
+        createExchange({
+          direction: 'Input',
+          internalId: 'input-1',
+          flowId: 'shared-flow',
+          flowVersion: '01.00.001',
+        }),
+        createExchange({
+          direction: 'Output',
+          internalId: 'output-1',
+          flowId: 'shared-flow',
+        }),
+      ],
+    }),
+  );
+  assert.equal(
+    missingReferenceVersion[0]?.code,
+    'process_same_reference_flow_input_identity_incomplete',
+  );
+
+  const malformedExemptions = createProcessPayload({
+    dataSetOther: {
+      'tiangongfoundry:stageFlowSelfProviderExemption': [
+        { schemaVersion: '2' },
+        {
+          schemaVersion: '1',
+          sourceEvidence: [
+            null,
+            { sourceId: '', locator: 'p. 1', claim: 'claim' },
+            { sourceId: 'source-1', locator: '', claim: 'claim' },
+            { sourceId: 'source-1', locator: 'p. 1', claim: '' },
+          ],
+        },
+      ],
+    },
+  });
+  assert.deepEqual(__testInternals.stageFlowSelfProviderExemptions(malformedExemptions), []);
+
+  for (const omittedField of [
+    'inputExchangeInternalId',
+    'referenceFlowId',
+    'referenceFlowVersion',
+    'reasonCode',
+    'sourceEvidence',
+    'modelingJustification',
+    'reviewDecisionId',
+  ]) {
+    const exemption: JsonRecord = {
+      schemaVersion: '1',
+      inputExchangeInternalId: 'input-1',
+      referenceFlowId: 'shared-flow',
+      referenceFlowVersion: '01.00.001',
+      reasonCode: 'documented_closed_loop_recirculation',
+      sourceEvidence: {
+        sourceId: 'source-1',
+        locator: 'p. 1',
+        claim: 'closed-loop evidence',
+      },
+      modelingJustification: 'Documented closed-loop carrier.',
+      reviewDecisionId: 'review-1',
+    };
+    delete exemption[omittedField];
+    assert.deepEqual(
+      __testInternals.stageFlowSelfProviderExemptions(
+        createProcessPayload({
+          dataSetOther: {
+            'tiangongfoundry:stageFlowSelfProviderExemption': exemption,
+          },
+        }),
+      ),
+      [],
+    );
   }
 });
 
