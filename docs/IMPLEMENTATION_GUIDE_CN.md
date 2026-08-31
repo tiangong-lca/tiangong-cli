@@ -1167,7 +1167,45 @@ TIANGONG_LCA_COVERAGE=0
 
 命令级 env 矩阵：
 
-| 命令组 | 必需 env | | --- | --- | --- | --- | --- | | `doctor` | 无 | | `auth login` | API base、publishable key、OAuth client ID | | `auth status` | 同一远程认证环境；只检查本地 session readiness | | `auth whoami` | 同一远程认证环境；执行 live redacted identity receipt | | `auth doctor-auth` | 同一远程认证环境；local readiness + live redacted identity | | `auth logout` | 远程认证环境；只清理本地 session，grant 在 Next Connected applications 撤销 | | `auth identity-receipt` | 远程认证环境；生产 guard 还必须通过 argv 同时给出 expected project/user | | `search flow | process | lifecyclemodel` | 远程认证环境（region 可选） | | `dataset evidence-search` | 默认无；若使用 `--provider-url`，认证由 `--provider-key` 显式传入 | | `admin embedding-run` | 远程认证环境（region 可选） | | `process get` | 远程认证环境 | | `dataset save-draft` | dry-run 无；`--commit` 需要远程认证环境，ledger 位置不变 | | `process identity-preflight` | 默认无；remote candidates 需要远程认证环境 | | `process build-plan` | 无 | | `process auto-build | resume-build | publish-build | batch-build` | 无 | | `lifecyclemodel auto-build | validate-build | publish-build | orchestrate` | 无 | | `lifecyclemodel build-resulting-process` | 本地默认无；remote lookup 需要远程认证环境 | | `lifecyclemodel publish-resulting-process` | 无 | | `qa process` | 纯规则 QA 默认无；若显式开启 `--enable-llm`，则需要 `TIANGONG_LCA_REVIEW_LLM_BASE_URL`、`TIANGONG_LCA_REVIEW_LLM_API_KEY`、`TIANGONG_LCA_REVIEW_LLM_MODEL` | | `qa flow` | 纯规则 QA 默认无；若显式开启 `--enable-llm`，则需要 `TIANGONG_LCA_REVIEW_LLM_BASE_URL`、`TIANGONG_LCA_REVIEW_LLM_API_KEY`、`TIANGONG_LCA_REVIEW_LLM_MODEL` | | `qa lifecyclemodel` | 无 | | `flow get` | 远程认证环境 | | `flow list` | 远程认证环境 | | `flow identity-preflight` | 默认无；remote candidates 需要远程认证环境 | | `flow build-plan` | 无 | | `flow remediate` | 无 | | `flow publish-version` | 远程认证环境 | | `flow publish-reviewed-data` | dry-run 无；`--commit` 需要远程认证环境 | | `flow build-alias-map` | 无 | | `flow scan-process-flow-refs` | 无 | | `flow plan-process-flow-repairs` | 无 | | `flow apply-process-flow-repairs` | 无 | | `flow regen-product` | 无 | | `flow validate-processes` | 无 | | `publish run` | 无 | | `validation run` | 无 | | `release *` | 远程认证环境；服务端仍要求 `data_product_manager`，禁止 service-role |
+| 命令组 | 必需 env |
+| --- | --- |
+| `doctor` | 无 |
+| `auth login` | API base、publishable key、OAuth client ID |
+| `auth status` | 同一远程认证环境；只检查本地 session readiness |
+| `auth whoami` | 同一远程认证环境；执行 live redacted identity receipt |
+| `auth doctor-auth` | 同一远程认证环境；local readiness + live redacted identity |
+| `auth logout` | 远程认证环境；只清理本地 session，grant 在 Next Connected applications 撤销 |
+| `auth identity-receipt` | 远程认证环境；生产 guard 还必须通过 argv 同时给出 expected project/user |
+| `search flow \| process \| lifecyclemodel` | 远程认证环境（region 可选） |
+| `dataset evidence-search` | 默认无；若使用 `--provider-url`，认证由 `--provider-key` 显式传入 |
+| `admin embedding-run` | 远程认证环境（region 可选） |
+| `process get` | 远程认证环境 |
+| `dataset save-draft` | dry-run 无；`--commit` 需要远程认证环境，ledger 位置不变 |
+| `process identity-preflight` | 默认无；remote candidates 需要远程认证环境 |
+| `process build-plan` | 无 |
+| `process auto-build \| resume-build \| publish-build \| batch-build` | 无 |
+| `lifecyclemodel auto-build \| validate-build \| publish-build \| orchestrate` | 无 |
+| `lifecyclemodel build-resulting-process` | 本地默认无；remote lookup 需要远程认证环境 |
+| `lifecyclemodel publish-resulting-process` | 无 |
+| `qa process` | 纯规则 QA 默认无；若显式开启 `--enable-llm`，则需要 `TIANGONG_LCA_REVIEW_LLM_BASE_URL`、`TIANGONG_LCA_REVIEW_LLM_API_KEY`、`TIANGONG_LCA_REVIEW_LLM_MODEL` |
+| `qa flow` | 纯规则 QA 默认无；若显式开启 `--enable-llm`，则需要 `TIANGONG_LCA_REVIEW_LLM_BASE_URL`、`TIANGONG_LCA_REVIEW_LLM_API_KEY`、`TIANGONG_LCA_REVIEW_LLM_MODEL` |
+| `qa lifecyclemodel` | 无 |
+| `flow get` | 远程认证环境 |
+| `flow list` | 远程认证环境 |
+| `flow identity-preflight` | 默认无；remote candidates 需要远程认证环境 |
+| `flow build-plan` | 无 |
+| `flow remediate` | 无 |
+| `flow publish-version` | 远程认证环境 |
+| `flow publish-reviewed-data` | dry-run 无；`--commit` 需要远程认证环境 |
+| `flow build-alias-map` | 无 |
+| `flow scan-process-flow-refs` | 无 |
+| `flow plan-process-flow-repairs` | 无 |
+| `flow apply-process-flow-repairs` | 无 |
+| `flow regen-product` | 无 |
+| `flow validate-processes` | 无 |
+| `publish run` | 无 |
+| `validation run` | 无 |
+| `release *` | 远程认证环境；服务端仍要求 `data_product_manager`，禁止 service-role |
 
 ## 6. 质量门
 

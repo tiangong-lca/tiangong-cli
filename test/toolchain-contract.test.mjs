@@ -324,6 +324,13 @@ test('active maintainer documentation exposes only pnpm package-management comma
     [],
     `active maintainer documentation still exposes npm or npx commands:\n${formatJson(findings)}`,
   );
+
+  const implementationGuide = readFileSync(
+    join(REPOSITORY_ROOT, 'docs', 'IMPLEMENTATION_GUIDE_CN.md'),
+    'utf8',
+  );
+  assert.match(implementationGuide, /^\| 命令组 \| 必需 env \|\n\| --- \| --- \|$/mu);
+  assert.doesNotMatch(implementationGuide, /\| 命令组 \| 必需 env \| \|/u);
 });
 
 test('workflows use the reviewed Node 24 pnpm setup, frozen installs, and trusted publish path', () => {
