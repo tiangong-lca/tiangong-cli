@@ -26,8 +26,8 @@ checkPaths:
   - scripts/docpact-gate.sh
   - scripts/install-git-hooks.sh
 lastReviewedAt: 2026-08-31
-lastReviewedCommit: bcdb7c5522a7fda92e16115ac08ef1a2d3def67d
-lastReviewedNote: 'Reviewed for Issue #242: 0.1.3 is the release-only package identity for the public auth receipt parser, with unchanged lock, dependency, tag, provenance, publication, and integration mechanics.'
+lastReviewedCommit: 352c11c5ffafaea1bf94133be92f3337b847866a
+lastReviewedNote: 'Reviewed for Issue #252: 0.1.5 is the replacement OAuth release after 0.1.4 stopped unpublished; unchanged four-platform/tag/provenance/publication mechanics apply.'
 related:
   - ../AGENTS.md
   - ../.docpact/config.yaml
@@ -58,6 +58,14 @@ Review note, 2026-08-26: Issue #237 is the dedicated 0.1.2 release for the bound
 Review note, 2026-08-29: Issue #240 is a feature delivery for the bounded public auth receipt parser and keeps package version 0.1.2. After it merges and all public/tarball/coverage/Docpact gates pass, publish the repair only through a separate patch version-bump PR (expected 0.1.3), the unchanged four-platform merge-tag workflow, Trusted Publishing/provenance verification, fresh public consumers, and exact workspace integration.
 
 Review note, 2026-08-29: Issue #242 is that dedicated 0.1.3 patch release. It changes only package identity and four live CLI-version fixtures, keeps the sole lock, dependencies, runtime, strict exports, workflows, and setup unchanged, and must prove pre-mutation npm/tag absence plus local package/prepush/audit/Docpact gates. After merge it must prove `cli-v0.1.3`, native pnpm Trusted Publishing/provenance, registry integrity, fresh credential-free bin/ESM/CJS/TypeScript consumers for `./batch` and `./auth-identity-receipt`, and exact release-merge workspace integration. Local publication and manual tag creation remain forbidden.
+
+Review note, 2026-08-31: Issue #247 is a release-blocking runtime prerequisite discovered by the 0.1.4 full gate. It fixes only concurrent state-lock metadata disappearance, keeps package version 0.1.3, dependencies, lock bytes, exports, and workflows unchanged, and must merge with exact 100% proof before Issue #246 rebases and resumes the normal 0.1.4 release path.
+
+Review note, 2026-08-31: Issue #246 is the dedicated 0.1.4 patch release for merged OAuth Issue #244. It changes only package identity and four live CLI-version fixtures, keeps the sole lock, dependencies, runtime, strict exports, workflows, and setup unchanged, and must prove pre-mutation npm/tag absence plus local package/prepush/audit/Docpact gates. After merge it must prove `cli-v0.1.4`, native pnpm Trusted Publishing/provenance, registry integrity, fresh credential-free bin/ESM/CJS/TypeScript consumers including OAuth help/status, the immutable Skills 0.1.4 pin, and exact release-merge workspace integration. Local publication and manual tag creation remain forbidden.
+
+Review note, 2026-08-31: Issue #250 records the 0.1.4 attempt as failed before tag creation because Windows coverage was 95,430/95,434 lines even though all tests passed; npm 0.1.4 and `cli-v0.1.4` remain absent. The coverage repair itself keeps package version 0.1.4 and does not tag. After it merges, use a new version-only release so the normal push detector, four-platform matrix, tag, Trusted Publishing, provenance, consumer, Skills, and workspace gates bind one new merge commit; do not manually create or backfill the failed tag.
+
+Review note, 2026-08-31: Issue #252 is that new version-only release, advancing 0.1.4 to 0.1.5 after coverage merge `ca15e0ed17e82c6ef169614fe86ee6efbbd284ef`. It must prove 0.1.4 remains absent, 0.1.5/tag are absent pre-mutation, local exact 100%, and all four remote platforms before the normal workflow creates `cli-v0.1.5`. Then verify Trusted Publishing/provenance, registry integrity, fresh OAuth consumers, Skills 0.1.5, and workspace integration. Manual tag/local publish/backfill remain forbidden.
 
 Review note, 2026-07-14: Issue #165 adds the guarded `dataset maintenance rebuild-derivatives` command profile but does not change the release procedure. Its command, contract, remote-adapter, asynchronous verification, and no-fallback tests must pass the existing pre-push/docpact gate before a later version-bump PR; the feature PR itself must not publish locally or alter package version metadata.
 

@@ -54,7 +54,11 @@ test('requireSupabaseRestRuntime reads the shared CLI env contract', () => {
     } as NodeJS.ProcessEnv),
     {
       apiBaseUrl: 'https://example.supabase.co/functions/v1',
+      authMode: 'legacy_user_api_key',
       userApiKey: 'secret-token',
+      oauthClientId: null,
+      oauthRedirectUri: null,
+      accessToken: null,
       publishableKey: 'sb-publishable-key',
       sessionFile: null,
       disableSessionCache: false,
@@ -72,7 +76,7 @@ test('requireSupabaseRestRuntime rejects missing env keys', () => {
       assert.deepEqual(error.details, {
         missing: [
           'TIANGONG_LCA_API_BASE_URL',
-          'TIANGONG_LCA_API_KEY',
+          'TIANGONG_LCA_OAUTH_CLIENT_ID or TIANGONG_LCA_ACCESS_TOKEN or TIANGONG_LCA_API_KEY',
           'TIANGONG_LCA_SUPABASE_PUBLISHABLE_KEY',
         ],
       });

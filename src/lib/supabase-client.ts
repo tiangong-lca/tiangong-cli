@@ -1,11 +1,19 @@
 import { createClient, type PostgrestError } from '@supabase/supabase-js';
 import { CliError } from './errors.js';
 import type { FetchLike, ResponseLike } from './http.js';
+import { DEFAULT_OAUTH_REDIRECT_URI, requireOAuthLoopbackRedirectUri } from './oauth-loopback.js';
+import { requireOAuthClientId } from './oauth-pkce.js';
 import { isDataApiAuthRefreshReplaySafe } from './supabase-data-api-replay.js';
+
+export type SupabaseAuthMode = 'oauth' | 'access_token' | 'legacy_user_api_key';
 
 export type SupabaseRestRuntime = {
   apiBaseUrl: string;
-  userApiKey: string;
+  authMode: SupabaseAuthMode;
+  userApiKey: string | null;
+  oauthClientId: string | null;
+  oauthRedirectUri: string | null;
+  accessToken: string | null;
   publishableKey: string;
   sessionFile: string | null;
   disableSessionCache: boolean;
@@ -39,21 +47,61 @@ function parseBooleanEnv(value: unknown): boolean {
   }
 }
 
+function resolveSupabaseAuthMode(options: {
+  configuredMode: string;
+  oauthClientId: string;
+  accessToken: string;
+  userApiKey: string;
+}): SupabaseAuthMode | null {
+  const configuredMode = options.configuredMode.trim().toLowerCase();
+  if (configuredMode) {
+    switch (configuredMode) {
+      case 'oauth':
+        return 'oauth';
+      case 'access-token':
+        return 'access_token';
+      case 'legacy-user-api-key':
+        return 'legacy_user_api_key';
+      default:
+        throw new CliError(
+          'TIANGONG_LCA_AUTH_MODE must be oauth, access-token, or legacy-user-api-key.',
+          { code: 'SUPABASE_AUTH_MODE_INVALID', exitCode: 2 },
+        );
+    }
+  }
+
+  if (options.accessToken) return 'access_token';
+  if (options.oauthClientId) return 'oauth';
+  if (options.userApiKey) return 'legacy_user_api_key';
+  return null;
+}
+
 export function requireSupabaseRestRuntime(env: NodeJS.ProcessEnv): SupabaseRestRuntime {
   const apiBaseUrl = trimToken(env.TIANGONG_LCA_API_BASE_URL);
   const userApiKey = trimToken(env.TIANGONG_LCA_API_KEY);
+  const oauthClientId = trimToken(env.TIANGONG_LCA_OAUTH_CLIENT_ID);
+  const accessToken = trimToken(env.TIANGONG_LCA_ACCESS_TOKEN);
+  const configuredAuthMode = trimToken(env.TIANGONG_LCA_AUTH_MODE);
   const publishableKey = trimToken(env.TIANGONG_LCA_SUPABASE_PUBLISHABLE_KEY);
   const sessionFile = trimToken(env.TIANGONG_LCA_SESSION_FILE) || null;
   const disableSessionCache = parseBooleanEnv(env.TIANGONG_LCA_DISABLE_SESSION_CACHE);
   const forceReauth = parseBooleanEnv(env.TIANGONG_LCA_FORCE_REAUTH);
   const missing: string[] = [];
+  const authMode = resolveSupabaseAuthMode({
+    configuredMode: configuredAuthMode,
+    oauthClientId,
+    accessToken,
+    userApiKey,
+  });
 
   if (!apiBaseUrl) {
     missing.push('TIANGONG_LCA_API_BASE_URL');
   }
 
-  if (!userApiKey) {
-    missing.push('TIANGONG_LCA_API_KEY');
+  if (!authMode) {
+    missing.push(
+      'TIANGONG_LCA_OAUTH_CLIENT_ID or TIANGONG_LCA_ACCESS_TOKEN or TIANGONG_LCA_API_KEY',
+    );
   }
 
   if (!publishableKey) {
@@ -67,10 +115,43 @@ export function requireSupabaseRestRuntime(env: NodeJS.ProcessEnv): SupabaseRest
       details: { missing },
     });
   }
+  const resolvedAuthMode = authMode as SupabaseAuthMode;
+
+  if (resolvedAuthMode === 'oauth' && !oauthClientId) {
+    throw new CliError('OAuth auth mode requires TIANGONG_LCA_OAUTH_CLIENT_ID.', {
+      code: 'SUPABASE_OAUTH_CLIENT_ID_REQUIRED',
+      exitCode: 2,
+    });
+  }
+  if (resolvedAuthMode === 'access_token' && !accessToken) {
+    throw new CliError('Access-token auth mode requires TIANGONG_LCA_ACCESS_TOKEN.', {
+      code: 'SUPABASE_ACCESS_TOKEN_REQUIRED',
+      exitCode: 2,
+    });
+  }
+  if (resolvedAuthMode === 'legacy_user_api_key' && !userApiKey) {
+    throw new CliError('Legacy auth mode requires TIANGONG_LCA_API_KEY.', {
+      code: 'SUPABASE_LEGACY_API_KEY_REQUIRED',
+      exitCode: 2,
+    });
+  }
+
+  const normalizedOAuthClientId =
+    resolvedAuthMode === 'oauth' ? requireOAuthClientId(oauthClientId) : null;
+  const normalizedOAuthRedirectUri =
+    resolvedAuthMode === 'oauth'
+      ? requireOAuthLoopbackRedirectUri(
+          trimToken(env.TIANGONG_LCA_OAUTH_REDIRECT_URI) || DEFAULT_OAUTH_REDIRECT_URI,
+        ).redirectUri
+      : null;
 
   return {
     apiBaseUrl,
-    userApiKey,
+    authMode: resolvedAuthMode,
+    userApiKey: resolvedAuthMode === 'legacy_user_api_key' ? userApiKey : null,
+    oauthClientId: normalizedOAuthClientId,
+    oauthRedirectUri: normalizedOAuthRedirectUri,
+    accessToken: resolvedAuthMode === 'access_token' ? accessToken : null,
     publishableKey,
     sessionFile,
     disableSessionCache,
@@ -422,5 +503,6 @@ export function createSupabaseDataClient(
 export const __testInternals = {
   postgrestInvalidJsonDetails,
   parseBooleanEnv,
+  resolveSupabaseAuthMode,
   trimToken,
 };

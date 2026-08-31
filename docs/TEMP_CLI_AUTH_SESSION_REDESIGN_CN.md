@@ -15,9 +15,9 @@ checkPaths:
   - src/lib/user-api-key.ts
   - src/lib/supabase-session.ts
   - src/lib/supabase-client.ts
-lastReviewedAt: 2026-08-20
-lastReviewedCommit: 0b0518fb2b35446ebdeab72ca6de634677ae72b8
-lastReviewedNote: 'Reviewed for Issue #214: search request and derivative proof field cleanup does not alter CLI auth-session ownership.'
+lastReviewedAt: 2026-08-31
+lastReviewedCommit: ff028627c4672f7274c96fa8271d425464b15f54
+lastReviewedNote: 'Reviewed for Issue #244: this API-key bootstrap RFC is now explicitly superseded by the active OAuth 2.1 PKCE/session contract; retained only as historical migration context.'
 related:
   - ../AGENTS.md
   - ../.docpact/config.yaml
@@ -26,6 +26,8 @@ related:
 ---
 
 # CLI 认证与 Session 临时改造方案
+
+> 历史状态（2026-08-31）：Issue #244 已用 Supabase OAuth 2.1 Authorization Code + S256 PKCE、固定 loopback、私有 schema-v2 refresh session 与显式 headless access token 取代本文的 active API-key bootstrap 方案。下文只用于解释旧 `TIANGONG_LCA_API_KEY -> signInWithPassword -> session` 迁移背景；不得再作为新调用方或生产配置指南。当前合同以 `AGENTS.md`、`README.md`、`DEV_CN.md` 和 `docs/agents/repo-architecture.md` 为准。
 
 更新时间：2026-04-06
 

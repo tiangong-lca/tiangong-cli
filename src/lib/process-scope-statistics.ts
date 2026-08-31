@@ -20,7 +20,7 @@ import {
   resolveDataApiCapability,
 } from './supabase-data-api-contract.js';
 import { resolveSupabaseUserSession } from './supabase-session.js';
-import { redactEmail, requireUserApiKeyCredentials } from './user-api-key.js';
+import { redactEmail } from './user-api-key.js';
 
 type JsonRecord = Record<string, unknown>;
 
@@ -1103,7 +1103,12 @@ export async function runProcessScopeStatistics(
     const env = options.env ?? process.env;
     const fetchImpl = options.fetchImpl ?? (fetch as FetchLike);
     const restRuntime = requireSupabaseRestRuntime(env);
-    const userApiKeyCredentials = requireUserApiKeyCredentials(restRuntime.userApiKey);
+    const session = await resolveSupabaseUserSession({
+      runtime: restRuntime,
+      fetchImpl,
+      timeoutMs,
+      now: options.now ?? new Date(),
+    });
     const userId =
       scope === 'current-user'
         ? await resolveCurrentUserId({
@@ -1127,7 +1132,7 @@ export async function runProcessScopeStatistics(
     rows = snapshot.rows;
     metadata = {
       userId,
-      maskedUserEmail: redactEmail(userApiKeyCredentials.email),
+      maskedUserEmail: redactEmail(session.userEmail),
       totalRowsReportedByRemote: snapshot.total ?? rows.length,
     };
 

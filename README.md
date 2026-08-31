@@ -13,6 +13,7 @@ whenToUpdate:
   - when user-facing command examples change
 checkPaths:
   - README.md
+  - .env.example
   - package.json
   - pnpm-workspace.yaml
   - pnpm-lock.yaml
@@ -23,19 +24,22 @@ checkPaths:
   - src/batch.ts
   - src/command-spec.ts
   - src/lib/auth-identity-receipt.ts
+  - src/lib/oauth-loopback.ts
+  - src/lib/oauth-pkce.ts
+  - src/lib/supabase-session.ts
   - src/lib/lca-release.ts
   - scripts/run-auth-identity-production-case.ts
   - test/auth-identity*.test.ts
   - test/public-auth-identity-receipt.test.ts
   - test/lca-release*.test.ts
-lastReviewedAt: 2026-08-29
-lastReviewedCommit: f460f0567faac6e89e53d259fbd29d1dfccd058d
-lastReviewedNote: 'Reviewed for Issue #242: identifies 0.1.3 as the release-only package identity for the public auth receipt parser while runtime, exports, dependencies, and release behavior stay fixed.'
+lastReviewedAt: 2026-08-31
+lastReviewedCommit: 352c11c5ffafaea1bf94133be92f3337b847866a
+lastReviewedNote: 'Reviewed for Issue #252: identifies 0.1.5 as the replacement OAuth release after unpublished 0.1.4, preserving exports, dependencies, and release behavior.'
 ---
 
 # TianGong LCA CLI
 
-Package: `@tiangong-lca/cli` Executable: `tiangong-lca` Current package version: `0.1.3` Node: `24.19.0`
+Package: `@tiangong-lca/cli` Executable: `tiangong-lca` Current package version: `0.1.5` Node: `24.19.0`
 
 Repository development is single-track on pnpm `11.24.0` and TypeScript `7.0.2`. The published package remains a clean, package-manager-neutral consumer artifact: it contains runtime files only, not pnpm, TypeScript, Oxlint, tests, source-only tooling, or repository lockfiles.
 
@@ -58,6 +62,14 @@ Review note, 2026-08-26: Issue #237 releases the already reviewed bounded Comman
 Review note, 2026-08-29: Issue #240 adds the typed `@tiangong-lca/cli/auth-identity-receipt` public parser entry without changing package version 0.1.2 or auth behavior. It directly re-exports the existing strict parser, schema/timeout constants, and receipt types; the remote runner and test internals stay private, and the previous `dist/src/lib/**` deep path remains blocked.
 
 Review note, 2026-08-29: Issue #242 releases that public parser as `@tiangong-lca/cli@0.1.3`. Only package identity and four existing exact-version fixtures change; `./batch`, `./command-spec`, `./auth-identity-receipt`, the executable, dependencies, pnpm lock, Node 24.19.0 / TypeScript 7.0.2 toolchain, and package-manager-neutral consumer contract are otherwise unchanged.
+
+Review note, 2026-08-31: Issue #244 adds Supabase OAuth 2.1 Authorization Code + S256 PKCE without adding a dependency or changing package version/exports. `auth login` uses a registered public client, exact literal-`127.0.0.1` callback, state validation, and shell-free system browser; it atomically stores rotating access/refresh tokens in a private session file. `auth status` performs no network request and reveals no credential or session path; `auth whoami` and `auth doctor-auth` use the live redacted identity receipt. `auth logout` deletes only that matching local session; Connected applications owns grant revocation. `TIANGONG_LCA_ACCESS_TOKEN` is a short-lived, online-verified, memory-only headless option. The reversible API key remains only as a transition fallback and is never used by OAuth mode.
+
+Review note, 2026-08-31: Issue #247 prevents a second CLI process from failing when the first process removes `session.json.lock` between contention and metadata read. Only an absent lock is treated as released; permission, I/O, malformed-owner, timeout, and stale-owner safety behavior is unchanged.
+
+Review note, 2026-08-31: Issue #246 releases that OAuth runtime as `@tiangong-lca/cli@0.1.4`. Only package identity and four existing exact-version fixtures change; the executable and public subpaths, dependencies, pnpm lock, Node 24.19.0 / TypeScript 7.0.2 toolchain, auth behavior, and package-manager-neutral consumer contract are otherwise unchanged.
+
+Review note, 2026-08-31: Issue #252 replaces the stopped-unpublished 0.1.4 attempt with `@tiangong-lca/cli@0.1.5` after platform-complete session coverage merged. Only package identity, four version fixtures, and release evidence change; executable/public subpaths, OAuth behavior, dependencies, pnpm lock, Node/TypeScript toolchain, and consumer contract stay unchanged.
 
 Review note, 2026-07-12: `dataset maintenance plan/apply/verify` provides current-user RLS-scoped exact-row maintenance with immutable plans, explicit approval, per-action logs, platform audit correlation, and independent readback. `merge-support-aliases` now runs only in `target_mode=owner_draft`: source/target support and all changed rows stay private `state_code=0`; publication is a separate future workflow.
 
@@ -127,24 +139,44 @@ Remote commands require:
 
 ```bash
 TIANGONG_LCA_API_BASE_URL=
-TIANGONG_LCA_API_KEY=
 TIANGONG_LCA_SUPABASE_PUBLISHABLE_KEY=
+TIANGONG_LCA_OAUTH_CLIENT_ID=
 TIANGONG_LCA_REGION=us-east-1
 ```
 
 Notes:
 
 - `TIANGONG_LCA_API_BASE_URL` accepts the project root, `/functions/v1`, or `/rest/v1`.
-- `TIANGONG_LCA_API_KEY` is the TianGong user API key from the account page, not a Supabase project key.
-- The CLI exchanges `TIANGONG_LCA_API_KEY` for a user session, then reuses the access token for both Edge Functions and direct Supabase access.
+- `TIANGONG_LCA_OAUTH_CLIENT_ID` is the environment-specific registered public CLI client; it is not a secret.
+- Run `tiangong-lca auth login` once in a trusted terminal. All Edge Function and direct Supabase commands then reuse the OAuth access token and rotate the refresh token on demand.
+- For approved headless execution, set `TIANGONG_LCA_AUTH_MODE=access-token` and inject one short-lived `TIANGONG_LCA_ACCESS_TOKEN`. It is verified online, kept only in process memory, and never refreshed.
+- Transition-only compatibility uses `TIANGONG_LCA_AUTH_MODE=legacy-user-api-key` plus `TIANGONG_LCA_API_KEY`. OAuth failures never fall back to this password-equivalent credential.
 
 Optional session control:
 
 ```bash
+TIANGONG_LCA_AUTH_MODE=oauth
+TIANGONG_LCA_OAUTH_REDIRECT_URI=http://127.0.0.1:49191/oauth/callback
 TIANGONG_LCA_SESSION_FILE=
 TIANGONG_LCA_DISABLE_SESSION_CACHE=false
 TIANGONG_LCA_FORCE_REAUTH=false
 ```
+
+## OAuth Session Commands
+
+```text
+tiangong-lca auth login
+tiangong-lca auth status --json
+tiangong-lca auth whoami --json
+tiangong-lca auth doctor-auth --json
+tiangong-lca auth logout
+```
+
+The callback URI must exactly match the URI registered with the selected Supabase OAuth client. The default is `http://127.0.0.1:49191/oauth/callback`; OAuth client redirect URIs do not support wildcards. Login never accepts a username, password, authorization code, access token, refresh token, or PKCE verifier through argv. On POSIX, the app directory is `0700` and `session.json` is `0600`; writes and refresh-token rotation use a temporary file, atomic rename, and the existing cross-process state lock. Windows callers must keep the selected parent ACL current-user-only because chmod bits are not an ACL.
+
+`auth status` is intentionally local-only and non-mutating. It reports whether a matching session can be used or refreshed, but sets `onlineVerified: false`; it never prints email, tokens, a session path, or a credential fingerprint. `auth whoami` performs the live redacted identity receipt. `auth doctor-auth` first checks local readiness, then performs that live check; a missing OAuth session returns `login-required` so a human can run `auth login`. An AI agent must never ask for or handle the user's password, authorization code, access token, or refresh token.
+
+Local logout does not revoke the server grant. To invalidate every refresh token for the CLI client, open Account → Connected applications and disconnect TianGong CLI.
 
 ## Auth Identity Receipt
 
@@ -154,7 +186,7 @@ Use the identity receipt before a production-backed case or any later owner-draf
 tiangong-lca auth identity-receipt --expected-project-ref <project-ref> --expected-user-id <user-id> --json
 ```
 
-The command performs no dataset write. It exchanges the normal user API key for a session, checks the canonical Supabase project, and makes a bounded live `GET /auth/v1/user`. A cached token that receives `401` or `403` may be refreshed and retried exactly once; all other transport or response failures are terminal. A valid production guard requires:
+The command performs no dataset write. It resolves the selected OAuth, explicit headless, or transition-only legacy session, checks the canonical Supabase project, and makes a bounded live `GET /auth/v1/user`. A refreshable cached token that receives `401` or `403` may be refreshed and retried exactly once; an explicit headless access token is never refreshed. All other transport or response failures are terminal. A valid production guard requires:
 
 - `schema` exactly `tiangong-lca.auth-identity-receipt.v1`;
 - `status: "passed"`, `operation: "current-user-read"`, and `remote_write_mode: "read-only"`;
@@ -169,7 +201,7 @@ For the explicitly authorized local production read case from a validated reposi
 pnpm case:auth-identity:production -- --env-file <data-foundry-ignored-.env> --expected-project-ref <project-ref> --expected-user-id <user-id> --out-dir <new-private-case-directory>
 ```
 
-The runner reads only `TIANGONG_LCA_API_BASE_URL`, `TIANGONG_LCA_SUPABASE_PUBLISHABLE_KEY`, and `TIANGONG_LCA_TEST_API_KEY`; the last is mapped to the child process's standard API-key variable. It does not accept an alternate CLI path. The pnpm command first performs a clean TS7 build without the production env. Its plain-Node runner then single-reads source/config/lock and the freshly generated `dist/src/**/*.js`, hashes the source tree, runner, runtime, exact entrypoint, and pnpm lock, and copies those exact built buffers into a private snapshot before exposing the key. It forces reauthentication with session cache disabled, runs only the built snapshot from an exclusively created clean directory with an argv array and `shell:false`, cleans the snapshot before publishing success artifacts, and persists only the parsed receipt and case manifest. POSIX creates the case directory as `0700` and files as `0600`; Windows inherits ACLs from the caller-selected parent, so use a user-restricted parent because mode bits are not an ACL guarantee. The runner never stores raw child stdout/stderr and is intentionally not wired to CI secrets. This receipt is locally hash-verifiable, not server-signed attestation.
+The historical production-case runner remains a transition-only legacy fixture: it reads only `TIANGONG_LCA_API_BASE_URL`, `TIANGONG_LCA_SUPABASE_PUBLISHABLE_KEY`, and `TIANGONG_LCA_TEST_API_KEY`; the last is mapped to the child process's explicit legacy variable. It does not accept an alternate CLI path. The pnpm command first performs a clean TS7 build without the production env. Its plain-Node runner then single-reads source/config/lock and the freshly generated `dist/src/**/*.js`, hashes the source tree, runner, runtime, exact entrypoint, and pnpm lock, and copies those exact built buffers into a private snapshot before exposing the key. It forces reauthentication with session cache disabled, runs only the built snapshot from an exclusively created clean directory with an argv array and `shell:false`, cleans the snapshot before publishing success artifacts, and persists only the parsed receipt and case manifest. POSIX creates the case directory as `0700` and files as `0600`; Windows inherits ACLs from the caller-selected parent, so use a user-restricted parent because mode bits are not an ACL guarantee. The runner never stores raw child stdout/stderr and is intentionally not wired to CI secrets. New automation should use OAuth/headless mode instead. This receipt is locally hash-verifiable, not server-signed attestation.
 
 ## LCI/LCIA Data Release
 
@@ -235,7 +267,7 @@ tiangong-lca release status --release-run-id <release-run-id> --json
 }
 ```
 
-The CLI verifies every local upload against its declared byte size, SHA-256, media type, and required pair before requesting signed URLs. Upload receipts and downloads are written atomically with private file permissions. Existing outputs are preserved unless `--force` is explicit. The publish credential fingerprint is derived locally from `TIANGONG_LCA_API_KEY`; callers cannot inject it through the request file.
+The CLI verifies every local upload against its declared byte size, SHA-256, media type, and required pair before requesting signed URLs. Upload receipts and downloads are written atomically with private file permissions. Existing outputs are preserved unless `--force` is explicit. Release requests use the resolved actor access token and `client_id`-aware database policy; no credential-derived fingerprint is accepted from local state or the request file.
 
 Calculation results and published artifacts remain file-first:
 
@@ -325,7 +357,7 @@ Key outputs under `--out-dir`:
 - `outputs/identity-candidates.jsonl`
 - `outputs/identity-candidate-sources.json`
 
-`--candidate-input` is repeatable and accepts JSON, JSONL, or a directory scanned recursively for JSON/JSONL candidate rows. Embedded `candidates` from the request and local-scan candidates are evaluated together. Add `--remote-candidates` when the preflight should also call `process_hybrid_search` or `flow_hybrid_search`; `--remote-query` overrides the target-derived search text and `--remote-limit` caps returned candidate rows. Remote candidate search uses the normal Supabase session env: `TIANGONG_LCA_API_BASE_URL`, `TIANGONG_LCA_API_KEY`, `TIANGONG_LCA_SUPABASE_PUBLISHABLE_KEY`, and optional `TIANGONG_LCA_REGION`.
+`--candidate-input` is repeatable and accepts JSON, JSONL, or a directory scanned recursively for JSON/JSONL candidate rows. Embedded `candidates` from the request and local-scan candidates are evaluated together. Add `--remote-candidates` when the preflight should also call `process_hybrid_search` or `flow_hybrid_search`; `--remote-query` overrides the target-derived search text and `--remote-limit` caps returned candidate rows. Remote candidate search uses the normal OAuth session env above and optional `TIANGONG_LCA_REGION`.
 
 When remote search is enabled, the CLI sends a compact fielded `query` string plus supported edge-search options to `process_hybrid_search` or `flow_hybrid_search`: `filter`, `match_count`, `page_size`, `data_source`, `match_threshold`, `lexical_weight`, `semantic_weight`, and `rrf_k`. `lexical_weight` controls the single database-owned `extracted_md` lexical branch. Request-level `remote_candidate_search.profile_hints` are not sent to the Edge Function. They are applied locally before scoring candidates so Foundry can provide source-derived facts such as flow type, flow property, reference unit, elementary categories, geography, reference-flow names, technology route, and system boundary without polluting the full-text/semantic query.
 

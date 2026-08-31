@@ -39,8 +39,13 @@ layout: repo
 # Review note, 2026-08-26: Issue #237 is the dedicated 0.1.2 release-only delivery for the bounded public batch/CommandSpec surface on pnpm 11.24.0. It changes package version metadata and four live CLI-version fixtures only; existing package, test, release, and governed-doc rules cover the change, while ownership, routing, lock bytes, dependencies, runtime, exports, tag automation, Trusted Publishing, provenance, and workspace integration remain unchanged.
 # Review note, 2026-08-29: Issue #240 adds a bounded public auth identity-receipt parser subpath after CLI 0.1.2 closed deep imports. The wrapper directly re-exports the existing semantic owner and is covered by public-library, remote-session, packed-consumer, declaration, validation, and release routes without exposing the remote runner or test internals.
 # Review note, 2026-08-29: Issue #242 is the dedicated 0.1.3 release-only delivery for that public parser. It changes package identity and four existing exact-version fixtures only; current package, test, release, and governed-doc rules cover the change while ownership, routing, lock bytes, dependencies, runtime, exports, tag automation, Trusted Publishing, provenance, and workspace integration remain unchanged.
-lastReviewedAt: "2026-08-31"
-lastReviewedCommit: "bcdb7c5522a7fda92e16115ac08ef1a2d3def67d"
+# Review note, 2026-08-31: Issue #244 adds internal OAuth PKCE/loopback helpers, login/status/whoami/doctor-auth/logout command dispatch, schema-v2 session rotation, and explicit headless access-token support inside the existing command-surface and remote-session ownership. The remote-session intent/rule names both OAuth modules explicitly; no dependency, public library export, package version, tag, or publication route changes.
+# Review note, 2026-08-31: Issue #247 removes the state-lock metadata existence/read TOCTOU exposed by the OAuth 0.1.4 release gate. Existing command-family, state-lock, test, release, and governed-doc rules already cover the narrow ENOENT-as-released behavior; ownership, routing, dependencies, exports, package version, and publication mechanics do not change.
+# Review note, 2026-08-31: Issue #246 is the dedicated 0.1.4 release-only delivery for merged OAuth Issue #244. It changes package identity and four existing exact-version fixtures only; current package, test, release, and governed-doc rules cover the change while ownership, routing, lock bytes, dependencies, runtime, exports, tag automation, Trusted Publishing, provenance, and workspace integration remain unchanged.
+# Review note, 2026-08-31: Issue #250 makes two internal session-cache helpers accept a test-only optional platform while keeping `process.platform` as the runtime default. Existing remote-session, validation, release, and governed-doc routes own the four-platform coverage repair; no public API, auth, dependency, lock, tag, or ownership boundary changes.
+# Review note, 2026-08-31: Issue #252 is the replacement 0.1.5 release after failed-unpublished 0.1.4 and merged Windows coverage #250. It changes package identity and four existing version fixtures only; current release/test/doc routes own the change and no runtime, dependency, export, lock, workflow, or ownership rule changes.
+lastReviewedAt: '2026-08-31'
+lastReviewedCommit: '352c11c5ffafaea1bf94133be92f3337b847866a'
 
 catalog:
   repos:
@@ -113,12 +118,15 @@ ownership:
     - id: remote-session-and-adapters
       paths:
         include:
+          - .env.example
           - src/lib/auth-identity-receipt.ts
           - src/lib/dotenv.ts
           - src/lib/env.ts
           - src/lib/http.ts
           - src/lib/kb-search.ts
           - src/lib/llm.ts
+          - src/lib/oauth-loopback.ts
+          - src/lib/oauth-pkce.ts
           - src/lib/remote.ts
           - src/lib/supabase-client.ts
           - src/lib/supabase-data-api-contract.ts
@@ -174,6 +182,7 @@ coverage:
     - docs/release-runbook.md
     - docs/release-setup.md
     - .gitignore
+    - .env.example
     - package.json
     - pnpm-workspace.yaml
     - pnpm-lock.yaml
@@ -220,6 +229,7 @@ routing:
         - README.md
     remote-session:
       paths:
+        - .env.example
         - src/auth-identity-receipt.ts
         - src/lib/auth-identity-receipt.ts
         - src/lib/dotenv.ts
@@ -227,6 +237,8 @@ routing:
         - src/lib/http.ts
         - src/lib/kb-search.ts
         - src/lib/llm.ts
+        - src/lib/oauth-loopback.ts
+        - src/lib/oauth-pkce.ts
         - src/lib/remote.ts
         - src/lib/supabase-client.ts
         - src/lib/supabase-data-api-contract.ts
@@ -550,6 +562,8 @@ rules:
     scope: repo
     repo: cli
     triggers:
+      - path: .env.example
+        kind: env-template
       - path: src/auth-identity-receipt.ts
         kind: auth-public-parser
       - path: src/lib/auth-identity-receipt.ts
@@ -564,6 +578,10 @@ rules:
         kind: remote-adapter
       - path: src/lib/llm.ts
         kind: remote-adapter
+      - path: src/lib/oauth-loopback.ts
+        kind: oauth-loopback-runtime
+      - path: src/lib/oauth-pkce.ts
+        kind: oauth-protocol-runtime
       - path: src/lib/remote.ts
         kind: remote-adapter
       - path: src/lib/supabase-client.ts

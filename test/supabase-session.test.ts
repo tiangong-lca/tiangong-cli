@@ -31,12 +31,14 @@ const mutableOs = require('node:os') as typeof import('node:os');
 
 function clearSessionState(): void {
   __testInternals.SESSION_MEMORY_CACHE.clear();
+  __testInternals.ACCESS_TOKEN_MEMORY_CACHE.clear();
   __testInternals.SESSION_OPERATION_CHAINS.clear();
 }
 
 function makeRuntime(overrides: Partial<SupabaseRestRuntime> = {}): SupabaseRestRuntime {
-  return {
+  const runtime: SupabaseRestRuntime = {
     apiBaseUrl: 'https://example.supabase.co/functions/v1',
+    authMode: 'legacy_user_api_key',
     userApiKey: Buffer.from(
       JSON.stringify({
         email: 'user@example.com',
@@ -44,12 +46,15 @@ function makeRuntime(overrides: Partial<SupabaseRestRuntime> = {}): SupabaseRest
       }),
       'utf8',
     ).toString('base64'),
+    oauthClientId: null,
+    oauthRedirectUri: null,
+    accessToken: null,
     publishableKey: 'sb-publishable-key',
     sessionFile: null,
     disableSessionCache: false,
     forceReauth: false,
-    ...overrides,
   };
+  return { ...runtime, ...overrides } as SupabaseRestRuntime;
 }
 
 function makeJsonResponse(
@@ -187,6 +192,7 @@ test('path resolution helpers cover xdg, home, platform fallbacks, and explicit 
     ),
     null,
   );
+  assert.equal(typeof __testInternals.resolveSessionFilePath(makeRuntime()), 'string');
 });
 
 test('resolveSessionFilePath falls back to cwd session file on Windows when env paths are unavailable', () => {
@@ -283,6 +289,7 @@ test('session record helpers parse, persist, fingerprint, and clean up memoized 
       ),
       null,
     );
+    assert.equal(typeof __testInternals.resolveSessionFilePath(makeRuntime()), 'string');
 
     const record = __testInternals.buildCachedSessionRecord({
       runtime: identity,
@@ -292,7 +299,10 @@ test('session record helpers parse, persist, fingerprint, and clean up memoized 
     });
     assert.equal(record.supabase_url, 'https://example.supabase.co');
     assert.equal(record.publishable_key_fingerprint, fingerprintSecret(runtime.publishableKey));
-    assert.equal(record.user_api_key_fingerprint, fingerprintUserApiKey(runtime.userApiKey));
+    assert.equal(
+      record.auth_binding_fingerprint,
+      fingerprintUserApiKey(runtime.userApiKey as string),
+    );
     assert.equal(__testInternals.isSessionFresh(record, now), true);
     assert.equal(
       __testInternals.isSessionFresh(
@@ -309,7 +319,7 @@ test('session record helpers parse, persist, fingerprint, and clean up memoized 
       __testInternals.recordMatchesRuntime(
         {
           ...record,
-          user_api_key_fingerprint: 'sha256:other',
+          auth_binding_fingerprint: 'sha256:other',
         },
         identity,
       ),
@@ -338,6 +348,7 @@ test('session record helpers parse, persist, fingerprint, and clean up memoized 
     writeFileSync(sessionFile, '{"broken"', 'utf8');
     assert.equal(__testInternals.readCachedSessionRecord(sessionFile), null);
     assert.equal(__testInternals.parseCachedSessionRecord(null), null);
+    assert.equal(__testInternals.parseCachedSessionRecord({ schema_version: 3 }), null);
     assert.equal(__testInternals.parseCachedSessionRecord({ schema_version: 2 }), null);
     assert.equal(
       __testInternals.parseCachedSessionRecord({
@@ -372,6 +383,60 @@ test('session record helpers parse, persist, fingerprint, and clean up memoized 
     __testInternals.dropMemoizedRecord(identity);
     assert.equal(__testInternals.getMemoizedRecord(identity), null);
   } finally {
+    clearSessionState();
+    rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+test('session cache permission behavior is platform-injected on every host', () => {
+  clearSessionState();
+  const dir = mkdtempSync(path.join(os.tmpdir(), 'tg-cli-session-platform-permissions-'));
+  const linuxSessionFile = path.join(dir, 'linux', 'session.json');
+  const windowsSessionFile = path.join(dir, 'windows', 'session.json');
+  const runtime = makeRuntime({ sessionFile: linuxSessionFile });
+  const identity = __testInternals.buildRuntimeIdentity(runtime);
+  const record = __testInternals.buildCachedSessionRecord({
+    runtime: identity,
+    session: makeSession() as never,
+    userEmail: 'user@example.com',
+    now: new Date('2026-08-31T00:00:00.000Z'),
+  });
+  const originalStatSync = mutableFs.statSync;
+  const originalChmodSync = mutableFs.chmodSync;
+  const chmodModes: number[] = [];
+
+  try {
+    assert.equal(
+      Reflect.set(
+        mutableFs,
+        'statSync',
+        (() =>
+          ({
+            isFile: () => true,
+            mode: 0o100644,
+          }) as ReturnType<typeof mutableFs.statSync>) as typeof mutableFs.statSync,
+      ),
+      true,
+    );
+    mutableFs.chmodSync = ((_filePath, mode) => {
+      chmodModes.push(Number(mode));
+    }) as typeof mutableFs.chmodSync;
+    syncBuiltinESMExports();
+
+    assert.equal(
+      __testInternals.readCachedSessionRecord('/synthetic/public-session.json', 'linux'),
+      null,
+    );
+    __testInternals.writeCachedSessionRecord(linuxSessionFile, record, 'linux');
+    assert.deepEqual(chmodModes, [0o700, 0o600]);
+
+    chmodModes.length = 0;
+    __testInternals.writeCachedSessionRecord(windowsSessionFile, record, 'win32');
+    assert.deepEqual(chmodModes, [0o600]);
+  } finally {
+    assert.equal(Reflect.set(mutableFs, 'statSync', originalStatSync), true);
+    mutableFs.chmodSync = originalChmodSync;
+    syncBuiltinESMExports();
     clearSessionState();
     rmSync(dir, { recursive: true, force: true });
   }
@@ -452,7 +517,7 @@ test('resolveSupabaseUserSession signs in once, then serves cache and memory hit
       timeoutMs: 25,
       now: new Date('2026-04-06T00:00:00.000Z'),
     });
-    assert.equal(signedIn.source, 'signin');
+    assert.equal(signedIn.source, 'legacy_signin');
     assert.equal(counts.password, 1);
     assert.equal(existsSync(sessionFile), true);
 
@@ -533,7 +598,7 @@ test('resolveSupabaseUserSession refreshes stale sessions and falls back to sign
       now: new Date('2026-04-06T00:00:00.000Z'),
       forceRefresh: true,
     });
-    assert.equal(relogged.source, 'signin');
+    assert.equal(relogged.source, 'legacy_signin');
     assert.equal(relogged.accessToken, 'relogged-access-token');
     assert.equal(fallbackPlan.counts.refresh, 1);
     assert.equal(fallbackPlan.counts.password, 1);
@@ -558,7 +623,7 @@ test('resolveSupabaseUserSession supports memory-only mode, force reauth, and in
     timeoutMs: 25,
     now: new Date('2026-04-06T00:00:00.000Z'),
   });
-  assert.equal(first.source, 'signin');
+  assert.equal(first.source, 'legacy_signin');
   assert.equal(first.sessionFile, null);
 
   const second = await resolveSupabaseUserSession({

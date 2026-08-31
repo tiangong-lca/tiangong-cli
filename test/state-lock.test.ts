@@ -65,6 +65,30 @@ test('lockPathForState and readStateLockMetadata handle missing, empty, invalid,
   }
 });
 
+test('readStateLockMetadata treats a concurrently removed lock as absent and rethrows other read failures', () => {
+  const originalReadFileSync = mutableFs.readFileSync;
+  let readErrorCode = 'ENOENT';
+  mutableFs.readFileSync = (() => {
+    throw createErrnoError(readErrorCode, 'synthetic lock metadata read race');
+  }) as typeof mutableFs.readFileSync;
+  syncBuiltinESMExports();
+
+  try {
+    assert.equal(readStateLockMetadata('/synthetic/session.json.lock'), null);
+    readErrorCode = 'EACCES';
+    assert.throws(
+      () => readStateLockMetadata('/synthetic/session.json.lock'),
+      (error: unknown) => {
+        assert.equal((error as NodeJS.ErrnoException).code, 'EACCES');
+        return true;
+      },
+    );
+  } finally {
+    mutableFs.readFileSync = originalReadFileSync;
+    syncBuiltinESMExports();
+  }
+});
+
 test('isProcessAlive distinguishes current, missing, and invalid processes', () => {
   assert.equal(isProcessAlive(process.pid), true);
   assert.equal(isProcessAlive(999_999_999), false);

@@ -127,7 +127,7 @@ test('executeRemoteCommand validates required API config and unsupported command
             throw new Error('unreachable');
           },
         }),
-      /Missing Supabase REST runtime env: TIANGONG_LCA_API_KEY/u,
+      /Missing Supabase REST runtime env: TIANGONG_LCA_OAUTH_CLIENT_ID or TIANGONG_LCA_ACCESS_TOKEN or TIANGONG_LCA_API_KEY/u,
     );
 
     await assert.rejects(

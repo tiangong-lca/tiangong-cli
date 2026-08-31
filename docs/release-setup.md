@@ -25,8 +25,8 @@ checkPaths:
   - scripts/docpact-gate.sh
   - scripts/install-git-hooks.sh
 lastReviewedAt: 2026-08-31
-lastReviewedCommit: bcdb7c5522a7fda92e16115ac08ef1a2d3def67d
-lastReviewedNote: 'Reviewed for Issue #242: CLI 0.1.3 uses the unchanged pnpm 11.24 merge-tag and Trusted Publishing setup with no new secret, dependency, lock byte, workflow, credential, or publication path.'
+lastReviewedCommit: 352c11c5ffafaea1bf94133be92f3337b847866a
+lastReviewedNote: 'Reviewed for Issue #252: replacement CLI 0.1.5 reuses the unchanged merge-tag/Trusted Publishing setup with no new secret, workflow, credential, or publication path.'
 related:
   - ../AGENTS.md
   - ../.docpact/config.yaml
@@ -67,6 +67,14 @@ Review note, 2026-08-26: Issue #237 publishes 0.1.2 through the existing merge-t
 Review note, 2026-08-29: Issue #240 adds a public parser subpath and requires no new secret, environment, runner, dependency, lockfile, Trusted Publisher setting, workflow, tag rule, credential, or alternate publication path. Its later patch release uses the existing release-prep PR and merge-triggered Trusted Publishing setup.
 
 Review note, 2026-08-29: Issue #242 publishes 0.1.3 through that unchanged merge-triggered tag and native pnpm Trusted Publishing path. It adds no secret, environment, runner, dependency, lockfile change, Trusted Publisher setting, workflow filename, tag rule, service-role/test-account access, local credential, or alternate authentication/publication surface.
+
+Review note, 2026-08-31: Issue #247 changes only local state-lock read behavior and adds no secret, environment, runner, dependency, lockfile change, Trusted Publisher setting, workflow filename, tag rule, service-role/test-account access, local credential, OAuth credential, or alternate authentication/publication surface.
+
+Review note, 2026-08-31: Issue #246 publishes 0.1.4 through that unchanged merge-triggered tag and native pnpm Trusted Publishing path. It adds no secret, environment, runner, dependency, lockfile change, Trusted Publisher setting, workflow filename, tag rule, service-role/test-account access, local credential, OAuth credential, or alternate authentication/publication surface.
+
+Review note, 2026-08-31: Issue #250 adds test-only platform injection and no release setup. The stopped 0.1.4 run created neither tag nor package. A later version-only PR reuses the existing merge-triggered four-platform gate and native pnpm Trusted Publishing; no manual tag, local publish, new secret, runner, environment, workflow, or recovery credential is allowed.
+
+Review note, 2026-08-31: Issue #252 publishes replacement 0.1.5 through that existing merge-triggered four-platform/tag/native pnpm Trusted Publishing path. It adds no secret, environment, runner, dependency, lockfile, Trusted Publisher setting, workflow filename, tag rule, service/test credential, OAuth credential, or recovery surface.
 
 Current workflow files:
 

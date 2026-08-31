@@ -21,7 +21,6 @@ import {
   requireSupabaseRestRuntime,
 } from './supabase-client.js';
 import { resolveSupabaseUserSession } from './supabase-session.js';
-import { fingerprintUserApiKey } from './user-api-key.js';
 
 export const LCA_RELEASE_ACTIONS = [
   'prepare',
@@ -218,10 +217,10 @@ function commandAction(action: LcaReleaseAction): string {
   return result;
 }
 
-function buildCommandPayload(
-  options: RunLcaReleaseOptions,
-  userApiKey: string,
-): { body: JsonRecord; inputPath: string | null } {
+function buildCommandPayload(options: RunLcaReleaseOptions): {
+  body: JsonRecord;
+  inputPath: string | null;
+} {
   if (
     options.action === 'prepare' ||
     options.action === 'finalize' ||
@@ -233,7 +232,7 @@ function buildCommandPayload(
     const input = readObjectInput(options.inputPath);
     const body: JsonRecord = { ...input.value, action: commandAction(options.action) };
     if (options.action === 'publish') {
-      body.credentialFingerprint = fingerprintUserApiKey(userApiKey).replace(/^sha256:/u, '');
+      delete body.credentialFingerprint;
     }
     return { body, inputPath: input.inputPath };
   }
@@ -710,7 +709,7 @@ export async function runLcaRelease(options: RunLcaReleaseOptions): Promise<LcaR
   const url = edgeUrl(runtime.apiBaseUrl);
   if (options.action === 'upload') return runUpload(options, runtime, url);
 
-  const command = buildCommandPayload(options, runtime.userApiKey);
+  const command = buildCommandPayload(options);
   if (options.dryRun) {
     return {
       schemaVersion: 'tiangong.cli.lca-release.v1',

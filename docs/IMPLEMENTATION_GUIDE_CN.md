@@ -12,6 +12,7 @@ whenToUpdate:
   - when implemented command families, runtime design conclusions, or maintainer guidance change materially
 checkPaths:
   - docs/IMPLEMENTATION_GUIDE_CN.md
+  - .env.example
   - DEV_CN.md
   - README.md
   - package.json
@@ -21,8 +22,8 @@ checkPaths:
   - src/**
   - test/**
 lastReviewedAt: 2026-08-31
-lastReviewedCommit: bcdb7c5522a7fda92e16115ac08ef1a2d3def67d
-lastReviewedNote: 'Reviewed for Issue #236: 实现与验证工具链精确升级到 pnpm 11.24.0，保持 Node 24.19.0、TS 7.0.2、0.1.1 包版本、依赖、公开行为与发布边界。'
+lastReviewedCommit: 626987ace7c5008935f8641d0fce21712410c5c0
+lastReviewedNote: 'Reviewed for Issue #250: session cache helper 的可选 platform 只用于跨平台覆盖 POSIX/Windows 权限分支；生产默认、OAuth/session bytes 与发布边界不变。'
 related:
   - ../AGENTS.md
   - ../.docpact/config.yaml
@@ -42,6 +43,10 @@ Review note, 2026-08-25: Issue #230 把本地、engines 和所有 Node workflow 
 Review note, 2026-08-26: Issue #232 在不新增依赖、不改 0.1.1 版本的前提下增加 `@tiangong-lca/cli/command-spec` 与 `@tiangong-lca/cli/batch`。前者保持 Foundry v1 exact-key/canonical SHA/artifact bytes 与 `shell:false` 执行兼容，并在注入 spawn 同步抛错时清理外部 abort listener；后者在任何工作前完成全部 item identity/content/policy/resource projection，并在 resumed acceptance 与 fresh claim 前重投影 identity/content/policy/resource。identity 变化或 getter 抛错都稳定输出 `BatchItemIdentityDriftError` / `item_identity_drift` 且零执行，其他已启动 worker 必须 drain 后 batch 才返回。任一 worker 的 scheduler/event/stop 基础设施异常会同步设置 fatal/stop、禁止后续 claim；聚合器以 `allSettled` 排空已 claim worker，再抛首个记录错误。exclusive key 阻塞项保持 unclaimed、不占 worker，后续 free key 可先 claim，因此 claim order 反映真实资源调度，stop/pause 后的 `unclaimed_item_ids` 仍按输入顺序精确保留。每个资源使用 FIFO cursor，只把当前 head 放入私有 binary min-ready heap；完成或 pre-claim rejection 的 stop 判断结束后才暴露同 key 后继，使普通调度从反复全表扫描收敛到近 `O(n log k)`。mutation 自动重试仍被禁止。
 
 `withBatchRunLock` 以 canonical run directory 作为唯一跨进程锁域，只允许当前 holder 所属且仍存活的 scope 嵌套重入；顶层 Promise 等待 detached nested scope 全部排空，已完成 scope 遗留的 async context 不能重入后来的 owner；live/foreign-host 锁不回收，本地 waiter 只在物理锁清理后接棒。公共 options 不暴露 PID、host 或 ownership clock，metadata 只从 `process.pid`、`os.hostname()` 与当前系统时间内部派生，强制注入额外字段也不能伪造 foreign-host stale recovery。CommandSpec timeout、run-lock timeout/poll、read retry policy/backoff 全部限制在 Node `2_147_483_647ms` timer 上限内；公共 lock timing 还必须是非负 safe integer。
+
+Issue #247 将 OAuth/session 与普通状态文件共用的 `readStateLockMetadata()` 从 `existsSync` + `readFileSync` 改为一次读取：读取时 `ENOENT` 只表示并发 owner 已完成物理释放；权限、I/O 等其他错误继续原样抛出。空/损坏 metadata、stale owner、reentrancy、timeout、unlink cleanup 与文件权限合同均不变。
+
+Issue #250 为 `readCachedSessionRecord()` / `writeCachedSessionRecord()` 增加仅内部可用的可选 platform 参数，默认仍为 `process.platform`。测试在所有 host 上显式执行 `linux` 与 `win32`，从而同时覆盖 POSIX public-mode 拒绝、目录/文件 chmod 与 Windows 跳过目录 chmod；运行时代码不传该参数，session schema、atomic rename、token、公开 API、依赖及认证语义均不变。
 
 `dataset save-draft --execution-contract` 只把 unique-target parallel suffix 的 resource-aware claim/fatal-stop 调度接入公共 batch engine。依赖 prefix 仍逐项串行；`executeAction` 继续独占 before-state、PREPARED、token renewal、DML、append-only attempt/outcome、exact readback 与 no-replay 判断。因此 rows 的输入顺序、progress/failures/summary 字节和 fatal worker 传播保持原契约；blocked target 不消耗 worker 或越过 stop claim 窗口。
 
@@ -357,7 +362,7 @@ tiangong-lca
 - 已实现的 `flow apply-process-flow-repairs` 把治理链中的独立 deterministic repair apply 切片收口到 CLI，固定与 planning 相同的输入契约，直接写出 `patched-processes.json` / `process-patches/**`，并可在 `--process-pool-file` 下同步本地 pool
 - 已实现的 `flow regen-product` 把治理后的 process-side 再生产物链收口到 CLI，在一个命令下固定 `scan -> repair plan -> optional apply -> optional validate` 契约，并把退出码 `1` 保留给 `--apply` 之后的本地校验失败
 - 已实现的 `flow validate-processes` 把治理后 patched process rows 的独立校验切片收口到 CLI，固定 original/patched/scope 三类输入契约，并直接写出 `validation-report.json` / `validation-failures.jsonl`
-- 现有命令族里已经没有残留的 Python / shell validation fallback；review / build / publish 与 `auth identity-receipt` 已进入可执行状态，未实现的只剩 `auth whoami` / `auth doctor-auth` 与 `job` placeholder surface
+- 现有命令族里已经没有残留的 Python / shell validation fallback；review / build / publish 与 `auth login|status|whoami|doctor-auth|logout|identity-receipt` 已进入可执行状态，未实现的只剩 `job` placeholder surface
 - 这样做的目的不是“假装已完成”，而是先固定命令树，再逐个把 workflow 迁入 TypeScript CLI
 
 ### 2.1.1 `dataset maintenance plan/apply/freeze-protected/seal-protected-approval/run-protected/verify` v1 契约
@@ -596,7 +601,7 @@ tiangong-lca admin embedding-run --input ./jobs.json --dry-run
 
 ### 4.3.0 `auth identity-receipt` 的最小 contract
 
-`tiangong-lca auth identity-receipt` 是 production-backed case 的身份前置证明，不是泛化 auth 管理器。运行顺序固定为：解析三项标准 runtime env；从 canonical `https://<ref>.supabase.co` base 派生 project；在任何 session/network 前核对 `--expected-project-ref`；复用既有 session cache/refresh/sign-in；对 `/auth/v1/user` 做大小和 JSON shape 有界的 live GET；核对 API-key email、session email 与 live email；最后核对 `--expected-user-id`。第一次 live GET 的 401/403 可以 force refresh 并重读一次，其他失败不重试。
+`tiangong-lca auth identity-receipt` 是 production-backed case 的身份前置证明，不是泛化 auth 管理器。运行顺序固定为：解析受控 auth runtime；从 canonical `https://<ref>.supabase.co` base 派生 project；在任何 session/network 前核对 `--expected-project-ref`；复用 OAuth/headless/迁移兼容 session；对 `/auth/v1/user` 做大小和 JSON shape 有界的 live GET；核对 session email 与 live email（legacy 额外核对 API-key email）；最后核对 `--expected-user-id`。第一次 live GET 的 401/403 只在 session 可 refresh 时续期并重读一次，其他失败不重试。
 
 回执 schema 固定为 `tiangong-lca.auth-identity-receipt.v1`。公开字段只包含 CLI 版本、project ref/base、live user id、masked display email、session source/cache mode/force-reauth/expiry、安全投影 request/response SHA、expected assertions、capture time 与 receipt scope SHA。parser 要求 exact keys，并独立重算三类 hash；额外 metadata、`ok:false`、完整 email、API/publishable key、access/refresh token、session path，以及它们的 fingerprint 一律不能进入回执。无 expected 是 `observed`，只给一项是 `partial`，两项都给且通过才是 `intent-bound`；Foundry 只能把最后一种作为 production guard。
 
@@ -609,7 +614,7 @@ tiangong-lca admin embedding-run --input ./jobs.json --dry-run
 它负责：
 
 - 从 `--input` 读取一个 JSON 请求体
-- 用 `TIANGONG_LCA_API_KEY` 换取 user session/access token
+- 用 OAuth refresh session（或显式 headless token、迁移期 legacy bootstrap）取得 user access token
 - 把请求体原样转发到 `flow_hybrid_search`
 - 原样返回 edge-function 的 JSON 响应，而不是在 CLI 里做本地 UI 映射
 
@@ -1087,13 +1092,19 @@ outputs/evidence-search-declaration.json
 
 ### 5.1 统一命名
 
+Issue #244（2026-08-31）把 active session 设计从 password-equivalent bootstrap 升级为 Supabase OAuth 2.1。`auth login` 使用 public client、S256 PKCE、state、固定 `127.0.0.1` 回调和无 shell 浏览器；token refresh 在原有进程/文件锁下原子更新 schema-v2 私有文件。headless 可显式注入短期 actor access token；旧 API key 仅是迁移兼容，OAuth 失败不回退密码。
+
+`auth status` 只读取当前 project/client 绑定的本地 session metadata，不发网络请求、不 refresh，并明确输出 `onlineVerified: false`；`auth whoami` 复用 live redacted identity receipt；`auth doctor-auth` 先做 local status，缺失 session 时直接返回 `login-required` 并把终端交还人类，ready 时才做 live receipt。三者都不输出完整邮箱、token、session path 或 credential fingerprint，也不接受密码/code/token argv。
+
 公开命令面的标准变量名：
 
 ```bash
 TIANGONG_LCA_API_BASE_URL=
-TIANGONG_LCA_API_KEY=
-TIANGONG_LCA_REGION=us-east-1
 TIANGONG_LCA_SUPABASE_PUBLISHABLE_KEY=
+TIANGONG_LCA_OAUTH_CLIENT_ID=
+TIANGONG_LCA_REGION=us-east-1
+TIANGONG_LCA_AUTH_MODE=oauth
+TIANGONG_LCA_OAUTH_REDIRECT_URI=http://127.0.0.1:49191/oauth/callback
 TIANGONG_LCA_SESSION_FILE=
 TIANGONG_LCA_DISABLE_SESSION_CACHE=false
 TIANGONG_LCA_FORCE_REAUTH=false
@@ -1101,11 +1112,13 @@ TIANGONG_LCA_FORCE_REAUTH=false
 
 其中：
 
-- `TIANGONG_LCA_API_KEY` 是 TianGong 账户页生成的用户 API Key，不是 Supabase project key
-- CLI 只把它当作 bootstrap 凭证，本地解码后调用 Supabase auth 换取用户 session
-- 运行时统一使用 access token，既用于 Edge Functions，也用于 direct Supabase
+- `TIANGONG_LCA_OAUTH_CLIENT_ID` 是环境专属 public client ID；先运行 `tiangong-lca auth login`
+- authorization code、PKCE verifier/state 不进入 argv 或磁盘；access/refresh token 不进入 stdout/report
+- 运行时统一使用 actor access token，既用于 Edge Functions，也用于 direct Supabase
 - `TIANGONG_LCA_SUPABASE_PUBLISHABLE_KEY` 是 authenticated CLI 命令的必需项
 - `TIANGONG_LCA_SESSION_FILE`、`TIANGONG_LCA_DISABLE_SESSION_CACHE`、`TIANGONG_LCA_FORCE_REAUTH` 是可选 session cache 控制项
+- headless 使用 `TIANGONG_LCA_AUTH_MODE=access-token` + `TIANGONG_LCA_ACCESS_TOKEN`，只在进程内复用且不 refresh
+- legacy 使用 `TIANGONG_LCA_AUTH_MODE=legacy-user-api-key` + `TIANGONG_LCA_API_KEY`，仅迁移兼容
 
 按需启用的可选 QA-only 变量：只有显式启用 `tiangong-lca qa process --enable-llm` 或 `tiangong-lca qa flow --enable-llm` 时才需要配置。`TIANGONG_LCA_REVIEW_LLM_BASE_URL` 应指向 OpenAI-compatible Responses API 根地址，CLI 会向 `<base_url>/responses` 发请求。
 
@@ -1141,40 +1154,47 @@ TIANGONG_LCA_COVERAGE=0
 - 公开命令只暴露当前已实现、且真实消费的 env
 - internal/preparatory 和 test-only env 也要在 `.env.example` 里显式列出，避免代码与文档脱节
 - 不为了历史实现或未来猜测保留 alias
-- 不引入 `SUPABASE_URL`、`SUPABASE_KEY`、`TIANGONG_LCA_TIDAS_SDK_DIR` 这类额外兼容层；原生 Supabase client 一律从 `TIANGONG_LCA_API_BASE_URL` 派生，用户 session 一律从 `TIANGONG_LCA_API_KEY + TIANGONG_LCA_SUPABASE_PUBLISHABLE_KEY` 换取，`@tiangong-lca/tidas-sdk` 一律走直接依赖
+- 不引入 `SUPABASE_URL`、`SUPABASE_KEY`、`TIANGONG_LCA_TIDAS_SDK_DIR` 这类额外兼容层；原生 Supabase client 一律从 `TIANGONG_LCA_API_BASE_URL` 派生，actor session 走 OAuth/headless/显式 legacy 三种受控模式，`@tiangong-lca/tidas-sdk` 一律走直接依赖
 - `qa process` 的可选语义审核统一走 QA-only 的 `TIANGONG_LCA_REVIEW_LLM_*`，不再引入 `OPENAI_*`
 - `qa flow` 的可选语义审核也统一走 QA-only 的 `TIANGONG_LCA_REVIEW_LLM_*`，不再引入 `OPENAI_*`
 - `publish run` / `validation run` 都是本地契约与执行收口，不新增远程 env
-- `release *` 复用既有 `TIANGONG_LCA_API_BASE_URL`、用户 `TIANGONG_LCA_API_KEY` 与 `TIANGONG_LCA_SUPABASE_PUBLISHABLE_KEY`；release 项目只继承这组三项，不读取或持久化 API key，CLI 也不接受 service-role
+- `release *` 复用同一 actor session；不读取/持久化 API key，不在请求体生成 credential fingerprint，也不接受 service-role
 - `TIANGONG_LCA_KB_SEARCH_*` 与 `TIANGONG_LCA_UNSTRUCTURED_*` 目前只属于 internal/preparatory 层，不属于公开命令契约
+
+下表“远程认证环境”指 `API_BASE_URL + SUPABASE_PUBLISHABLE_KEY + OAuth client/已登录 session`，或显式短期 headless access token；legacy 兼容需另外显式选择。
 
 命令级 env 矩阵：
 
 | 命令组 | 必需 env |
 | --- | --- | --- | --- | --- |
 | `doctor` | 无 |
-| `auth identity-receipt` | `TIANGONG_LCA_API_BASE_URL`、`TIANGONG_LCA_API_KEY`、`TIANGONG_LCA_SUPABASE_PUBLISHABLE_KEY`；生产 guard 还必须通过 argv 同时给出 expected project/user |
-| `search flow | process | lifecyclemodel` | `TIANGONG_LCA_API_BASE_URL`、`TIANGONG_LCA_API_KEY`、`TIANGONG_LCA_SUPABASE_PUBLISHABLE_KEY`（`TIANGONG_LCA_REGION` 可选） |
+| `auth login` | API base、publishable key、OAuth client ID |
+| `auth status` | 同一远程认证环境；只检查本地 session readiness |
+| `auth whoami` | 同一远程认证环境；执行 live redacted identity receipt |
+| `auth doctor-auth` | 同一远程认证环境；local readiness + live redacted identity |
+| `auth logout` | 远程认证环境；只清理本地 session，grant 在 Next Connected applications 撤销 |
+| `auth identity-receipt` | 远程认证环境；生产 guard 还必须通过 argv 同时给出 expected project/user |
+| `search flow | process | lifecyclemodel` | 远程认证环境（region 可选） |
 | `dataset evidence-search` | 默认无；若使用 `--provider-url`，认证由 `--provider-key` 显式传入 |
-| `admin embedding-run` | `TIANGONG_LCA_API_BASE_URL`、`TIANGONG_LCA_API_KEY`、`TIANGONG_LCA_SUPABASE_PUBLISHABLE_KEY`（`TIANGONG_LCA_REGION` 可选） |
-| `process get` | `TIANGONG_LCA_API_BASE_URL`、`TIANGONG_LCA_API_KEY`、`TIANGONG_LCA_SUPABASE_PUBLISHABLE_KEY` |
-| `dataset save-draft` | 本地 dry-run 默认无；`--commit`（包括 `--execution-contract`）需要 `TIANGONG_LCA_API_BASE_URL`、`TIANGONG_LCA_API_KEY`、`TIANGONG_LCA_SUPABASE_PUBLISHABLE_KEY`。execution ledger 默认使用平台用户状态目录，`XDG_STATE_HOME` 可改变根目录 |
-| `process identity-preflight` | 默认无；若启用 `--remote-candidates` 或输入 `remote_candidate_search.enabled=true`，则需要 `TIANGONG_LCA_API_BASE_URL`、`TIANGONG_LCA_API_KEY`、`TIANGONG_LCA_SUPABASE_PUBLISHABLE_KEY`（`TIANGONG_LCA_REGION` 可选） |
+| `admin embedding-run` | 远程认证环境（region 可选） |
+| `process get` | 远程认证环境 |
+| `dataset save-draft` | dry-run 无；`--commit` 需要远程认证环境，ledger 位置不变 |
+| `process identity-preflight` | 默认无；remote candidates 需要远程认证环境 |
 | `process build-plan` | 无 |
 | `process auto-build | resume-build | publish-build | batch-build` | 无 |
 | `lifecyclemodel auto-build | validate-build | publish-build | orchestrate` | 无 |
-| `lifecyclemodel build-resulting-process` | 本地运行默认无；若 request 开启 `process_sources.allow_remote_lookup=true`，则需要 `TIANGONG_LCA_API_BASE_URL`、`TIANGONG_LCA_API_KEY`、`TIANGONG_LCA_SUPABASE_PUBLISHABLE_KEY` |
+| `lifecyclemodel build-resulting-process` | 本地默认无；remote lookup 需要远程认证环境 |
 | `lifecyclemodel publish-resulting-process` | 无 |
 | `qa process` | 纯规则 QA 默认无；若显式开启 `--enable-llm`，则需要 `TIANGONG_LCA_REVIEW_LLM_BASE_URL`、`TIANGONG_LCA_REVIEW_LLM_API_KEY`、`TIANGONG_LCA_REVIEW_LLM_MODEL` |
 | `qa flow` | 纯规则 QA 默认无；若显式开启 `--enable-llm`，则需要 `TIANGONG_LCA_REVIEW_LLM_BASE_URL`、`TIANGONG_LCA_REVIEW_LLM_API_KEY`、`TIANGONG_LCA_REVIEW_LLM_MODEL` |
 | `qa lifecyclemodel` | 无 |
-| `flow get` | `TIANGONG_LCA_API_BASE_URL`、`TIANGONG_LCA_API_KEY`、`TIANGONG_LCA_SUPABASE_PUBLISHABLE_KEY` |
-| `flow list` | `TIANGONG_LCA_API_BASE_URL`、`TIANGONG_LCA_API_KEY`、`TIANGONG_LCA_SUPABASE_PUBLISHABLE_KEY` |
-| `flow identity-preflight` | 默认无；若启用 `--remote-candidates` 或输入 `remote_candidate_search.enabled=true`，则需要 `TIANGONG_LCA_API_BASE_URL`、`TIANGONG_LCA_API_KEY`、`TIANGONG_LCA_SUPABASE_PUBLISHABLE_KEY`（`TIANGONG_LCA_REGION` 可选） |
+| `flow get` | 远程认证环境 |
+| `flow list` | 远程认证环境 |
+| `flow identity-preflight` | 默认无；remote candidates 需要远程认证环境 |
 | `flow build-plan` | 无 |
 | `flow remediate` | 无 |
-| `flow publish-version` | `TIANGONG_LCA_API_BASE_URL`、`TIANGONG_LCA_API_KEY`、`TIANGONG_LCA_SUPABASE_PUBLISHABLE_KEY` |
-| `flow publish-reviewed-data` | 本地 dry-run 默认无；若 `--commit` 发布 prepared flow/process rows，则需要 `TIANGONG_LCA_API_BASE_URL`、`TIANGONG_LCA_API_KEY`、`TIANGONG_LCA_SUPABASE_PUBLISHABLE_KEY` |
+| `flow publish-version` | 远程认证环境 |
+| `flow publish-reviewed-data` | dry-run 无；`--commit` 需要远程认证环境 |
 | `flow build-alias-map` | 无 |
 | `flow scan-process-flow-refs` | 无 |
 | `flow plan-process-flow-repairs` | 无 |
@@ -1183,7 +1203,7 @@ TIANGONG_LCA_COVERAGE=0
 | `flow validate-processes` | 无 |
 | `publish run` | 无 |
 | `validation run` | 无 |
-| `release *` | `TIANGONG_LCA_API_BASE_URL`、`TIANGONG_LCA_API_KEY`、`TIANGONG_LCA_SUPABASE_PUBLISHABLE_KEY`；服务端对管理动作与私有结果读取额外要求 `data_product_manager` |
+| `release *` | 远程认证环境；服务端仍要求 `data_product_manager`，禁止 service-role |
 
 ## 6. 质量门
 
@@ -1325,7 +1345,7 @@ CLI 现在额外有一条独立于质量门的 npm 发布链路：
 ### 后续只保留原生增量，不再叫“遗留迁移”
 
 - lifecyclemodel 的 discovery / AI 选择逻辑，只有在产品面确认需要时才继续抽象成新的 CLI 子命令
-- `auth identity-receipt` 已由真实生产 case 需求实现；`auth whoami` / `auth doctor-auth` 与 `job` placeholder 仍只在出现独立真实场景时补齐，而不是为了对称性先做
+- `auth identity-receipt`、`auth status`、`auth whoami` 与 `auth doctor-auth` 已由 OAuth/agent human-handoff 场景实现；`job` placeholder 仍只在出现独立真实场景时补齐，而不是为了对称性先做
 - 任何新增能力都必须先定义成 `tiangong-lca <noun> <verb>`，再决定是否要进一步服务化
 
 ## 10. 结论

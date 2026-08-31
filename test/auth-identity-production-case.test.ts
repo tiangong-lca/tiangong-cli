@@ -61,7 +61,8 @@ async function receiptJson(): Promise<string> {
       userEmail: 'user@example.com',
       projectBaseUrl: `https://${PROJECT_REF}.supabase.co`,
       sessionFile: null,
-      source: 'signin',
+      authMethod: 'legacy_user_api_key',
+      source: 'legacy_signin',
     }),
   });
   return `${JSON.stringify(receipt)}\n`;

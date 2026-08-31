@@ -59,7 +59,8 @@ function resolvedSession(
     userEmail: 'user@example.com',
     projectBaseUrl: 'https://project-ref.supabase.co',
     sessionFile: null,
-    source: 'signin',
+    authMethod: 'legacy_user_api_key',
+    source: 'legacy_signin',
     ...overrides,
   };
 }
@@ -127,7 +128,7 @@ test('identity receipt binds a server-verified account/project without exposing 
   assert.equal(receipt.identity.user_id, '11111111-1111-4111-8111-111111111111');
   assert.equal(receipt.identity.display_email, 'us****@example.com');
   assert.deepEqual(receipt.session, {
-    source: 'signin',
+    source: 'legacy_signin',
     cache_mode: 'disabled',
     force_reauth: false,
     expires_at_utc: '2100-01-01T00:00:00.000Z',
@@ -159,6 +160,31 @@ test('identity receipt binds a server-verified account/project without exposing 
     'never-copied-to-receipt',
   ]) {
     assert.doesNotMatch(serialized, new RegExp(secret, 'u'));
+  }
+});
+
+test('identity receipt binds OAuth and explicit headless sessions without a legacy API key', async () => {
+  for (const authMode of ['oauth', 'access-token'] as const) {
+    const oauth = authMode === 'oauth';
+    const receipt = await runAuthIdentityReceipt({
+      env: runtimeEnv({
+        TIANGONG_LCA_API_KEY: '',
+        TIANGONG_LCA_AUTH_MODE: authMode,
+        TIANGONG_LCA_OAUTH_CLIENT_ID: oauth ? '123e4567-e89b-42d3-a456-426614174000' : undefined,
+        TIANGONG_LCA_ACCESS_TOKEN: oauth ? undefined : ACCESS_TOKEN_SECRET,
+      }),
+      fetchImpl: async () => response(200, { id: USER_ID, email: 'user@example.com' }),
+      cliVersion: '0.1.3-test',
+      now: NOW,
+      resolveSessionImpl: async () =>
+        resolvedSession({
+          authMethod: oauth ? 'oauth' : 'access_token',
+          source: oauth ? 'refresh' : 'access_token',
+        }),
+    });
+    assert.equal(receipt.status, 'passed');
+    assert.equal(receipt.session.source, oauth ? 'refresh' : 'access_token');
+    assert.equal(receipt.session.cache_mode, 'disabled');
   }
 });
 
@@ -216,7 +242,7 @@ test('identity receipt default wiring signs in and performs one live current-use
     });
 
     assert.equal(receipt.status, 'passed');
-    assert.equal(receipt.session.source, 'signin');
+    assert.equal(receipt.session.source, 'legacy_signin');
     assert.equal(authCalls, 1);
     assert.equal(currentUserCalls, 1);
   } finally {
