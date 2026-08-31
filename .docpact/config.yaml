@@ -42,8 +42,9 @@ layout: repo
 # Review note, 2026-08-31: Issue #244 adds internal OAuth PKCE/loopback helpers, login/status/whoami/doctor-auth/logout command dispatch, schema-v2 session rotation, and explicit headless access-token support inside the existing command-surface and remote-session ownership. The remote-session intent/rule names both OAuth modules explicitly; no dependency, public library export, package version, tag, or publication route changes.
 # Review note, 2026-08-31: Issue #247 removes the state-lock metadata existence/read TOCTOU exposed by the OAuth 0.1.4 release gate. Existing command-family, state-lock, test, release, and governed-doc rules already cover the narrow ENOENT-as-released behavior; ownership, routing, dependencies, exports, package version, and publication mechanics do not change.
 # Review note, 2026-08-31: Issue #246 is the dedicated 0.1.4 release-only delivery for merged OAuth Issue #244. It changes package identity and four existing exact-version fixtures only; current package, test, release, and governed-doc rules cover the change while ownership, routing, lock bytes, dependencies, runtime, exports, tag automation, Trusted Publishing, provenance, and workspace integration remain unchanged.
+# Review note, 2026-08-31: Issue #250 makes two internal session-cache helpers accept a test-only optional platform while keeping `process.platform` as the runtime default. Existing remote-session, validation, release, and governed-doc routes own the four-platform coverage repair; no public API, auth, dependency, lock, tag, or ownership boundary changes.
 lastReviewedAt: '2026-08-31'
-lastReviewedCommit: '028efb78359fd15b789467d20e1ea2ae7c8dd5b7'
+lastReviewedCommit: '626987ace7c5008935f8641d0fce21712410c5c0'
 
 catalog:
   repos:

@@ -23,8 +23,8 @@ checkPaths:
   - scripts/**
   - .github/workflows/**
 lastReviewedAt: 2026-08-31
-lastReviewedCommit: 38a85ab7dc01b9f6cdee02ab4c681a1976d02cfa
-lastReviewedNote: 'Reviewed for Issue #247: OAuth/session state-lock metadata 使用单次读取，将并发释放产生的 ENOENT 视为锁已消失，其他读取错误仍 fail closed。'
+lastReviewedCommit: 626987ace7c5008935f8641d0fce21712410c5c0
+lastReviewedNote: 'Reviewed for Issue #250: session cache 内部 platform 注入仅用于让 Windows 也覆盖 POSIX 权限分支；运行时仍默认 process.platform，OAuth/session 合同不变。'
 related:
   - AGENTS.md
   - .docpact/config.yaml
@@ -208,6 +208,8 @@ pnpm add --global @tiangong-lca/cli
 Review note, 2026-08-31: Issue #244 新增 `auth login|status|whoami|doctor-auth|logout`。交互登录使用注册过的 public OAuth client、S256 PKCE、随机 state、精确固定端口 `127.0.0.1` 回调与无 shell 系统浏览器；verifier/code 不落盘，OAuth access/rotating refresh token 在现有进程锁与文件锁下原子写入 schema-v2 私有 session。`status` 只读本地 metadata 且明确不是 online verification；`whoami` 复用 live redacted identity receipt；`doctor-auth` 缺少本地 session 时先返回 human login handoff，ready 后才做 live read。`TIANGONG_LCA_ACCESS_TOKEN` 是只在进程内缓存、在线校验且不自动 refresh 的 headless 入口。旧可逆 `TIANGONG_LCA_API_KEY` 仅在没有 OAuth/headless 配置或显式 `legacy-user-api-key` 模式时作为迁移兼容；OAuth 失败绝不回退密码登录。
 
 Review note, 2026-08-31: Issue #247 修复并发 CLI 进程交接 `session.json.lock` 时的 metadata TOCTOU。读取操作不再先检查存在性；`readFileSync` 返回 `ENOENT` 表示前一 owner 已完成释放，权限/I/O 等其他错误继续原样失败。锁创建、metadata schema、stale owner、timeout、reentrancy、cleanup、session bytes 与认证选择均不变。
+
+Review note, 2026-08-31: Issue #250 修复 0.1.4 release matrix 的 Windows coverage gap。session cache 私有 read/write helper 可由测试显式注入 `linux`/`win32`，生产调用仍默认 `process.platform`；因此每个 runner 都能证明 POSIX private-mode 拒绝、目录/文件 chmod 以及 Windows 跳过目录 chmod。session schema、atomic rename、token、公开 API、依赖与认证行为不变。
 
 初始化时，把 `.env.example` 复制成仓库根目录下的 `.env`。推荐直接用编辑器或文件管理器完成这一步，这样 macOS / Linux / Windows 都不需要自行翻译 shell 命令。
 

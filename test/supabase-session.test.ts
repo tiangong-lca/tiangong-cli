@@ -388,6 +388,60 @@ test('session record helpers parse, persist, fingerprint, and clean up memoized 
   }
 });
 
+test('session cache permission behavior is platform-injected on every host', () => {
+  clearSessionState();
+  const dir = mkdtempSync(path.join(os.tmpdir(), 'tg-cli-session-platform-permissions-'));
+  const linuxSessionFile = path.join(dir, 'linux', 'session.json');
+  const windowsSessionFile = path.join(dir, 'windows', 'session.json');
+  const runtime = makeRuntime({ sessionFile: linuxSessionFile });
+  const identity = __testInternals.buildRuntimeIdentity(runtime);
+  const record = __testInternals.buildCachedSessionRecord({
+    runtime: identity,
+    session: makeSession() as never,
+    userEmail: 'user@example.com',
+    now: new Date('2026-08-31T00:00:00.000Z'),
+  });
+  const originalStatSync = mutableFs.statSync;
+  const originalChmodSync = mutableFs.chmodSync;
+  const chmodModes: number[] = [];
+
+  try {
+    assert.equal(
+      Reflect.set(
+        mutableFs,
+        'statSync',
+        (() =>
+          ({
+            isFile: () => true,
+            mode: 0o100644,
+          }) as ReturnType<typeof mutableFs.statSync>) as typeof mutableFs.statSync,
+      ),
+      true,
+    );
+    mutableFs.chmodSync = ((_filePath, mode) => {
+      chmodModes.push(Number(mode));
+    }) as typeof mutableFs.chmodSync;
+    syncBuiltinESMExports();
+
+    assert.equal(
+      __testInternals.readCachedSessionRecord('/synthetic/public-session.json', 'linux'),
+      null,
+    );
+    __testInternals.writeCachedSessionRecord(linuxSessionFile, record, 'linux');
+    assert.deepEqual(chmodModes, [0o700, 0o600]);
+
+    chmodModes.length = 0;
+    __testInternals.writeCachedSessionRecord(windowsSessionFile, record, 'win32');
+    assert.deepEqual(chmodModes, [0o600]);
+  } finally {
+    assert.equal(Reflect.set(mutableFs, 'statSync', originalStatSync), true);
+    mutableFs.chmodSync = originalChmodSync;
+    syncBuiltinESMExports();
+    clearSessionState();
+    rmSync(dir, { recursive: true, force: true });
+  }
+});
+
 test('writeCachedSessionRecord removes temp files when the final rename fails', () => {
   clearSessionState();
   const dir = mkdtempSync(path.join(os.tmpdir(), 'tg-cli-session-write-fail-'));

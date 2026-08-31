@@ -26,8 +26,8 @@ checkPaths:
   - scripts/docpact-gate.sh
   - scripts/install-git-hooks.sh
 lastReviewedAt: 2026-08-31
-lastReviewedCommit: 028efb78359fd15b789467d20e1ea2ae7c8dd5b7
-lastReviewedNote: 'Reviewed for Issue #246: 0.1.4 releases OAuth on the merged #247 lock repair with unchanged dependency, tag, provenance, publication, and integration mechanics.'
+lastReviewedCommit: 626987ace7c5008935f8641d0fce21712410c5c0
+lastReviewedNote: 'Reviewed for Issue #250: failed 0.1.4 produced no tag/package; platform-complete coverage must merge before a new version-only release retries the unchanged publication path.'
 related:
   - ../AGENTS.md
   - ../.docpact/config.yaml
@@ -62,6 +62,8 @@ Review note, 2026-08-29: Issue #242 is that dedicated 0.1.3 patch release. It ch
 Review note, 2026-08-31: Issue #247 is a release-blocking runtime prerequisite discovered by the 0.1.4 full gate. It fixes only concurrent state-lock metadata disappearance, keeps package version 0.1.3, dependencies, lock bytes, exports, and workflows unchanged, and must merge with exact 100% proof before Issue #246 rebases and resumes the normal 0.1.4 release path.
 
 Review note, 2026-08-31: Issue #246 is the dedicated 0.1.4 patch release for merged OAuth Issue #244. It changes only package identity and four live CLI-version fixtures, keeps the sole lock, dependencies, runtime, strict exports, workflows, and setup unchanged, and must prove pre-mutation npm/tag absence plus local package/prepush/audit/Docpact gates. After merge it must prove `cli-v0.1.4`, native pnpm Trusted Publishing/provenance, registry integrity, fresh credential-free bin/ESM/CJS/TypeScript consumers including OAuth help/status, the immutable Skills 0.1.4 pin, and exact release-merge workspace integration. Local publication and manual tag creation remain forbidden.
+
+Review note, 2026-08-31: Issue #250 records the 0.1.4 attempt as failed before tag creation because Windows coverage was 95,430/95,434 lines even though all tests passed; npm 0.1.4 and `cli-v0.1.4` remain absent. The coverage repair itself keeps package version 0.1.4 and does not tag. After it merges, use a new version-only release so the normal push detector, four-platform matrix, tag, Trusted Publishing, provenance, consumer, Skills, and workspace gates bind one new merge commit; do not manually create or backfill the failed tag.
 
 Review note, 2026-07-14: Issue #165 adds the guarded `dataset maintenance rebuild-derivatives` command profile but does not change the release procedure. Its command, contract, remote-adapter, asynchronous verification, and no-fallback tests must pass the existing pre-push/docpact gate before a later version-bump PR; the feature PR itself must not publish locally or alter package version metadata.
 
