@@ -820,8 +820,7 @@ test('runPublish preserves lifecyclemodel metadata aliases from wrapper entries'
     assert.equal(report.lifecyclemodels[0].status, 'executed');
     const observedMetadata =
       ((observedArgs as { metadata?: unknown } | null)?.metadata as
-        | Record<string, unknown>
-        | undefined) ?? {};
+        Record<string, unknown> | undefined) ?? {};
     assert.deepEqual(observedMetadata, {
       json_tg: {
         xflow: {

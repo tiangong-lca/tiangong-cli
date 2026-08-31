@@ -22,8 +22,8 @@ checkPaths:
   - src/**
   - test/**
 lastReviewedAt: 2026-08-31
-lastReviewedCommit: 626987ace7c5008935f8641d0fce21712410c5c0
-lastReviewedNote: 'Reviewed for Issue #250: session cache helper 的可选 platform 只用于跨平台覆盖 POSIX/Windows 权限分支；生产默认、OAuth/session bytes 与发布边界不变。'
+lastReviewedCommit: f6430d1b6c73589df77c449d3dfb871b976277b9
+lastReviewedNote: 'Reviewed for Issue #256: Node 24 最新兼容依赖与 Prettier 3.9 格式迁移不改变命令、OAuth/session、精确 TIDAS 0.2 或发布所有权，并由 package contract 保持 env 矩阵为合法两列表格。'
 related:
   - ../AGENTS.md
   - ../.docpact/config.yaml
@@ -33,6 +33,8 @@ related:
 ---
 
 # TianGong LCA CLI 实施指南
+
+Review note, 2026-08-31: Issue #256 keeps package 0.1.5 and the existing implementation architecture while refreshing Supabase JS/tooling to the latest Node 24-compatible releases. TIDAS SDK is pinned exactly to npm-latest 0.2.0, peer checks join the pre-push gate, and Prettier 3.9's mechanical rewrite is isolated. Issue #257 owns the later version-only 0.1.6 publication.
 
 Review note, 2026-08-25: Issue #224 把实现与验证工具链固定为 Node 24.19.0、pnpm 11.23.0、TypeScript 7.0.2 与 type-aware Oxlint。依赖只由根 `pnpm-workspace.yaml` / `pnpm-lock.yaml` 决定；不保留 TypeScript 5/6、ESLint 或 Compiler API 兼容路径。`test:package` 同时验证单轨工具链、干净 tarball 和 package-manager-neutral consumer。feature 版本保持 0.0.33；合并和完整门禁通过后，建议用单独的 release-only PR 准备 0.1.0。
 
@@ -1166,7 +1168,7 @@ TIANGONG_LCA_COVERAGE=0
 命令级 env 矩阵：
 
 | 命令组 | 必需 env |
-| --- | --- | --- | --- | --- |
+| --- | --- |
 | `doctor` | 无 |
 | `auth login` | API base、publishable key、OAuth client ID |
 | `auth status` | 同一远程认证环境；只检查本地 session readiness |
@@ -1174,15 +1176,15 @@ TIANGONG_LCA_COVERAGE=0
 | `auth doctor-auth` | 同一远程认证环境；local readiness + live redacted identity |
 | `auth logout` | 远程认证环境；只清理本地 session，grant 在 Next Connected applications 撤销 |
 | `auth identity-receipt` | 远程认证环境；生产 guard 还必须通过 argv 同时给出 expected project/user |
-| `search flow | process | lifecyclemodel` | 远程认证环境（region 可选） |
+| `search flow \| process \| lifecyclemodel` | 远程认证环境（region 可选） |
 | `dataset evidence-search` | 默认无；若使用 `--provider-url`，认证由 `--provider-key` 显式传入 |
 | `admin embedding-run` | 远程认证环境（region 可选） |
 | `process get` | 远程认证环境 |
 | `dataset save-draft` | dry-run 无；`--commit` 需要远程认证环境，ledger 位置不变 |
 | `process identity-preflight` | 默认无；remote candidates 需要远程认证环境 |
 | `process build-plan` | 无 |
-| `process auto-build | resume-build | publish-build | batch-build` | 无 |
-| `lifecyclemodel auto-build | validate-build | publish-build | orchestrate` | 无 |
+| `process auto-build \| resume-build \| publish-build \| batch-build` | 无 |
+| `lifecyclemodel auto-build \| validate-build \| publish-build \| orchestrate` | 无 |
 | `lifecyclemodel build-resulting-process` | 本地默认无；remote lookup 需要远程认证环境 |
 | `lifecyclemodel publish-resulting-process` | 无 |
 | `qa process` | 纯规则 QA 默认无；若显式开启 `--enable-llm`，则需要 `TIANGONG_LCA_REVIEW_LLM_BASE_URL`、`TIANGONG_LCA_REVIEW_LLM_API_KEY`、`TIANGONG_LCA_REVIEW_LLM_MODEL` |

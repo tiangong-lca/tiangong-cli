@@ -5419,23 +5419,21 @@ test('maintenance planning and remote helpers cover sparse references and runtim
       [],
     );
 
-    const referencedRows = ['process-b', 'process-a'].map(
-      (id): DatasetMaintenanceRemoteRow => ({
-        table: 'processes',
+    const referencedRows = ['process-b', 'process-a'].map((id): DatasetMaintenanceRemoteRow => ({
+      table: 'processes',
+      id,
+      version: '01.00.000',
+      user_id: remote.userId,
+      state_code: 0,
+      modified_at: null,
+      json_ordered: processPayload({
         id,
         version: '01.00.000',
-        user_id: remote.userId,
-        state_code: 0,
-        modified_at: null,
-        json_ordered: processPayload({
-          id,
-          version: '01.00.000',
-          sourceId: '33333333-3333-4333-8333-333333333333',
-        }),
-        model_id: null,
-        rule_verification: null,
+        sourceId: '33333333-3333-4333-8333-333333333333',
       }),
-    );
+      model_id: null,
+      rule_verification: null,
+    }));
     const sortedImpacts = planInternals.referenceImpacts({
       rows: referencedRows,
       deletes: [deleteAction],

@@ -6,13 +6,7 @@ import { readJsonInput } from './io.js';
 export type JsonObject = Record<string, unknown>;
 
 export type DatasetKind =
-  | 'contact'
-  | 'flow'
-  | 'flowproperty'
-  | 'lifecyclemodel'
-  | 'process'
-  | 'source'
-  | 'unitgroup';
+  'contact' | 'flow' | 'flowproperty' | 'lifecyclemodel' | 'process' | 'source' | 'unitgroup';
 
 export type DatasetRowInput = {
   index: number;

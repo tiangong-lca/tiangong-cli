@@ -10,10 +10,7 @@ import {
 type JsonObject = Record<string, unknown>;
 
 type NameFieldKey =
-  | 'baseName'
-  | 'treatmentStandardsRoutes'
-  | 'mixAndLocationTypes'
-  | 'functionalUnitFlowProperties';
+  'baseName' | 'treatmentStandardsRoutes' | 'mixAndLocationTypes' | 'functionalUnitFlowProperties';
 
 export type ProcessVerifyNameFieldSummary = {
   present: boolean;

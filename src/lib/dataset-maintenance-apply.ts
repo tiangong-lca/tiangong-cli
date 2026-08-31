@@ -2758,9 +2758,7 @@ export async function runDatasetMaintenanceApply(
         });
         const actions = plan.actions.map((action) => {
           const status = executionStatuses.get(action.action_id) as
-            | 'success'
-            | 'failed'
-            | 'unknown';
+            'success' | 'failed' | 'unknown';
           return {
             action_id: action.action_id,
             action: action.action,

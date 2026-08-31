@@ -324,6 +324,13 @@ test('active maintainer documentation exposes only pnpm package-management comma
     [],
     `active maintainer documentation still exposes npm or npx commands:\n${formatJson(findings)}`,
   );
+
+  const implementationGuide = readFileSync(
+    join(REPOSITORY_ROOT, 'docs', 'IMPLEMENTATION_GUIDE_CN.md'),
+    'utf8',
+  );
+  assert.match(implementationGuide, /^\| 命令组 \| 必需 env \|\n\| --- \| --- \|$/mu);
+  assert.doesNotMatch(implementationGuide, /\| 命令组 \| 必需 env \| \|/u);
 });
 
 test('workflows use the reviewed Node 24 pnpm setup, frozen installs, and trusted publish path', () => {
@@ -522,13 +529,15 @@ test('Oxlint is the only JavaScript and TypeScript linter and uses type-aware TS
   );
 });
 
-test('the runtime SDK floor is 0.2.0 and published dependencies contain no toolchain', () => {
+test('the latest Node 24-compatible graph pins the reviewed TIDAS 0.2 runtime', () => {
   const sdkRange = PACKAGE_JSON.dependencies?.['@tiangong-lca/tidas-sdk'];
-  assert.equal(typeof sdkRange, 'string');
-  assert.ok(
-    compareVersions(firstVersion(sdkRange), [0, 2, 0]) >= 0,
-    `@tiangong-lca/tidas-sdk must be >=0.2.0, received ${sdkRange}`,
-  );
+  assert.equal(sdkRange, '0.2.0');
+  assert.equal(compareVersions(firstVersion(sdkRange), [0, 2, 0]), 0);
+  assert.equal(PACKAGE_JSON.dependencies?.['@supabase/supabase-js'], '^2.112.4');
+  assert.equal(PACKAGE_JSON.devDependencies?.['@types/node'], '^24.13.3');
+  assert.equal(PACKAGE_JSON.devDependencies?.['lint-staged'], '^17.4.1');
+  assert.equal(PACKAGE_JSON.devDependencies?.prettier, '3.9.6');
+  assert.equal(PACKAGE_JSON.devDependencies?.tsx, '^4.23.13');
 
   const publishedDependencies = DEPENDENCY_SECTIONS.filter(
     (section) => section !== 'devDependencies',
@@ -588,6 +597,8 @@ test('the exact 100% source-coverage gate remains in the pnpm pre-push path', ()
   assert.match(coverageCommand, /scripts\/run-test-coverage\.cjs/u);
   assert.match(coverageAssertCommand, /assert-full-coverage\.js/u);
   assert.match(packageContractCommand, /test\/toolchain-contract\.test\.mjs/u);
+  assert.equal(PACKAGE_JSON.scripts?.['peers:check'], 'pnpm peers check');
+  assert.match(prepushCommand, /(?:^|&&)\s*pnpm(?:\s+run)?\s+peers:check(?:\s|&&|$)/u);
   assert.match(prepushCommand, /(?:^|&&)\s*pnpm(?:\s+run)?\s+test:package(?:\s|&&|$)/u);
   assert.match(prepushCommand, /(?:^|&&)\s*pnpm(?:\s+run)?\s+test:coverage(?:\s|&&|$)/u);
   assert.match(

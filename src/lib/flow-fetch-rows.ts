@@ -39,8 +39,7 @@ type FlowFetchMaterializationContext = {
 };
 
 type FlowFetchSummaryStatus =
-  | 'completed_flow_row_materialization'
-  | 'completed_flow_row_materialization_with_gaps';
+  'completed_flow_row_materialization' | 'completed_flow_row_materialization_with_gaps';
 
 export type RunFlowFetchRowsOptions = {
   refsFile: string;

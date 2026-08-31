@@ -32,10 +32,7 @@ export type DatasetMaintenanceOperation =
   | 'merge-support-aliases'
   | 'rebuild-derivatives';
 export type DatasetMaintenanceActionKind =
-  | 'save_draft'
-  | 'delete'
-  | 'update_json_ordered'
-  | 'rebuild_derivatives';
+  'save_draft' | 'delete' | 'update_json_ordered' | 'rebuild_derivatives';
 export type DatasetMaintenanceTargetMode = 'owner_draft';
 
 export const DERIVATIVE_REBUILD_COMPONENTS = ['extracted_md', 'embedding_ft'] as const;

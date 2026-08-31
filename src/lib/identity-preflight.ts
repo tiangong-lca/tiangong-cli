@@ -28,12 +28,7 @@ import {
 type IdentityPreflightKind = 'process' | 'flow';
 
 export type IdentityPreflightDecision =
-  | 'reuse'
-  | 'update_same_row'
-  | 'version_bump'
-  | 'create_new'
-  | 'block_duplicate'
-  | 'manual_review';
+  'reuse' | 'update_same_row' | 'version_bump' | 'create_new' | 'block_duplicate' | 'manual_review';
 
 export type IdentityPreflightStatus = 'passed' | 'blocked' | 'needs_review';
 

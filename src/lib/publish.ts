@@ -227,11 +227,7 @@ export type PublishDatasetReport = {
   id: string | null;
   version: string | null;
   status:
-    | 'prepared'
-    | 'executed'
-    | 'deferred_no_executor'
-    | 'deferred_projection_payload'
-    | 'failed';
+    'prepared' | 'executed' | 'deferred_no_executor' | 'deferred_projection_payload' | 'failed';
   source: 'bundle' | 'input';
   bundle_path: string | null;
   reason?: string;

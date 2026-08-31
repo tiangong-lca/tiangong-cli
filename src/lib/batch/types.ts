@@ -94,8 +94,7 @@ export type BatchItemFailedResult<TInput> = BatchItemResultCommon<TInput> &
 
 export type BatchItemResultStatus = BatchItemSuccessStatus | 'failed';
 export type BatchItemResult<TInput, TOutput> =
-  | BatchItemFailedResult<TInput>
-  | BatchItemSucceededResult<TInput, TOutput>;
+  BatchItemFailedResult<TInput> | BatchItemSucceededResult<TInput, TOutput>;
 
 export type BatchRunResult<
   TInput,

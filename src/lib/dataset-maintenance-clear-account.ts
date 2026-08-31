@@ -29,11 +29,7 @@ import { resolveSupabaseUserSession } from './supabase-session.js';
 type JsonObject = Record<string, unknown>;
 
 export type DatasetMaintenanceClearAccountTable =
-  | 'lifecyclemodels'
-  | 'processes'
-  | 'flows'
-  | 'sources'
-  | 'contacts';
+  'lifecyclemodels' | 'processes' | 'flows' | 'sources' | 'contacts';
 
 export type DatasetMaintenanceClearAccountRow = {
   table: DatasetMaintenanceClearAccountTable;

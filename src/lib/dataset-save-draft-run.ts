@@ -52,13 +52,7 @@ type JsonObject = Record<string, unknown>;
 const DEFAULT_TIMEOUT_MS = 10_000;
 
 export type DatasetSaveDraftType =
-  | 'auto'
-  | 'contact'
-  | 'source'
-  | 'unitgroup'
-  | 'flowproperty'
-  | 'flow'
-  | 'process';
+  'auto' | 'contact' | 'source' | 'unitgroup' | 'flowproperty' | 'flow' | 'process';
 
 type ConcreteDatasetSaveDraftType = Exclude<DatasetSaveDraftType, 'auto'>;
 

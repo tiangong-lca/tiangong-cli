@@ -22,10 +22,7 @@ const DEFAULT_TIMEOUT_MS = 10_000;
 export type SupabaseJsonOrderedTable = 'lifecyclemodels' | 'processes' | 'sources';
 export type SupabaseJsonOrderedWriteMode = 'upsert_current_version' | 'append_only_insert';
 export type SupabaseJsonOrderedWriteOperation =
-  | 'insert'
-  | 'update_existing'
-  | 'update_after_insert_error'
-  | 'skipped_existing';
+  'insert' | 'update_existing' | 'update_after_insert_error' | 'skipped_existing';
 
 export type SupabaseJsonOrderedWriteResult = {
   status: 'success';

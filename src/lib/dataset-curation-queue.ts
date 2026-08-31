@@ -94,10 +94,7 @@ export type DatasetCurationQueueBuildReport = {
 };
 
 export type DatasetCurationQueueTaskRuntimeStatus =
-  | 'complete'
-  | 'pending'
-  | 'waiting_dependencies'
-  | 'blocked';
+  'complete' | 'pending' | 'waiting_dependencies' | 'blocked';
 
 export type DatasetCurationQueueTaskState = {
   task_id: string;

@@ -34,12 +34,7 @@ type ProcessTypeOfDataSet =
   | 'Partly terminated system'
   | 'Avoided product system';
 type BuildPlanDecision =
-  | 'reuse'
-  | 'update_same_row'
-  | 'version_bump'
-  | 'create_new'
-  | 'block_duplicate'
-  | 'manual_review';
+  'reuse' | 'update_same_row' | 'version_bump' | 'create_new' | 'block_duplicate' | 'manual_review';
 type UnitOfAnalysisDecision =
   | 'ready_for_materialization'
   | 'declared_unit_dataset'
