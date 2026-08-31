@@ -25,8 +25,8 @@ checkPaths:
   - scripts/docpact-gate.sh
   - scripts/install-git-hooks.sh
 lastReviewedAt: 2026-08-31
-lastReviewedCommit: 35f7f7690cea5e8061b12699494f7cd6cd0b03da
-lastReviewedNote: 'Reviewed for Issues #256/#257: the dependency feature adds no release setup; the separate 0.1.6 release reuses existing merge-tag and Trusted Publishing configuration.'
+lastReviewedCommit: f6430d1b6c73589df77c449d3dfb871b976277b9
+lastReviewedNote: 'Reviewed for Issues #256/#257: the dependency feature and exact TIDAS SDK 0.2.0 pin add no release setup; the separate 0.1.6 release reuses existing merge-tag and Trusted Publishing configuration.'
 related:
   - ../AGENTS.md
   - ../.docpact/config.yaml

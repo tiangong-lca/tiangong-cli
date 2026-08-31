@@ -22,8 +22,8 @@ checkPaths:
   - src/**
   - test/**
 lastReviewedAt: 2026-08-31
-lastReviewedCommit: 35f7f7690cea5e8061b12699494f7cd6cd0b03da
-lastReviewedNote: 'Reviewed for Issue #256: Node 24 最新兼容依赖与 Prettier 3.9 格式迁移不改变命令、OAuth/session、TIDAS 0.2 或发布所有权，并由 package contract 保持 env 矩阵为合法两列表格。'
+lastReviewedCommit: f6430d1b6c73589df77c449d3dfb871b976277b9
+lastReviewedNote: 'Reviewed for Issue #256: Node 24 最新兼容依赖与 Prettier 3.9 格式迁移不改变命令、OAuth/session、精确 TIDAS 0.2 或发布所有权，并由 package contract 保持 env 矩阵为合法两列表格。'
 related:
   - ../AGENTS.md
   - ../.docpact/config.yaml
@@ -34,7 +34,7 @@ related:
 
 # TianGong LCA CLI 实施指南
 
-Review note, 2026-08-31: Issue #256 keeps package 0.1.5 and the existing implementation architecture while refreshing Supabase JS/tooling to the latest Node 24-compatible releases. TIDAS SDK remains 0.2.0, peer checks join the pre-push gate, and Prettier 3.9's mechanical rewrite is isolated. Issue #257 owns the later version-only 0.1.6 publication.
+Review note, 2026-08-31: Issue #256 keeps package 0.1.5 and the existing implementation architecture while refreshing Supabase JS/tooling to the latest Node 24-compatible releases. TIDAS SDK is pinned exactly to npm-latest 0.2.0, peer checks join the pre-push gate, and Prettier 3.9's mechanical rewrite is isolated. Issue #257 owns the later version-only 0.1.6 publication.
 
 Review note, 2026-08-25: Issue #224 把实现与验证工具链固定为 Node 24.19.0、pnpm 11.23.0、TypeScript 7.0.2 与 type-aware Oxlint。依赖只由根 `pnpm-workspace.yaml` / `pnpm-lock.yaml` 决定；不保留 TypeScript 5/6、ESLint 或 Compiler API 兼容路径。`test:package` 同时验证单轨工具链、干净 tarball 和 package-manager-neutral consumer。feature 版本保持 0.0.33；合并和完整门禁通过后，建议用单独的 release-only PR 准备 0.1.0。
 

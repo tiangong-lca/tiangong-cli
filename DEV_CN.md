@@ -23,8 +23,8 @@ checkPaths:
   - scripts/**
   - .github/workflows/**
 lastReviewedAt: 2026-08-31
-lastReviewedCommit: 35f7f7690cea5e8061b12699494f7cd6cd0b03da
-lastReviewedNote: 'Reviewed for Issue #256: CLI 0.1.5 更新到 Node 24 最新兼容 Supabase/开发依赖，保留 TIDAS SDK 0.2.0，并把 peer 检查与 Prettier 3.9 格式纳入门禁。'
+lastReviewedCommit: f6430d1b6c73589df77c449d3dfb871b976277b9
+lastReviewedNote: 'Reviewed for Issue #256: CLI 0.1.5 更新到 Node 24 最新兼容 Supabase/开发依赖，精确固定 TIDAS SDK 0.2.0，并把 peer 检查与 Prettier 3.9 格式纳入门禁。'
 related:
   - AGENTS.md
   - .docpact/config.yaml
@@ -38,7 +38,7 @@ related:
 
 本项目是 TianGong 的统一 CLI 仓库，本地与 CI 运行时基线固定为 Node 24.19.0，开发工具链固定为 pnpm 11.24.0、TypeScript 7.0.2 与 type-aware Oxlint，但发布运行时只执行 `dist/` 下的构建产物。
 
-2026-08-31 复核（Issue #256）：当前 0.1.5 依赖基线为 Supabase JS 2.112.4、TIDAS SDK 0.2.0、lint-staged 17.4.1、Prettier 3.9.6 与 tsx 4.23.13；Node 类型保持最新 24.x。`pnpm peers check` 是提交前门禁的一部分。Prettier 3.9 对旧文件的纯格式改写独立提交；OAuth/session、命令与公开 exports 不变，0.1.6 发布由 Issue #257 单独负责。
+2026-08-31 复核（Issue #256）：当前 0.1.5 依赖基线为 Supabase JS 2.112.4、精确固定的 TIDAS SDK 0.2.0、lint-staged 17.4.1、Prettier 3.9.6 与 tsx 4.23.13；Node 类型保持最新 24.x。精确固定避免未来未经审查的 0.2.x 自动进入消费者；`pnpm peers check` 是提交前门禁的一部分。Prettier 3.9 对旧文件的纯格式改写独立提交；OAuth/session、命令与公开 exports 不变，0.1.6 发布由 Issue #257 单独负责。
 
 Review note, 2026-08-25: Issue #224 把仓库收敛为单一 Node 工具链：根 `pnpm-workspace.yaml` 与唯一根 `pnpm-lock.yaml` 管理依赖；`test:package` 拒绝其他 lockfile、旧 TypeScript/ESLint bridge、active npm 包管理命令和发布包中的开发工具泄漏；Oxlint 完全替代 ESLint 与 TypeScript Compiler API lint 路径。feature 仍保持 0.0.33；合并且全部质量门通过后，应另开只含 release metadata 的 0.1.0 PR，明确 maintainer/release compatibility 边界。
 

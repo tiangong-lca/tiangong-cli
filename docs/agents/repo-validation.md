@@ -32,8 +32,8 @@ checkPaths:
   - scripts/docpact-gate.sh
   - scripts/install-git-hooks.sh
 lastReviewedAt: 2026-08-31
-lastReviewedCommit: 35f7f7690cea5e8061b12699494f7cd6cd0b03da
-lastReviewedNote: 'Reviewed for Issue #256: latest Node 24-compatible dependencies require clean peers, TIDAS 0.2/OAuth proof, exact 100%, and an executable guard preserving the Prettier 3.9-formatted env matrix.'
+lastReviewedCommit: f6430d1b6c73589df77c449d3dfb871b976277b9
+lastReviewedNote: 'Reviewed for Issue #256: latest Node 24-compatible dependencies require clean peers, an exact TIDAS 0.2.0 pin, OAuth proof, exact 100%, and an executable guard preserving the Prettier 3.9-formatted env matrix.'
 related:
   - ../../AGENTS.md
   - ../../.docpact/config.yaml
@@ -94,7 +94,7 @@ Review note, 2026-08-31: Issue #250 follows failed release run `33342410523`, wh
 
 Review note, 2026-08-31: Issue #252 records npm/tag absence for both failed 0.1.4 and replacement 0.1.5, commits RED fixtures before the package bump, and requires a release-only diff. Local proof is the complete exact-100% pre-push/package/audit/Docpact gate. Remote proof must show all four platform jobs—including Windows—at exact 100%, then one merge-bound `cli-v0.1.5`, native Trusted Publishing, provenance/integrity, fresh consumers, Skills exact pin, and workspace integration.
 
-Review note, 2026-08-31: Issue #256 keeps package 0.1.5 and upgrades Supabase JS 2.112.4 plus current Node 24-compatible tooling. Proof requires `pnpm outdated --format json` to leave only the documented Node-26 typings mismatch, `pnpm peers check`, package/tarball consumers, every OAuth/session and TIDAS 0.2 case, exact 100% coverage, Prettier 3.9's isolated mechanical rewrite, strict Docpact, and four-platform CI. It must not tag or publish; Issue #257 owns the version-only 0.1.6 release.
+Review note, 2026-08-31: Issue #256 keeps package 0.1.5 and upgrades Supabase JS 2.112.4 plus current Node 24-compatible tooling. Proof requires `pnpm outdated --format json` to leave only the documented Node-26 typings mismatch, exact TIDAS SDK `0.2.0`, `pnpm peers check`, package/tarball consumers, every OAuth/session and TIDAS 0.2 case, exact 100% coverage, Prettier 3.9's isolated mechanical rewrite, strict Docpact, and four-platform CI. It must not tag or publish; Issue #257 owns the version-only 0.1.6 release.
 
 When command-surface, release-gate, or governed docs change, also run the repo-local documentation governance gate:
 

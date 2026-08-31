@@ -26,8 +26,8 @@ checkPaths:
   - scripts/docpact-gate.sh
   - scripts/install-git-hooks.sh
 lastReviewedAt: 2026-08-31
-lastReviewedCommit: 35f7f7690cea5e8061b12699494f7cd6cd0b03da
-lastReviewedNote: 'Reviewed for Issues #256/#257: dependency changes merge at 0.1.5 with no tag; a separate version-only 0.1.6 PR reuses the four-platform/tag/provenance/publication path.'
+lastReviewedCommit: f6430d1b6c73589df77c449d3dfb871b976277b9
+lastReviewedNote: 'Reviewed for Issues #256/#257: dependency changes, including the exact TIDAS SDK 0.2.0 pin, merge at 0.1.5 with no tag; a separate version-only 0.1.6 PR reuses the four-platform/tag/provenance/publication path.'
 related:
   - ../AGENTS.md
   - ../.docpact/config.yaml
