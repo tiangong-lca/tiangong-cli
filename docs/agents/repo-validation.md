@@ -32,8 +32,8 @@ checkPaths:
   - scripts/docpact-gate.sh
   - scripts/install-git-hooks.sh
 lastReviewedAt: 2026-08-31
-lastReviewedCommit: 626987ace7c5008935f8641d0fce21712410c5c0
-lastReviewedNote: 'Reviewed for Issue #250: every runner now proves both session-cache permission branches; the Windows replacement-release matrix must reach exact 100% before any tag or publish.'
+lastReviewedCommit: 352c11c5ffafaea1bf94133be92f3337b847866a
+lastReviewedNote: 'Reviewed for Issue #252: 0.1.5 replacement proof retains platform-complete exact 100%, package, matrix, provenance, consumer, and OAuth gates; 0.1.4 stays absent.'
 related:
   - ../../AGENTS.md
   - ../../.docpact/config.yaml
@@ -91,6 +91,8 @@ Review note, 2026-08-31: Issue #247 proof injects an `ENOENT` metadata read afte
 Review note, 2026-08-31: Issue #246 release proof records pre-mutation npm 0.1.4 and `cli-v0.1.4` absence, commits the four RED exact-version fixtures before the package bump, and requires byte-identical lock/dependency/runtime/export/workflow state. Local proof remains frozen pnpm 11.24.0 install, package/tarball consumers, the complete pre-push gate with exact 100% coverage, audit, and strict Docpact; remote proof remains the exact four-platform matrix, merge-tag workflow, native Trusted Publishing, cryptographic provenance/integrity verification, fresh OAuth command/identity consumers, and the Skills pin to the immutable 0.1.4 publication.
 
 Review note, 2026-08-31: Issue #250 follows failed release run `33342410523`, where tests passed but Windows could not execute `supabase-session.ts` POSIX permission branches. Validation injects `linux` to prove public-mode rejection plus directory/file chmod, and `win32` to prove directory chmod is omitted, on every host. Runtime defaults remain native. Full local proof is `pnpm prepush:gate`; terminal proof requires all four matrix jobs to report exact 100% before a replacement version can tag/publish. CLI 0.1.4 remains intentionally absent from npm and Git tags.
+
+Review note, 2026-08-31: Issue #252 records npm/tag absence for both failed 0.1.4 and replacement 0.1.5, commits RED fixtures before the package bump, and requires a release-only diff. Local proof is the complete exact-100% pre-push/package/audit/Docpact gate. Remote proof must show all four platform jobs—including Windows—at exact 100%, then one merge-bound `cli-v0.1.5`, native Trusted Publishing, provenance/integrity, fresh consumers, Skills exact pin, and workspace integration.
 
 When command-surface, release-gate, or governed docs change, also run the repo-local documentation governance gate:
 
