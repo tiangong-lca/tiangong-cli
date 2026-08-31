@@ -33,7 +33,7 @@ checkPaths:
   - test/public-auth-identity-receipt.test.ts
   - test/lca-release*.test.ts
 lastReviewedAt: 2026-08-31
-lastReviewedCommit: ac915213debee7312e9def5e8790c757cd15a579
+lastReviewedCommit: 35f7f7690cea5e8061b12699494f7cd6cd0b03da
 lastReviewedNote: 'Reviewed for Issue #256: CLI 0.1.5 keeps its commands/exports while upgrading to the latest Node 24-compatible Supabase/tooling graph and retaining TIDAS SDK 0.2.0.'
 ---
 

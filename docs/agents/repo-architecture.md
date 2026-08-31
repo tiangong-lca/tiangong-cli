@@ -31,7 +31,7 @@ checkPaths:
   - scripts/docpact-gate.sh
   - scripts/install-git-hooks.sh
 lastReviewedAt: 2026-08-31
-lastReviewedCommit: ac915213debee7312e9def5e8790c757cd15a579
+lastReviewedCommit: 35f7f7690cea5e8061b12699494f7cd6cd0b03da
 lastReviewedNote: 'Reviewed for Issue #256: CLI 0.1.5 retains command/export/OAuth/TIDAS architecture while moving to the latest Node 24-compatible dependency graph, clean peers, and Prettier 3.9 formatting.'
 related:
   - ../../AGENTS.md

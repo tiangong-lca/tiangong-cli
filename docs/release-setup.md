@@ -25,7 +25,7 @@ checkPaths:
   - scripts/docpact-gate.sh
   - scripts/install-git-hooks.sh
 lastReviewedAt: 2026-08-31
-lastReviewedCommit: ac915213debee7312e9def5e8790c757cd15a579
+lastReviewedCommit: 35f7f7690cea5e8061b12699494f7cd6cd0b03da
 lastReviewedNote: 'Reviewed for Issues #256/#257: the dependency feature adds no release setup; the separate 0.1.6 release reuses existing merge-tag and Trusted Publishing configuration.'
 related:
   - ../AGENTS.md

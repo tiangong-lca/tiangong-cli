@@ -23,7 +23,7 @@ checkPaths:
   - scripts/**
   - .github/workflows/**
 lastReviewedAt: 2026-08-31
-lastReviewedCommit: ac915213debee7312e9def5e8790c757cd15a579
+lastReviewedCommit: 35f7f7690cea5e8061b12699494f7cd6cd0b03da
 lastReviewedNote: 'Reviewed for Issue #256: CLI 0.1.5 更新到 Node 24 最新兼容 Supabase/开发依赖，保留 TIDAS SDK 0.2.0，并把 peer 检查与 Prettier 3.9 格式纳入门禁。'
 related:
   - AGENTS.md

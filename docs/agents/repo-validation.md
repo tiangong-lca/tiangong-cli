@@ -32,8 +32,8 @@ checkPaths:
   - scripts/docpact-gate.sh
   - scripts/install-git-hooks.sh
 lastReviewedAt: 2026-08-31
-lastReviewedCommit: ac915213debee7312e9def5e8790c757cd15a579
-lastReviewedNote: 'Reviewed for Issue #256: latest Node 24-compatible dependencies require clean peers, TIDAS 0.2/OAuth package proof, Prettier 3.9 formatting, and the unchanged exact-100% gate at CLI 0.1.5.'
+lastReviewedCommit: 35f7f7690cea5e8061b12699494f7cd6cd0b03da
+lastReviewedNote: 'Reviewed for Issue #256: latest Node 24-compatible dependencies require clean peers, TIDAS 0.2/OAuth proof, exact 100%, and an executable guard preserving the Prettier 3.9-formatted env matrix.'
 related:
   - ../../AGENTS.md
   - ../../.docpact/config.yaml
