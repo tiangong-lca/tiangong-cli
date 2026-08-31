@@ -537,8 +537,7 @@ function extractClassificationEntries(dataSetInformation: JsonRecord): Classific
     ] &&
       (
         (dataSetInformation.classificationInformation as JsonRecord)['common:classification'] as
-          | JsonRecord
-          | undefined
+          JsonRecord | undefined
       )?.['common:class'],
   );
 

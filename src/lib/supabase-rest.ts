@@ -23,9 +23,7 @@ export type SupabaseProcessLookup = {
   row: SupabaseProcessRow;
   sourceUrl: string;
   resolution:
-    | 'remote_supabase_exact'
-    | 'remote_supabase_latest'
-    | 'remote_supabase_latest_fallback';
+    'remote_supabase_exact' | 'remote_supabase_latest' | 'remote_supabase_latest_fallback';
 };
 
 function isRecord(value: unknown): value is JsonObject {

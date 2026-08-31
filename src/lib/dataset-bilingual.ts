@@ -188,8 +188,7 @@ type TranslationInput = {
 };
 
 type ApplyTranslationResult =
-  | { applied: true; evidence: TranslationEvidenceEntry }
-  | { applied: false; blocker: string };
+  { applied: true; evidence: TranslationEvidenceEntry } | { applied: false; blocker: string };
 
 type PathVisit = {
   rowIndex: number;

@@ -37,9 +37,7 @@ export type SupabaseFlowLookup = {
   row: SupabaseFlowRow;
   sourceUrl: string;
   resolution:
-    | 'remote_supabase_exact'
-    | 'remote_supabase_latest'
-    | 'remote_supabase_latest_fallback';
+    'remote_supabase_exact' | 'remote_supabase_latest' | 'remote_supabase_latest_fallback';
 };
 
 type QueryWithUrl = {

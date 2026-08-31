@@ -81,11 +81,7 @@ type RemoteStatus = {
   loaded: number;
   error: string | null;
   reference_scan:
-    | 'not_run'
-    | 'skipped_by_flag'
-    | 'skipped_missing_user_id'
-    | 'current_user_completed'
-    | 'failed';
+    'not_run' | 'skipped_by_flag' | 'skipped_missing_user_id' | 'current_user_completed' | 'failed';
 };
 
 type ProcessDedupGate = {

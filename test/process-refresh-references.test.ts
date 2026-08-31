@@ -997,8 +997,7 @@ test('process refresh helper internals cover dataset parsing, manifests, report 
     });
     assert.equal(refCache.has('flows:cached-flow'), true);
     const fetchedFlow = refCache.get('flows:flow-1') as
-      | { row: { version: string } | null }
-      | undefined;
+      { row: { version: string } | null } | undefined;
     assert.equal(fetchedFlow?.row?.version, '01.00.002');
 
     const missingManifestPath = path.join(tempDir, 'missing.manifest.json');

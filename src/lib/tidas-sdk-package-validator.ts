@@ -671,9 +671,7 @@ export function collectClassificationIssues(
       issues.push(
         ...validateSourcesClassificationHierarchy(
           asRecord(asRecord(classes)?.['common:classification'])?.['common:class'] as
-            | Array<Record<string, unknown>>
-            | Record<string, unknown>
-            | undefined,
+            Array<Record<string, unknown>> | Record<string, unknown> | undefined,
         ).map((message) =>
           makeIssue(category, filePath, '<root>', message, 'classification_hierarchy_error'),
         ),

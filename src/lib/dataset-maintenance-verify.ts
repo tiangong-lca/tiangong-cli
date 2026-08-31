@@ -82,11 +82,7 @@ export type DatasetMaintenanceVerifyReport = {
     action_id: string;
     status: 'pending' | 'passed' | 'failed';
     observed:
-      | 'desired_payload'
-      | 'absent'
-      | 'mismatch'
-      | 'derivative_pending'
-      | 'derivative_current';
+      'desired_payload' | 'absent' | 'mismatch' | 'derivative_pending' | 'derivative_current';
   }>;
   issues: DatasetMaintenanceVerifyIssue[];
   artifacts: {
