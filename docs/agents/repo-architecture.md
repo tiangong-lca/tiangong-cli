@@ -31,8 +31,8 @@ checkPaths:
   - scripts/docpact-gate.sh
   - scripts/install-git-hooks.sh
 lastReviewedAt: 2026-08-31
-lastReviewedCommit: 626987ace7c5008935f8641d0fce21712410c5c0
-lastReviewedNote: 'Reviewed for Issue #250: session-cache permission architecture is unchanged; optional internal platform injection only makes both POSIX and Windows branches executable in every validation runner.'
+lastReviewedCommit: 352c11c5ffafaea1bf94133be92f3337b847866a
+lastReviewedNote: 'Reviewed for Issue #252: 0.1.5 advances package identity only on the merged OAuth/lock/platform-complete runtime; module, export, dependency, lock, and publication architecture stay unchanged.'
 related:
   - ../../AGENTS.md
   - ../../.docpact/config.yaml
@@ -72,6 +72,8 @@ Review note, 2026-08-31: Issue #247 keeps `src/lib/state-lock.ts` as the single 
 Review note, 2026-08-31: Issue #246 advances only the package compatibility identity to 0.1.4 for the already merged OAuth command/session runtime. The remote-session modules, generated declarations, strict export map, dependencies, pnpm lock bytes, command runtime, tag workflow, native Trusted Publishing, provenance verifier, and exact workspace integration architecture do not change.
 
 Review note, 2026-08-31: Issue #250 keeps `src/lib/supabase-session.ts` as the single session-cache owner and adds no adapter or auth path. Its two private read/write helpers retain `process.platform` by default; tests may inject `linux`/`win32` to execute permission branches independent of the runner host. POSIX `0700`/`0600`, Windows parent-ACL guidance, atomic rename, runtime calls, and session schema remain unchanged.
+
+Review note, 2026-08-31: Issue #252 advances only package compatibility identity to 0.1.5. The OAuth/session/state-lock runtime, platform injection, generated declarations, strict exports, dependencies, pnpm lock bytes, command architecture, tag workflow, Trusted Publishing, provenance, and workspace integration architecture do not change.
 
 Review note, 2026-06-04: Foundry entity queue state now stays in the native CLI command family as `dataset curation-queue build/next/verify`; no secondary orchestration runtime was introduced.
 

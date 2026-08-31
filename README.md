@@ -33,13 +33,13 @@ checkPaths:
   - test/public-auth-identity-receipt.test.ts
   - test/lca-release*.test.ts
 lastReviewedAt: 2026-08-31
-lastReviewedCommit: 028efb78359fd15b789467d20e1ea2ae7c8dd5b7
-lastReviewedNote: 'Reviewed for Issue #246: identifies 0.1.4 as the release identity for the merged OAuth runtime plus #247 lock repair while exports, dependencies, and release behavior stay fixed.'
+lastReviewedCommit: 352c11c5ffafaea1bf94133be92f3337b847866a
+lastReviewedNote: 'Reviewed for Issue #252: identifies 0.1.5 as the replacement OAuth release after unpublished 0.1.4, preserving exports, dependencies, and release behavior.'
 ---
 
 # TianGong LCA CLI
 
-Package: `@tiangong-lca/cli` Executable: `tiangong-lca` Current package version: `0.1.4` Node: `24.19.0`
+Package: `@tiangong-lca/cli` Executable: `tiangong-lca` Current package version: `0.1.5` Node: `24.19.0`
 
 Repository development is single-track on pnpm `11.24.0` and TypeScript `7.0.2`. The published package remains a clean, package-manager-neutral consumer artifact: it contains runtime files only, not pnpm, TypeScript, Oxlint, tests, source-only tooling, or repository lockfiles.
 
@@ -68,6 +68,8 @@ Review note, 2026-08-31: Issue #244 adds Supabase OAuth 2.1 Authorization Code +
 Review note, 2026-08-31: Issue #247 prevents a second CLI process from failing when the first process removes `session.json.lock` between contention and metadata read. Only an absent lock is treated as released; permission, I/O, malformed-owner, timeout, and stale-owner safety behavior is unchanged.
 
 Review note, 2026-08-31: Issue #246 releases that OAuth runtime as `@tiangong-lca/cli@0.1.4`. Only package identity and four existing exact-version fixtures change; the executable and public subpaths, dependencies, pnpm lock, Node 24.19.0 / TypeScript 7.0.2 toolchain, auth behavior, and package-manager-neutral consumer contract are otherwise unchanged.
+
+Review note, 2026-08-31: Issue #252 replaces the stopped-unpublished 0.1.4 attempt with `@tiangong-lca/cli@0.1.5` after platform-complete session coverage merged. Only package identity, four version fixtures, and release evidence change; executable/public subpaths, OAuth behavior, dependencies, pnpm lock, Node/TypeScript toolchain, and consumer contract stay unchanged.
 
 Review note, 2026-07-12: `dataset maintenance plan/apply/verify` provides current-user RLS-scoped exact-row maintenance with immutable plans, explicit approval, per-action logs, platform audit correlation, and independent readback. `merge-support-aliases` now runs only in `target_mode=owner_draft`: source/target support and all changed rows stay private `state_code=0`; publication is a separate future workflow.
 

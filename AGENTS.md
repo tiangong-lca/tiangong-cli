@@ -38,8 +38,8 @@ checkPaths:
   - scripts/docpact-gate.sh
   - scripts/install-git-hooks.sh
 lastReviewedAt: 2026-08-31
-lastReviewedCommit: 626987ace7c5008935f8641d0fce21712410c5c0
-lastReviewedNote: 'Reviewed for Issue #250: internal session-cache platform injection makes POSIX permission branches testable on Windows while runtime defaults, OAuth/session bytes, public API, dependencies, and release mechanics stay unchanged.'
+lastReviewedCommit: 352c11c5ffafaea1bf94133be92f3337b847866a
+lastReviewedNote: 'Reviewed for Issue #252: CLI 0.1.5 is the replacement OAuth release on merged platform-complete coverage; release-only metadata/fixtures change while runtime, dependencies, exports, and automation stay fixed.'
 related:
   - .docpact/config.yaml
   - docs/agents/repo-validation.md
@@ -62,6 +62,8 @@ Review note, 2026-08-31: Issue #247 hardens that OAuth/session lock against a re
 Review note, 2026-08-31: Issue #246 publishes the merged OAuth runtime as CLI 0.1.4. The release delta is limited to `package.json` and four existing exact-version fixtures; the pnpm lock, runtime, public exports, dependencies, authentication semantics, commands, credentials, tag automation, Trusted Publishing/provenance, and workspace integration contract are unchanged.
 
 Review note, 2026-08-31: Issue #250 repairs the Windows release-gate coverage gap without changing production behavior. `readCachedSessionRecord()` and `writeCachedSessionRecord()` accept an optional internal/test platform whose default remains `process.platform`; deterministic tests execute both POSIX private-mode/chmod and Windows branches on every host. Session paths, modes, OAuth tokens, lock behavior, public exports, dependencies, and package version are unchanged. The failed 0.1.4 run created no tag or npm package; a separately tracked replacement release follows only after the four-platform matrix passes.
+
+Review note, 2026-08-31: Issue #252 prepares replacement CLI 0.1.5 after 0.1.4 stopped before tag/publish. Its delta is `package.json`, four existing version fixtures, and governed release evidence only. Runtime includes OAuth #244, lock #247, and platform coverage #250 from main; dependencies, lock bytes, exports, auth semantics, workflows, credentials, and local/manual publication prohibitions remain unchanged.
 
 Review note, 2026-08-25: Issue #228 implements `auth identity-receipt` as the CLI-owned live identity proof. It resolves the existing API-key/session chain, safely validates the canonical Supabase project before credential decode or network work, performs a redirect-disabled and incrementally byte-bounded `/auth/v1/user` lookup for a canonical user UUID, caps timeout values to Node's supported timer range, retries only one 401/403 through forced session refresh, and emits an exact-key receipt containing no credential, token, full email, session path, or credential-derived fingerprint. A production guard is valid only with both expected project and user argv assertions and `assertions.mode=intent-bound`. The companion pnpm case command owns the single clean TS7 build before its plain-Node runner starts; callers must not add a redundant prebuild. The runner rejects alternate entrypoints, single-reads/hashes source/config/lock and generated runtime/runner bytes, snapshots the exact built runtime privately before exposing three allowlisted env values, cleans the snapshot before publishing any passed/failed evidence, disables cache, uses an exclusively created clean cwd and argv-array spawn, and never persists raw child output. POSIX modes are enforced; Windows callers must choose a current-user-restricted parent ACL.
 
