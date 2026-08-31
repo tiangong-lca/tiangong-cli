@@ -22,8 +22,8 @@ checkPaths:
   - src/**
   - test/**
 lastReviewedAt: 2026-08-31
-lastReviewedCommit: 626987ace7c5008935f8641d0fce21712410c5c0
-lastReviewedNote: 'Reviewed for Issue #250: session cache helper 的可选 platform 只用于跨平台覆盖 POSIX/Windows 权限分支；生产默认、OAuth/session bytes 与发布边界不变。'
+lastReviewedCommit: 2cef1c85417387ee245d5672f2cf403fb37f602c
+lastReviewedNote: 'Reviewed for Issue #254: process QA 与 save-draft/publish-build 前的共享 payload validation 共同阻断定量参考输出 Flow 的同 UUID/同版本输入；仅完整、来源与审核绑定的闭环回流结构可豁免，命令、认证、依赖与发布边界不变。'
 related:
   - ../AGENTS.md
   - ../.docpact/config.yaml

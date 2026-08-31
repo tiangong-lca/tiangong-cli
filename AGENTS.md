@@ -38,8 +38,8 @@ checkPaths:
   - scripts/docpact-gate.sh
   - scripts/install-git-hooks.sh
 lastReviewedAt: 2026-08-31
-lastReviewedCommit: 352c11c5ffafaea1bf94133be92f3337b847866a
-lastReviewedNote: 'Reviewed for Issue #252: CLI 0.1.5 is the replacement OAuth release on merged platform-complete coverage; release-only metadata/fixtures change while runtime, dependencies, exports, and automation stay fixed.'
+lastReviewedCommit: 2cef1c85417387ee245d5672f2cf403fb37f602c
+lastReviewedNote: 'Reviewed for Issue #254: exact same-Flow UUID/version self-provider detection stays inside process QA and shared pre-write validation, with a strict evidence/review-bound closed-loop exemption and no ownership, auth, dependency, package, release, or integration change.'
 related:
   - .docpact/config.yaml
   - docs/agents/repo-validation.md

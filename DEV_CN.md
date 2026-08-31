@@ -23,8 +23,8 @@ checkPaths:
   - scripts/**
   - .github/workflows/**
 lastReviewedAt: 2026-08-31
-lastReviewedCommit: 626987ace7c5008935f8641d0fce21712410c5c0
-lastReviewedNote: 'Reviewed for Issue #250: session cache 内部 platform 注入仅用于让 Windows 也覆盖 POSIX 权限分支；运行时仍默认 process.platform，OAuth/session 合同不变。'
+lastReviewedCommit: 2cef1c85417387ee245d5672f2cf403fb37f602c
+lastReviewedNote: 'Reviewed for Issue #254: process QA 与 save-draft/publish-build 前置校验阻断定量参考输出 Flow 的同 UUID/同版本输入；不同版本链保持允许，缺失版本给出警告，闭环回流豁免必须绑定来源、理由与审核决定。'
 related:
   - AGENTS.md
   - .docpact/config.yaml

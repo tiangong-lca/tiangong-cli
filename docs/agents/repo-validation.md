@@ -32,8 +32,8 @@ checkPaths:
   - scripts/docpact-gate.sh
   - scripts/install-git-hooks.sh
 lastReviewedAt: 2026-08-31
-lastReviewedCommit: 352c11c5ffafaea1bf94133be92f3337b847866a
-lastReviewedNote: 'Reviewed for Issue #252: 0.1.5 replacement proof retains platform-complete exact 100%, package, matrix, provenance, consumer, and OAuth gates; 0.1.4 stays absent.'
+lastReviewedCommit: 2cef1c85417387ee245d5672f2cf403fb37f602c
+lastReviewedNote: 'Reviewed for Issue #254: exact-version stage-flow blocker, incomplete-identity warning, different-version allowance, and strict exemption paths are covered through QA, payload, and ruleset tests; the merged Node 24.19.0 gate passes 1,218 tests with 100% source coverage.'
 related:
   - ../../AGENTS.md
   - ../../.docpact/config.yaml

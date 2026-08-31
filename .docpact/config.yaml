@@ -44,8 +44,9 @@ layout: repo
 # Review note, 2026-08-31: Issue #246 is the dedicated 0.1.4 release-only delivery for merged OAuth Issue #244. It changes package identity and four existing exact-version fixtures only; current package, test, release, and governed-doc rules cover the change while ownership, routing, lock bytes, dependencies, runtime, exports, tag automation, Trusted Publishing, provenance, and workspace integration remain unchanged.
 # Review note, 2026-08-31: Issue #250 makes two internal session-cache helpers accept a test-only optional platform while keeping `process.platform` as the runtime default. Existing remote-session, validation, release, and governed-doc routes own the four-platform coverage repair; no public API, auth, dependency, lock, tag, or ownership boundary changes.
 # Review note, 2026-08-31: Issue #252 is the replacement 0.1.5 release after failed-unpublished 0.1.4 and merged Windows coverage #250. It changes package identity and four existing version fixtures only; current release/test/doc routes own the change and no runtime, dependency, export, lock, workflow, or ownership rule changes.
+# Review note, 2026-08-31: Issue #254 adds an exact UUID-and-version stage-flow self-provider blocker to the existing process QA and shared pre-write payload validation paths. The current command-family, process authoring, test, validation, release, and governed-doc rules already cover the bounded guard, strict reviewed exemption, and runtime-ruleset mapping; no ownership, dependency, authentication, package, release, or workspace-integration rule changes are required.
 lastReviewedAt: '2026-08-31'
-lastReviewedCommit: '352c11c5ffafaea1bf94133be92f3337b847866a'
+lastReviewedCommit: '2cef1c85417387ee245d5672f2cf403fb37f602c'
 
 catalog:
   repos:

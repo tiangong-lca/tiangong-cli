@@ -25,8 +25,8 @@ checkPaths:
   - scripts/docpact-gate.sh
   - scripts/install-git-hooks.sh
 lastReviewedAt: 2026-08-31
-lastReviewedCommit: 352c11c5ffafaea1bf94133be92f3337b847866a
-lastReviewedNote: 'Reviewed for Issue #252: replacement CLI 0.1.5 reuses the unchanged merge-tag/Trusted Publishing setup with no new secret, workflow, credential, or publication path.'
+lastReviewedCommit: 2cef1c85417387ee245d5672f2cf403fb37f602c
+lastReviewedNote: 'Reviewed for Issue #254: the stage-flow blocker adds no secret, dependency, workflow, credential, package-version, Trusted Publishing, or publication-path change; existing release setup remains current.'
 related:
   - ../AGENTS.md
   - ../.docpact/config.yaml

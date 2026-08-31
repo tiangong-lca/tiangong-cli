@@ -31,8 +31,8 @@ checkPaths:
   - scripts/docpact-gate.sh
   - scripts/install-git-hooks.sh
 lastReviewedAt: 2026-08-31
-lastReviewedCommit: 352c11c5ffafaea1bf94133be92f3337b847866a
-lastReviewedNote: 'Reviewed for Issue #252: 0.1.5 advances package identity only on the merged OAuth/lock/platform-complete runtime; module, export, dependency, lock, and publication architecture stay unchanged.'
+lastReviewedCommit: 2cef1c85417387ee245d5672f2cf403fb37f602c
+lastReviewedNote: 'Reviewed for Issue #254: the bounded process stage-flow guard is a shared semantic leaf consumed by QA and payload validation; runtime ruleset mapping and tests extend the existing process architecture without changing exports, dependencies, auth, locks, or publication.'
 related:
   - ../../AGENTS.md
   - ../../.docpact/config.yaml

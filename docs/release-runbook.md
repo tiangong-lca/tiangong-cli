@@ -26,8 +26,8 @@ checkPaths:
   - scripts/docpact-gate.sh
   - scripts/install-git-hooks.sh
 lastReviewedAt: 2026-08-31
-lastReviewedCommit: 352c11c5ffafaea1bf94133be92f3337b847866a
-lastReviewedNote: 'Reviewed for Issue #252: 0.1.5 is the replacement OAuth release after 0.1.4 stopped unpublished; unchanged four-platform/tag/provenance/publication mechanics apply.'
+lastReviewedCommit: 2cef1c85417387ee245d5672f2cf403fb37f602c
+lastReviewedNote: 'Reviewed for Issue #254: the process stage-flow validation feature changes no package version, dependency, tag, provenance, publication, or workspace-integration procedure; any later package delivery remains a separately tracked release.'
 related:
   - ../AGENTS.md
   - ../.docpact/config.yaml
