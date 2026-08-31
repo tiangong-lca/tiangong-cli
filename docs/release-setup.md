@@ -25,8 +25,8 @@ checkPaths:
   - scripts/docpact-gate.sh
   - scripts/install-git-hooks.sh
 lastReviewedAt: 2026-08-31
-lastReviewedCommit: f6430d1b6c73589df77c449d3dfb871b976277b9
-lastReviewedNote: 'Reviewed for Issues #256/#257: the dependency feature and exact TIDAS SDK 0.2.0 pin add no release setup; the separate 0.1.6 release reuses existing merge-tag and Trusted Publishing configuration.'
+lastReviewedCommit: 499c910d07bb6a5e2e1cd8e4403a5a617d4269bb
+lastReviewedNote: 'Reviewed for Issue #257: CLI 0.1.6 reuses the existing merge-triggered four-platform, tag, and native pnpm Trusted Publishing setup with no new secret, workflow, credential, environment, or publication path.'
 related:
   - ../AGENTS.md
   - ../.docpact/config.yaml
@@ -77,6 +77,8 @@ Review note, 2026-08-31: Issue #250 adds test-only platform injection and no rel
 Review note, 2026-08-31: Issue #252 publishes replacement 0.1.5 through that existing merge-triggered four-platform/tag/native pnpm Trusted Publishing path. It adds no secret, environment, runner, dependency, lockfile, Trusted Publisher setting, workflow filename, tag rule, service/test credential, OAuth credential, or recovery surface.
 
 Review note, 2026-08-31: Issue #256 upgrades dependency and formatter versions at package 0.1.5 without adding a secret, environment, runner, Trusted Publisher setting, workflow filename, tag rule, credential, or publication. Issue #257 later publishes 0.1.6 through the existing merge-triggered four-platform/tag/native pnpm Trusted Publishing path and likewise adds no setup surface.
+
+Review note, 2026-08-31: Issue #257 publishes 0.1.6 through that unchanged merge-triggered four-platform/tag/native pnpm Trusted Publishing path. It adds no secret, environment, runner, dependency, lockfile change, Trusted Publisher setting, workflow filename, tag rule, service/test credential, OAuth credential, local npm authorization, or recovery surface.
 
 Current workflow files:
 

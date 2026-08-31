@@ -38,8 +38,8 @@ checkPaths:
   - scripts/docpact-gate.sh
   - scripts/install-git-hooks.sh
 lastReviewedAt: 2026-08-31
-lastReviewedCommit: f6430d1b6c73589df77c449d3dfb871b976277b9
-lastReviewedNote: 'Reviewed for Issue #256: CLI 0.1.5 keeps its public/runtime contract while moving to the latest Node 24-compatible Supabase and development graph, exact TIDAS SDK 0.2.0, clean peers, and Prettier 3.9 formatting.'
+lastReviewedCommit: 499c910d07bb6a5e2e1cd8e4403a5a617d4269bb
+lastReviewedNote: 'Reviewed for Issue #257: CLI 0.1.6 publishes the merged dependency graph through a release-only package/version-fixture change; runtime, dependencies, lock bytes, exports, OAuth, and release automation stay fixed.'
 related:
   - .docpact/config.yaml
   - docs/agents/repo-validation.md
@@ -66,6 +66,8 @@ Review note, 2026-08-31: Issue #250 repairs the Windows release-gate coverage ga
 Review note, 2026-08-31: Issue #252 prepares replacement CLI 0.1.5 after 0.1.4 stopped before tag/publish. Its delta is `package.json`, four existing version fixtures, and governed release evidence only. Runtime includes OAuth #244, lock #247, and platform coverage #250 from main; dependencies, lock bytes, exports, auth semantics, workflows, credentials, and local/manual publication prohibitions remain unchanged.
 
 Review note, 2026-08-31: Issue #256 keeps package identity at 0.1.5 while upgrading the direct Node 24-compatible graph to Supabase JS 2.112.4, lint-staged 17.4.1, Prettier 3.9.6, and tsx 4.23.13. TIDAS SDK is pinned exactly to npm-latest 0.2.0 so a future unreviewed 0.2.x cannot drift into consumers; Node typings remain on latest 24.x instead of Node 26. `pnpm peers check` joins the authoritative pre-push gate; Prettier 3.9's deterministic existing-file rewrite is isolated in its own commit. OAuth/session/public exports and release automation do not change, and Issue #257 owns the later version-only 0.1.6 release.
+
+Review note, 2026-08-31: Issue #257 prepares CLI 0.1.6 from dependency merge `490eb08990bf339935f7a5402add063618d844d2`. npm 0.1.6 and `cli-v0.1.6` were absent before RED fixture commit `06a3f5c`; package commit `499c910` changes only the version from 0.1.5 to 0.1.6. The four exact fixtures, package identity, and governed release evidence are the full release diff; runtime, exact TIDAS 0.2.0, Supabase JS 2.112.4, lock bytes, exports, OAuth/session behavior, workflows, credentials, and local/manual publication prohibitions remain unchanged.
 
 Review note, 2026-08-25: Issue #228 implements `auth identity-receipt` as the CLI-owned live identity proof. It resolves the existing API-key/session chain, safely validates the canonical Supabase project before credential decode or network work, performs a redirect-disabled and incrementally byte-bounded `/auth/v1/user` lookup for a canonical user UUID, caps timeout values to Node's supported timer range, retries only one 401/403 through forced session refresh, and emits an exact-key receipt containing no credential, token, full email, session path, or credential-derived fingerprint. A production guard is valid only with both expected project and user argv assertions and `assertions.mode=intent-bound`. The companion pnpm case command owns the single clean TS7 build before its plain-Node runner starts; callers must not add a redundant prebuild. The runner rejects alternate entrypoints, single-reads/hashes source/config/lock and generated runtime/runner bytes, snapshots the exact built runtime privately before exposing three allowlisted env values, cleans the snapshot before publishing any passed/failed evidence, disables cache, uses an exclusively created clean cwd and argv-array spawn, and never persists raw child output. POSIX modes are enforced; Windows callers must choose a current-user-restricted parent ACL.
 

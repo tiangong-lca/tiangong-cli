@@ -33,13 +33,13 @@ checkPaths:
   - test/public-auth-identity-receipt.test.ts
   - test/lca-release*.test.ts
 lastReviewedAt: 2026-08-31
-lastReviewedCommit: f6430d1b6c73589df77c449d3dfb871b976277b9
-lastReviewedNote: 'Reviewed for Issue #256: CLI 0.1.5 keeps its commands/exports while upgrading to the latest Node 24-compatible Supabase/tooling graph and pinning TIDAS SDK 0.2.0 exactly.'
+lastReviewedCommit: 499c910d07bb6a5e2e1cd8e4403a5a617d4269bb
+lastReviewedNote: 'Reviewed for Issue #257: CLI 0.1.6 is the release identity for the merged latest-compatible dependency graph; commands, exports, OAuth/session behavior, dependencies, and lock bytes stay fixed.'
 ---
 
 # TianGong LCA CLI
 
-Package: `@tiangong-lca/cli` Executable: `tiangong-lca` Current package version: `0.1.5` Node: `24.19.0`
+Package: `@tiangong-lca/cli` Executable: `tiangong-lca` Current package version: `0.1.6` Node: `24.19.0`
 
 Repository development is single-track on pnpm `11.24.0` and TypeScript `7.0.2`. The published package remains a clean, package-manager-neutral consumer artifact: it contains runtime files only, not pnpm, TypeScript, Oxlint, tests, source-only tooling, or repository lockfiles.
 
@@ -72,6 +72,8 @@ Review note, 2026-08-31: Issue #246 releases that OAuth runtime as `@tiangong-lc
 Review note, 2026-08-31: Issue #252 replaces the stopped-unpublished 0.1.4 attempt with `@tiangong-lca/cli@0.1.5` after platform-complete session coverage merged. Only package identity, four version fixtures, and release evidence change; executable/public subpaths, OAuth behavior, dependencies, pnpm lock, Node/TypeScript toolchain, and consumer contract stay unchanged.
 
 Review note, 2026-08-31: Issue #256 upgrades the still-0.1.5 development/runtime graph to Supabase JS 2.112.4, lint-staged 17.4.1, Prettier 3.9.6, and tsx 4.23.13. TIDAS SDK is pinned exactly to npm-latest 0.2.0 and every stricter validation/data workflow stays in the exact-100% gate. Node 24.19.0 deliberately keeps latest 24.x typings rather than Node 26. The formatter rewrite is a separate mechanical commit; OAuth, public exports, commands, tags, and publication behavior do not change. Issue #257 owns the later version-only 0.1.6 release.
+
+Review note, 2026-08-31: Issue #257 releases that merged dependency graph as `@tiangong-lca/cli@0.1.6`. Only package identity, four exact-version fixtures, and release evidence change; commands, executable/public subpaths, OAuth/session behavior, exact TIDAS/Supabase dependencies, pnpm lock, Node/TypeScript toolchain, and clean consumer contract remain unchanged.
 
 Review note, 2026-07-12: `dataset maintenance plan/apply/verify` provides current-user RLS-scoped exact-row maintenance with immutable plans, explicit approval, per-action logs, platform audit correlation, and independent readback. `merge-support-aliases` now runs only in `target_mode=owner_draft`: source/target support and all changed rows stay private `state_code=0`; publication is a separate future workflow.
 
