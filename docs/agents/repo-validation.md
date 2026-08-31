@@ -32,8 +32,8 @@ checkPaths:
   - scripts/docpact-gate.sh
   - scripts/install-git-hooks.sh
 lastReviewedAt: 2026-08-31
-lastReviewedCommit: f6430d1b6c73589df77c449d3dfb871b976277b9
-lastReviewedNote: 'Reviewed for Issue #256: latest Node 24-compatible dependencies require clean peers, an exact TIDAS 0.2.0 pin, OAuth proof, exact 100%, and an executable guard preserving the Prettier 3.9-formatted env matrix.'
+lastReviewedCommit: 499c910d07bb6a5e2e1cd8e4403a5a617d4269bb
+lastReviewedNote: 'Reviewed for Issue #257: CLI 0.1.6 release proof requires npm/tag absence, RED fixtures, release-only diff, exact 100%, four platforms, provenance/integrity, and fresh OAuth/TIDAS consumers.'
 related:
   - ../../AGENTS.md
   - ../../.docpact/config.yaml
@@ -95,6 +95,8 @@ Review note, 2026-08-31: Issue #250 follows failed release run `33342410523`, wh
 Review note, 2026-08-31: Issue #252 records npm/tag absence for both failed 0.1.4 and replacement 0.1.5, commits RED fixtures before the package bump, and requires a release-only diff. Local proof is the complete exact-100% pre-push/package/audit/Docpact gate. Remote proof must show all four platform jobs—including Windows—at exact 100%, then one merge-bound `cli-v0.1.5`, native Trusted Publishing, provenance/integrity, fresh consumers, Skills exact pin, and workspace integration.
 
 Review note, 2026-08-31: Issue #256 keeps package 0.1.5 and upgrades Supabase JS 2.112.4 plus current Node 24-compatible tooling. Proof requires `pnpm outdated --format json` to leave only the documented Node-26 typings mismatch, exact TIDAS SDK `0.2.0`, `pnpm peers check`, package/tarball consumers, every OAuth/session and TIDAS 0.2 case, exact 100% coverage, Prettier 3.9's isolated mechanical rewrite, strict Docpact, and four-platform CI. It must not tag or publish; Issue #257 owns the version-only 0.1.6 release.
+
+Review note, 2026-08-31: Issue #257 records npm/tag 0.1.6 absence, commits RED fixtures before the package bump, and requires a release-only diff from merge `490eb08990bf339935f7a5402add063618d844d2`. Local proof is frozen install, 12/12 package/tarball, complete pre-push exact-100%, audit, and Docpact. Remote proof must show all four exact platform/architecture jobs at 100% before merge, then merge-bound `cli-v0.1.6`, native Trusted Publishing, cryptographic provenance/integrity/signatures, and fresh credential-free OAuth/TIDAS consumers before root integration.
 
 When command-surface, release-gate, or governed docs change, also run the repo-local documentation governance gate:
 

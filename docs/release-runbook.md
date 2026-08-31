@@ -26,8 +26,8 @@ checkPaths:
   - scripts/docpact-gate.sh
   - scripts/install-git-hooks.sh
 lastReviewedAt: 2026-08-31
-lastReviewedCommit: f6430d1b6c73589df77c449d3dfb871b976277b9
-lastReviewedNote: 'Reviewed for Issues #256/#257: dependency changes, including the exact TIDAS SDK 0.2.0 pin, merge at 0.1.5 with no tag; a separate version-only 0.1.6 PR reuses the four-platform/tag/provenance/publication path.'
+lastReviewedCommit: 499c910d07bb6a5e2e1cd8e4403a5a617d4269bb
+lastReviewedNote: 'Reviewed for Issue #257: 0.1.6 is the release-only publication of the merged dependency graph and reuses the unchanged four-platform, merge-tag, Trusted Publishing, provenance, consumer, and integration path.'
 related:
   - ../AGENTS.md
   - ../.docpact/config.yaml
@@ -68,6 +68,8 @@ Review note, 2026-08-31: Issue #250 records the 0.1.4 attempt as failed before t
 Review note, 2026-08-31: Issue #252 is that new version-only release, advancing 0.1.4 to 0.1.5 after coverage merge `ca15e0ed17e82c6ef169614fe86ee6efbbd284ef`. It must prove 0.1.4 remains absent, 0.1.5/tag are absent pre-mutation, local exact 100%, and all four remote platforms before the normal workflow creates `cli-v0.1.5`. Then verify Trusted Publishing/provenance, registry integrity, fresh OAuth consumers, Skills 0.1.5, and workspace integration. Manual tag/local publish/backfill remain forbidden.
 
 Review note, 2026-08-31: Issue #256 is a dependency feature PR and deliberately keeps package 0.1.5, so its merge must not create a tag or publish. After exact-100%/four-platform merge, Issue #257 creates a clean release-only branch, records npm/tag absence plus RED fixtures, advances only package/version evidence to 0.1.6, and reuses the existing merge-tag, Trusted Publishing, cryptographic verifier, OAuth/TIDAS public consumer, and workspace integration sequence.
+
+Review note, 2026-08-31: Issue #257 is that dedicated 0.1.6 release, based on dependency merge `490eb08990bf339935f7a5402add063618d844d2`. It changes package identity and four exact-version fixtures only, keeps lock bytes, dependencies, runtime, strict exports, workflows, and setup unchanged, and must prove pre-mutation npm/tag absence plus local package/prepush/audit/Docpact gates. Before merge, manually dispatch the exact-head four-platform matrix. After merge, verify `cli-v0.1.6`, native pnpm Trusted Publishing, cryptographic provenance/integrity/signatures, fresh OAuth/TIDAS consumers, and exact workspace integration. Local publication and manual tag creation remain forbidden.
 
 Review note, 2026-07-14: Issue #165 adds the guarded `dataset maintenance rebuild-derivatives` command profile but does not change the release procedure. Its command, contract, remote-adapter, asynchronous verification, and no-fallback tests must pass the existing pre-push/docpact gate before a later version-bump PR; the feature PR itself must not publish locally or alter package version metadata.
 
