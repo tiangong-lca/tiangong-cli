@@ -33,8 +33,8 @@ checkPaths:
   - test/public-auth-identity-receipt.test.ts
   - test/lca-release*.test.ts
 lastReviewedAt: 2026-08-31
-lastReviewedCommit: 352c11c5ffafaea1bf94133be92f3337b847866a
-lastReviewedNote: 'Reviewed for Issue #252: identifies 0.1.5 as the replacement OAuth release after unpublished 0.1.4, preserving exports, dependencies, and release behavior.'
+lastReviewedCommit: ac915213debee7312e9def5e8790c757cd15a579
+lastReviewedNote: 'Reviewed for Issue #256: CLI 0.1.5 keeps its commands/exports while upgrading to the latest Node 24-compatible Supabase/tooling graph and retaining TIDAS SDK 0.2.0.'
 ---
 
 # TianGong LCA CLI
@@ -70,6 +70,8 @@ Review note, 2026-08-31: Issue #247 prevents a second CLI process from failing w
 Review note, 2026-08-31: Issue #246 releases that OAuth runtime as `@tiangong-lca/cli@0.1.4`. Only package identity and four existing exact-version fixtures change; the executable and public subpaths, dependencies, pnpm lock, Node 24.19.0 / TypeScript 7.0.2 toolchain, auth behavior, and package-manager-neutral consumer contract are otherwise unchanged.
 
 Review note, 2026-08-31: Issue #252 replaces the stopped-unpublished 0.1.4 attempt with `@tiangong-lca/cli@0.1.5` after platform-complete session coverage merged. Only package identity, four version fixtures, and release evidence change; executable/public subpaths, OAuth behavior, dependencies, pnpm lock, Node/TypeScript toolchain, and consumer contract stay unchanged.
+
+Review note, 2026-08-31: Issue #256 upgrades the still-0.1.5 development/runtime graph to Supabase JS 2.112.4, lint-staged 17.4.1, Prettier 3.9.6, and tsx 4.23.13. TIDAS SDK remains npm-latest 0.2.0 and every stricter validation/data workflow stays in the exact-100% gate. Node 24.19.0 deliberately keeps latest 24.x typings rather than Node 26. The formatter rewrite is a separate mechanical commit; OAuth, public exports, commands, tags, and publication behavior do not change. Issue #257 owns the later version-only 0.1.6 release.
 
 Review note, 2026-07-12: `dataset maintenance plan/apply/verify` provides current-user RLS-scoped exact-row maintenance with immutable plans, explicit approval, per-action logs, platform audit correlation, and independent readback. `merge-support-aliases` now runs only in `target_mode=owner_draft`: source/target support and all changed rows stay private `state_code=0`; publication is a separate future workflow.
 

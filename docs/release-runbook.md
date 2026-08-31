@@ -26,8 +26,8 @@ checkPaths:
   - scripts/docpact-gate.sh
   - scripts/install-git-hooks.sh
 lastReviewedAt: 2026-08-31
-lastReviewedCommit: 352c11c5ffafaea1bf94133be92f3337b847866a
-lastReviewedNote: 'Reviewed for Issue #252: 0.1.5 is the replacement OAuth release after 0.1.4 stopped unpublished; unchanged four-platform/tag/provenance/publication mechanics apply.'
+lastReviewedCommit: ac915213debee7312e9def5e8790c757cd15a579
+lastReviewedNote: 'Reviewed for Issues #256/#257: dependency changes merge at 0.1.5 with no tag; a separate version-only 0.1.6 PR reuses the four-platform/tag/provenance/publication path.'
 related:
   - ../AGENTS.md
   - ../.docpact/config.yaml
@@ -66,6 +66,8 @@ Review note, 2026-08-31: Issue #246 is the dedicated 0.1.4 patch release for mer
 Review note, 2026-08-31: Issue #250 records the 0.1.4 attempt as failed before tag creation because Windows coverage was 95,430/95,434 lines even though all tests passed; npm 0.1.4 and `cli-v0.1.4` remain absent. The coverage repair itself keeps package version 0.1.4 and does not tag. After it merges, use a new version-only release so the normal push detector, four-platform matrix, tag, Trusted Publishing, provenance, consumer, Skills, and workspace gates bind one new merge commit; do not manually create or backfill the failed tag.
 
 Review note, 2026-08-31: Issue #252 is that new version-only release, advancing 0.1.4 to 0.1.5 after coverage merge `ca15e0ed17e82c6ef169614fe86ee6efbbd284ef`. It must prove 0.1.4 remains absent, 0.1.5/tag are absent pre-mutation, local exact 100%, and all four remote platforms before the normal workflow creates `cli-v0.1.5`. Then verify Trusted Publishing/provenance, registry integrity, fresh OAuth consumers, Skills 0.1.5, and workspace integration. Manual tag/local publish/backfill remain forbidden.
+
+Review note, 2026-08-31: Issue #256 is a dependency feature PR and deliberately keeps package 0.1.5, so its merge must not create a tag or publish. After exact-100%/four-platform merge, Issue #257 creates a clean release-only branch, records npm/tag absence plus RED fixtures, advances only package/version evidence to 0.1.6, and reuses the existing merge-tag, Trusted Publishing, cryptographic verifier, OAuth/TIDAS public consumer, and workspace integration sequence.
 
 Review note, 2026-07-14: Issue #165 adds the guarded `dataset maintenance rebuild-derivatives` command profile but does not change the release procedure. Its command, contract, remote-adapter, asynchronous verification, and no-fallback tests must pass the existing pre-push/docpact gate before a later version-bump PR; the feature PR itself must not publish locally or alter package version metadata.
 

@@ -31,8 +31,8 @@ checkPaths:
   - scripts/docpact-gate.sh
   - scripts/install-git-hooks.sh
 lastReviewedAt: 2026-08-31
-lastReviewedCommit: 352c11c5ffafaea1bf94133be92f3337b847866a
-lastReviewedNote: 'Reviewed for Issue #252: 0.1.5 advances package identity only on the merged OAuth/lock/platform-complete runtime; module, export, dependency, lock, and publication architecture stay unchanged.'
+lastReviewedCommit: ac915213debee7312e9def5e8790c757cd15a579
+lastReviewedNote: 'Reviewed for Issue #256: CLI 0.1.5 retains command/export/OAuth/TIDAS architecture while moving to the latest Node 24-compatible dependency graph, clean peers, and Prettier 3.9 formatting.'
 related:
   - ../../AGENTS.md
   - ../../.docpact/config.yaml
@@ -74,6 +74,8 @@ Review note, 2026-08-31: Issue #246 advances only the package compatibility iden
 Review note, 2026-08-31: Issue #250 keeps `src/lib/supabase-session.ts` as the single session-cache owner and adds no adapter or auth path. Its two private read/write helpers retain `process.platform` by default; tests may inject `linux`/`win32` to execute permission branches independent of the runner host. POSIX `0700`/`0600`, Windows parent-ACL guidance, atomic rename, runtime calls, and session schema remain unchanged.
 
 Review note, 2026-08-31: Issue #252 advances only package compatibility identity to 0.1.5. The OAuth/session/state-lock runtime, platform injection, generated declarations, strict exports, dependencies, pnpm lock bytes, command architecture, tag workflow, Trusted Publishing, provenance, and workspace integration architecture do not change.
+
+Review note, 2026-08-31: Issue #256 keeps package identity 0.1.5 and all command/export/OAuth/session architecture while updating Supabase JS to 2.112.4 and development tools to their Node 24-compatible stable releases. TIDAS SDK stays 0.2.0, Node types stay on latest 24.x, peer validation becomes part of pre-push, and Prettier 3.9 formatting is isolated from dependency bytes. The later 0.1.6 release remains separately owned by Issue #257.
 
 Review note, 2026-06-04: Foundry entity queue state now stays in the native CLI command family as `dataset curation-queue build/next/verify`; no secondary orchestration runtime was introduced.
 

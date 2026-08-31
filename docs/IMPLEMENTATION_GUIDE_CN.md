@@ -22,8 +22,8 @@ checkPaths:
   - src/**
   - test/**
 lastReviewedAt: 2026-08-31
-lastReviewedCommit: 626987ace7c5008935f8641d0fce21712410c5c0
-lastReviewedNote: 'Reviewed for Issue #250: session cache helper 的可选 platform 只用于跨平台覆盖 POSIX/Windows 权限分支；生产默认、OAuth/session bytes 与发布边界不变。'
+lastReviewedCommit: ac915213debee7312e9def5e8790c757cd15a579
+lastReviewedNote: 'Reviewed for Issue #256: Node 24 最新兼容依赖与 Prettier 3.9 格式迁移不改变命令、OAuth/session、TIDAS 0.2 或发布所有权。'
 related:
   - ../AGENTS.md
   - ../.docpact/config.yaml
@@ -33,6 +33,8 @@ related:
 ---
 
 # TianGong LCA CLI 实施指南
+
+Review note, 2026-08-31: Issue #256 keeps package 0.1.5 and the existing implementation architecture while refreshing Supabase JS/tooling to the latest Node 24-compatible releases. TIDAS SDK remains 0.2.0, peer checks join the pre-push gate, and Prettier 3.9's mechanical rewrite is isolated. Issue #257 owns the later version-only 0.1.6 publication.
 
 Review note, 2026-08-25: Issue #224 把实现与验证工具链固定为 Node 24.19.0、pnpm 11.23.0、TypeScript 7.0.2 与 type-aware Oxlint。依赖只由根 `pnpm-workspace.yaml` / `pnpm-lock.yaml` 决定；不保留 TypeScript 5/6、ESLint 或 Compiler API 兼容路径。`test:package` 同时验证单轨工具链、干净 tarball 和 package-manager-neutral consumer。feature 版本保持 0.0.33；合并和完整门禁通过后，建议用单独的 release-only PR 准备 0.1.0。
 
