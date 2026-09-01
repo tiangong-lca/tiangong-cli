@@ -142,7 +142,9 @@ integrationTest('bin entrypoint executes successfully in a child process', () =>
     path.join(dir, '.env'),
     [
       `TIANGONG_LCA_API_BASE_URL=${env.TIANGONG_LCA_API_BASE_URL ?? ''}`,
-      `TIANGONG_LCA_API_KEY=${env.TIANGONG_LCA_API_KEY ?? ''}`,
+      `TIANGONG_LCA_AUTH_MODE=${env.TIANGONG_LCA_AUTH_MODE ?? ''}`,
+      `TIANGONG_LCA_OAUTH_CLIENT_ID=${env.TIANGONG_LCA_OAUTH_CLIENT_ID ?? ''}`,
+      `TIANGONG_LCA_SESSION_FILE=${env.TIANGONG_LCA_SESSION_FILE ?? ''}`,
       `TIANGONG_LCA_SUPABASE_PUBLISHABLE_KEY=${env.TIANGONG_LCA_SUPABASE_PUBLISHABLE_KEY ?? ''}`,
     ].join('\n'),
     'utf8',

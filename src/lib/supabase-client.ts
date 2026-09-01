@@ -5,12 +5,11 @@ import { DEFAULT_OAUTH_REDIRECT_URI, requireOAuthLoopbackRedirectUri } from './o
 import { requireOAuthClientId } from './oauth-pkce.js';
 import { isDataApiAuthRefreshReplaySafe } from './supabase-data-api-replay.js';
 
-export type SupabaseAuthMode = 'oauth' | 'access_token' | 'legacy_user_api_key';
+export type SupabaseAuthMode = 'oauth' | 'access_token';
 
 export type SupabaseRestRuntime = {
   apiBaseUrl: string;
   authMode: SupabaseAuthMode;
-  userApiKey: string | null;
   oauthClientId: string | null;
   oauthRedirectUri: string | null;
   accessToken: string | null;
@@ -51,7 +50,6 @@ function resolveSupabaseAuthMode(options: {
   configuredMode: string;
   oauthClientId: string;
   accessToken: string;
-  userApiKey: string;
 }): SupabaseAuthMode | null {
   const configuredMode = options.configuredMode.trim().toLowerCase();
   if (configuredMode) {
@@ -60,25 +58,21 @@ function resolveSupabaseAuthMode(options: {
         return 'oauth';
       case 'access-token':
         return 'access_token';
-      case 'legacy-user-api-key':
-        return 'legacy_user_api_key';
       default:
-        throw new CliError(
-          'TIANGONG_LCA_AUTH_MODE must be oauth, access-token, or legacy-user-api-key.',
-          { code: 'SUPABASE_AUTH_MODE_INVALID', exitCode: 2 },
-        );
+        throw new CliError('TIANGONG_LCA_AUTH_MODE must be oauth or access-token.', {
+          code: 'SUPABASE_AUTH_MODE_INVALID',
+          exitCode: 2,
+        });
     }
   }
 
   if (options.accessToken) return 'access_token';
   if (options.oauthClientId) return 'oauth';
-  if (options.userApiKey) return 'legacy_user_api_key';
   return null;
 }
 
 export function requireSupabaseRestRuntime(env: NodeJS.ProcessEnv): SupabaseRestRuntime {
   const apiBaseUrl = trimToken(env.TIANGONG_LCA_API_BASE_URL);
-  const userApiKey = trimToken(env.TIANGONG_LCA_API_KEY);
   const oauthClientId = trimToken(env.TIANGONG_LCA_OAUTH_CLIENT_ID);
   const accessToken = trimToken(env.TIANGONG_LCA_ACCESS_TOKEN);
   const configuredAuthMode = trimToken(env.TIANGONG_LCA_AUTH_MODE);
@@ -91,7 +85,6 @@ export function requireSupabaseRestRuntime(env: NodeJS.ProcessEnv): SupabaseRest
     configuredMode: configuredAuthMode,
     oauthClientId,
     accessToken,
-    userApiKey,
   });
 
   if (!apiBaseUrl) {
@@ -99,9 +92,7 @@ export function requireSupabaseRestRuntime(env: NodeJS.ProcessEnv): SupabaseRest
   }
 
   if (!authMode) {
-    missing.push(
-      'TIANGONG_LCA_OAUTH_CLIENT_ID or TIANGONG_LCA_ACCESS_TOKEN or TIANGONG_LCA_API_KEY',
-    );
+    missing.push('TIANGONG_LCA_OAUTH_CLIENT_ID or TIANGONG_LCA_ACCESS_TOKEN');
   }
 
   if (!publishableKey) {
@@ -129,13 +120,6 @@ export function requireSupabaseRestRuntime(env: NodeJS.ProcessEnv): SupabaseRest
       exitCode: 2,
     });
   }
-  if (resolvedAuthMode === 'legacy_user_api_key' && !userApiKey) {
-    throw new CliError('Legacy auth mode requires TIANGONG_LCA_API_KEY.', {
-      code: 'SUPABASE_LEGACY_API_KEY_REQUIRED',
-      exitCode: 2,
-    });
-  }
-
   const normalizedOAuthClientId =
     resolvedAuthMode === 'oauth' ? requireOAuthClientId(oauthClientId) : null;
   const normalizedOAuthRedirectUri =
@@ -148,7 +132,6 @@ export function requireSupabaseRestRuntime(env: NodeJS.ProcessEnv): SupabaseRest
   return {
     apiBaseUrl,
     authMode: resolvedAuthMode,
-    userApiKey: resolvedAuthMode === 'legacy_user_api_key' ? userApiKey : null,
     oauthClientId: normalizedOAuthClientId,
     oauthRedirectUri: normalizedOAuthRedirectUri,
     accessToken: resolvedAuthMode === 'access_token' ? accessToken : null,

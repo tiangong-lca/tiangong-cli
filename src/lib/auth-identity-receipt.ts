@@ -12,7 +12,7 @@ import {
   resolveSupabaseUserSession,
   type ResolvedSupabaseUserSession,
 } from './supabase-session.js';
-import { redactEmail, requireUserApiKeyCredentials } from './user-api-key.js';
+import { redactEmail } from './credential-safety.js';
 
 export const AUTH_IDENTITY_RECEIPT_SCHEMA = 'tiangong-lca.auth-identity-receipt.v1' as const;
 export const AUTH_IDENTITY_MAX_TIMEOUT_MS = 2_147_483_647;
@@ -25,14 +25,7 @@ const SESSION_REFRESH_WINDOW_SECONDS = 300;
 const SHA256_PATTERN = /^[0-9a-f]{64}$/u;
 const UUID_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/u;
 const EMAIL_PATTERN = /^[^@\s]+@[^@\s]+\.[^@\s]+$/u;
-const SESSION_SOURCES = [
-  'memory',
-  'cache',
-  'refresh',
-  'oauth_login',
-  'legacy_signin',
-  'access_token',
-] as const;
+const SESSION_SOURCES = ['memory', 'cache', 'refresh', 'oauth_login', 'access_token'] as const;
 const CACHE_MODES = ['disabled', 'custom-file', 'platform-default'] as const;
 
 type SessionSource = (typeof SESSION_SOURCES)[number];
@@ -313,12 +306,10 @@ function assertSessionBinding(options: {
   runtime: SupabaseRestRuntime;
   session: ResolvedSupabaseUserSession;
   projectBaseUrl: string;
-  credentialEmail: string | null;
   now: Date;
 }): void {
   const { runtime, session } = options;
   const sessionEmail = normalizeEmail(session.userEmail);
-  const credentialEmail = options.credentialEmail ? normalizeEmail(options.credentialEmail) : null;
   const accessToken = token(session.accessToken);
   const source = session.source as string;
   const expectedMode = cacheMode(runtime);
@@ -342,7 +333,6 @@ function assertSessionBinding(options: {
     session.authMethod !== runtime.authMode ||
     session.projectBaseUrl !== options.projectBaseUrl ||
     !sessionEmail ||
-    (credentialEmail !== null && sessionEmail !== credentialEmail) ||
     !SESSION_SOURCES.includes(session.source) ||
     !cachePathMatches ||
     !cacheSourceFresh ||
@@ -746,11 +736,6 @@ export async function runAuthIdentityReceipt(
       { details: { expected_project_ref: expectedProjectRef, observed_project_ref: projectRef } },
     );
   }
-  const credentialEmail =
-    runtime.authMode === 'legacy_user_api_key'
-      ? requireUserApiKeyCredentials(runtime.userApiKey as string).email
-      : null;
-
   let session = await resolveBoundSession({
     runtime,
     fetchImpl: options.fetchImpl,
@@ -762,7 +747,6 @@ export async function runAuthIdentityReceipt(
     runtime,
     session,
     projectBaseUrl,
-    credentialEmail,
     now,
   });
 
@@ -792,7 +776,6 @@ export async function runAuthIdentityReceipt(
       runtime,
       session,
       projectBaseUrl,
-      credentialEmail,
       now,
     });
     currentUser = await fetchCurrentUser({
@@ -804,12 +787,7 @@ export async function runAuthIdentityReceipt(
     });
   }
   const sessionEmail = normalizeEmail(session.userEmail);
-  const normalizedCredentialEmail = credentialEmail ? normalizeEmail(credentialEmail) : null;
-  if (
-    !sessionEmail ||
-    currentUser.email !== sessionEmail ||
-    (normalizedCredentialEmail !== null && currentUser.email !== normalizedCredentialEmail)
-  ) {
+  if (!sessionEmail || currentUser.email !== sessionEmail) {
     return identityError(
       'Server-verified current user does not match the resolved session identity.',
       'AUTH_IDENTITY_SESSION_MISMATCH',

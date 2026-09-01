@@ -12,14 +12,9 @@ import {
   __testInternals as sessionInternals,
   type ResolvedSupabaseUserSession,
 } from '../src/lib/supabase-session.js';
-import {
-  buildSupabaseTestEnv,
-  isSupabaseAuthTokenUrl,
-  makeSupabaseAuthResponse,
-} from './helpers/supabase-auth.js';
 
 const NOW = new Date('2026-08-25T12:34:56.000Z');
-const USER_API_KEY_SECRET = 'identity-api-key-password';
+const SENSITIVE_SENTINEL = 'identity-sensitive-sentinel';
 const ACCESS_TOKEN_SECRET = 'identity-access-token';
 const PUBLISHABLE_KEY_SECRET = 'identity-publishable-key';
 const USER_ID = '11111111-1111-4111-8111-111111111111';
@@ -40,13 +35,14 @@ function response(status: number, body: unknown, contentType = 'application/json
 }
 
 function runtimeEnv(overrides: Partial<NodeJS.ProcessEnv> = {}): NodeJS.ProcessEnv {
-  return buildSupabaseTestEnv({
+  return {
     TIANGONG_LCA_API_BASE_URL: 'https://project-ref.supabase.co/functions/v1',
     TIANGONG_LCA_SUPABASE_PUBLISHABLE_KEY: PUBLISHABLE_KEY_SECRET,
-    TIANGONG_LCA_API_KEY: USER_API_KEY_SECRET,
+    TIANGONG_LCA_AUTH_MODE: 'access-token',
+    TIANGONG_LCA_ACCESS_TOKEN: ACCESS_TOKEN_SECRET,
     TIANGONG_LCA_DISABLE_SESSION_CACHE: 'true',
     ...overrides,
-  });
+  };
 }
 
 function resolvedSession(
@@ -59,8 +55,8 @@ function resolvedSession(
     userEmail: 'user@example.com',
     projectBaseUrl: 'https://project-ref.supabase.co',
     sessionFile: null,
-    authMethod: 'legacy_user_api_key',
-    source: 'legacy_signin',
+    authMethod: 'access_token',
+    source: 'access_token',
     ...overrides,
   };
 }
@@ -128,7 +124,7 @@ test('identity receipt binds a server-verified account/project without exposing 
   assert.equal(receipt.identity.user_id, '11111111-1111-4111-8111-111111111111');
   assert.equal(receipt.identity.display_email, 'us****@example.com');
   assert.deepEqual(receipt.session, {
-    source: 'legacy_signin',
+    source: 'access_token',
     cache_mode: 'disabled',
     force_reauth: false,
     expires_at_utc: '2100-01-01T00:00:00.000Z',
@@ -153,7 +149,7 @@ test('identity receipt binds a server-verified account/project without exposing 
     /user_api_key_fingerprint|publishable_key_fingerprint|email_fingerprint|session_file/u,
   );
   for (const secret of [
-    USER_API_KEY_SECRET,
+    SENSITIVE_SENTINEL,
     ACCESS_TOKEN_SECRET,
     PUBLISHABLE_KEY_SECRET,
     'identity-refresh-token',
@@ -163,12 +159,11 @@ test('identity receipt binds a server-verified account/project without exposing 
   }
 });
 
-test('identity receipt binds OAuth and explicit headless sessions without a legacy API key', async () => {
+test('identity receipt binds OAuth and explicit headless sessions', async () => {
   for (const authMode of ['oauth', 'access-token'] as const) {
     const oauth = authMode === 'oauth';
     const receipt = await runAuthIdentityReceipt({
       env: runtimeEnv({
-        TIANGONG_LCA_API_KEY: '',
         TIANGONG_LCA_AUTH_MODE: authMode,
         TIANGONG_LCA_OAUTH_CLIENT_ID: oauth ? '123e4567-e89b-42d3-a456-426614174000' : undefined,
         TIANGONG_LCA_ACCESS_TOKEN: oauth ? undefined : ACCESS_TOKEN_SECRET,
@@ -213,64 +208,22 @@ test('identity receipt canonicalization is deterministic and binds bounded reque
   assert.deepEqual(changedToken, first);
 });
 
-test('identity receipt default wiring signs in and performs one live current-user read', async () => {
-  let authCalls = 0;
+test('identity receipt default wiring verifies the headless token and performs the live read', async () => {
   let currentUserCalls = 0;
   try {
     const receipt = await runAuthIdentityReceipt({
       env: runtimeEnv({ TIANGONG_LCA_FORCE_REAUTH: 'true' }),
       fetchImpl: async (url) => {
-        if (isSupabaseAuthTokenUrl(url)) {
-          authCalls += 1;
-          return makeSupabaseAuthResponse({
-            accessToken: ACCESS_TOKEN_SECRET,
-            email: 'user@example.com',
-            userId: '11111111-1111-4111-8111-111111111111',
-          });
-        }
-        assert.equal(url, 'https://project-ref.supabase.co/auth/v1/user');
-        currentUserCalls += 1;
-        return response(200, {
-          id: '11111111-1111-4111-8111-111111111111',
-          email: 'user@example.com',
-        });
-      },
-      cliVersion: '0.1.1-test',
-      expectedProjectRef: 'project-ref',
-      expectedUserId: '11111111-1111-4111-8111-111111111111',
-      now: NOW,
-    });
-
-    assert.equal(receipt.status, 'passed');
-    assert.equal(receipt.session.source, 'legacy_signin');
-    assert.equal(authCalls, 1);
-    assert.equal(currentUserCalls, 1);
-  } finally {
-    sessionInternals.SESSION_MEMORY_CACHE.clear();
-    sessionInternals.SESSION_OPERATION_CHAINS.clear();
-  }
-});
-
-test('identity receipt default wiring refreshes once after a 401', async () => {
-  let passwordCalls = 0;
-  let refreshCalls = 0;
-  let currentUserCalls = 0;
-  try {
-    const receipt = await runAuthIdentityReceipt({
-      env: runtimeEnv(),
-      fetchImpl: async (url) => {
-        if (url.includes('grant_type=password')) {
-          passwordCalls += 1;
-          return makeSupabaseAuthResponse({ accessToken: 'stale-default-token' });
-        }
-        if (url.includes('grant_type=refresh_token')) {
-          refreshCalls += 1;
-          return makeSupabaseAuthResponse({ accessToken: 'fresh-default-token' });
-        }
         assert.equal(url, 'https://project-ref.supabase.co/auth/v1/user');
         currentUserCalls += 1;
         return currentUserCalls === 1
-          ? response(401, { message: 'expired' })
+          ? response(200, {
+              user: {
+                id: '11111111-1111-4111-8111-111111111111',
+                email: 'user@example.com',
+                role: 'authenticated',
+              },
+            })
           : response(200, {
               id: '11111111-1111-4111-8111-111111111111',
               email: 'user@example.com',
@@ -281,12 +234,49 @@ test('identity receipt default wiring refreshes once after a 401', async () => {
       expectedUserId: '11111111-1111-4111-8111-111111111111',
       now: NOW,
     });
-    assert.equal(receipt.session.source, 'refresh');
-    assert.equal(passwordCalls, 1);
-    assert.equal(refreshCalls, 1);
+
+    assert.equal(receipt.status, 'passed');
+    assert.equal(receipt.session.source, 'access_token');
     assert.equal(currentUserCalls, 2);
   } finally {
     sessionInternals.SESSION_MEMORY_CACHE.clear();
+    sessionInternals.SESSION_OPERATION_CHAINS.clear();
+  }
+});
+
+test('identity receipt default wiring retries one unauthorized live read', async () => {
+  sessionInternals.ACCESS_TOKEN_MEMORY_CACHE.clear();
+  sessionInternals.SESSION_OPERATION_CHAINS.clear();
+  let currentUserCalls = 0;
+  try {
+    const receipt = await runAuthIdentityReceipt({
+      env: runtimeEnv(),
+      fetchImpl: async (url) => {
+        assert.equal(url, 'https://project-ref.supabase.co/auth/v1/user');
+        currentUserCalls += 1;
+        if (currentUserCalls === 1) {
+          return response(200, {
+            user: {
+              id: USER_ID,
+              email: 'user@example.com',
+              role: 'authenticated',
+            },
+          });
+        }
+        return currentUserCalls === 2
+          ? response(401, { message: 'expired' })
+          : response(200, { id: USER_ID, email: 'user@example.com' });
+      },
+      cliVersion: '0.1.1-test',
+      expectedProjectRef: 'project-ref',
+      expectedUserId: USER_ID,
+      now: NOW,
+    });
+
+    assert.equal(receipt.status, 'passed');
+    assert.equal(currentUserCalls, 3);
+  } finally {
+    sessionInternals.ACCESS_TOKEN_MEMORY_CACHE.clear();
     sessionInternals.SESSION_OPERATION_CHAINS.clear();
   }
 });
@@ -372,11 +362,15 @@ test('identity receipt refreshes once after an unauthorized live lookup and neve
 test('identity receipt records cache modes without exposing a session path', async () => {
   const custom = await successfulReceipt({
     env: runtimeEnv({
+      TIANGONG_LCA_AUTH_MODE: 'oauth',
+      TIANGONG_LCA_ACCESS_TOKEN: undefined,
+      TIANGONG_LCA_OAUTH_CLIENT_ID: '123e4567-e89b-42d3-a456-426614174000',
       TIANGONG_LCA_DISABLE_SESSION_CACHE: 'false',
       TIANGONG_LCA_SESSION_FILE: '/private/account/session.json',
     }),
     resolveSessionImpl: async () =>
       resolvedSession({
+        authMethod: 'oauth',
         source: 'cache',
         sessionFile: '/private/account/session.json',
       }),
@@ -386,12 +380,16 @@ test('identity receipt records cache modes without exposing a session path', asy
 
   const platformDefault = await successfulReceipt({
     env: runtimeEnv({
+      TIANGONG_LCA_AUTH_MODE: 'oauth',
+      TIANGONG_LCA_ACCESS_TOKEN: undefined,
+      TIANGONG_LCA_OAUTH_CLIENT_ID: '123e4567-e89b-42d3-a456-426614174000',
       TIANGONG_LCA_DISABLE_SESSION_CACHE: 'false',
       TIANGONG_LCA_SESSION_FILE: '',
       TIANGONG_LCA_FORCE_REAUTH: 'true',
     }),
     resolveSessionImpl: async () =>
       resolvedSession({
+        authMethod: 'oauth',
         source: 'refresh',
         sessionFile: '/platform/default/session.json',
         expiresAt: null,
@@ -491,7 +489,7 @@ test('identity receipt rejects nonzero, malformed, ok:false, oversized, and inco
   const cases: Array<[string, ResponseLike, string]> = [
     [
       'nonzero',
-      response(503, { secret: USER_API_KEY_SECRET }),
+      response(503, { secret: SENSITIVE_SENTINEL }),
       'AUTH_IDENTITY_REMOTE_REQUEST_FAILED',
     ],
     ['invalid-json', response(200, '{broken'), 'AUTH_IDENTITY_REMOTE_INVALID_JSON'],
@@ -529,7 +527,7 @@ test('identity receipt rejects nonzero, malformed, ok:false, oversized, and inco
       (error: unknown) => {
         assert.ok(error instanceof Error, name);
         assert.equal('code' in error ? error.code : null, code, name);
-        assert.doesNotMatch(JSON.stringify(error), new RegExp(USER_API_KEY_SECRET, 'u'), name);
+        assert.doesNotMatch(JSON.stringify(error), new RegExp(SENSITIVE_SENTINEL, 'u'), name);
         assert.doesNotMatch(JSON.stringify(error), new RegExp(ACCESS_TOKEN_SECRET, 'u'), name);
         return true;
       },
@@ -541,14 +539,14 @@ test('identity receipt rejects nonzero, malformed, ok:false, oversized, and inco
       fetchImpl: async () => ({
         ...response(200, {}),
         async text(): Promise<string> {
-          throw new Error(`body read included ${USER_API_KEY_SECRET}`);
+          throw new Error(`body read included ${SENSITIVE_SENTINEL}`);
         },
       }),
     }),
     (error: unknown) => {
       assert.ok(error instanceof Error);
       assert.equal('code' in error ? error.code : null, 'AUTH_IDENTITY_REMOTE_REQUEST_FAILED');
-      assert.doesNotMatch(JSON.stringify(error), new RegExp(USER_API_KEY_SECRET, 'u'));
+      assert.doesNotMatch(JSON.stringify(error), new RegExp(SENSITIVE_SENTINEL, 'u'));
       return true;
     },
   );
@@ -625,13 +623,13 @@ test('identity receipt sanitizes transport and session-resolution failures', asy
   await assert.rejects(
     successfulReceipt({
       fetchImpl: async () => {
-        throw new Error(`transport included ${USER_API_KEY_SECRET} and ${ACCESS_TOKEN_SECRET}`);
+        throw new Error(`transport included ${SENSITIVE_SENTINEL} and ${ACCESS_TOKEN_SECRET}`);
       },
     }),
     (error: unknown) => {
       assert.ok(error instanceof Error);
       assert.equal('code' in error ? error.code : null, 'AUTH_IDENTITY_REMOTE_REQUEST_FAILED');
-      assert.doesNotMatch(JSON.stringify(error), new RegExp(USER_API_KEY_SECRET, 'u'));
+      assert.doesNotMatch(JSON.stringify(error), new RegExp(SENSITIVE_SENTINEL, 'u'));
       assert.doesNotMatch(JSON.stringify(error), new RegExp(ACCESS_TOKEN_SECRET, 'u'));
       return true;
     },
@@ -650,7 +648,7 @@ test('identity receipt sanitizes transport and session-resolution failures', asy
   await assert.rejects(
     successfulReceipt({
       resolveSessionImpl: async () => {
-        const error = new Error(`session included ${USER_API_KEY_SECRET}`) as Error & {
+        const error = new Error(`session included ${SENSITIVE_SENTINEL}`) as Error & {
           code: string;
         };
         error.code = 'SIMULATED_SESSION_FAILURE';
@@ -661,7 +659,7 @@ test('identity receipt sanitizes transport and session-resolution failures', asy
       assert.ok(error instanceof Error);
       assert.equal('code' in error ? error.code : null, 'AUTH_IDENTITY_SESSION_FAILED');
       assert.match(JSON.stringify(error), /SIMULATED_SESSION_FAILURE/u);
-      assert.doesNotMatch(JSON.stringify(error), new RegExp(USER_API_KEY_SECRET, 'u'));
+      assert.doesNotMatch(JSON.stringify(error), new RegExp(SENSITIVE_SENTINEL, 'u'));
       return true;
     },
   );

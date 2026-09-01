@@ -34,18 +34,14 @@ import {
   type SupabaseDataRuntime,
   type SupabaseRestRuntime,
 } from './supabase-client.js';
-import {
-  fingerprintSecret,
-  fingerprintUserApiKey,
-  requireUserApiKeyCredentials,
-} from './user-api-key.js';
+import { fingerprintSecret } from './credential-safety.js';
 
 const DEFAULT_TIMEOUT_MS = 10_000;
 const SESSION_REFRESH_WINDOW_SECONDS = 300;
 
 export type CachedSupabaseSessionRecord = {
   schema_version: 2;
-  auth_method: 'oauth' | 'legacy_user_api_key';
+  auth_method: 'oauth';
   supabase_url: string;
   publishable_key_fingerprint: string;
   auth_binding_fingerprint: string;
@@ -64,14 +60,14 @@ export type ResolvedSupabaseUserSession = {
   userEmail: string;
   projectBaseUrl: string;
   sessionFile: string | null;
-  authMethod: 'oauth' | 'access_token' | 'legacy_user_api_key';
-  source: 'memory' | 'cache' | 'refresh' | 'oauth_login' | 'legacy_signin' | 'access_token';
+  authMethod: 'oauth' | 'access_token';
+  source: 'memory' | 'cache' | 'refresh' | 'oauth_login' | 'access_token';
 };
 
 type RuntimeIdentity = {
   projectBaseUrl: string;
   publishableKeyFingerprint: string;
-  authMethod: 'oauth' | 'access_token' | 'legacy_user_api_key';
+  authMethod: 'oauth' | 'access_token';
   authBindingFingerprint: string;
   sessionFilePath: string | null;
   memoKey: string;
@@ -115,22 +111,14 @@ function parseCachedSessionRecord(value: unknown): CachedSupabaseSessionRecord |
     return null;
   }
 
-  if (value.schema_version !== 1 && value.schema_version !== 2) {
+  if (value.schema_version !== 2) {
     return null;
   }
 
   const supabaseUrl = trimToken(value.supabase_url);
   const publishableKeyFingerprint = trimToken(value.publishable_key_fingerprint);
-  const authMethod =
-    value.schema_version === 1
-      ? 'legacy_user_api_key'
-      : value.auth_method === 'oauth' || value.auth_method === 'legacy_user_api_key'
-        ? value.auth_method
-        : null;
-  const authBindingFingerprint =
-    value.schema_version === 1
-      ? trimToken(value.user_api_key_fingerprint)
-      : trimToken(value.auth_binding_fingerprint);
+  const authMethod = value.auth_method === 'oauth' ? 'oauth' : null;
+  const authBindingFingerprint = trimToken(value.auth_binding_fingerprint);
   const userEmail = trimToken(value.user_email);
   const accessToken = trimToken(value.access_token);
   const refreshToken = trimToken(value.refresh_token);
@@ -142,14 +130,12 @@ function parseCachedSessionRecord(value: unknown): CachedSupabaseSessionRecord |
         ? null
         : NaN;
   const grantedScopes =
-    value.schema_version === 1
-      ? []
-      : Array.isArray(value.granted_scopes) &&
-          value.granted_scopes.every((scope) => typeof scope === 'string' && scope.trim())
-        ? [...new Set(value.granted_scopes.map((scope) => scope.trim()))].sort((left, right) =>
-            left.localeCompare(right),
-          )
-        : null;
+    Array.isArray(value.granted_scopes) &&
+    value.granted_scopes.every((scope) => typeof scope === 'string' && scope.trim())
+      ? [...new Set(value.granted_scopes.map((scope) => scope.trim()))].sort((left, right) =>
+          left.localeCompare(right),
+        )
+      : null;
 
   if (
     !supabaseUrl ||
@@ -235,9 +221,7 @@ function buildRuntimeIdentity(runtime: SupabaseRestRuntime): RuntimeIdentity {
   const authBindingFingerprint =
     runtime.authMode === 'oauth'
       ? fingerprintSecret(`oauth-client:${runtime.oauthClientId as string}`)
-      : runtime.authMode === 'access_token'
-        ? fingerprintSecret(runtime.accessToken as string)
-        : fingerprintUserApiKey(runtime.userApiKey as string);
+      : fingerprintSecret(runtime.accessToken as string);
   const sessionFilePath = resolveSessionFilePath(runtime);
 
   return {
@@ -294,7 +278,7 @@ function buildCachedSessionRecord(options: {
 
   return {
     schema_version: 2,
-    auth_method: options.runtime.authMethod === 'oauth' ? 'oauth' : 'legacy_user_api_key',
+    auth_method: 'oauth',
     supabase_url: options.runtime.projectBaseUrl,
     publishable_key_fingerprint: options.runtime.publishableKeyFingerprint,
     auth_binding_fingerprint: options.runtime.authBindingFingerprint,
@@ -422,47 +406,10 @@ function createSupabaseAuthClient(
   });
 }
 
-async function signInWithUserApiKey(options: {
-  runtime: SupabaseRestRuntime;
-  runtimeIdentity: RuntimeIdentity;
-  fetchImpl: FetchLike;
-  timeoutMs: number;
-  now: Date;
-}): Promise<CachedSupabaseSessionRecord> {
-  const credentials = requireUserApiKeyCredentials(options.runtime.userApiKey as string);
-  const authClient = createSupabaseAuthClient(
-    options.runtimeIdentity,
-    options.runtime.publishableKey,
-    options.fetchImpl,
-    options.timeoutMs,
-  );
-  const { data, error } = await authClient.auth.signInWithPassword({
-    email: credentials.email,
-    password: credentials.password,
-  });
-
-  if (error || !data.session) {
-    throw new CliError('Failed to sign in with TIANGONG_LCA_API_KEY.', {
-      code: 'SUPABASE_AUTH_SIGN_IN_FAILED',
-      exitCode: 1,
-      details: error?.message ?? 'Supabase auth session missing from sign-in response.',
-    });
-  }
-
-  return buildCachedSessionRecord({
-    runtime: options.runtimeIdentity,
-    session: data.session,
-    userEmail: trimToken(data.user?.email) || credentials.email,
-    grantedScopes: [],
-    now: options.now,
-  });
-}
-
 async function refreshWithRefreshToken(options: {
   runtime: SupabaseRestRuntime;
   runtimeIdentity: RuntimeIdentity;
   refreshToken: string;
-  userEmail: string;
   fetchImpl: FetchLike;
   timeoutMs: number;
   now: Date;
@@ -473,57 +420,29 @@ async function refreshWithRefreshToken(options: {
   }
 
   try {
-    if (options.runtime.authMode === 'oauth') {
-      const tokens = await refreshOAuthTokens({
-        projectBaseUrl: options.runtimeIdentity.projectBaseUrl,
-        clientId: options.runtime.oauthClientId as string,
-        refreshToken: normalizedRefreshToken,
-        fetchImpl: options.fetchImpl,
-        timeoutMs: options.timeoutMs,
-      });
-      const userInfo = await fetchOAuthUserInfo({
-        projectBaseUrl: options.runtimeIdentity.projectBaseUrl,
-        accessToken: tokens.accessToken,
-        fetchImpl: options.fetchImpl,
-        timeoutMs: options.timeoutMs,
-      });
-      return buildCachedSessionRecord({
-        runtime: options.runtimeIdentity,
-        session: {
-          access_token: tokens.accessToken,
-          refresh_token: tokens.refreshToken,
-          expires_at: undefined,
-          expires_in: tokens.expiresIn,
-        },
-        userEmail: userInfo.email,
-        grantedScopes: tokens.scope,
-        now: options.now,
-      });
-    }
-
-    if (options.runtime.authMode !== 'legacy_user_api_key') {
-      return null;
-    }
-
-    const authClient = createSupabaseAuthClient(
-      options.runtimeIdentity,
-      options.runtime.publishableKey,
-      options.fetchImpl,
-      options.timeoutMs,
-    );
-    const { data, error } = await authClient.auth.refreshSession({
-      refresh_token: normalizedRefreshToken,
+    const tokens = await refreshOAuthTokens({
+      projectBaseUrl: options.runtimeIdentity.projectBaseUrl,
+      clientId: options.runtime.oauthClientId as string,
+      refreshToken: normalizedRefreshToken,
+      fetchImpl: options.fetchImpl,
+      timeoutMs: options.timeoutMs,
     });
-
-    if (error || !data.session) {
-      return null;
-    }
-
+    const userInfo = await fetchOAuthUserInfo({
+      projectBaseUrl: options.runtimeIdentity.projectBaseUrl,
+      accessToken: tokens.accessToken,
+      fetchImpl: options.fetchImpl,
+      timeoutMs: options.timeoutMs,
+    });
     return buildCachedSessionRecord({
       runtime: options.runtimeIdentity,
-      session: data.session,
-      userEmail: trimToken(data.user?.email) || options.userEmail,
-      grantedScopes: [],
+      session: {
+        access_token: tokens.accessToken,
+        refresh_token: tokens.refreshToken,
+        expires_at: undefined,
+        expires_in: tokens.expiresIn,
+      },
+      userEmail: userInfo.email,
+      grantedScopes: tokens.scope,
       now: options.now,
     });
   } catch {
@@ -632,7 +551,6 @@ async function resolveAndPersistSession(options: {
         runtime,
         runtimeIdentity,
         refreshToken: refreshCandidate.refresh_token,
-        userEmail: refreshCandidate.user_email,
         fetchImpl: options.fetchImpl,
         timeoutMs: options.timeoutMs,
         now: options.now,
@@ -648,30 +566,14 @@ async function resolveAndPersistSession(options: {
     }
   }
 
-  if (runtime.authMode === 'oauth') {
-    dropMemoizedRecord(runtimeIdentity);
-    throw new CliError(
-      'No usable OAuth session is available. Run `tiangong-lca auth login` in a trusted terminal.',
-      {
-        code: 'SUPABASE_OAUTH_LOGIN_REQUIRED',
-        exitCode: 1,
-      },
-    );
-  }
-
-  const signedIn = await signInWithUserApiKey({
-    runtime,
-    runtimeIdentity,
-    fetchImpl: options.fetchImpl,
-    timeoutMs: options.timeoutMs,
-    now: options.now,
-  });
-
-  if (runtimeIdentity.sessionFilePath) {
-    writeCachedSessionRecord(runtimeIdentity.sessionFilePath, signedIn);
-  }
-  memoizeRecord(runtimeIdentity, signedIn);
-  return toResolvedSession(signedIn, runtimeIdentity, 'legacy_signin');
+  dropMemoizedRecord(runtimeIdentity);
+  throw new CliError(
+    'No usable OAuth session is available. Run `tiangong-lca auth login` in a trusted terminal.',
+    {
+      code: 'SUPABASE_OAUTH_LOGIN_REQUIRED',
+      exitCode: 1,
+    },
+  );
 }
 
 export async function resolveSupabaseUserSession(options: {
@@ -763,7 +665,7 @@ export type AuthStatusReceipt = {
   schemaVersion: 'tiangong.cli-auth-status.v1';
   status: 'ready' | 'login-required';
   authMethod: ResolvedSupabaseUserSession['authMethod'];
-  sessionState: 'fresh' | 'refresh-required' | 'memory-only' | 'transition-only' | 'missing';
+  sessionState: 'fresh' | 'refresh-required' | 'memory-only' | 'missing';
   sessionCache: 'private-file' | 'disabled' | 'memory-only';
   expiresAt: number | null;
   grantedScopes: string[];
@@ -784,19 +686,6 @@ export function inspectSupabaseAuthStatus(options: {
       authMethod: 'access_token',
       sessionState: 'memory-only',
       sessionCache: 'memory-only',
-      expiresAt: null,
-      grantedScopes: [],
-      onlineVerified: false,
-    };
-  }
-
-  if (options.runtime.authMode === 'legacy_user_api_key') {
-    return {
-      schemaVersion: 'tiangong.cli-auth-status.v1',
-      status: 'ready',
-      authMethod: 'legacy_user_api_key',
-      sessionState: 'transition-only',
-      sessionCache: runtimeIdentity.sessionFilePath ? 'private-file' : 'disabled',
       expiresAt: null,
       grantedScopes: [],
       onlineVerified: false,
@@ -1035,7 +924,6 @@ export const __testInternals = {
   resolveDefaultSessionFilePath,
   resolveAndPersistSession,
   resolveSessionFilePath,
-  signInWithUserApiKey,
   withSessionOperationLock,
   writeCachedSessionRecord,
 };

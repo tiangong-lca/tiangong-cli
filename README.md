@@ -28,18 +28,17 @@ checkPaths:
   - src/lib/oauth-pkce.ts
   - src/lib/supabase-session.ts
   - src/lib/lca-release.ts
-  - scripts/run-auth-identity-production-case.ts
   - test/auth-identity*.test.ts
   - test/public-auth-identity-receipt.test.ts
   - test/lca-release*.test.ts
 lastReviewedAt: 2026-08-31
 lastReviewedCommit: 499c910d07bb6a5e2e1cd8e4403a5a617d4269bb
-lastReviewedNote: 'Reviewed for Issue #257: CLI 0.1.6 is the release identity for the merged latest-compatible dependency graph; commands, exports, OAuth/session behavior, dependencies, and lock bytes stay fixed.'
+lastReviewedNote: 'Reviewed for Issue #260: CLI 0.1.7 removes the password-equivalent API-key bootstrap and historical runner; OAuth or an explicit verified headless token is required for every user-authenticated remote command.'
 ---
 
 # TianGong LCA CLI
 
-Package: `@tiangong-lca/cli` Executable: `tiangong-lca` Current package version: `0.1.6` Node: `24.19.0`
+Package: `@tiangong-lca/cli` Executable: `tiangong-lca` Current package version: `0.1.7` Node: `24.19.0`
 
 Repository development is single-track on pnpm `11.24.0` and TypeScript `7.0.2`. The published package remains a clean, package-manager-neutral consumer artifact: it contains runtime files only, not pnpm, TypeScript, Oxlint, tests, source-only tooling, or repository lockfiles.
 
@@ -154,7 +153,6 @@ Notes:
 - `TIANGONG_LCA_OAUTH_CLIENT_ID` is the environment-specific registered public CLI client; it is not a secret.
 - Run `tiangong-lca auth login` once in a trusted terminal. All Edge Function and direct Supabase commands then reuse the OAuth access token and rotate the refresh token on demand.
 - For approved headless execution, set `TIANGONG_LCA_AUTH_MODE=access-token` and inject one short-lived `TIANGONG_LCA_ACCESS_TOKEN`. It is verified online, kept only in process memory, and never refreshed.
-- Transition-only compatibility uses `TIANGONG_LCA_AUTH_MODE=legacy-user-api-key` plus `TIANGONG_LCA_API_KEY`. OAuth failures never fall back to this password-equivalent credential.
 
 Optional session control:
 
@@ -190,7 +188,7 @@ Use the identity receipt before a production-backed case or any later owner-draf
 tiangong-lca auth identity-receipt --expected-project-ref <project-ref> --expected-user-id <user-id> --json
 ```
 
-The command performs no dataset write. It resolves the selected OAuth, explicit headless, or transition-only legacy session, checks the canonical Supabase project, and makes a bounded live `GET /auth/v1/user`. A refreshable cached token that receives `401` or `403` may be refreshed and retried exactly once; an explicit headless access token is never refreshed. All other transport or response failures are terminal. A valid production guard requires:
+The command performs no dataset write. It resolves the selected OAuth or explicit headless session, checks the canonical Supabase project, and makes a bounded live `GET /auth/v1/user`. A refreshable cached token that receives `401` or `403` may be refreshed and retried exactly once; an explicit headless access token is never refreshed. All other transport or response failures are terminal. A valid production guard requires:
 
 - `schema` exactly `tiangong-lca.auth-identity-receipt.v1`;
 - `status: "passed"`, `operation: "current-user-read"`, and `remote_write_mode: "read-only"`;
@@ -198,14 +196,6 @@ The command performs no dataset write. It resolves the selected OAuth, explicit 
 - a fresh capture time and a valid recomputed `receipt_scope_sha256`.
 
 Calling without expectations is allowed for discovery but produces `assertions.mode: "observed"`; it is not an authorization guard. The safe display email is masked and must not be used as the account key. The receipt deliberately excludes credentials, full email, session-file details, raw response metadata, and all credential/token/path-derived fingerprints.
-
-For the explicitly authorized local production read case from a validated repository checkout, invoke the narrow TypeScript runner with a new private output directory:
-
-```text
-pnpm case:auth-identity:production -- --env-file <data-foundry-ignored-.env> --expected-project-ref <project-ref> --expected-user-id <user-id> --out-dir <new-private-case-directory>
-```
-
-The historical production-case runner remains a transition-only legacy fixture: it reads only `TIANGONG_LCA_API_BASE_URL`, `TIANGONG_LCA_SUPABASE_PUBLISHABLE_KEY`, and `TIANGONG_LCA_TEST_API_KEY`; the last is mapped to the child process's explicit legacy variable. It does not accept an alternate CLI path. The pnpm command first performs a clean TS7 build without the production env. Its plain-Node runner then single-reads source/config/lock and the freshly generated `dist/src/**/*.js`, hashes the source tree, runner, runtime, exact entrypoint, and pnpm lock, and copies those exact built buffers into a private snapshot before exposing the key. It forces reauthentication with session cache disabled, runs only the built snapshot from an exclusively created clean directory with an argv array and `shell:false`, cleans the snapshot before publishing success artifacts, and persists only the parsed receipt and case manifest. POSIX creates the case directory as `0700` and files as `0600`; Windows inherits ACLs from the caller-selected parent, so use a user-restricted parent because mode bits are not an ACL guarantee. The runner never stores raw child stdout/stderr and is intentionally not wired to CI secrets. New automation should use OAuth/headless mode instead. This receipt is locally hash-verifiable, not server-signed attestation.
 
 ## LCI/LCIA Data Release
 

@@ -76,18 +76,20 @@ test('runProcessGet resolves the exact requested process version', async () => {
 test('runProcessGet can fall back to process.env and global fetch', async () => {
   const originalFetch = globalThis.fetch;
   const originalBaseUrl = process.env.TIANGONG_LCA_API_BASE_URL;
-  const originalApiKey = process.env.TIANGONG_LCA_API_KEY;
+  const originalAuthMode = process.env.TIANGONG_LCA_AUTH_MODE;
+  const originalOAuthClientId = process.env.TIANGONG_LCA_OAUTH_CLIENT_ID;
+  const originalSessionFile = process.env.TIANGONG_LCA_SESSION_FILE;
   const originalPublishableKey = process.env.TIANGONG_LCA_SUPABASE_PUBLISHABLE_KEY;
-  const originalSessionMemoryOnly = process.env.TIANGONG_LCA_SESSION_MEMORY_ONLY;
   const testEnv = buildSupabaseTestEnv({
     TIANGONG_LCA_API_BASE_URL: 'https://example.supabase.co',
-    TIANGONG_LCA_API_KEY: 'secret-token',
+    TIANGONG_LCA_ACCESS_TOKEN: 'secret-token',
   });
 
   process.env.TIANGONG_LCA_API_BASE_URL = testEnv.TIANGONG_LCA_API_BASE_URL;
-  process.env.TIANGONG_LCA_API_KEY = testEnv.TIANGONG_LCA_API_KEY;
+  process.env.TIANGONG_LCA_AUTH_MODE = testEnv.TIANGONG_LCA_AUTH_MODE;
+  process.env.TIANGONG_LCA_OAUTH_CLIENT_ID = testEnv.TIANGONG_LCA_OAUTH_CLIENT_ID;
+  process.env.TIANGONG_LCA_SESSION_FILE = testEnv.TIANGONG_LCA_SESSION_FILE;
   process.env.TIANGONG_LCA_SUPABASE_PUBLISHABLE_KEY = testEnv.TIANGONG_LCA_SUPABASE_PUBLISHABLE_KEY;
-  process.env.TIANGONG_LCA_SESSION_MEMORY_ONLY = testEnv.TIANGONG_LCA_SESSION_MEMORY_ONLY;
   globalThis.fetch = (async (input: RequestInfo | URL) => {
     if (isSupabaseAuthTokenUrl(String(input))) {
       return makeSupabaseAuthResponse();
@@ -128,20 +130,25 @@ test('runProcessGet can fall back to process.env and global fetch', async () => 
     } else {
       process.env.TIANGONG_LCA_API_BASE_URL = originalBaseUrl;
     }
-    if (originalApiKey === undefined) {
-      delete process.env.TIANGONG_LCA_API_KEY;
+    if (originalAuthMode === undefined) {
+      delete process.env.TIANGONG_LCA_AUTH_MODE;
     } else {
-      process.env.TIANGONG_LCA_API_KEY = originalApiKey;
+      process.env.TIANGONG_LCA_AUTH_MODE = originalAuthMode;
+    }
+    if (originalOAuthClientId === undefined) {
+      delete process.env.TIANGONG_LCA_OAUTH_CLIENT_ID;
+    } else {
+      process.env.TIANGONG_LCA_OAUTH_CLIENT_ID = originalOAuthClientId;
+    }
+    if (originalSessionFile === undefined) {
+      delete process.env.TIANGONG_LCA_SESSION_FILE;
+    } else {
+      process.env.TIANGONG_LCA_SESSION_FILE = originalSessionFile;
     }
     if (originalPublishableKey === undefined) {
       delete process.env.TIANGONG_LCA_SUPABASE_PUBLISHABLE_KEY;
     } else {
       process.env.TIANGONG_LCA_SUPABASE_PUBLISHABLE_KEY = originalPublishableKey;
-    }
-    if (originalSessionMemoryOnly === undefined) {
-      delete process.env.TIANGONG_LCA_SESSION_MEMORY_ONLY;
-    } else {
-      process.env.TIANGONG_LCA_SESSION_MEMORY_ONLY = originalSessionMemoryOnly;
     }
   }
 });

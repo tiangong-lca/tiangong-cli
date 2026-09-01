@@ -20,7 +20,7 @@ import {
   resolveDataApiCapability,
 } from './supabase-data-api-contract.js';
 import { resolveSupabaseUserSession } from './supabase-session.js';
-import { redactEmail } from './user-api-key.js';
+import { redactEmail } from './credential-safety.js';
 
 type JsonRecord = Record<string, unknown>;
 

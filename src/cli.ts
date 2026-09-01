@@ -763,9 +763,6 @@ Required env:
 Headless alternative:
   TIANGONG_LCA_ACCESS_TOKEN (short-lived actor token; never cached or refreshed)
 
-Legacy compatibility:
-  TIANGONG_LCA_AUTH_MODE=legacy-user-api-key plus TIANGONG_LCA_API_KEY
-
 Optional session env:
   TIANGONG_LCA_SESSION_FILE
   TIANGONG_LCA_DISABLE_SESSION_CACHE
@@ -791,7 +788,6 @@ Options:
   --input <file>   JSON request file
   --json           Print compact JSON
   --dry-run        Print the planned HTTP request without sending it
-  --api-key <key>  Override TIANGONG_LCA_API_KEY
   --base-url <url> Override TIANGONG_LCA_API_BASE_URL
   --region <name>  Override TIANGONG_LCA_REGION
   --timeout-ms <n> Request timeout in milliseconds
@@ -799,13 +795,12 @@ Options:
 
 Required env:
   TIANGONG_LCA_API_BASE_URL
-  TIANGONG_LCA_API_KEY
   TIANGONG_LCA_SUPABASE_PUBLISHABLE_KEY
+  TIANGONG_LCA_OAUTH_CLIENT_ID and a prior "tiangong-lca auth login"
   TIANGONG_LCA_REGION (optional)
 
 Runtime note:
-  The CLI decodes TIANGONG_LCA_API_KEY as a user API key bootstrap, exchanges it for a user session,
-  and sends the resolved access token to Edge Functions.
+  The CLI resolves the OAuth session and sends only its access token to Edge Functions.
 `.trim();
 }
 
@@ -817,19 +812,17 @@ Options:
   --input <file>   JSON request file
   --json           Print compact JSON
   --dry-run        Print the planned HTTP request without sending it
-  --api-key <key>  Override TIANGONG_LCA_API_KEY
   --base-url <url> Override TIANGONG_LCA_API_BASE_URL
   --timeout-ms <n> Request timeout in milliseconds
   -h, --help
 
 Required env:
   TIANGONG_LCA_API_BASE_URL
-  TIANGONG_LCA_API_KEY
   TIANGONG_LCA_SUPABASE_PUBLISHABLE_KEY
+  TIANGONG_LCA_OAUTH_CLIENT_ID and a prior "tiangong-lca auth login"
 
 Runtime note:
-  The CLI decodes TIANGONG_LCA_API_KEY as a user API key bootstrap, exchanges it for a user session,
-  and sends the resolved access token to Edge Functions.
+  The CLI resolves the OAuth session and sends only its access token to Edge Functions.
 `.trim();
 }
 
@@ -863,19 +856,18 @@ Options:
   --force                 Replace an existing output file
   --dry-run               Validate and print the masked planned request without network writes
   --json                  Print the stable compact JSON report; otherwise print Summary and Next
-  --api-key <key>         Override TIANGONG_LCA_API_KEY; environment use is preferred
   --base-url <url>        Override TIANGONG_LCA_API_BASE_URL
   --timeout-ms <n>        Request timeout in milliseconds (default 60000)
   -h, --help
 
 Required environment:
   TIANGONG_LCA_API_BASE_URL
-  TIANGONG_LCA_API_KEY
   TIANGONG_LCA_SUPABASE_PUBLISHABLE_KEY
+  TIANGONG_LCA_OAUTH_CLIENT_ID and a prior "tiangong-lca auth login"
 
 Authorization and safety:
-  The User API key is exchanged for a user session. Database RPCs then check that the live account
-  has data_product_manager. The service-role key never enters this CLI. Large bundle projections,
+  The OAuth session identifies the live account, and Database RPCs check that it has
+  data_product_manager. The service-role key never enters this CLI. Large bundle projections,
   ZIPs, and chunks are written to files and verified against exact byte size and SHA-256.
 
 Examples:
@@ -1549,7 +1541,7 @@ Options:
   -h, --help
 
 Environment:
-  TIANGONG_LCA_API_BASE_URL, TIANGONG_LCA_API_KEY, and TIANGONG_LCA_SUPABASE_PUBLISHABLE_KEY
+  TIANGONG_LCA_API_BASE_URL, TIANGONG_LCA_SUPABASE_PUBLISHABLE_KEY, and a configured OAuth session
 
 Outputs written under --out-dir:
   - outputs/remote-verification-report.json
@@ -1774,7 +1766,7 @@ Options:
 
 Environment:
   none for local dry-run
-  TIANGONG_LCA_API_BASE_URL, TIANGONG_LCA_API_KEY, and TIANGONG_LCA_SUPABASE_PUBLISHABLE_KEY
+  TIANGONG_LCA_API_BASE_URL, TIANGONG_LCA_SUPABASE_PUBLISHABLE_KEY, and a configured OAuth session
   when --commit executes remote writes
 
 Outputs written under --out-dir:
@@ -1894,7 +1886,7 @@ Options:
 
 Required env:
   TIANGONG_LCA_API_BASE_URL
-  TIANGONG_LCA_API_KEY
+  TIANGONG_LCA_OAUTH_CLIENT_ID and a prior "tiangong-lca auth login"
   TIANGONG_LCA_SUPABASE_PUBLISHABLE_KEY
 
 Runtime note:
@@ -1923,7 +1915,7 @@ Options:
 
 Required env:
   TIANGONG_LCA_API_BASE_URL
-  TIANGONG_LCA_API_KEY
+  TIANGONG_LCA_OAUTH_CLIENT_ID and a prior "tiangong-lca auth login"
   TIANGONG_LCA_SUPABASE_PUBLISHABLE_KEY
 
 Runtime note:
@@ -1966,7 +1958,7 @@ Options:
 
 Required env:
   TIANGONG_LCA_API_BASE_URL
-  TIANGONG_LCA_API_KEY
+  TIANGONG_LCA_OAUTH_CLIENT_ID and a prior "tiangong-lca auth login"
   TIANGONG_LCA_SUPABASE_PUBLISHABLE_KEY
 
 Outputs written under --out-dir:
@@ -2015,7 +2007,7 @@ Options:
 
 Environment:
   TIANGONG_LCA_API_BASE_URL
-  TIANGONG_LCA_API_KEY
+  TIANGONG_LCA_OAUTH_CLIENT_ID and a prior "tiangong-lca auth login"
   TIANGONG_LCA_SUPABASE_PUBLISHABLE_KEY
 
 Outputs written under --out-dir:
@@ -2046,7 +2038,7 @@ Options:
 
 Environment:
   none for local dry-run
-  TIANGONG_LCA_API_BASE_URL, TIANGONG_LCA_API_KEY, and TIANGONG_LCA_SUPABASE_PUBLISHABLE_KEY
+  TIANGONG_LCA_API_BASE_URL, TIANGONG_LCA_SUPABASE_PUBLISHABLE_KEY, and a configured OAuth session
   when --commit publishes prepared rows
 
 Outputs written under --out-dir:
@@ -2292,7 +2284,7 @@ Options:
 
 Remote lookup env (only when process_sources.allow_remote_lookup=true):
   TIANGONG_LCA_API_BASE_URL
-  TIANGONG_LCA_API_KEY
+  TIANGONG_LCA_OAUTH_CLIENT_ID and a prior "tiangong-lca auth login"
   TIANGONG_LCA_SUPABASE_PUBLISHABLE_KEY
 `.trim();
 }
@@ -2324,7 +2316,7 @@ Options:
 
 Environment:
   none for local dry-run
-  TIANGONG_LCA_API_BASE_URL, TIANGONG_LCA_API_KEY, and TIANGONG_LCA_SUPABASE_PUBLISHABLE_KEY
+  TIANGONG_LCA_API_BASE_URL, TIANGONG_LCA_SUPABASE_PUBLISHABLE_KEY, and a configured OAuth session
   when --commit executes remote writes
 
 Local gate:
@@ -2498,7 +2490,7 @@ Options:
 
 Required env:
   TIANGONG_LCA_API_BASE_URL
-  TIANGONG_LCA_API_KEY
+  TIANGONG_LCA_OAUTH_CLIENT_ID and a prior "tiangong-lca auth login"
   TIANGONG_LCA_SUPABASE_PUBLISHABLE_KEY
 
 Runtime note:
@@ -2526,7 +2518,7 @@ Options:
 
 Required env:
   TIANGONG_LCA_API_BASE_URL
-  TIANGONG_LCA_API_KEY
+  TIANGONG_LCA_OAUTH_CLIENT_ID and a prior "tiangong-lca auth login"
   TIANGONG_LCA_SUPABASE_PUBLISHABLE_KEY
 
 Runtime note:
@@ -2682,7 +2674,7 @@ Options:
 
 Environment:
   none for local dry-run
-  TIANGONG_LCA_API_BASE_URL, TIANGONG_LCA_API_KEY, and TIANGONG_LCA_SUPABASE_PUBLISHABLE_KEY
+  TIANGONG_LCA_API_BASE_URL, TIANGONG_LCA_SUPABASE_PUBLISHABLE_KEY, and a configured OAuth session
   when --commit executes remote writes
 
 Local gate:
@@ -2740,7 +2732,7 @@ Options:
 
 Required env:
   TIANGONG_LCA_API_BASE_URL
-  TIANGONG_LCA_API_KEY
+  TIANGONG_LCA_OAUTH_CLIENT_ID and a prior "tiangong-lca auth login"
   TIANGONG_LCA_SUPABASE_PUBLISHABLE_KEY
 
 Guardrails:
@@ -3147,7 +3139,6 @@ function parseRemoteFlags(args: string[]): {
   json: boolean;
   dryRun: boolean;
   inputPath: string;
-  apiKey: string | null;
   apiBaseUrl: string | null;
   region: string | null;
   timeoutMs: number;
@@ -3163,7 +3154,6 @@ function parseRemoteFlags(args: string[]): {
         json: { type: 'boolean' },
         'dry-run': { type: 'boolean' },
         input: { type: 'string' },
-        'api-key': { type: 'string' },
         'base-url': { type: 'string' },
         region: { type: 'string' },
         'timeout-ms': { type: 'string' },
@@ -3190,7 +3180,6 @@ function parseRemoteFlags(args: string[]): {
     json: Boolean(values.json),
     dryRun: Boolean(values['dry-run']),
     inputPath: typeof values.input === 'string' ? values.input : '',
-    apiKey: typeof values['api-key'] === 'string' ? values['api-key'] : null,
     apiBaseUrl: typeof values['base-url'] === 'string' ? values['base-url'] : null,
     region: typeof values.region === 'string' ? values.region : null,
     timeoutMs,
@@ -3208,7 +3197,6 @@ function parseLcaReleaseFlags(args: string[]): {
   packageId: string | null;
   artifactId: string | null;
   artifactPath: string | null;
-  apiKey: string | null;
   apiBaseUrl: string | null;
   timeoutMs: number;
 } {
@@ -3229,7 +3217,6 @@ function parseLcaReleaseFlags(args: string[]): {
         'package-id': { type: 'string' },
         'artifact-id': { type: 'string' },
         'artifact-path': { type: 'string' },
-        'api-key': { type: 'string' },
         'base-url': { type: 'string' },
         'timeout-ms': { type: 'string' },
       },
@@ -3263,7 +3250,6 @@ function parseLcaReleaseFlags(args: string[]): {
     packageId: optionalString(values['package-id']),
     artifactId: optionalString(values['artifact-id']),
     artifactPath: optionalString(values['artifact-path']),
-    apiKey: optionalString(values['api-key']),
     apiBaseUrl: optionalString(values['base-url']),
     timeoutMs,
   };
@@ -7197,14 +7183,13 @@ function removedReviewCommand(subcommand?: string): CliResult {
 
 function applyRemoteOverrides(
   env: NodeJS.ProcessEnv,
-  overrides: Pick<ReturnType<typeof parseRemoteFlags>, 'apiBaseUrl' | 'apiKey' | 'region'>,
+  overrides: Pick<ReturnType<typeof parseRemoteFlags>, 'apiBaseUrl' | 'region'>,
 ) {
   const runtimeEnv = readRuntimeEnv(env);
 
   return {
     ...env,
     TIANGONG_LCA_API_BASE_URL: overrides.apiBaseUrl ?? runtimeEnv.apiBaseUrl ?? undefined,
-    TIANGONG_LCA_API_KEY: overrides.apiKey ?? runtimeEnv.apiKey ?? undefined,
     TIANGONG_LCA_REGION: overrides.region ?? runtimeEnv.region,
   } satisfies NodeJS.ProcessEnv;
 }
@@ -9738,9 +9723,6 @@ export async function executeCli(argv: string[], deps: CliDeps): Promise<CliResu
       }
       const action = requireLcaReleaseAction(subcommand);
       const env = { ...deps.env };
-      if (releaseFlags.apiKey !== null) {
-        env.TIANGONG_LCA_API_KEY = releaseFlags.apiKey;
-      }
       if (releaseFlags.apiBaseUrl !== null) {
         env.TIANGONG_LCA_API_BASE_URL = releaseFlags.apiBaseUrl;
       }

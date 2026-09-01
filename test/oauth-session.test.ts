@@ -25,7 +25,6 @@ function runtime(overrides: Partial<SupabaseRestRuntime> = {}): SupabaseRestRunt
   return {
     apiBaseUrl: 'https://example.supabase.co/functions/v1',
     authMode: 'oauth',
-    userApiKey: null,
     oauthClientId: CLIENT_ID,
     oauthRedirectUri: 'http://127.0.0.1:49191/oauth/callback',
     accessToken: null,
@@ -179,40 +178,15 @@ test('auth status inspects only bound local metadata and never exposes credentia
       }).sessionState,
       'memory-only',
     );
-    const legacyRuntime = runtime({
-      authMode: 'legacy_user_api_key',
-      oauthClientId: null,
-      oauthRedirectUri: null,
-      userApiKey: 'legacy-secret',
-    });
-    assert.equal(
-      inspectSupabaseAuthStatus({ runtime: legacyRuntime }).sessionCache,
-      'private-file',
-    );
-    const legacyStatus = inspectSupabaseAuthStatus({
-      runtime: runtime({
-        authMode: 'legacy_user_api_key',
-        oauthClientId: null,
-        oauthRedirectUri: null,
-        userApiKey: 'legacy-secret',
-        disableSessionCache: true,
-      }),
-    });
-    assert.equal(legacyStatus.sessionState, 'transition-only');
-    assert.equal(legacyStatus.sessionCache, 'disabled');
-
     const dist = await loadDistModule<typeof import('../src/lib/supabase-session.js')>(
       'src/lib/supabase-session.js',
     );
     assert.equal(
-      dist.inspectSupabaseAuthStatus({ runtime: legacyRuntime }).sessionCache,
-      'private-file',
-    );
-    assert.equal(
       dist.inspectSupabaseAuthStatus({
-        runtime: { ...legacyRuntime, disableSessionCache: true },
-      }).sessionCache,
-      'disabled',
+        runtime: oauthRuntime,
+        now: NOW,
+      }).status,
+      'login-required',
     );
   } finally {
     __testInternals.SESSION_MEMORY_CACHE.clear();
@@ -445,7 +419,12 @@ test('OAuth mode never falls back to password sign-in when login or refresh is u
     await assert.rejects(
       () =>
         loginWithSupabaseOAuth({
-          runtime: runtime({ authMode: 'legacy_user_api_key' }),
+          runtime: runtime({
+            authMode: 'access_token',
+            oauthClientId: null,
+            oauthRedirectUri: null,
+            accessToken: 'headless-secret',
+          }),
           fetchImpl: async () => jsonResponse({}),
         }),
       expectCliCode('SUPABASE_OAUTH_RUNTIME_REQUIRED'),
@@ -457,6 +436,70 @@ test('OAuth mode never falls back to password sign-in when login or refresh is u
           fetchImpl: async () => jsonResponse({}),
         }),
       expectCliCode('SUPABASE_OAUTH_SESSION_CACHE_REQUIRED'),
+    );
+  } finally {
+    __testInternals.SESSION_MEMORY_CACHE.clear();
+    __testInternals.ACCESS_TOKEN_MEMORY_CACHE.clear();
+    rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+test('OAuth refresh can recover a stale in-memory session and cache-disabled mode fails closed', async () => {
+  __testInternals.SESSION_MEMORY_CACHE.clear();
+  __testInternals.ACCESS_TOKEN_MEMORY_CACHE.clear();
+  const dir = mkdtempSync(path.join(os.tmpdir(), 'tg-cli-oauth-memory-refresh-'));
+  const sessionFile = path.join(dir, 'session.json');
+  const oauthRuntime = runtime({ sessionFile });
+  const identity = __testInternals.buildRuntimeIdentity(oauthRuntime);
+  const stale = __testInternals.buildCachedSessionRecord({
+    runtime: identity,
+    session: {
+      access_token: 'stale-memory-access',
+      refresh_token: 'stale-memory-refresh',
+      expires_at: 1,
+      expires_in: 1,
+    },
+    userEmail: 'memory@example.com',
+    grantedScopes: ['email'],
+    now: NOW,
+  });
+  __testInternals.memoizeRecord(identity, stale);
+
+  try {
+    const refreshed = await resolveSupabaseUserSession({
+      runtime: oauthRuntime,
+      forceRefresh: true,
+      now: NOW,
+      fetchImpl: async (url) => {
+        if (url.endsWith('/auth/v1/oauth/token')) {
+          return jsonResponse({
+            access_token: 'fresh-memory-access',
+            refresh_token: 'fresh-memory-refresh',
+            token_type: 'bearer',
+            expires_in: 3_600,
+            scope: 'openid email profile',
+          });
+        }
+        if (url.endsWith('/auth/v1/oauth/userinfo')) {
+          return jsonResponse({ sub: USER_ID, email: 'memory@example.com' });
+        }
+        throw new Error(`Unexpected OAuth request: ${url}`);
+      },
+    });
+    assert.equal(refreshed.source, 'refresh');
+    assert.equal(refreshed.accessToken, 'fresh-memory-access');
+
+    __testInternals.SESSION_MEMORY_CACHE.clear();
+    await assert.rejects(
+      () =>
+        resolveSupabaseUserSession({
+          runtime: runtime({ disableSessionCache: true }),
+          fetchImpl: async () => {
+            throw new Error('OAuth without a private session cache must not bootstrap remotely.');
+          },
+          now: NOW,
+        }),
+      expectCliCode('SUPABASE_OAUTH_LOGIN_REQUIRED'),
     );
   } finally {
     __testInternals.SESSION_MEMORY_CACHE.clear();
@@ -512,7 +555,6 @@ test('explicit headless access tokens are verified online and never cached or re
       runtime: accessRuntime,
       runtimeIdentity: identity,
       refreshToken: 'unused',
-      userEmail: 'headless@example.com',
       fetchImpl,
       timeoutMs: 100,
       now: NOW,

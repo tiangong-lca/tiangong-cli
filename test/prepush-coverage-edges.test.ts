@@ -1377,9 +1377,6 @@ test('prepush coverage covers maintenance delete failures and readback catch', a
       env: buildSupabaseTestEnv({ TIANGONG_LCA_API_BASE_URL: 'https://example.com/functions/v1' }),
       fetchImpl: async (input) => {
         const url = String(input);
-        if (isSupabaseAuthTokenUrl(url)) {
-          return makeSupabaseAuthResponse({ email: 'private-account@example.test' });
-        }
         if (url.endsWith('/auth/v1/user')) {
           sawCurrentUser = true;
           return {
@@ -1389,6 +1386,9 @@ test('prepush coverage covers maintenance delete failures and readback catch', a
             text: async () =>
               JSON.stringify({ id: 'user-1', email: 'private-account@example.test' }),
           };
+        }
+        if (isSupabaseAuthTokenUrl(url)) {
+          return makeSupabaseAuthResponse({ email: 'private-account@example.test' });
         }
         if (url.includes('/rest/v1/')) {
           const parsedUrl = new URL(url);

@@ -110,7 +110,6 @@ test('auth login and logout are discoverable and dispatch only safe runtime valu
   });
   assert.equal(loginCalls[0]?.loginTimeoutMs, 4321);
   assert.equal(loginCalls[0]?.runtime.authMode, 'oauth');
-  assert.equal(loginCalls[0]?.runtime.userApiKey, null);
 
   const logout = await executeCli(['auth', 'logout'], deps);
   assert.match(logout.stdout, /\n  "removed": true\n/u);

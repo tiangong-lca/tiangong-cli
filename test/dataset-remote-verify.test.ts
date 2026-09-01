@@ -282,7 +282,7 @@ test('runDatasetRemoteVerify can use Supabase REST lookup with the default runti
     assert.equal(report.status, 'passed_remote_verification');
     assert.equal(report.root_policy, 'existing');
     assert.equal(report.counts.references, 2);
-    assert.ok(urls.some((url) => url.includes('/auth/v1/token?grant_type=password')));
+    assert.ok(urls.some((url) => url.includes('/auth/v1/user')));
     assert.ok(urls.some((url) => url.includes('/rest/v1/processes')));
     assert.ok(urls.some((url) => url.includes('/rest/v1/flows')));
   } finally {
@@ -1462,7 +1462,7 @@ test('runDatasetRemoteRefresh can use the default remote verifier and process en
   });
   const originalEnv = {
     TIANGONG_LCA_API_BASE_URL: process.env.TIANGONG_LCA_API_BASE_URL,
-    TIANGONG_LCA_API_KEY: process.env.TIANGONG_LCA_API_KEY,
+    TIANGONG_LCA_ACCESS_TOKEN: process.env.TIANGONG_LCA_ACCESS_TOKEN,
     TIANGONG_LCA_SUPABASE_PUBLISHABLE_KEY: process.env.TIANGONG_LCA_SUPABASE_PUBLISHABLE_KEY,
     TIANGONG_LCA_DISABLE_SESSION_CACHE: process.env.TIANGONG_LCA_DISABLE_SESSION_CACHE,
   };
@@ -1481,7 +1481,7 @@ test('runDatasetRemoteRefresh can use the default remote verifier and process en
 
   try {
     process.env.TIANGONG_LCA_API_BASE_URL = env.TIANGONG_LCA_API_BASE_URL;
-    process.env.TIANGONG_LCA_API_KEY = env.TIANGONG_LCA_API_KEY;
+    process.env.TIANGONG_LCA_ACCESS_TOKEN = env.TIANGONG_LCA_ACCESS_TOKEN;
     process.env.TIANGONG_LCA_SUPABASE_PUBLISHABLE_KEY = env.TIANGONG_LCA_SUPABASE_PUBLISHABLE_KEY;
     process.env.TIANGONG_LCA_DISABLE_SESSION_CACHE = env.TIANGONG_LCA_DISABLE_SESSION_CACHE;
 

@@ -754,9 +754,13 @@ class FakeMaintenanceRemote {
   constructor(label: string) {
     this.env = buildSupabaseTestEnv({
       TIANGONG_LCA_API_BASE_URL: `https://${label}.example.com/functions/v1`,
-      TIANGONG_LCA_DISABLE_SESSION_CACHE: '1',
-      TIANGONG_LCA_FORCE_REAUTH: '1',
     });
+    const sessionFile = this.env.TIANGONG_LCA_SESSION_FILE;
+    if (sessionFile) {
+      const session = JSON.parse(readFileSync(sessionFile, 'utf8')) as Record<string, unknown>;
+      session.user_email = this.email;
+      writeFileSync(sessionFile, `${JSON.stringify(session)}\n`, 'utf8');
+    }
     for (const table of [
       'contacts',
       'sources',

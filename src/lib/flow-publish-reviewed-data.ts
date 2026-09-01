@@ -1146,7 +1146,7 @@ export async function runFlowReviewedPublishData(
     const runtimeEnv = options.env;
     if (!runtimeEnv || !hasSupabaseRestRuntime(runtimeEnv)) {
       throw new CliError(
-        'Process commit requires TIANGONG_LCA_API_BASE_URL, TIANGONG_LCA_API_KEY, and TIANGONG_LCA_SUPABASE_PUBLISHABLE_KEY.',
+        'Process commit requires TIANGONG_LCA_API_BASE_URL, TIANGONG_LCA_SUPABASE_PUBLISHABLE_KEY, and an OAuth or explicit access-token session.',
         {
           code: 'FLOW_PUBLISH_REVIEWED_PROCESS_RUNTIME_REQUIRED',
           exitCode: 2,

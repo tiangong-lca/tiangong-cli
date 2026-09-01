@@ -658,7 +658,7 @@ test('syncLifecyclemodelBundleRecord creates lifecyclemodels through save_lifecy
     payload: createLifecyclemodelPayload(),
     env: buildSupabaseTestEnv({
       TIANGONG_LCA_API_BASE_URL: 'https://example.supabase.co/functions/v1',
-      TIANGONG_LCA_API_KEY: 'key',
+      TIANGONG_LCA_ACCESS_TOKEN: 'key',
     }),
     fetchImpl,
   });
@@ -706,7 +706,7 @@ test('syncLifecyclemodelBundleRecord updates existing lifecyclemodels and retrie
     payload: createLifecyclemodelPayload(),
     env: buildSupabaseTestEnv({
       TIANGONG_LCA_API_BASE_URL: 'https://example.supabase.co',
-      TIANGONG_LCA_API_KEY: 'key',
+      TIANGONG_LCA_ACCESS_TOKEN: 'key',
     }),
     fetchImpl: updateFetch,
   });
@@ -759,7 +759,7 @@ test('syncLifecyclemodelBundleRecord updates existing lifecyclemodels and retrie
     payload: createLifecyclemodelPayload(),
     env: buildSupabaseTestEnv({
       TIANGONG_LCA_API_BASE_URL: 'https://example.supabase.co/rest/v1',
-      TIANGONG_LCA_API_KEY: 'key',
+      TIANGONG_LCA_ACCESS_TOKEN: 'key',
     }),
     fetchImpl: conflictFetch,
   });
@@ -797,7 +797,7 @@ test('syncLifecyclemodelBundleRecord preserves structured errors and generic HTT
         payload: createLifecyclemodelPayload(),
         env: buildSupabaseTestEnv({
           TIANGONG_LCA_API_BASE_URL: 'https://example.supabase.co',
-          TIANGONG_LCA_API_KEY: 'key',
+          TIANGONG_LCA_ACCESS_TOKEN: 'key',
         }),
         fetchImpl: structuredFetch,
       }),
@@ -834,7 +834,7 @@ test('syncLifecyclemodelBundleRecord preserves structured errors and generic HTT
         payload: createLifecyclemodelPayload(),
         env: buildSupabaseTestEnv({
           TIANGONG_LCA_API_BASE_URL: 'https://example.supabase.co',
-          TIANGONG_LCA_API_KEY: 'key',
+          TIANGONG_LCA_ACCESS_TOKEN: 'key',
         }),
         fetchImpl: textErrorFetch,
       }),
@@ -870,7 +870,7 @@ test('syncLifecyclemodelBundleRecord preserves structured errors and generic HTT
         payload: createLifecyclemodelPayload(),
         env: buildSupabaseTestEnv({
           TIANGONG_LCA_API_BASE_URL: 'https://example.supabase.co',
-          TIANGONG_LCA_API_KEY: 'key',
+          TIANGONG_LCA_ACCESS_TOKEN: 'key',
         }),
         fetchImpl: conflictWithoutVisibleRowFetch,
       }),
@@ -905,7 +905,7 @@ test('syncLifecyclemodelBundleRecord preserves structured errors and generic HTT
         payload: createLifecyclemodelPayload(),
         env: buildSupabaseTestEnv({
           TIANGONG_LCA_API_BASE_URL: 'https://example.supabase.co',
-          TIANGONG_LCA_API_KEY: 'key',
+          TIANGONG_LCA_ACCESS_TOKEN: 'key',
         }),
         fetchImpl: invalidJsonFetch,
       }),
@@ -947,7 +947,7 @@ test('syncLifecyclemodelBundleRecord preserves structured errors and generic HTT
         payload: createLifecyclemodelPayload(),
         env: buildSupabaseTestEnv({
           TIANGONG_LCA_API_BASE_URL: 'https://example.supabase.co',
-          TIANGONG_LCA_API_KEY: 'key',
+          TIANGONG_LCA_ACCESS_TOKEN: 'key',
         }),
         fetchImpl: missingContentTypeFetch,
       }),
