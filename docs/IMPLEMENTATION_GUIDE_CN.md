@@ -603,11 +603,9 @@ tiangong-lca admin embedding-run --input ./jobs.json --dry-run
 
 ### 4.3.0 `auth identity-receipt` 的最小 contract
 
-`tiangong-lca auth identity-receipt` 是 production-backed case 的身份前置证明，不是泛化 auth 管理器。运行顺序固定为：解析受控 auth runtime；从 canonical `https://<ref>.supabase.co` base 派生 project；在任何 session/network 前核对 `--expected-project-ref`；复用 OAuth/headless/迁移兼容 session；对 `/auth/v1/user` 做大小和 JSON shape 有界的 live GET；核对 session email 与 live email（legacy 额外核对 API-key email）；最后核对 `--expected-user-id`。第一次 live GET 的 401/403 只在 session 可 refresh 时续期并重读一次，其他失败不重试。
+`tiangong-lca auth identity-receipt` 是 production-backed case 的身份前置证明，不是泛化 auth 管理器。运行顺序固定为：解析受控 auth runtime；从 canonical `https://<ref>.supabase.co` base 派生 project；在任何 session/network 前核对 `--expected-project-ref`；复用 OAuth/headless session；对 `/auth/v1/user` 做大小和 JSON shape 有界的 live GET；核对 session email 与 live email；最后核对 `--expected-user-id`。第一次 live GET 的 401/403 只在 OAuth session 可 refresh 时续期并重读一次，其他失败不重试。
 
 回执 schema 固定为 `tiangong-lca.auth-identity-receipt.v1`。公开字段只包含 CLI 版本、project ref/base、live user id、masked display email、session source/cache mode/force-reauth/expiry、安全投影 request/response SHA、expected assertions、capture time 与 receipt scope SHA。parser 要求 exact keys，并独立重算三类 hash；额外 metadata、`ok:false`、完整 email、API/publishable key、access/refresh token、session path，以及它们的 fingerprint 一律不能进入回执。无 expected 是 `observed`，只给一项是 `partial`，两项都给且通过才是 `intent-bound`；Foundry 只能把最后一种作为 production guard。
-
-真实生产只读 case 由 package script 与 `scripts/run-auth-identity-production-case.ts` 两段承载。package script 自身执行唯一一次 clean `pnpm build`，所以调用方不需要也不应预先重复 build；parent runner 是刚生成的 plain JS，不经 tsx 执行。runner 不导入 Foundry runner、不接受 alternate CLI path，也不继承整份 `process.env`；它单次读取当前 `src/**/*.ts`、runner、package/lock/compiler config 及 freshly generated `dist/src/**/*.js`，固定 source-tree、runner、runtime-tree、exact-entrypoint 与 pnpm-lock hashes，再把同一 built Buffer set create-only copy 到私有随机 snapshot。随后才从显式 env file 选择 API base、publishable key 与 `TIANGONG_LCA_TEST_API_KEY`，把最后一项映射给标准 CLI env；子进程只执行这份 snapshot，固定 cache disabled + force reauth、独占创建 cwd、`shell:false` 和 argv array。snapshot 必须在任何 passed/failure evidence 发布前清理；cleanup 失败只能写 safe failure，不能留下 passed manifest。成功只保存严格 parse 后的 receipt/manifest 及 runtime hashes，失败只保存 stage/exit/error code，不保存 raw stdout/stderr。POSIX 固定 `0700/0600`，Windows 必须由调用方选择 current-user-restricted parent ACL；mode bits 不代表 Windows ACL。该 case 不是 CI job，也不产生服务器签名。
 
 ### 4.3.1 `search flow` 的最小 contract
 
@@ -616,7 +614,7 @@ tiangong-lca admin embedding-run --input ./jobs.json --dry-run
 它负责：
 
 - 从 `--input` 读取一个 JSON 请求体
-- 用 OAuth refresh session（或显式 headless token、迁移期 legacy bootstrap）取得 user access token
+- 用 OAuth refresh session（或显式、在线验证的短期 headless token）取得 user access token
 - 把请求体原样转发到 `flow_hybrid_search`
 - 原样返回 edge-function 的 JSON 响应，而不是在 CLI 里做本地 UI 映射
 
@@ -1120,7 +1118,6 @@ TIANGONG_LCA_FORCE_REAUTH=false
 - `TIANGONG_LCA_SUPABASE_PUBLISHABLE_KEY` 是 authenticated CLI 命令的必需项
 - `TIANGONG_LCA_SESSION_FILE`、`TIANGONG_LCA_DISABLE_SESSION_CACHE`、`TIANGONG_LCA_FORCE_REAUTH` 是可选 session cache 控制项
 - headless 使用 `TIANGONG_LCA_AUTH_MODE=access-token` + `TIANGONG_LCA_ACCESS_TOKEN`，只在进程内复用且不 refresh
-- legacy 使用 `TIANGONG_LCA_AUTH_MODE=legacy-user-api-key` + `TIANGONG_LCA_API_KEY`，仅迁移兼容
 
 按需启用的可选 QA-only 变量：只有显式启用 `tiangong-lca qa process --enable-llm` 或 `tiangong-lca qa flow --enable-llm` 时才需要配置。`TIANGONG_LCA_REVIEW_LLM_BASE_URL` 应指向 OpenAI-compatible Responses API 根地址，CLI 会向 `<base_url>/responses` 发请求。
 
@@ -1156,14 +1153,14 @@ TIANGONG_LCA_COVERAGE=0
 - 公开命令只暴露当前已实现、且真实消费的 env
 - internal/preparatory 和 test-only env 也要在 `.env.example` 里显式列出，避免代码与文档脱节
 - 不为了历史实现或未来猜测保留 alias
-- 不引入 `SUPABASE_URL`、`SUPABASE_KEY`、`TIANGONG_LCA_TIDAS_SDK_DIR` 这类额外兼容层；原生 Supabase client 一律从 `TIANGONG_LCA_API_BASE_URL` 派生，actor session 走 OAuth/headless/显式 legacy 三种受控模式，`@tiangong-lca/tidas-sdk` 一律走直接依赖
+- 不引入 `SUPABASE_URL`、`SUPABASE_KEY`、`TIANGONG_LCA_TIDAS_SDK_DIR` 这类额外兼容层；原生 Supabase client 一律从 `TIANGONG_LCA_API_BASE_URL` 派生，actor session 只走 OAuth 或显式 headless 两种受控模式，`@tiangong-lca/tidas-sdk` 一律走直接依赖
 - `qa process` 的可选语义审核统一走 QA-only 的 `TIANGONG_LCA_REVIEW_LLM_*`，不再引入 `OPENAI_*`
 - `qa flow` 的可选语义审核也统一走 QA-only 的 `TIANGONG_LCA_REVIEW_LLM_*`，不再引入 `OPENAI_*`
 - `publish run` / `validation run` 都是本地契约与执行收口，不新增远程 env
 - `release *` 复用同一 actor session；不读取/持久化 API key，不在请求体生成 credential fingerprint，也不接受 service-role
 - `TIANGONG_LCA_KB_SEARCH_*` 与 `TIANGONG_LCA_UNSTRUCTURED_*` 目前只属于 internal/preparatory 层，不属于公开命令契约
 
-下表“远程认证环境”指 `API_BASE_URL + SUPABASE_PUBLISHABLE_KEY + OAuth client/已登录 session`，或显式短期 headless access token；legacy 兼容需另外显式选择。
+下表“远程认证环境”指 `API_BASE_URL + SUPABASE_PUBLISHABLE_KEY + OAuth client/已登录 session`，或显式短期 headless access token。
 
 命令级 env 矩阵：
 

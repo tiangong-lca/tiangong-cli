@@ -25,9 +25,9 @@ checkPaths:
   - scripts/docpact
   - scripts/docpact-gate.sh
   - scripts/install-git-hooks.sh
-lastReviewedAt: 2026-08-31
-lastReviewedCommit: 499c910d07bb6a5e2e1cd8e4403a5a617d4269bb
-lastReviewedNote: 'Reviewed for Issue #257: 0.1.6 is the release-only publication of the merged dependency graph and reuses the unchanged four-platform, merge-tag, Trusted Publishing, provenance, consumer, and integration path.'
+lastReviewedAt: 2026-09-01
+lastReviewedCommit: 72e27f3421937d8c07dcad77372fb3f548436e44
+lastReviewedNote: 'Reviewed for Issue #260: CLI 0.1.7 removes user API-key/password bootstrap and legacy session/runner compatibility, preserves OAuth/headless proof gates, and uses the existing four-platform Trusted Publishing path.'
 related:
   - ../AGENTS.md
   - ../.docpact/config.yaml
@@ -39,11 +39,11 @@ related:
 
 This document is the operator runbook for each `@tiangong-lca/cli` release.
 
+Review note, 2026-09-01: Issue #260 ships CLI 0.1.7 as the OAuth-only user-authentication boundary. It removes the reversible user API-key/password bootstrap, schema-v1 session compatibility, retired flags/env, and the local production-case runner; it retains browser PKCE, private rotating refresh sessions, explicit online-verified process-only headless access tokens, the exact 100% gate, four-platform release validation, merge-created tag, Trusted Publishing/provenance verification, fresh public consumers, and exact workspace integration. Local publication and manual tag creation remain forbidden.
+
 Review note, 2026-08-25: Issue #224 keeps the feature branch at 0.0.33 while replacing the repository toolchain with Node 24, pnpm 11.23.0, TypeScript 7.0.2, and Oxlint. Because that migration changes maintainer and release compatibility, prepare 0.1.0 in a separate release-only PR after the feature PR merges and `test:package`, exact 100% coverage, package inspection, Docpact, and release automation all pass. Historical npm-era notes below are retained only as dated evidence and are not current commands.
 
 Review note, 2026-08-25: Issue #226 is that dedicated 0.1.0 release-only delivery for merged Issue #224 / PR #225. It updates package version metadata and the four live CLI-version fixtures, and adds test-only proof for ESM/CJS hosts importing the existing explicit bin launcher subpath, while keeping runtime files, package-root exports, dependencies, and `pnpm-lock.yaml` unchanged. Before merge it must prove npm/tag absence, package/prepush/audit/Docpact and the exact four-platform matrix; after merge it must prove `cli-v0.1.0` identity, native pnpm Trusted Publishing/provenance, the public-registry consumer, and exact released-commit workspace integration.
-
-Review note, 2026-08-25: Issue #228 adds a feature command and a local-only production read-case script without changing package version, tag creation, Trusted Publishing, provenance, or workspace follow-up mechanics. The ignored production test credential remains local and must never enter GitHub Actions or npm release configuration. After the feature merges, any public package delivery still uses a separate version-only release PR and every existing post-merge registry/provenance/integration check below.
 
 Review note, 2026-08-25: Issue #230 is that separate 0.1.1 release. It keeps the published runtime dependency graph unchanged while adding exact `sigstore@5.0.0` to the dev-only verification graph and regenerating the sole pnpm lock for that reviewed change. `.nvmrc`, engines, all workflows, tests, and active docs pin latest-stable Node 24.19.0. The four-platform workflow is reusable, asserts actual platform/architecture, and blocks tag creation. `release:verify-published` cryptographically verifies the SLSA bundle against the GitHub OIDC issuer, exact workflow/tag certificate identity, certificate transparency and Rekor, binds its `gitCommit` and tarball sha512, runs pnpm registry-signature verification, isolates user/global package-manager configuration, pins pnpm 11.23.0, scans all production dependency sections, and exercises clean bin/ESM/CJS consumers. The child finish continuation owns root integration create/reuse and child completion; operators never create a parallel task or finish the child twice. Local publication and manual tag creation remain forbidden.
 

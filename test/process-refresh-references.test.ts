@@ -1578,7 +1578,7 @@ test('runProcessRefreshReferences covers missing current user ids, duplicate man
           env: buildSupabaseTestEnv({
             TIANGONG_LCA_API_BASE_URL: 'https://example.supabase.co/functions/v1',
           }),
-          fetchImpl: withSupabaseAuthBootstrap(async (url) => {
+          fetchImpl: async (url) => {
             const parsed = new URL(String(url));
             if (parsed.pathname === '/auth/v1/user') {
               return makeJsonResponse({
@@ -1586,7 +1586,7 @@ test('runProcessRefreshReferences covers missing current user ids, duplicate man
               });
             }
             throw new Error(`Unexpected URL: ${String(url)}`);
-          }),
+          },
           maxRetries: 1,
         }),
       (error: unknown) => {
@@ -1859,7 +1859,7 @@ test('runProcessRefreshReferences covers non-array auth, snapshot, and detail re
           env: buildSupabaseTestEnv({
             TIANGONG_LCA_API_BASE_URL: 'https://example.supabase.co/functions/v1',
           }),
-          fetchImpl: withSupabaseAuthBootstrap(async (url) => {
+          fetchImpl: async (url) => {
             const parsed = new URL(String(url));
             if (parsed.pathname === '/auth/v1/user') {
               return makeJsonResponse({
@@ -1867,7 +1867,7 @@ test('runProcessRefreshReferences covers non-array auth, snapshot, and detail re
               });
             }
             throw new Error(`Unexpected URL: ${String(url)}`);
-          }),
+          },
           maxRetries: 1,
         }),
       (error: unknown) => {

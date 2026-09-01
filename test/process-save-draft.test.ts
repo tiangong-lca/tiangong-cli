@@ -49,7 +49,7 @@ test('state-aware process write routes visible drafts through cmd_dataset_save_d
     payload: { processDataSet: {} },
     env: buildSupabaseTestEnv({
       TIANGONG_LCA_API_BASE_URL: 'https://example.supabase.co',
-      TIANGONG_LCA_API_KEY: 'key',
+      TIANGONG_LCA_ACCESS_TOKEN: 'key',
     }),
     fetchImpl: withSupabaseAuthBootstrap(async (url, init) => {
       observed.push({
@@ -103,7 +103,7 @@ test('state-aware process write enforces target user guard before remote writes'
     targetUserId: 'user-1',
     env: buildSupabaseTestEnv({
       TIANGONG_LCA_API_BASE_URL: 'https://example.supabase.co',
-      TIANGONG_LCA_API_KEY: 'key',
+      TIANGONG_LCA_ACCESS_TOKEN: 'key',
     }),
     fetchImpl: withSupabaseAuthBootstrap(async (url, init) => {
       observed.push({
@@ -138,9 +138,9 @@ test('state-aware process write enforces target user guard before remote writes'
 
   assert.deepEqual(
     observed.map((entry) => entry.method),
-    ['GET', 'GET', 'POST'],
+    ['GET', 'POST'],
   );
-  assert.match(observed[1]?.url ?? '', /\/auth\/v1\/user$/u);
+  assert.match(observed[1]?.url ?? '', /\/rest\/v1\/rpc\/cmd_dataset_save_draft$/u);
   assert.deepEqual(result, {
     status: 'success',
     operation: 'save_draft',
@@ -165,9 +165,9 @@ test('state-aware process write rejects target user mismatches', async () => {
         targetUserId: 'target-user',
         env: buildSupabaseTestEnv({
           TIANGONG_LCA_API_BASE_URL: 'https://example.supabase.co',
-          TIANGONG_LCA_API_KEY: 'key',
+          TIANGONG_LCA_ACCESS_TOKEN: 'key',
         }),
-        fetchImpl: withSupabaseAuthBootstrap(async (url) => {
+        fetchImpl: async (url) => {
           if (String(url).includes('/rest/v1/processes')) {
             return makeResponse({
               ok: true,
@@ -180,7 +180,7 @@ test('state-aware process write rejects target user mismatches', async () => {
             status: 200,
             body: '{"id":"current-user"}',
           });
-        }),
+        },
       }),
     (error) => {
       assert.ok(error instanceof CliError);
@@ -201,9 +201,9 @@ test('state-aware process write rejects target user guards without current auth 
         targetUserId: 'target-user',
         env: buildSupabaseTestEnv({
           TIANGONG_LCA_API_BASE_URL: 'https://example.supabase.co',
-          TIANGONG_LCA_API_KEY: 'key',
+          TIANGONG_LCA_ACCESS_TOKEN: 'key',
         }),
-        fetchImpl: withSupabaseAuthBootstrap(async (url) => {
+        fetchImpl: async (url) => {
           if (String(url).includes('/rest/v1/processes')) {
             return makeResponse({
               ok: true,
@@ -216,7 +216,7 @@ test('state-aware process write rejects target user guards without current auth 
             status: 200,
             body: '{}',
           });
-        }),
+        },
       }),
     (error) => {
       assert.ok(error instanceof CliError);
@@ -235,9 +235,9 @@ test('state-aware process write rejects target user guards without current auth 
         targetUserId: 'target-user',
         env: buildSupabaseTestEnv({
           TIANGONG_LCA_API_BASE_URL: 'https://example.supabase.co',
-          TIANGONG_LCA_API_KEY: 'key',
+          TIANGONG_LCA_ACCESS_TOKEN: 'key',
         }),
-        fetchImpl: withSupabaseAuthBootstrap(async (url) => {
+        fetchImpl: async (url) => {
           if (String(url).includes('/rest/v1/processes')) {
             return makeResponse({
               ok: true,
@@ -250,7 +250,7 @@ test('state-aware process write rejects target user guards without current auth 
             status: 200,
             body: '[]',
           });
-        }),
+        },
       }),
     (error) => {
       assert.ok(error instanceof CliError);
@@ -269,7 +269,7 @@ test('state-aware process write rejects visible non-draft rows before raw table 
         payload: { processDataSet: {} },
         env: buildSupabaseTestEnv({
           TIANGONG_LCA_API_BASE_URL: 'https://example.supabase.co',
-          TIANGONG_LCA_API_KEY: 'key',
+          TIANGONG_LCA_ACCESS_TOKEN: 'key',
         }),
         fetchImpl: withSupabaseAuthBootstrap(async () =>
           makeResponse({
@@ -297,7 +297,7 @@ test('state-aware process write treats HTTP 200 ok:false RPC payloads as failure
         payload: { processDataSet: {} },
         env: buildSupabaseTestEnv({
           TIANGONG_LCA_API_BASE_URL: 'https://example.supabase.co',
-          TIANGONG_LCA_API_KEY: 'key',
+          TIANGONG_LCA_ACCESS_TOKEN: 'key',
         }),
         fetchImpl: withSupabaseAuthBootstrap(async (_url, init) => {
           if (String(init?.method ?? 'GET') === 'GET') {
@@ -332,7 +332,7 @@ test('state-aware process write falls back to dataset create when no exact visib
     payload: { processDataSet: {} },
     env: buildSupabaseTestEnv({
       TIANGONG_LCA_API_BASE_URL: 'https://example.supabase.co',
-      TIANGONG_LCA_API_KEY: 'key',
+      TIANGONG_LCA_ACCESS_TOKEN: 'key',
     }),
     fetchImpl: withSupabaseAuthBootstrap(async (_url, init) => {
       observed.push({
@@ -473,7 +473,7 @@ test('state-aware process write rejects unexpected RPC payloads even on HTTP 200
         payload: { processDataSet: {} },
         env: buildSupabaseTestEnv({
           TIANGONG_LCA_API_BASE_URL: 'https://example.supabase.co',
-          TIANGONG_LCA_API_KEY: 'key',
+          TIANGONG_LCA_ACCESS_TOKEN: 'key',
         }),
         fetchImpl: withSupabaseAuthBootstrap(async (_url, init) => {
           if (String(init?.method ?? 'GET') === 'GET') {

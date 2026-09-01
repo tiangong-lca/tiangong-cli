@@ -710,11 +710,11 @@ test('process scope helper internals cover option parsing, response parsing, and
         env: buildSupabaseTestEnv(),
         fetchImpl: async (input) => {
           const url = String(input);
-          if (isSupabaseAuthTokenUrl(url)) {
-            return makeSupabaseAuthResponse({ userId: 'user-1' });
-          }
           if (url.endsWith('/auth/v1/user')) {
             return jsonResponse({});
+          }
+          if (isSupabaseAuthTokenUrl(url)) {
+            return makeSupabaseAuthResponse({ userId: 'user-1' });
           }
           throw new Error(`Unexpected URL: ${url}`);
         },
@@ -798,11 +798,11 @@ test('process scope helper internals cover sparse fallbacks and zero-row statist
         env: buildSupabaseTestEnv(),
         fetchImpl: async (input) => {
           const url = String(input);
-          if (isSupabaseAuthTokenUrl(url)) {
-            return makeSupabaseAuthResponse({ userId: 'user-1' });
-          }
           if (url.endsWith('/auth/v1/user')) {
             return jsonResponse([]);
+          }
+          if (isSupabaseAuthTokenUrl(url)) {
+            return makeSupabaseAuthResponse({ userId: 'user-1' });
           }
           throw new Error(`Unexpected URL: ${url}`);
         },

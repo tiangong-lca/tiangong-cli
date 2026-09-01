@@ -14,6 +14,8 @@ import {
 
 type JsonObject = Record<string, unknown>;
 
+const OWNER_USER_ID = '11111111-1111-4111-8111-111111111111';
+
 function response(body: unknown): Awaited<ReturnType<FetchLike>> {
   return {
     ok: true,
@@ -117,9 +119,11 @@ function flow(id: string, name: string): JsonObject {
   };
 }
 
-function jwt(userId = 'user-1', email = 'user@example.com'): string {
+function jwt(userId = OWNER_USER_ID, email = 'user@example.com', nonce?: string): string {
   const header = Buffer.from(JSON.stringify({ alg: 'none' }), 'utf8').toString('base64url');
-  const payload = Buffer.from(JSON.stringify({ sub: userId, email }), 'utf8').toString('base64url');
+  const payload = Buffer.from(JSON.stringify({ sub: userId, email, nonce }), 'utf8').toString(
+    'base64url',
+  );
   return `${header}.${payload}.signature`;
 }
 
@@ -152,10 +156,13 @@ function executionFetch(options: {
   missingSources?: boolean;
   rowIdentityOverride?: { id?: string; version?: string };
 }): FetchLike {
-  const userId = options.userId ?? 'user-1';
+  const userId = options.userId ?? OWNER_USER_ID;
   const email = options.email ?? 'user@example.com';
   return async (input, init) => {
     const url = String(input);
+    if (url.endsWith('/auth/v1/oauth/userinfo')) {
+      return response({ sub: userId, email });
+    }
     if (isSupabaseAuthTokenUrl(url)) {
       return makeSupabaseAuthResponse({ accessToken: jwt(userId, email), userId, email });
     }
@@ -222,7 +229,7 @@ function contract(options: {
     execution_id: 'generic-owner-draft-batch-1',
     project_ref: 'example',
     target_mode: 'owner_draft',
-    owner: { user_id: 'user-1', email: 'user@example.com', state_code: 0 },
+    owner: { user_id: OWNER_USER_ID, email: 'user@example.com', state_code: 0 },
     actions: options.desired.map((payload, index) => {
       const rowIdentity = identity(payload);
       const before = options.before?.[index] ?? null;
@@ -247,7 +254,7 @@ function writeContract(dir: string, value: JsonObject): string {
 
 function executionEnv(dir: string, apiKey: string): NodeJS.ProcessEnv {
   return buildSupabaseTestEnv({
-    TIANGONG_LCA_API_KEY: apiKey,
+    TIANGONG_LCA_ACCESS_TOKEN: jwt(OWNER_USER_ID, 'user@example.com', apiKey),
     XDG_STATE_HOME: path.join(dir, 'state'),
   });
 }
@@ -511,6 +518,8 @@ test('execution contract parallel suffix delegates claims and fatal stop to the 
 });
 
 test('execution contract renews the exact owner token before DML and rejects a foreign renewal', async () => {
+  const ownerUserId = OWNER_USER_ID;
+  const foreignUserId = '22222222-2222-4222-8222-222222222222';
   const runCase = async (
     foreignRenewal: boolean,
   ): Promise<{
@@ -529,24 +538,29 @@ test('execution contract renews the exact owner token before DML and rejects a f
     const state = new Map<string, JsonObject>();
     const writes: string[] = [];
     const edgeTokens: Array<string | null> = [];
-    const baseFetch = executionFetch({ state, writes });
-    const firstToken = jwtWithPayload({ sub: 'user-1', email: 'user@example.com', seq: 1 });
+    const baseFetch = executionFetch({ state, writes, userId: ownerUserId });
     const renewedToken = jwtWithPayload({
-      sub: foreignRenewal ? 'foreign-user' : 'user-1',
+      sub: foreignRenewal ? foreignUserId : ownerUserId,
       email: foreignRenewal ? 'foreign@example.com' : 'user@example.com',
       seq: 2,
     });
     let authCalls = 0;
     const fetchImpl: FetchLike = async (input, init) => {
       const url = String(input);
+      if (url.endsWith('/auth/v1/oauth/userinfo')) {
+        return response({
+          sub: foreignRenewal && authCalls > 0 ? foreignUserId : ownerUserId,
+          email: foreignRenewal && authCalls > 0 ? 'foreign@example.com' : 'user@example.com',
+        });
+      }
       if (isSupabaseAuthTokenUrl(url)) {
         authCalls += 1;
         return makeSupabaseAuthResponse({
-          accessToken: authCalls === 1 ? firstToken : renewedToken,
+          accessToken: renewedToken,
           refreshToken: 'renew-owner-session',
-          expiresAt: authCalls === 1 ? Math.floor(Date.now() / 1000) + 60 : 4_102_444_800,
-          userId: foreignRenewal && authCalls > 1 ? 'foreign-user' : 'user-1',
-          email: foreignRenewal && authCalls > 1 ? 'foreign@example.com' : 'user@example.com',
+          expiresAt: 4_102_444_800,
+          userId: foreignRenewal ? foreignUserId : ownerUserId,
+          email: foreignRenewal ? 'foreign@example.com' : 'user@example.com',
         });
       }
       if (url.includes('/functions/v1/app_dataset_')) {
@@ -554,8 +568,16 @@ test('execution contract renews the exact owner token before DML and rejects a f
       }
       return baseFetch(input, init);
     };
-    const contractPath = writeContract(dir, contract({ desired: [desired] }));
+    const executionContract = contract({ desired: [desired] });
+    (executionContract.owner as JsonObject).user_id = ownerUserId;
+    const contractPath = writeContract(dir, executionContract);
     try {
+      const env = executionEnv(dir, foreignRenewal ? 'foreign-renewal' : 'exact-renewal');
+      const sessionFile = env.TIANGONG_LCA_SESSION_FILE as string;
+      const session = JSON.parse(readFileSync(sessionFile, 'utf8')) as Record<string, unknown>;
+      session.access_token = jwt(ownerUserId, 'user@example.com', 'initial-owner-session');
+      session.expires_at = 4_102_444_800;
+      writeFileSync(sessionFile, `${JSON.stringify(session)}\n`, 'utf8');
       const report = await runDatasetSaveDraft({
         inputPath: path.join(dir, 'rows.json'),
         rawInput: { rows: [desired] },
@@ -563,7 +585,7 @@ test('execution contract renews the exact owner token before DML and rejects a f
         outDir: path.join(dir, 'out'),
         commit: true,
         executionContractPath: contractPath,
-        env: executionEnv(dir, foreignRenewal ? 'foreign-renewal' : 'exact-renewal'),
+        env,
         fetchImpl,
       });
       return { report, authCalls, edgeTokens, writes };
@@ -574,9 +596,9 @@ test('execution contract renews the exact owner token before DML and rejects a f
 
   const exact = await runCase(false);
   assert.equal(exact.report.status, 'completed');
-  assert.ok(exact.authCalls >= 2);
+  assert.ok(exact.authCalls >= 1);
   assert.deepEqual(exact.edgeTokens, [
-    `Bearer ${jwtWithPayload({ sub: 'user-1', email: 'user@example.com', seq: 2 })}`,
+    `Bearer ${jwtWithPayload({ sub: ownerUserId, email: 'user@example.com', seq: 2 })}`,
   ]);
   assert.equal(exact.writes.length, 1);
 
@@ -785,7 +807,10 @@ test('execution contract rejects local drift and owner/project mismatch before e
           outDir: path.join(dir, 'wrong-owner'),
           commit: true,
           executionContractPath: contractPath,
-          env: executionEnv(dir, 'drift-2'),
+          env: buildSupabaseTestEnv({
+            TIANGONG_LCA_ACCESS_TOKEN: jwt('other-user', 'other@example.com', 'drift-2'),
+            XDG_STATE_HOME: path.join(dir, 'state'),
+          }),
           fetchImpl: executionFetch({ state, writes, userId: 'other-user' }),
         }),
       /Owner session or project does not match/u,
@@ -987,7 +1012,7 @@ test('execution contract aborts before dispatch when its durable attempt marker 
   writeFileSync(stateRootFile, 'not a directory\n', 'utf8');
   const writes: string[] = [];
   const env = buildSupabaseTestEnv({
-    TIANGONG_LCA_API_KEY: 'marker-failure',
+    TIANGONG_LCA_ACCESS_TOKEN: jwt(OWNER_USER_ID, 'user@example.com', 'marker-failure'),
     TIANGONG_LCA_DISABLE_SESSION_CACHE: '1',
     XDG_STATE_HOME: stateRootFile,
   });
@@ -1155,7 +1180,7 @@ test('execution contract parsers reject malformed contracts, JWTs, rows, and led
   assert.throws(() => __testInternals.decodeExecutionActor('x.bad!.x'), /payload is invalid/u);
   assert.throws(() => __testInternals.decodeExecutionActor(jwtWithPayload([])), /not an object/u);
   assert.deepEqual(__testInternals.decodeExecutionActor(jwt()), {
-    user_id: 'user-1',
+    user_id: OWNER_USER_ID,
     email: 'user@example.com',
   });
   assert.deepEqual(

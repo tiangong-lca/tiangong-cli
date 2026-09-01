@@ -17,7 +17,7 @@ const dotEnvStatus: DotEnvLoadResult = {
 const makeDeps = () => ({
   env: {
     TIANGONG_LCA_API_BASE_URL: 'https://example.com/functions/v1',
-    TIANGONG_LCA_API_KEY: 'secret-token',
+    TIANGONG_LCA_ACCESS_TOKEN: 'secret-token',
     TIANGONG_LCA_REGION: 'us-east-1',
   } as NodeJS.ProcessEnv,
   dotEnvStatus,

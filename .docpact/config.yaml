@@ -1,5 +1,6 @@
 version: 1
 layout: repo
+# Review note, 2026-09-01: Issue #260 removes the API-key/password bootstrap, legacy session/runner/docs, and routes the remaining credential-safety helper through the existing remote-session/auth governance without changing repository ownership.
 # Review note, 2026-06-11: release 0.0.15 keeps existing command-family, validation, and release routing. The dataset import-lca wrapper now targets the tidas-tools 0.0.28 process-bundle CLI surface; routing and ownership are unchanged.
 # Review note, 2026-07-12: owner-draft BAFU `merge-support-aliases` now sends both frozen dimensions through one whole-plan RPC; it remains inside the existing dataset-maintenance command/runtime domain, and wildcard routing already covers its request/proof adapter, alias-rewrite, tests, and governed command/validation docs, so no ownership or route changes are required.
 # Review note, 2026-07-13: exact-count maintenance pagination remains inside the existing dataset-maintenance command/runtime domain. Wildcard routing already covers its shared paginator, account scans, tests, and governed command/validation docs, so no ownership or route changes are required.
@@ -29,7 +30,7 @@ layout: repo
 # Review note, 2026-08-07: database-engine Issue #422 switches the existing Data API adapter to the frozen api-only contract, retires the private alias whole-plan transport, and keeps the change inside existing remote-session, command-family, test, and governed-doc routes.
 # Review note, 2026-08-25: Issue #224 makes the Node toolchain single-track on Node 24, pnpm 11.23.0, TypeScript 7.0.2, and Oxlint. The existing validation/release rule is extended to own the sole root pnpm workspace/lockfile, Oxlint configuration, package contract test, local pre-push gate, pnpm/setup v2.0.2 CI bootstrap, and native pnpm Trusted Publishing/provenance path; package version remains 0.0.33 in the feature change.
 # Review note, 2026-08-25: Issue #226 is the dedicated 0.1.0 compatibility-boundary release for merged Issue #224 / PR #225. Its runtime delta is limited to package version metadata and four live CLI-version fixtures; its test-only delta extends the clean package consumer contract to explicit ESM/CJS launcher-subpath hosts, with governed/public release evidence updated alongside it. The pnpm lock/dependency graph, ownership, routing, command behavior, package-root exports, tag automation, native pnpm Trusted Publishing, provenance, and workspace-integration rules remain unchanged.
-# Review note, 2026-08-25: Issue #228 adds the read-only `auth identity-receipt` command and a narrow local production-case runner. `src/lib/auth-identity-receipt.ts` belongs to the existing remote-session/auth domain; it safely rejects malformed project URLs, verifies a canonical UUID through a redirect-disabled, incrementally byte-bounded `/auth/v1/user` read, caps timeouts to Node's supported range, emits only a strict secret-free projection, retries one 401/403 through the existing session refresh path, and adds no dependency or mutation surface. The pnpm case command itself performs the one required clean TS7 build before starting the plain-Node runner; that runner rejects alternate entrypoints, single-reads and hashes source/config/lock plus the generated runtime/runner, snapshots the exact built bytes privately, cleans the snapshot before any evidence publication, and passes three allowlisted env values only to that cache-disabled snapshot child.
+# Review note, 2026-08-25: Issue #228 adds the read-only `auth identity-receipt` command inside the existing remote-session/auth domain; it rejects malformed project URLs, verifies a canonical UUID through a redirect-disabled, incrementally byte-bounded `/auth/v1/user` read, caps timeouts, emits only a strict secret-free projection, and retries one 401/403 through the existing session refresh path.
 # Review note, 2026-08-25: Issue #230 releases merged auth receipt PR #229 as 0.1.1 without changing runtime logic, published dependencies, command contract, or credentials. It pins local/CI/package-engine metadata to Node 24.19.0; adds dev-only `sigstore@5.0.0` and regenerates the sole pnpm lock for cryptographic DSSE/Fulcio/CT/Rekor proof; test-locks exact matrix platform/architecture; isolates user/global pnpm configuration; verifies registry signatures; scans all production dependency sections; and makes workspace integration continuation-owned. Existing package, lock, `.nvmrc`, `scripts/**`, `test/**`, workflow, and governed-doc triggers already own those paths, so routing and ownership do not change.
 # Review note, 2026-08-26: Issue #232 adds the supported `@tiangong-lca/cli/command-spec` and `@tiangong-lca/cli/batch` library surfaces. Public primitive sources have a dedicated routing intent/rule covering package exports and declaration config, canonical contracts, mutation no-replay, resource serialization, run-directory locking, packed consumers, and dataset save-draft dogfood. Version 0.1.1 remains unchanged; publication is separate tracked work.
 # Review note, 2026-08-26: Issue #232 re-review keeps the existing public-library ownership and routing graph unchanged while guarding throwing identity reprojection, draining in-flight workers, and replacing pending scans with per-resource FIFO cursors plus a private minimum-ready heap. The existing rule paths already cover runtime, scale proof, package consumers, dogfood, and synchronized source docs.
@@ -46,8 +47,8 @@ layout: repo
 # Review note, 2026-08-31: Issue #252 is the replacement 0.1.5 release after failed-unpublished 0.1.4 and merged Windows coverage #250. It changes package identity and four existing version fixtures only; current release/test/doc routes own the change and no runtime, dependency, export, lock, workflow, or ownership rule changes.
 # Review note, 2026-08-31: Issue #256 refreshes package/lock/test and formatter-owned source/docs under existing validation/release/governed-doc routes, pins the reviewed npm-latest TIDAS SDK 0.2.0 exactly, and keeps version 0.1.5 plus public command/export ownership unchanged. Issue #257 separately owns the later 0.1.6 release-only path.
 # Review note, 2026-08-31: Issue #257 is the release-only 0.1.6 delivery for merged dependency Issue #256. It changes package identity and four existing exact-version fixtures only; current release/test/doc routes own the change while runtime, dependencies, lock bytes, exports, workflows, and ownership remain unchanged.
-lastReviewedAt: '2026-08-31'
-lastReviewedCommit: '499c910d07bb6a5e2e1cd8e4403a5a617d4269bb'
+lastReviewedAt: '2026-09-01'
+lastReviewedCommit: '72e27f3421937d8c07dcad77372fb3f548436e44'
 
 catalog:
   repos:
@@ -76,7 +77,6 @@ ownership:
           - docs/agents/**
           - docs/IMPLEMENTATION_GUIDE_CN.md
           - docs/SKILLS_TO_CLI_MIGRATION_CHECKLIST_CN.md
-          - docs/TEMP_CLI_AUTH_SESSION_REDESIGN_CN.md
           - docs/TEMP_ISSUE_55_DIRECT_DEPS_TODO_CN.md
           - docs/release-runbook.md
           - docs/release-setup.md
@@ -137,7 +137,8 @@ ownership:
           - src/lib/supabase-rest.ts
           - src/lib/supabase-session.ts
           - src/lib/unstructured.ts
-          - src/lib/user-api-key.ts
+          - src/lib/*-api-*.ts
+          - src/lib/credential-safety.ts
       ownerRepo: cli
     - id: tests-release-and-automation
       paths:
@@ -179,7 +180,6 @@ coverage:
     - docs/agents/**
     - docs/IMPLEMENTATION_GUIDE_CN.md
     - docs/SKILLS_TO_CLI_MIGRATION_CHECKLIST_CN.md
-    - docs/TEMP_CLI_AUTH_SESSION_REDESIGN_CN.md
     - docs/TEMP_ISSUE_55_DIRECT_DEPS_TODO_CN.md
     - docs/release-runbook.md
     - docs/release-setup.md
@@ -249,8 +249,8 @@ routing:
         - src/lib/supabase-rest.ts
         - src/lib/supabase-session.ts
         - src/lib/unstructured.ts
-        - src/lib/user-api-key.ts
-        - docs/TEMP_CLI_AUTH_SESSION_REDESIGN_CN.md
+        - src/lib/*-api-*.ts
+        - src/lib/credential-safety.ts
     workflow-commands:
       paths:
         - src/lib/artifacts.ts
@@ -366,7 +366,6 @@ docInventory:
     - docs/agents/repo-architecture.md
     - docs/IMPLEMENTATION_GUIDE_CN.md
     - docs/SKILLS_TO_CLI_MIGRATION_CHECKLIST_CN.md
-    - docs/TEMP_CLI_AUTH_SESSION_REDESIGN_CN.md
     - docs/TEMP_ISSUE_55_DIRECT_DEPS_TODO_CN.md
     - docs/release-runbook.md
     - docs/release-setup.md
@@ -420,8 +419,6 @@ rules:
         kind: implementation-guide
       - path: docs/SKILLS_TO_CLI_MIGRATION_CHECKLIST_CN.md
         kind: historical-audit
-      - path: docs/TEMP_CLI_AUTH_SESSION_REDESIGN_CN.md
-        kind: historical-design
       - path: docs/TEMP_ISSUE_55_DIRECT_DEPS_TODO_CN.md
         kind: historical-todo
     requiredDocs:
@@ -435,11 +432,9 @@ rules:
         mode: review_or_update
       - path: docs/SKILLS_TO_CLI_MIGRATION_CHECKLIST_CN.md
         mode: must_exist
-      - path: docs/TEMP_CLI_AUTH_SESSION_REDESIGN_CN.md
-        mode: must_exist
       - path: docs/TEMP_ISSUE_55_DIRECT_DEPS_TODO_CN.md
         mode: must_exist
-    reason: Active maintainer guides must stay aligned, while retained historical docs must remain discoverable without being rewritten for unrelated current-toolchain changes.
+    reason: Active maintainer guides must stay aligned, while retained non-auth historical docs remain discoverable without being rewritten for unrelated current-toolchain changes.
   - id: cli-command-surface-contract
     scope: repo
     repo: cli
@@ -600,7 +595,9 @@ rules:
         kind: session-runtime
       - path: src/lib/unstructured.ts
         kind: remote-adapter
-      - path: src/lib/user-api-key.ts
+      - path: src/lib/*-api-*.ts
+        kind: remote-adapter
+      - path: src/lib/credential-safety.ts
         kind: auth-runtime
     requiredDocs:
       - path: AGENTS.md

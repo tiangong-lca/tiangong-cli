@@ -66,7 +66,7 @@ test('dataset command helper posts create and save-draft payloads with normalize
   const transport = await resolveDatasetCommandTransport({
     env: buildSupabaseTestEnv({
       TIANGONG_LCA_API_BASE_URL: 'https://example.supabase.co/rest/v1',
-      TIANGONG_LCA_API_KEY: 'key',
+      TIANGONG_LCA_ACCESS_TOKEN: 'key',
     }),
     fetchImpl: withSupabaseAuthBootstrap(async (url, init) => {
       observed.push({
@@ -137,7 +137,7 @@ test('dataset command helper rejects ok:false application payloads', async () =>
   const transport = await resolveDatasetCommandTransport({
     env: buildSupabaseTestEnv({
       TIANGONG_LCA_API_BASE_URL: 'https://example.supabase.co',
-      TIANGONG_LCA_API_KEY: 'key',
+      TIANGONG_LCA_ACCESS_TOKEN: 'key',
     }),
     fetchImpl: withSupabaseAuthBootstrap(async () =>
       makeResponse({
@@ -184,7 +184,7 @@ test('dataset command helper normalizes optional metadata helpers and rejects ma
   const transport = await resolveDatasetCommandTransport({
     env: buildSupabaseTestEnv({
       TIANGONG_LCA_API_BASE_URL: 'https://example.supabase.co',
-      TIANGONG_LCA_API_KEY: 'key',
+      TIANGONG_LCA_ACCESS_TOKEN: 'key',
     }),
     fetchImpl: withSupabaseAuthBootstrap(async () =>
       makeResponse({

@@ -52,7 +52,7 @@ test('hasSupabaseRestRuntime checks env completeness', () => {
   assert.equal(
     hasSupabaseRestRuntime({
       TIANGONG_LCA_API_BASE_URL: 'https://example.supabase.co',
-      TIANGONG_LCA_API_KEY: 'key',
+      TIANGONG_LCA_ACCESS_TOKEN: 'key',
       TIANGONG_LCA_SUPABASE_PUBLISHABLE_KEY: 'sb-publishable-key',
     } as NodeJS.ProcessEnv),
     true,
@@ -91,7 +91,7 @@ test('supabase json_ordered write inserts when no exact row exists', async () =>
     writeMode: 'upsert_current_version',
     env: buildSupabaseTestEnv({
       TIANGONG_LCA_API_BASE_URL: 'https://example.supabase.co',
-      TIANGONG_LCA_API_KEY: 'key',
+      TIANGONG_LCA_ACCESS_TOKEN: 'key',
     }),
     fetchImpl,
   });
@@ -144,7 +144,7 @@ test('supabase json_ordered write updates when exact row already exists', async 
     writeMode: 'upsert_current_version',
     env: buildSupabaseTestEnv({
       TIANGONG_LCA_API_BASE_URL: 'https://example.supabase.co/rest/v1',
-      TIANGONG_LCA_API_KEY: 'key',
+      TIANGONG_LCA_ACCESS_TOKEN: 'key',
     }),
     fetchImpl,
   });
@@ -204,7 +204,7 @@ test('supabase json_ordered write falls back to update after insert conflict', a
     writeMode: 'upsert_current_version',
     env: buildSupabaseTestEnv({
       TIANGONG_LCA_API_BASE_URL: 'https://example.supabase.co/functions/v1',
-      TIANGONG_LCA_API_KEY: 'key',
+      TIANGONG_LCA_ACCESS_TOKEN: 'key',
     }),
     fetchImpl,
   });
@@ -233,7 +233,7 @@ test('append-only insert skips existing rows and validates helper branches', asy
     writeMode: 'append_only_insert',
     env: buildSupabaseTestEnv({
       TIANGONG_LCA_API_BASE_URL: 'https://example.supabase.co',
-      TIANGONG_LCA_API_KEY: 'key',
+      TIANGONG_LCA_ACCESS_TOKEN: 'key',
     }),
     fetchImpl,
   });
@@ -285,7 +285,7 @@ test('supabase json_ordered helpers handle empty/text success payloads and inval
   const transport = await resolveDatasetCommandTransport({
     env: buildSupabaseTestEnv({
       TIANGONG_LCA_API_BASE_URL: 'https://example.supabase.co',
-      TIANGONG_LCA_API_KEY: 'key',
+      TIANGONG_LCA_ACCESS_TOKEN: 'key',
     }),
     fetchImpl,
     timeoutMs: 10,
@@ -334,7 +334,7 @@ test('supabase json_ordered write surfaces remote request failures and invalid J
         writeMode: 'upsert_current_version',
         env: buildSupabaseTestEnv({
           TIANGONG_LCA_API_BASE_URL: 'https://example.supabase.co',
-          TIANGONG_LCA_API_KEY: 'key',
+          TIANGONG_LCA_ACCESS_TOKEN: 'key',
         }),
         fetchImpl: withSupabaseAuthBootstrap(async () => ({
           ok: false,
@@ -366,7 +366,7 @@ test('supabase json_ordered write surfaces remote request failures and invalid J
         writeMode: 'upsert_current_version',
         env: buildSupabaseTestEnv({
           TIANGONG_LCA_API_BASE_URL: 'https://example.supabase.co',
-          TIANGONG_LCA_API_KEY: 'key',
+          TIANGONG_LCA_ACCESS_TOKEN: 'key',
         }),
         fetchImpl: withSupabaseAuthBootstrap(async () =>
           makeResponse({
@@ -396,7 +396,7 @@ test('supabase json_ordered write rethrows insert conflicts when the row is stil
         writeMode: 'upsert_current_version',
         env: buildSupabaseTestEnv({
           TIANGONG_LCA_API_BASE_URL: 'https://example.supabase.co',
-          TIANGONG_LCA_API_KEY: 'key',
+          TIANGONG_LCA_ACCESS_TOKEN: 'key',
         }),
         fetchImpl: withSupabaseAuthBootstrap(async (_url, init) => {
           observed.push(String(init?.method ?? 'GET'));
@@ -435,7 +435,7 @@ test('append-only insert skips rows that appear after an insert conflict', async
     writeMode: 'append_only_insert',
     env: buildSupabaseTestEnv({
       TIANGONG_LCA_API_BASE_URL: 'https://example.supabase.co',
-      TIANGONG_LCA_API_KEY: 'key',
+      TIANGONG_LCA_ACCESS_TOKEN: 'key',
     }),
     fetchImpl: withSupabaseAuthBootstrap(async (_url, init) => {
       observed.push(String(init?.method ?? 'GET'));

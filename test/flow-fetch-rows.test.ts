@@ -348,7 +348,7 @@ test(
     const originalFetch = globalThis.fetch;
     const originalEnv = {
       TIANGONG_LCA_API_BASE_URL: process.env.TIANGONG_LCA_API_BASE_URL,
-      TIANGONG_LCA_API_KEY: process.env.TIANGONG_LCA_API_KEY,
+      TIANGONG_LCA_ACCESS_TOKEN: process.env.TIANGONG_LCA_ACCESS_TOKEN,
       TIANGONG_LCA_SUPABASE_PUBLISHABLE_KEY: process.env.TIANGONG_LCA_SUPABASE_PUBLISHABLE_KEY,
     };
 

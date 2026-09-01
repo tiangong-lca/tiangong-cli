@@ -199,7 +199,6 @@ test('public consumer environment is credential-free and dependency scanning is 
   const env = publicConsumerEnvironment(
     {
       PATH: '/bin',
-      TIANGONG_LCA_TEST_API_KEY: 'must-not-pass',
       NODE_AUTH_TOKEN: 'must-not-pass',
       NPM_TOKEN: 'must-not-pass',
     },
@@ -207,7 +206,6 @@ test('public consumer environment is credential-free and dependency scanning is 
     '/tmp/public-consumer-global.npmrc',
   );
   assert.equal(env.PATH, '/bin');
-  assert.equal(env.TIANGONG_LCA_TEST_API_KEY, undefined);
   assert.equal(env.NODE_AUTH_TOKEN, undefined);
   assert.equal(env.NPM_TOKEN, undefined);
   assert.equal(env.NPM_CONFIG_USERCONFIG, '/tmp/public-consumer.npmrc');

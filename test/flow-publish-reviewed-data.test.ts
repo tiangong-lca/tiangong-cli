@@ -581,7 +581,7 @@ test('flow publish reviewed data process helpers unwrap root payloads and map up
     maxWorkers: 1,
     env: buildSupabaseTestEnv({
       TIANGONG_LCA_API_BASE_URL: 'https://example.supabase.co',
-      TIANGONG_LCA_API_KEY: 'key',
+      TIANGONG_LCA_ACCESS_TOKEN: 'key',
     }),
     fetchImpl: withSupabaseAuth(async (url, init) => {
       const method = String(init?.method ?? 'GET');
@@ -645,7 +645,7 @@ test('flow publish reviewed data process helpers unwrap root payloads and map up
     maxWorkers: 1,
     env: buildSupabaseTestEnv({
       TIANGONG_LCA_API_BASE_URL: 'https://example.supabase.co',
-      TIANGONG_LCA_API_KEY: 'key',
+      TIANGONG_LCA_ACCESS_TOKEN: 'key',
     }),
     fetchImpl: withSupabaseAuth(async (url, init) => {
       const method = String(init?.method ?? 'GET');
@@ -709,7 +709,7 @@ test('flow publish reviewed data process helpers unwrap root payloads and map up
     maxWorkers: 1,
     env: buildSupabaseTestEnv({
       TIANGONG_LCA_API_BASE_URL: 'https://example.supabase.co',
-      TIANGONG_LCA_API_KEY: 'key',
+      TIANGONG_LCA_ACCESS_TOKEN: 'key',
     }),
     fetchImpl: withSupabaseAuth(async () => {
       throw 'boom-string';
@@ -774,7 +774,7 @@ test('runFlowReviewedPublishData can use the default flow publish-version implem
       commit: true,
       env: buildSupabaseTestEnv({
         TIANGONG_LCA_API_BASE_URL: 'https://example.supabase.co/functions/v1',
-        TIANGONG_LCA_API_KEY: 'secret-token',
+        TIANGONG_LCA_ACCESS_TOKEN: 'secret-token',
       }),
       fetchImpl: fetchImpl as unknown as typeof fetch,
       validateFlowPayloadImpl: () => ({
@@ -923,7 +923,7 @@ test('runFlowReviewedPublishData commits prepared process rows through dataset c
       commit: true,
       env: buildSupabaseTestEnv({
         TIANGONG_LCA_API_BASE_URL: 'https://example.supabase.co',
-        TIANGONG_LCA_API_KEY: 'key',
+        TIANGONG_LCA_ACCESS_TOKEN: 'key',
       }),
       fetchImpl: withSupabaseAuth(async (url, init) => {
         observed.push({
@@ -1574,7 +1574,7 @@ test('flow publish-reviewed-data helper internals cover validation, compatibilit
       maxWorkers: 1,
       env: buildSupabaseTestEnv({
         TIANGONG_LCA_API_BASE_URL: 'https://example.supabase.co',
-        TIANGONG_LCA_API_KEY: 'key',
+        TIANGONG_LCA_ACCESS_TOKEN: 'key',
       }),
       fetchImpl: withSupabaseAuth(async (url, init) => {
         const method = String(init?.method ?? 'GET');
