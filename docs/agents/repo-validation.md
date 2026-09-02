@@ -31,8 +31,8 @@ checkPaths:
   - scripts/docpact
   - scripts/docpact-gate.sh
   - scripts/install-git-hooks.sh
-lastReviewedAt: 2026-08-31
-lastReviewedCommit: 499c910d07bb6a5e2e1cd8e4403a5a617d4269bb
+lastReviewedAt: 2026-09-02
+lastReviewedCommit: 72e27f3421937d8c07dcad77372fb3f548436e44
 lastReviewedNote: 'Reviewed for Issue #257: CLI 0.1.6 release proof requires npm/tag absence, RED fixtures, release-only diff, exact 100%, four platforms, provenance/integrity, and fresh OAuth/TIDAS consumers.'
 related:
   - ../../AGENTS.md
@@ -61,6 +61,8 @@ For protected-branch parity, the authoritative full gate is:
 ```bash
 pnpm prepush:gate
 ```
+
+Process ownership-version changes require focused `dataset-command`, `process-save-draft`, and `publish` tests in addition to the baseline. Prove exact `modelId`/`modelVersion` forwarding, omission-compatible legacy fallback, rejection of `modelVersion` without `modelId`, precedence among canonical source metadata forms, and absence of any latest-Model lookup. The final proof remains the exact-100% `pnpm prepush:gate`.
 
 Review note, 2026-08-25: Issue #224 fixes local and CI proof to Node 24, pnpm 11.23.0, TypeScript 7.0.2, and type-aware Oxlint. `pnpm test:package` is mandatory: it rejects alternate or nested lockfiles, legacy TypeScript/ESLint bridges, active npm package-management commands, unpinned pnpm CI bootstrap, and development-tool leakage into the tarball; it also installs and executes the packed artifact through a package-manager-neutral consumer. The feature version remains 0.0.33, while a separate 0.1.0 release PR is recommended after merge and all gates pass.
 

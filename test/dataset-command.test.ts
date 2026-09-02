@@ -102,6 +102,7 @@ test('dataset command helper posts create and save-draft payloads with normalize
     payload: { processDataSet: {} },
     extraData: {
       modelId: '33333333-3333-3333-3333-333333333333',
+      modelVersion: '01.01.021',
       ruleVerification: null,
     },
   });
@@ -129,6 +130,7 @@ test('dataset command helper posts create and save-draft payloads with normalize
       processDataSet: {},
     },
     modelId: '33333333-3333-3333-3333-333333333333',
+    modelVersion: '01.01.021',
     ruleVerification: null,
   });
 });
@@ -180,6 +182,12 @@ test('dataset command helper normalizes optional metadata helpers and rejects ma
   assert.equal(__testInternals.readOptionalModelId({ modelId: '   ' }, false), undefined);
   assert.equal(__testInternals.readOptionalModelId({ model_id: null }, true), null);
   assert.equal(__testInternals.readOptionalModelId({ model_id: null }, false), undefined);
+  assert.equal(
+    __testInternals.readOptionalModelVersion({ modelVersion: '  01.01.021  ' }),
+    '01.01.021',
+  );
+  assert.equal(__testInternals.readOptionalModelVersion({ model_version: null }), null);
+  assert.equal(__testInternals.readOptionalModelVersion({ modelVersion: '   ' }), undefined);
 
   const transport = await resolveDatasetCommandTransport({
     env: buildSupabaseTestEnv({

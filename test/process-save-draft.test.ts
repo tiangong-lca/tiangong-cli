@@ -47,6 +47,8 @@ test('state-aware process write routes visible drafts through cmd_dataset_save_d
     id: 'proc-draft',
     version: '01.00.001',
     payload: { processDataSet: {} },
+    modelId: 'model-source',
+    modelVersion: '01.01.021',
     env: buildSupabaseTestEnv({
       TIANGONG_LCA_API_BASE_URL: 'https://example.supabase.co',
       TIANGONG_LCA_API_KEY: 'key',
@@ -79,7 +81,15 @@ test('state-aware process write routes visible drafts through cmd_dataset_save_d
     ['GET', 'POST'],
   );
   assert.match(observed[1]?.url ?? '', /\/rest\/v1\/rpc\/cmd_dataset_save_draft$/u);
-  assert.match(observed[1]?.body ?? '', /"p_table":"processes"/u);
+  assert.deepEqual(JSON.parse(observed[1]?.body ?? '{}'), {
+    p_table: 'processes',
+    p_id: 'proc-draft',
+    p_version: '01.00.001',
+    p_json_ordered: { processDataSet: {} },
+    p_model_id: 'model-source',
+    p_model_version: '01.01.021',
+    p_audit: null,
+  });
   assert.deepEqual(result, {
     status: 'success',
     operation: 'save_draft',
@@ -330,6 +340,8 @@ test('state-aware process write falls back to dataset create when no exact visib
     id: 'proc-new',
     version: '01.00.001',
     payload: { processDataSet: {} },
+    modelId: 'model-source',
+    modelVersion: '01.01.021',
     env: buildSupabaseTestEnv({
       TIANGONG_LCA_API_BASE_URL: 'https://example.supabase.co',
       TIANGONG_LCA_API_KEY: 'key',
@@ -367,10 +379,82 @@ test('state-aware process write falls back to dataset create when no exact visib
     jsonOrdered: {
       processDataSet: {},
     },
+    modelId: 'model-source',
+    modelVersion: '01.01.021',
   });
   assert.deepEqual(result, {
     status: 'success',
     operation: 'insert',
+  });
+});
+
+test('state-aware process create omits model metadata when the caller supplies none', async () => {
+  const observed: Array<{ method: string; url: string; body?: string }> = [];
+  await syncStateAwareProcessRecord({
+    id: 'proc-independent',
+    version: '01.00.001',
+    payload: { processDataSet: {} },
+    env: buildSupabaseTestEnv({
+      TIANGONG_LCA_API_BASE_URL: 'https://example.supabase.co',
+      TIANGONG_LCA_API_KEY: 'key',
+    }),
+    fetchImpl: withSupabaseAuthBootstrap(async (url, init) => {
+      observed.push({
+        method: String(init?.method ?? 'GET'),
+        url: String(url),
+        body: typeof init?.body === 'string' ? init.body : undefined,
+      });
+      if (observed.length <= 2) {
+        return makeResponse({ ok: true, status: 200, body: '[]' });
+      }
+      return makeResponse({
+        ok: true,
+        status: 200,
+        body: '{"ok":true,"data":{"id":"proc-independent"}}',
+      });
+    }),
+  });
+
+  assert.deepEqual(JSON.parse(observed[2]?.body ?? '{}'), {
+    table: 'processes',
+    id: 'proc-independent',
+    jsonOrdered: { processDataSet: {} },
+  });
+});
+
+test('state-aware process create accepts an explicit independent model reference', async () => {
+  const observed: Array<{ method: string; url: string; body?: string }> = [];
+  await syncStateAwareProcessRecord({
+    id: 'proc-explicit-independent',
+    version: '01.00.001',
+    payload: { processDataSet: {} },
+    modelId: null,
+    modelVersion: null,
+    env: buildSupabaseTestEnv({
+      TIANGONG_LCA_API_BASE_URL: 'https://example.supabase.co',
+      TIANGONG_LCA_API_KEY: 'key',
+    }),
+    fetchImpl: withSupabaseAuthBootstrap(async (url, init) => {
+      observed.push({
+        method: String(init?.method ?? 'GET'),
+        url: String(url),
+        body: typeof init?.body === 'string' ? init.body : undefined,
+      });
+      if (observed.length <= 2) {
+        return makeResponse({ ok: true, status: 200, body: '[]' });
+      }
+      return makeResponse({
+        ok: true,
+        status: 200,
+        body: '{"ok":true,"data":{"id":"proc-explicit-independent"}}',
+      });
+    }),
+  });
+
+  assert.deepEqual(JSON.parse(observed[2]?.body ?? '{}'), {
+    table: 'processes',
+    id: 'proc-explicit-independent',
+    jsonOrdered: { processDataSet: {} },
   });
 });
 

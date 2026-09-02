@@ -21,8 +21,8 @@ checkPaths:
   - .oxlintrc.json
   - src/**
   - test/**
-lastReviewedAt: 2026-08-31
-lastReviewedCommit: f6430d1b6c73589df77c449d3dfb871b976277b9
+lastReviewedAt: 2026-09-02
+lastReviewedCommit: 72e27f3421937d8c07dcad77372fb3f548436e44
 lastReviewedNote: 'Reviewed for Issue #256: Node 24 最新兼容依赖与 Prettier 3.9 格式迁移不改变命令、OAuth/session、精确 TIDAS 0.2 或发布所有权，并由 package contract 保持 env 矩阵为合法两列表格。'
 related:
   - ../AGENTS.md
@@ -120,7 +120,9 @@ MCP 替代策略也固定为两条：
 - 策略 1：对业务 API 直接调用 `tiangong-lca-edge-functions`（Edge Functions / REST）
 - 策略 2：对 Supabase 直接访问时不再经过 MCP；CLI 直接依赖官方 `@supabase/supabase-js`，并在此基础上保持 deterministic 的读写语义、URL 形状和报告契约
 
-database-engine Issue #422 将策略 2 收口为 `src/lib/supabase-data-api-contract.ts` 的单一冻结 manifest/adapter：九张 core relation 明确固定在 `public`，16 个 authenticated RPC 必须使用 exact `api` signature 和显式 profile header；默认且唯一支持的 profile 是 `api-contract-v1`。`scripts/scan-data-api-consumers.ts` 是静态 consumer-zero gate，任何 raw RPC route、硬编码 public profile、未登记 relation/RPC 或退休的 private alias executor 消费都会失败。合同精确绑定 database-engine commit `0a97cc761f8127ca379ab7d4df4395dab255707a`、migration head `20260807103000`、migration tree 及关键 migration SHA-256，且 `contractReady=true`。GET/HEAD 与 manifest 中显式标为 read 的 RPC 仅可在 401/403 后 refresh/replay 一次；relation write、mutation/unknown RPC 不自动重放。`private.cmd_dataset_alias_plan_guarded(jsonb)` 不对 CLI 暴露，alias production path 仅使用受保护 execution 四个 façade；未冻结的新签名仍不得在 CLI 猜测。
+database-engine Issue #422 将策略 2 收口为 `src/lib/supabase-data-api-contract.ts` 的单一冻结 manifest/adapter；Issue #589 在同一合同内加入 Process 精确 Model 版本写入。九张 core relation 明确固定在 `public`，16 个 authenticated RPC 必须使用 exact `api` signature 和显式 profile header；默认且唯一支持的 profile 是 `api-contract-v1`。`scripts/scan-data-api-consumers.ts` 是静态 consumer-zero gate，任何 raw RPC route、硬编码 public profile、未登记 relation/RPC 或退休的 private alias executor 消费都会失败。合同精确绑定 database-engine commit `1320dcc506fe37af6b625ae30fbe0bec38cf87c6`、migration head `20260902104500`、migration tree 及关键 migration SHA-256，且 `contractReady=true`。GET/HEAD 与 manifest 中显式标为 read 的 RPC 仅可在 401/403 后 refresh/replay 一次；relation write、mutation/unknown RPC 不自动重放。`private.cmd_dataset_alias_plan_guarded(jsonb)` 不对 CLI 暴露，alias production path 仅使用受保护 execution 四个 façade；未冻结的新签名仍不得在 CLI 猜测。
+
+Process dataset command 还可以随 `modelId` 传入可空的 `modelVersion`。新 resulting Process 必须保留来源 LifecycleModel 的精确 id/version；旧输入缺少版本时才由数据库继续使用 Process 自身版本回退。版本不能脱离 id 单独出现，也不能通过“查询最新 Model”补齐。
 
 这两条是并行可选策略，不再引入新的 MCP 中间层。
 

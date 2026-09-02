@@ -201,9 +201,15 @@ export type DatasetPublishExecutorArgs = {
   version: string;
   payload: JsonObject;
   metadata?: LifecyclemodelPublishMetadata | null;
+  processModel?: ProcessModelReference;
   source: 'bundle' | 'input';
   bundle_path: string | null;
   publish: PublishRequest['publish'];
+};
+
+export type ProcessModelReference = {
+  modelId: string;
+  modelVersion: string | null;
 };
 
 export type ProcessBuildRunPublishExecutorArgs = {
@@ -231,6 +237,8 @@ export type PublishDatasetReport = {
   source: 'bundle' | 'input';
   bundle_path: string | null;
   reason?: string;
+  model_id?: string;
+  model_version?: string | null;
   validation?: ProcessPayloadValidationResult;
   execution?: unknown;
   error?: { message: string };
@@ -449,6 +457,10 @@ function extract_source_identity(payload: JsonObject): [string, string] {
 
 function load_dataset_entry(entry: PublishDatasetEntry, baseDir: string): JsonObject {
   const source = load_dataset_entry_source(entry, baseDir);
+  return unwrap_dataset_entry_source(source);
+}
+
+function unwrap_dataset_entry_source(source: JsonObject): JsonObject {
   if (isRecord(source)) {
     for (const key of ['json_ordered', 'jsonOrdered', 'payload'] as const) {
       const candidate = source[key];
@@ -516,6 +528,109 @@ function load_lifecyclemodel_publish_entry(
     payload,
     metadata: Object.keys(metadata).length > 0 ? metadata : null,
   };
+}
+
+type OptionalStringField = {
+  present: boolean;
+  value: string | null;
+};
+
+function read_optional_string_field(
+  source: JsonObject,
+  keys: readonly string[],
+): OptionalStringField {
+  for (const key of keys) {
+    if (Object.prototype.hasOwnProperty.call(source, key)) {
+      return {
+        present: true,
+        value: first_non_empty(source[key]),
+      };
+    }
+  }
+  return { present: false, value: null };
+}
+
+function process_model_reference_candidate(options: {
+  source: JsonObject | null;
+  idKeys: readonly string[];
+  versionKeys: readonly string[];
+}): { present: boolean; reference: ProcessModelReference | null } {
+  if (!options.source) {
+    return { present: false, reference: null };
+  }
+
+  const modelId = read_optional_string_field(options.source, options.idKeys);
+  const modelVersion = read_optional_string_field(options.source, options.versionKeys);
+  if (!modelId.present && !modelVersion.present) {
+    return { present: false, reference: null };
+  }
+  if (modelVersion.value && !modelId.value) {
+    throw new CliError('Process modelVersion requires modelId.', {
+      code: 'PUBLISH_PROCESS_MODEL_ID_REQUIRED',
+      exitCode: 2,
+      details: {
+        model_version: modelVersion.value,
+      },
+    });
+  }
+
+  return {
+    present: true,
+    reference: modelId.value
+      ? {
+          modelId: modelId.value,
+          modelVersion: modelVersion.value,
+        }
+      : null,
+  };
+}
+
+function resolve_process_model_reference(
+  source: JsonObject,
+  payload: JsonObject,
+): ProcessModelReference | null {
+  const payloadRoot = isRecord(payload.processDataSet) ? payload.processDataSet : payload;
+  const processInformation = isRecord(payloadRoot.processInformation)
+    ? payloadRoot.processInformation
+    : null;
+  const dataSetInformation =
+    processInformation && isRecord(processInformation.dataSetInformation)
+      ? processInformation.dataSetInformation
+      : null;
+  const generatedFromLifecycleModel =
+    dataSetInformation && isRecord(dataSetInformation.generatedFromLifecycleModel)
+      ? dataSetInformation.generatedFromLifecycleModel
+      : null;
+  const candidateOptions = [
+    {
+      source,
+      idKeys: ['modelId', 'model_id'],
+      versionKeys: ['modelVersion', 'model_version'],
+    },
+    {
+      source: isRecord(source.metadata) ? source.metadata : null,
+      idKeys: ['generated_from_lifecyclemodel_id'],
+      versionKeys: ['generated_from_lifecyclemodel_version'],
+    },
+    {
+      source: isRecord(payload.projectionMetadata) ? payload.projectionMetadata : null,
+      idKeys: ['generated_from_lifecyclemodel_id'],
+      versionKeys: ['generated_from_lifecyclemodel_version'],
+    },
+    {
+      source: generatedFromLifecycleModel,
+      idKeys: ['id'],
+      versionKeys: ['version'],
+    },
+  ];
+
+  for (const candidateOptionsEntry of candidateOptions) {
+    const candidate = process_model_reference_candidate(candidateOptionsEntry);
+    if (candidate.present) {
+      return candidate.reference;
+    }
+  }
+  return null;
 }
 
 function push_collected_entries<T>(
@@ -677,6 +792,7 @@ async function maybe_execute_dataset(
   options: PublishRequestOptions & {
     table: 'lifecyclemodels' | 'processes' | 'sources';
     metadata?: LifecyclemodelPublishMetadata | null;
+    processModel?: ProcessModelReference;
   },
 ): Promise<PublishDatasetReport> {
   if (!options.commit) {
@@ -689,7 +805,7 @@ async function maybe_execute_dataset(
   }
 
   try {
-    report.execution = await options.executor({
+    const executorArgs: DatasetPublishExecutorArgs = {
       table: options.table,
       id: report.id,
       version: report.version,
@@ -698,7 +814,11 @@ async function maybe_execute_dataset(
       source: report.source,
       bundle_path: report.bundle_path,
       publish: options.publish,
-    });
+    };
+    if (options.processModel) {
+      executorArgs.processModel = options.processModel;
+    }
+    report.execution = await options.executor(executorArgs);
     report.status = 'executed';
   } catch (error) {
     report.status = 'failed';
@@ -744,8 +864,11 @@ async function publish_processes(
   const reports: PublishDatasetReport[] = [];
   const validate = options.validateProcessPayloadImpl ?? validateProcessPayload;
   for (const item of entries) {
-    const payload = load_dataset_entry(item.entry, item.origin.base_dir);
+    let payload: JsonObject = {};
     try {
+      const source = load_dataset_entry_source(item.entry, item.origin.base_dir);
+      payload = unwrap_dataset_entry_source(source);
+      const modelReference = resolve_process_model_reference(source, payload);
       const [datasetId, version] = extract_process_identity(payload);
       const validation = validate(payload);
       if (!validation.ok) {
@@ -772,26 +895,39 @@ async function publish_processes(
         source: item.origin.source,
         bundle_path: item.origin.bundle_path,
         validation,
+        ...(modelReference
+          ? {
+              model_id: modelReference.modelId,
+              model_version: modelReference.modelVersion,
+            }
+          : {}),
       };
       reports.push(
         await maybe_execute_dataset(report, payload, {
           ...options,
           table: 'processes',
           executor: options.executor,
+          ...(modelReference ? { processModel: modelReference } : {}),
         }),
       );
     } catch (error) {
+      const invalidModelReference =
+        error instanceof CliError && error.code === 'PUBLISH_PROCESS_MODEL_ID_REQUIRED';
       const report: PublishDatasetReport = {
         table: 'processes',
         id: first_non_empty(payload['@id'], payload.id),
         version: first_non_empty(payload['@version'], payload.version, DEFAULT_DATASET_VERSION),
-        status: 'deferred_projection_payload',
+        status: invalidModelReference ? 'failed' : 'deferred_projection_payload',
         source: item.origin.source,
         bundle_path: item.origin.bundle_path,
-        reason:
-          error instanceof CliError && error.code === 'PUBLISH_PROCESS_ID_MISSING'
-            ? 'Payload is not a canonical processDataSet wrapper; keep it in the publish bundle until a projection-to-process adapter exists.'
-            : serialize_error(error).message,
+        ...(invalidModelReference
+          ? { error: serialize_error(error) }
+          : {
+              reason:
+                error instanceof CliError && error.code === 'PUBLISH_PROCESS_ID_MISSING'
+                  ? 'Payload is not a canonical processDataSet wrapper; keep it in the publish bundle until a projection-to-process adapter exists.'
+                  : serialize_error(error).message,
+            }),
       };
       reports.push(report);
     }
@@ -918,6 +1054,8 @@ function build_default_dataset_executor(options: {
         env: options.env,
         fetchImpl: options.fetchImpl,
         timeoutMs: options.timeoutMs,
+        modelId: args.processModel?.modelId,
+        modelVersion: args.processModel?.modelVersion,
         audit: {
           command: 'tiangong-lca publish run',
           source: args.source,

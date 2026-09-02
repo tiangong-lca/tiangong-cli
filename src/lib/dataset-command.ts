@@ -85,6 +85,20 @@ function readOptionalModelId(
   return undefined;
 }
 
+function readOptionalModelVersion(extraData: JsonObject | undefined): string | null | undefined {
+  if (!extraData) {
+    return undefined;
+  }
+
+  const value = extraData.modelVersion ?? extraData.model_version;
+  const trimmed = trimToken(value);
+  if (trimmed) {
+    return trimmed;
+  }
+
+  return value === null ? null : undefined;
+}
+
 function requireCommandSuccessPayload(payload: unknown, url: string): JsonObject {
   const normalized = requireRemoteOkPayload(payload, url);
   if (!isRecord(normalized) || normalized.ok !== true) {
@@ -182,6 +196,10 @@ export async function createDatasetRecord(options: {
   if (modelId !== undefined) {
     body.modelId = modelId;
   }
+  const modelVersion = readOptionalModelVersion(options.extraData);
+  if (modelVersion !== undefined) {
+    body.modelVersion = modelVersion;
+  }
   const ruleVerification = readOptionalRuleVerification(options.extraData);
   if (ruleVerification !== undefined) {
     body.ruleVerification = ruleVerification;
@@ -213,6 +231,10 @@ export async function saveDraftDatasetRecord(options: {
   const modelId = readOptionalModelId(options.extraData, false);
   if (modelId !== undefined) {
     body.modelId = modelId;
+  }
+  const modelVersion = readOptionalModelVersion(options.extraData);
+  if (modelVersion !== undefined) {
+    body.modelVersion = modelVersion;
   }
   const ruleVerification = readOptionalRuleVerification(options.extraData);
   if (ruleVerification !== undefined) {
@@ -247,5 +269,6 @@ export async function deleteDatasetRecord(options: {
 export const __testInternals = {
   deriveSupabaseFunctionsBaseUrl,
   readOptionalModelId,
+  readOptionalModelVersion,
   readOptionalRuleVerification,
 };

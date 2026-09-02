@@ -22,8 +22,8 @@ checkPaths:
   - src/**
   - scripts/**
   - .github/workflows/**
-lastReviewedAt: 2026-08-31
-lastReviewedCommit: f6430d1b6c73589df77c449d3dfb871b976277b9
+lastReviewedAt: 2026-09-02
+lastReviewedCommit: 72e27f3421937d8c07dcad77372fb3f548436e44
 lastReviewedNote: 'Reviewed for Issue #256: CLI 0.1.5 更新到 Node 24 最新兼容 Supabase/开发依赖，精确固定 TIDAS SDK 0.2.0，并把 peer 检查与 Prettier 3.9 格式纳入门禁。'
 related:
   - AGENTS.md
@@ -258,7 +258,7 @@ TIANGONG_LCA_UNSTRUCTURED_RETURN_TXT=true
 
 当前也不需要额外配置通用的 `SUPABASE_URL`、`SUPABASE_KEY` 或 `TIANGONG_LCA_TIDAS_SDK_DIR`。CLI 会从 `TIANGONG_LCA_API_BASE_URL` 派生原生 `@supabase/supabase-js` client，复用 OAuth/headless/迁移兼容解析出的 actor access token，并直接从 `package.json` 依赖加载 `@tiangong-lca/tidas-sdk`。
 
-Data API schema 不依赖 PostgREST 的默认 `public`。默认且唯一支持的配置为 `TIANGONG_LCA_DATA_API_PROFILE=api-contract-v1`；省略变量时也解析为该冻结合同，旧 `legacy-public-v1` 会在发送前失败。九张核心实体表继续显式使用 `public`，16 个 CLI RPC 则全部显式使用 `api`。当前合同固定到 database-engine commit `0a97cc761f8127ca379ab7d4df4395dab255707a`、migration head `20260807103000`，并在 manifest 中保存 migration tree 与关键 migration 的精确 hash。`private.cmd_dataset_alias_plan_guarded(jsonb)` 是不可暴露的内部 executor，不再是 CLI Data API capability；生产 alias 执行只使用 `run-protected` 的 preflight/gate/admit/read 四个 `api` façade。CLI 不接受 anon 或 service-role Data API 身份；GET/HEAD 与 manifest 明确分类为 read 的 RPC 仅在 401/403 后最多 refresh/replay 一次，relation write、mutation/unknown RPC 均不自动重放。
+Data API schema 不依赖 PostgREST 的默认 `public`。默认且唯一支持的配置为 `TIANGONG_LCA_DATA_API_PROFILE=api-contract-v1`；省略变量时也解析为该冻结合同，旧 `legacy-public-v1` 会在发送前失败。九张核心实体表继续显式使用 `public`，16 个 CLI RPC 则全部显式使用 `api`。当前合同固定到 database-engine commit `1320dcc506fe37af6b625ae30fbe0bec38cf87c6`、migration head `20260902104500`，并在 manifest 中保存 migration tree 与关键 migration 的精确 hash。`private.cmd_dataset_alias_plan_guarded(jsonb)` 是不可暴露的内部 executor，不再是 CLI Data API capability；生产 alias 执行只使用 `run-protected` 的 preflight/gate/admit/read 四个 `api` façade。CLI 不接受 anon 或 service-role Data API 身份；GET/HEAD 与 manifest 明确分类为 read 的 RPC 仅在 401/403 后最多 refresh/replay 一次，relation write、mutation/unknown RPC 均不自动重放。
 
 不再兼容旧变量名，也不再把 KB、TianGong unstructured service、MCP 相关 env 混写成当前公开命令面的必需配置。
 
@@ -770,6 +770,8 @@ Derivative rebuild 的 apply 成功只表示 guarded RPC 已返回 `accepted`/`q
 - 如果希望输出位置不受 request 文件位置影响，传绝对路径，不要依赖当前 shell `cwd`
 
 当前实现不会把旧 MCP 数据库写入逻辑重新塞回 CLI；但当提供 Supabase runtime 时，`lifecyclemodels` / `processes` / `sources` 会默认走共享的 dataset command executor：先做 REST 精确可见性预检，再调用 `app_dataset_create` / `app_dataset_save_draft`。如果调用方显式注入 executors，则仍以显式执行器为准。
+
+Process 写入可在 `modelId` 之外携带可空的 `modelVersion`。`publish run` 会从 canonical Process 来源元数据中解析并原样持久化精确的 LifecycleModel 版本；只有旧输入缺少 `modelVersion` 时才保留“用 Process 自身版本作为 Model 版本”的兼容回退，任何路径都不允许改查最新 Model 版本。仅有 `modelVersion` 而没有 `modelId` 会在写入前失败。
 
 `tiangong-lca validation run` 负责把本地 TIDAS 包校验统一收口到 CLI：
 

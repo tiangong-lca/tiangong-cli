@@ -24,8 +24,8 @@ checkPaths:
   - scripts/docpact
   - scripts/docpact-gate.sh
   - scripts/install-git-hooks.sh
-lastReviewedAt: 2026-08-31
-lastReviewedCommit: 499c910d07bb6a5e2e1cd8e4403a5a617d4269bb
+lastReviewedAt: 2026-09-02
+lastReviewedCommit: 72e27f3421937d8c07dcad77372fb3f548436e44
 lastReviewedNote: 'Reviewed for Issue #257: CLI 0.1.6 reuses the existing merge-triggered four-platform, tag, and native pnpm Trusted Publishing setup with no new secret, workflow, credential, environment, or publication path.'
 related:
   - ../AGENTS.md
