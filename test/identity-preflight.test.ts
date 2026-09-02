@@ -814,7 +814,7 @@ test('identity preflight requires a remote query when the target has no identity
 test('identity preflight can use process env and global fetch for remote candidates', async () => {
   const envKeys = [
     'TIANGONG_LCA_API_BASE_URL',
-    'TIANGONG_LCA_API_KEY',
+    'TIANGONG_LCA_ACCESS_TOKEN',
     'TIANGONG_LCA_SUPABASE_PUBLISHABLE_KEY',
     'TIANGONG_LCA_DISABLE_SESSION_CACHE',
     'TIANGONG_LCA_REGION',

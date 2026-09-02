@@ -43,7 +43,7 @@ function tempDir(): string {
 function releaseEnv(): NodeJS.ProcessEnv {
   envSequence += 1;
   return buildSupabaseTestEnv({
-    TIANGONG_LCA_API_KEY: `release-password-${envSequence}`,
+    TIANGONG_LCA_ACCESS_TOKEN: `release-password-${envSequence}`,
     TIANGONG_LCA_DISABLE_SESSION_CACHE: 'true',
   });
 }

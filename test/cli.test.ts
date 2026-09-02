@@ -137,7 +137,7 @@ test('executeCli returns doctor json and failure status when required env is mis
     ['doctor', '--json'],
     makeDeps({
       TIANGONG_LCA_API_BASE_URL: '',
-      TIANGONG_LCA_API_KEY: '',
+      TIANGONG_LCA_ACCESS_TOKEN: '',
     }),
   );
   assert.equal(result.exitCode, 1);
@@ -263,7 +263,7 @@ test('executeCli returns help for publish and validation subcommands', async () 
   assert.equal(flowGetHelp.exitCode, 0);
   assert.match(flowGetHelp.stdout, /tiangong-lca flow get --id <flow-id>/u);
   assert.match(flowGetHelp.stdout, /--user-id/u);
-  assert.match(flowGetHelp.stdout, /TIANGONG_LCA_API_KEY/u);
+  assert.match(flowGetHelp.stdout, /TIANGONG_LCA_OAUTH_CLIENT_ID/u);
   assert.doesNotMatch(flowGetHelp.stdout, /Planned command/u);
 
   const flowListHelp = await executeCli(['flow', 'list', '--help'], makeDeps());
@@ -381,7 +381,7 @@ test('executeCli returns help for the lifecyclemodel namespace and implemented s
     /tiangong-lca lifecyclemodel build-resulting-process --input <file>/u,
   );
   assert.match(buildHelp.stdout, /TIANGONG_LCA_API_BASE_URL/u);
-  assert.match(buildHelp.stdout, /TIANGONG_LCA_API_KEY/u);
+  assert.match(buildHelp.stdout, /TIANGONG_LCA_OAUTH_CLIENT_ID/u);
   assert.doesNotMatch(buildHelp.stdout, /Planned command/u);
 
   const publishHelp = await executeCli(
@@ -1150,7 +1150,7 @@ test('executeCli separates production read-only freeze from offline approval sea
     outDir: './protected-freeze',
     expectedProjectRef: 'production-ref',
     confirm: 'bafudata@126.com',
-    cliVersion: '0.1.6',
+    cliVersion: '0.1.7',
     pageSize: 250,
     timeoutMs: 12000,
     env: deps.env,
@@ -1352,7 +1352,7 @@ test('executeCli exposes the dedicated flow-identity capture/plan/freeze/seal/ru
     operationId: 'flow-identity-v2-capture',
     expectedProjectRef: 'prod',
     confirm: 'owner@example.com',
-    cliVersion: '0.1.6',
+    cliVersion: '0.1.7',
     sdkVersion: '0.1.45',
     outDir: 'capture-out',
     pageSize: 1000,
@@ -1429,7 +1429,7 @@ test('executeCli exposes the dedicated flow-identity capture/plan/freeze/seal/ru
     approvedAtUtc: '2026-07-16T05:00:00Z',
     expectedProjectRef: 'prod',
     confirm: 'owner@example.com',
-    cliVersion: '0.1.6',
+    cliVersion: '0.1.7',
     outDir: 'freeze-out',
   });
 
@@ -2691,7 +2691,7 @@ test('executeCli returns help for the process namespace and implemented subcomma
   assert.equal(getHelp.exitCode, 0);
   assert.match(getHelp.stdout, /tiangong-lca process get --id <process-id>/u);
   assert.match(getHelp.stdout, /TIANGONG_LCA_API_BASE_URL/u);
-  assert.match(getHelp.stdout, /TIANGONG_LCA_API_KEY/u);
+  assert.match(getHelp.stdout, /TIANGONG_LCA_OAUTH_CLIENT_ID/u);
   assert.doesNotMatch(getHelp.stdout, /Planned command/u);
 
   const listHelp = await executeCli(['process', 'list', '--help'], makeDeps());
@@ -2936,7 +2936,7 @@ test('executeCli executes lifecyclemodel build-resulting-process with injected i
   writeFileSync(inputPath, '{"source_model":{"json_ordered_path":"./model.json"}}', 'utf8');
   const deps = makeDeps({
     TIANGONG_LCA_API_BASE_URL: 'https://supabase.example/functions/v1',
-    TIANGONG_LCA_API_KEY: 'supabase-api-key',
+    TIANGONG_LCA_ACCESS_TOKEN: 'supabase-api-key',
   });
 
   try {
@@ -2996,7 +2996,7 @@ test('executeCli executes lifecyclemodel build-resulting-process with injected i
 test('executeCli executes process get with injected implementation', async () => {
   const deps = makeDeps({
     TIANGONG_LCA_API_BASE_URL: 'https://supabase.example/functions/v1',
-    TIANGONG_LCA_API_KEY: 'supabase-api-key',
+    TIANGONG_LCA_ACCESS_TOKEN: 'supabase-api-key',
   });
 
   const result = await executeCli(['process', 'get', '--id', 'proc-1', '--version', '00.00.001'], {
@@ -3030,7 +3030,7 @@ test('executeCli executes process get with injected implementation', async () =>
 test('executeCli executes process list with injected implementation', async () => {
   const deps = makeDeps({
     TIANGONG_LCA_API_BASE_URL: 'https://supabase.example/functions/v1',
-    TIANGONG_LCA_API_KEY: 'supabase-api-key',
+    TIANGONG_LCA_ACCESS_TOKEN: 'supabase-api-key',
   });
 
   const result = await executeCli(
@@ -3103,7 +3103,7 @@ test('executeCli executes process list with injected implementation', async () =
 test('executeCli parses non-all process list pagination flags', async () => {
   const deps = makeDeps({
     TIANGONG_LCA_API_BASE_URL: 'https://supabase.example/functions/v1',
-    TIANGONG_LCA_API_KEY: 'supabase-api-key',
+    TIANGONG_LCA_ACCESS_TOKEN: 'supabase-api-key',
   });
 
   const result = await executeCli(['process', 'list', '--limit', '5', '--offset', '3'], {
@@ -3564,7 +3564,7 @@ test('executeCli executes flow build-plan and maps blockers to exit code 1', asy
 test('executeCli executes flow get with injected implementation', async () => {
   const deps = makeDeps({
     TIANGONG_LCA_API_BASE_URL: 'https://supabase.example/functions/v1',
-    TIANGONG_LCA_API_KEY: 'supabase-api-key',
+    TIANGONG_LCA_ACCESS_TOKEN: 'supabase-api-key',
   });
 
   const result = await executeCli(
@@ -3617,7 +3617,7 @@ test('executeCli executes flow get with injected implementation', async () => {
 test('executeCli executes flow list with injected implementation', async () => {
   const deps = makeDeps({
     TIANGONG_LCA_API_BASE_URL: 'https://supabase.example/functions/v1',
-    TIANGONG_LCA_API_KEY: 'supabase-api-key',
+    TIANGONG_LCA_ACCESS_TOKEN: 'supabase-api-key',
   });
 
   const result = await executeCli(
@@ -3700,7 +3700,7 @@ test('executeCli executes flow list with injected implementation', async () => {
 test('executeCli parses non-all flow list pagination flags', async () => {
   const deps = makeDeps({
     TIANGONG_LCA_API_BASE_URL: 'https://supabase.example/functions/v1',
-    TIANGONG_LCA_API_KEY: 'supabase-api-key',
+    TIANGONG_LCA_ACCESS_TOKEN: 'supabase-api-key',
   });
 
   const result = await executeCli(
@@ -3871,7 +3871,7 @@ test('executeCli maps flow identity-preflight blocker reports to exit code 1', a
 test('executeCli executes flow list with explicit limit and offset', async () => {
   const deps = makeDeps({
     TIANGONG_LCA_API_BASE_URL: 'https://supabase.example/functions/v1',
-    TIANGONG_LCA_API_KEY: 'supabase-api-key',
+    TIANGONG_LCA_ACCESS_TOKEN: 'supabase-api-key',
   });
 
   const result = await executeCli(
@@ -4895,7 +4895,7 @@ test('executeCli keeps subcommand --json inside remote command parsing', async (
   }
 });
 
-test('executeCli respects explicit remote override flags', async () => {
+test('executeCli respects explicit URL and region override flags', async () => {
   const dir = mkdtempSync(path.join(os.tmpdir(), 'tg-cli-search-overrides-'));
   const inputPath = path.join(dir, 'request.json');
   writeFileSync(inputPath, '{"query":"steel"}', 'utf8');
@@ -4908,8 +4908,6 @@ test('executeCli respects explicit remote override flags', async () => {
         '--dry-run',
         '--input',
         inputPath,
-        '--api-key',
-        'override-token',
         '--base-url',
         'https://override.example/functions/v1',
         '--region',
@@ -4937,7 +4935,7 @@ test('executeCli resolves remote config from canonical TIANGONG_LCA_* env keys',
       ['search', 'process', '--dry-run', '--input', inputPath],
       makeDeps({
         TIANGONG_LCA_API_BASE_URL: 'https://env.example/functions/v1',
-        TIANGONG_LCA_API_KEY: 'env-token',
+        TIANGONG_LCA_ACCESS_TOKEN: 'env-token',
         TIANGONG_LCA_REGION: 'cn-east-1',
       }),
     );
@@ -4981,7 +4979,7 @@ test('executeCli surfaces missing search API configuration after exhausting all 
       ['search', 'flow', '--input', inputPath],
       makeDeps({
         TIANGONG_LCA_API_BASE_URL: undefined,
-        TIANGONG_LCA_API_KEY: '',
+        TIANGONG_LCA_ACCESS_TOKEN: '',
         TIANGONG_LCA_SUPABASE_PUBLISHABLE_KEY: undefined,
         TIANGONG_LCA_REGION: undefined,
       }),
@@ -4991,7 +4989,6 @@ test('executeCli surfaces missing search API configuration after exhausting all 
     assert.equal(result.stdout, '');
     assert.match(result.stderr, /SUPABASE_REST_ENV_REQUIRED/u);
     assert.match(result.stderr, /TIANGONG_LCA_API_BASE_URL/u);
-    assert.match(result.stderr, /TIANGONG_LCA_API_KEY/u);
     assert.match(result.stderr, /TIANGONG_LCA_SUPABASE_PUBLISHABLE_KEY/u);
   } finally {
     rmSync(dir, { recursive: true, force: true });
@@ -5008,7 +5005,7 @@ test('executeCli surfaces missing admin API configuration after exhausting all f
       ['admin', 'embedding-run', '--input', inputPath],
       makeDeps({
         TIANGONG_LCA_API_BASE_URL: undefined,
-        TIANGONG_LCA_API_KEY: '',
+        TIANGONG_LCA_ACCESS_TOKEN: '',
         TIANGONG_LCA_SUPABASE_PUBLISHABLE_KEY: undefined,
         TIANGONG_LCA_REGION: undefined,
       }),
@@ -5018,7 +5015,6 @@ test('executeCli surfaces missing admin API configuration after exhausting all f
     assert.equal(result.stdout, '');
     assert.match(result.stderr, /SUPABASE_REST_ENV_REQUIRED/u);
     assert.match(result.stderr, /TIANGONG_LCA_API_BASE_URL/u);
-    assert.match(result.stderr, /TIANGONG_LCA_API_KEY/u);
     assert.match(result.stderr, /TIANGONG_LCA_SUPABASE_PUBLISHABLE_KEY/u);
   } finally {
     rmSync(dir, { recursive: true, force: true });
@@ -6360,7 +6356,10 @@ test('executeCli dispatches flow publish-reviewed-data to the implemented CLI mo
       observedOptions?.env?.TIANGONG_LCA_API_BASE_URL,
       'https://example.com/functions/v1',
     );
-    assert.equal(observedOptions?.env?.TIANGONG_LCA_API_KEY, makeDeps().env.TIANGONG_LCA_API_KEY);
+    assert.equal(
+      observedOptions?.env?.TIANGONG_LCA_ACCESS_TOKEN,
+      makeDeps().env.TIANGONG_LCA_ACCESS_TOKEN,
+    );
     assert.equal(
       observedOptions?.env?.TIANGONG_LCA_SUPABASE_PUBLISHABLE_KEY,
       makeDeps().env.TIANGONG_LCA_SUPABASE_PUBLISHABLE_KEY,

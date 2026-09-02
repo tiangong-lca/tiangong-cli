@@ -22,7 +22,7 @@ maybeTest('runFromBin executes when imported without direct auto-run', async () 
   try {
     const exitCode = await runFromBin(['doctor', '--json'], {
       TIANGONG_LCA_API_BASE_URL: 'https://example.com/functions/v1',
-      TIANGONG_LCA_API_KEY: 'secret-token',
+      TIANGONG_LCA_ACCESS_TOKEN: 'secret-token',
       TIANGONG_LCA_SUPABASE_PUBLISHABLE_KEY: 'sb_publishable_test_key',
     });
 

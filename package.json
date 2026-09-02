@@ -1,6 +1,6 @@
 {
   "name": "@tiangong-lca/cli",
-  "version": "0.1.6",
+  "version": "0.1.7",
   "description": "Unified TianGong LCA CLI with direct REST adapters and low-entropy command surface.",
   "repository": {
     "type": "git",
@@ -62,7 +62,6 @@
     "test:coverage": "pnpm build && node ./scripts/run-test-coverage.cjs",
     "test:coverage:assert-full": "node ./dist/scripts/assert-full-coverage.js",
     "peers:check": "pnpm peers check",
-    "case:auth-identity:production": "pnpm build && node ./dist/scripts/run-auth-identity-production-case.js",
     "prepush:gate": "pnpm lint && pnpm peers:check && pnpm test:package && pnpm test:coverage && pnpm test:coverage:assert-full",
     "release:check-tag": "node ./scripts/ci/check-release-tag.cjs cli",
     "release:assert-unpublished": "node ./scripts/ci/release-version.cjs assert-unpublished",

@@ -223,7 +223,7 @@ test('runProcessSaveDraft executes state-aware save-draft writes on commit', asy
       commit: true,
       env: buildSupabaseTestEnv({
         TIANGONG_LCA_API_BASE_URL: 'https://example.supabase.co',
-        TIANGONG_LCA_API_KEY: 'key',
+        TIANGONG_LCA_ACCESS_TOKEN: 'key',
       }),
       fetchImpl: withSupabaseAuthBootstrap(async (url, init) => {
         observed.push({
@@ -299,7 +299,7 @@ test('runProcessSaveDraft records target user guard on commit', async () => {
       targetUserId: 'user-1',
       env: buildSupabaseTestEnv({
         TIANGONG_LCA_API_BASE_URL: 'https://example.supabase.co',
-        TIANGONG_LCA_API_KEY: 'key',
+        TIANGONG_LCA_ACCESS_TOKEN: 'key',
       }),
       fetchImpl: withSupabaseAuthBootstrap(async (url, init) => {
         observed.push({
@@ -336,9 +336,9 @@ test('runProcessSaveDraft records target user guard on commit', async () => {
 
     assert.deepEqual(
       observed.map((entry) => entry.method),
-      ['GET', 'GET', 'POST'],
+      ['GET', 'POST'],
     );
-    assert.match(observed[2]?.body ?? '', /"target_user_id":"user-1"/u);
+    assert.match(observed[1]?.body ?? '', /"target_user_id":"user-1"/u);
     assert.equal(report.status, 'completed');
     assert.equal(report.target_user_id, 'user-1');
     assert.deepEqual(report.account_guard, {
@@ -619,7 +619,7 @@ test('runProcessSaveDraft records execution failures and non-canonical extractio
       commit: true,
       env: buildSupabaseTestEnv({
         TIANGONG_LCA_API_BASE_URL: 'https://example.supabase.co',
-        TIANGONG_LCA_API_KEY: 'key',
+        TIANGONG_LCA_ACCESS_TOKEN: 'key',
       }),
       fetchImpl: withSupabaseAuthBootstrap(async (_url, init) => {
         if (String(init?.method ?? 'GET') === 'GET') {

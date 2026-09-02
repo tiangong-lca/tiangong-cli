@@ -148,7 +148,7 @@ test('runFlowPublishVersion writes dry-run artifacts for insert, update, and fai
       outDir,
       env: buildSupabaseTestEnv({
         TIANGONG_LCA_API_BASE_URL: 'https://example.supabase.co/functions/v1',
-        TIANGONG_LCA_API_KEY: 'secret-token',
+        TIANGONG_LCA_ACCESS_TOKEN: 'secret-token',
       }),
       fetchImpl: makeFetchQueue(
         [
@@ -271,7 +271,7 @@ test('runFlowPublishVersion commit executes update, insert, fallback update, and
       maxWorkers: 1,
       env: buildSupabaseTestEnv({
         TIANGONG_LCA_API_BASE_URL: 'https://example.supabase.co/rest/v1',
-        TIANGONG_LCA_API_KEY: 'secret-token',
+        TIANGONG_LCA_ACCESS_TOKEN: 'secret-token',
       }),
       fetchImpl: makeFetchQueue(
         [
@@ -412,12 +412,13 @@ test('runFlowPublishVersion can fall back to process.env and global fetch and re
   const outDir = path.join(dir, 'publish-version');
   const originalFetch = globalThis.fetch;
   const originalBaseUrl = process.env.TIANGONG_LCA_API_BASE_URL;
-  const originalApiKey = process.env.TIANGONG_LCA_API_KEY;
+  const originalAuthMode = process.env.TIANGONG_LCA_AUTH_MODE;
+  const originalOAuthClientId = process.env.TIANGONG_LCA_OAUTH_CLIENT_ID;
+  const originalSessionFile = process.env.TIANGONG_LCA_SESSION_FILE;
   const originalPublishableKey = process.env.TIANGONG_LCA_SUPABASE_PUBLISHABLE_KEY;
-  const originalSessionMemoryOnly = process.env.TIANGONG_LCA_SESSION_MEMORY_ONLY;
   const testEnv = buildSupabaseTestEnv({
     TIANGONG_LCA_API_BASE_URL: 'https://example.supabase.co/functions/v1',
-    TIANGONG_LCA_API_KEY: 'secret-token',
+    TIANGONG_LCA_ACCESS_TOKEN: 'secret-token',
   });
 
   writeJsonl(inputFile, [
@@ -426,9 +427,10 @@ test('runFlowPublishVersion can fall back to process.env and global fetch and re
   ]);
 
   process.env.TIANGONG_LCA_API_BASE_URL = testEnv.TIANGONG_LCA_API_BASE_URL;
-  process.env.TIANGONG_LCA_API_KEY = testEnv.TIANGONG_LCA_API_KEY;
+  process.env.TIANGONG_LCA_AUTH_MODE = testEnv.TIANGONG_LCA_AUTH_MODE;
+  process.env.TIANGONG_LCA_OAUTH_CLIENT_ID = testEnv.TIANGONG_LCA_OAUTH_CLIENT_ID;
+  process.env.TIANGONG_LCA_SESSION_FILE = testEnv.TIANGONG_LCA_SESSION_FILE;
   process.env.TIANGONG_LCA_SUPABASE_PUBLISHABLE_KEY = testEnv.TIANGONG_LCA_SUPABASE_PUBLISHABLE_KEY;
-  process.env.TIANGONG_LCA_SESSION_MEMORY_ONLY = testEnv.TIANGONG_LCA_SESSION_MEMORY_ONLY;
   globalThis.fetch = (async (input: RequestInfo | URL) => {
     if (isSupabaseAuthTokenUrl(String(input))) {
       return makeSupabaseAuthResponse();
@@ -462,20 +464,25 @@ test('runFlowPublishVersion can fall back to process.env and global fetch and re
     } else {
       process.env.TIANGONG_LCA_API_BASE_URL = originalBaseUrl;
     }
-    if (originalApiKey === undefined) {
-      delete process.env.TIANGONG_LCA_API_KEY;
+    if (originalAuthMode === undefined) {
+      delete process.env.TIANGONG_LCA_AUTH_MODE;
     } else {
-      process.env.TIANGONG_LCA_API_KEY = originalApiKey;
+      process.env.TIANGONG_LCA_AUTH_MODE = originalAuthMode;
+    }
+    if (originalOAuthClientId === undefined) {
+      delete process.env.TIANGONG_LCA_OAUTH_CLIENT_ID;
+    } else {
+      process.env.TIANGONG_LCA_OAUTH_CLIENT_ID = originalOAuthClientId;
+    }
+    if (originalSessionFile === undefined) {
+      delete process.env.TIANGONG_LCA_SESSION_FILE;
+    } else {
+      process.env.TIANGONG_LCA_SESSION_FILE = originalSessionFile;
     }
     if (originalPublishableKey === undefined) {
       delete process.env.TIANGONG_LCA_SUPABASE_PUBLISHABLE_KEY;
     } else {
       process.env.TIANGONG_LCA_SUPABASE_PUBLISHABLE_KEY = originalPublishableKey;
-    }
-    if (originalSessionMemoryOnly === undefined) {
-      delete process.env.TIANGONG_LCA_SESSION_MEMORY_ONLY;
-    } else {
-      process.env.TIANGONG_LCA_SESSION_MEMORY_ONLY = originalSessionMemoryOnly;
     }
     rmSync(dir, { recursive: true, force: true });
   }
@@ -494,7 +501,7 @@ test('runFlowPublishVersion rejects empty inputs', async () => {
           outDir: path.join(dir, 'publish-version'),
           env: buildSupabaseTestEnv({
             TIANGONG_LCA_API_BASE_URL: 'https://example.supabase.co',
-            TIANGONG_LCA_API_KEY: 'secret-token',
+            TIANGONG_LCA_ACCESS_TOKEN: 'secret-token',
           }),
           fetchImpl: makeFetchQueue([], []),
         }),
@@ -536,7 +543,7 @@ test('runFlowPublishVersion records rows with missing ids as failures without re
       outDir,
       env: buildSupabaseTestEnv({
         TIANGONG_LCA_API_BASE_URL: 'https://example.supabase.co/rest/v1',
-        TIANGONG_LCA_API_KEY: 'secret-token',
+        TIANGONG_LCA_ACCESS_TOKEN: 'secret-token',
       }),
       fetchImpl: makeFetchQueue([], observed),
       maxWorkers: 1,
@@ -711,7 +718,7 @@ test('runFlowPublishVersion surfaces update-after-insert-error failures when fal
       maxWorkers: 1,
       env: buildSupabaseTestEnv({
         TIANGONG_LCA_API_BASE_URL: 'https://example.supabase.co/rest/v1',
-        TIANGONG_LCA_API_KEY: 'secret-token',
+        TIANGONG_LCA_ACCESS_TOKEN: 'secret-token',
       }),
       fetchImpl: makeFetchQueue(
         [

@@ -49,16 +49,15 @@ test('requireSupabaseRestRuntime reads the shared CLI env contract', () => {
   assert.deepEqual(
     requireSupabaseRestRuntime({
       TIANGONG_LCA_API_BASE_URL: ' https://example.supabase.co/functions/v1 ',
-      TIANGONG_LCA_API_KEY: ' secret-token ',
+      TIANGONG_LCA_ACCESS_TOKEN: ' secret-token ',
       TIANGONG_LCA_SUPABASE_PUBLISHABLE_KEY: ' sb-publishable-key ',
     } as NodeJS.ProcessEnv),
     {
       apiBaseUrl: 'https://example.supabase.co/functions/v1',
-      authMode: 'legacy_user_api_key',
-      userApiKey: 'secret-token',
+      authMode: 'access_token',
       oauthClientId: null,
       oauthRedirectUri: null,
-      accessToken: null,
+      accessToken: 'secret-token',
       publishableKey: 'sb-publishable-key',
       sessionFile: null,
       disableSessionCache: false,
@@ -76,7 +75,7 @@ test('requireSupabaseRestRuntime rejects missing env keys', () => {
       assert.deepEqual(error.details, {
         missing: [
           'TIANGONG_LCA_API_BASE_URL',
-          'TIANGONG_LCA_OAUTH_CLIENT_ID or TIANGONG_LCA_ACCESS_TOKEN or TIANGONG_LCA_API_KEY',
+          'TIANGONG_LCA_OAUTH_CLIENT_ID or TIANGONG_LCA_ACCESS_TOKEN',
           'TIANGONG_LCA_SUPABASE_PUBLISHABLE_KEY',
         ],
       });

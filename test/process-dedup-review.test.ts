@@ -595,11 +595,11 @@ test('runProcessDedupReview skips the current-user reference scan when the user 
 
   const fetchImpl = (async (input) => {
     const url = String(input);
-    if (isSupabaseAuthTokenUrl(url)) {
-      return makeSupabaseAuthResponse({ userId: 'session-user' });
-    }
     if (url.endsWith('/auth/v1/user')) {
       return jsonResponse({});
+    }
+    if (isSupabaseAuthTokenUrl(url)) {
+      return makeSupabaseAuthResponse({ userId: 'session-user' });
     }
     if (url.includes('/rest/v1/processes?') && url.includes('id=in.')) {
       return jsonResponse([
@@ -1217,7 +1217,7 @@ test('process dedup remote helper internals cover retries, metadata fallbacks, a
 
   const resolvedAuth = await __testInternals.resolveRemoteAuthContext({
     env: buildSupabaseTestEnv(),
-    fetchImpl: withSupabaseAuthBootstrap(async (url) => {
+    fetchImpl: async (url) => {
       if (String(url).endsWith('/auth/v1/user')) {
         return responseLike({
           body: '{',
@@ -1225,7 +1225,7 @@ test('process dedup remote helper internals cover retries, metadata fallbacks, a
         });
       }
       throw new Error(`Unexpected URL: ${String(url)}`);
-    }),
+    },
     timeoutMs: 10,
     maxRetries: 1,
     now: new Date('2026-04-18T06:00:00.000Z'),

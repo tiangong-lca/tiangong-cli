@@ -30,9 +30,9 @@ checkPaths:
   - scripts/docpact
   - scripts/docpact-gate.sh
   - scripts/install-git-hooks.sh
-lastReviewedAt: 2026-09-02
-lastReviewedCommit: 72e27f3421937d8c07dcad77372fb3f548436e44
-lastReviewedNote: 'Reviewed for Issue #257: CLI 0.1.6 advances package identity only on the merged dependency graph; command/export/OAuth/TIDAS architecture, dependencies, lock bytes, and publication mechanics stay unchanged.'
+lastReviewedAt: 2026-08-31
+lastReviewedCommit: 499c910d07bb6a5e2e1cd8e4403a5a617d4269bb
+lastReviewedNote: 'Reviewed for Issue #260: CLI 0.1.7 removes user API-key/password bootstrap and legacy session/runner architecture; OAuth or explicit verified headless tokens remain the only actor paths.'
 related:
   - ../../AGENTS.md
   - ../../.docpact/config.yaml
@@ -121,7 +121,7 @@ Review note, 2026-07-16: Issue #182 remains entirely inside `dataset-maintenance
 
 Review note, 2026-07-16: Issue #184 changes the package version to 0.0.28 and updates the one live package-version dispatch fixture. No command family, launcher, session, artifact, protected-maintenance, dependency, tag, publication, or workspace-integration architecture changes.
 
-Review note, 2026-07-16: Issue #186 introduces `src/lib/lca-release.ts` as the CLI transport boundary for LCI/LCIA data releases. The standalone release repository owns the 20-stage workflow and canonical plan construction; Edge and Database own authorization/state transitions. The CLI exchanges only a user API key for a session, verifies the exact four-ZIP set before signed upload, derives the publish credential fingerprint locally, and verifies durable byte size/SHA-256 before exposing downloaded bundle or release artifacts.
+Review note, 2026-07-16: Issue #186 introduces `src/lib/lca-release.ts` as the CLI transport boundary for LCI/LCIA data releases. The standalone release repository owns the 20-stage workflow and canonical plan construction; Edge and Database own authorization/state transitions. The CLI uses the shared actor session, verifies the exact four-ZIP set before signed upload, derives the publish credential fingerprint locally, and verifies durable byte size/SHA-256 before exposing downloaded bundle or release artifacts.
 
 Review note, 2026-07-17: Issue #191 changes only platform-specific assertions in `test/lca-release.test.ts`. The LCI/LCIA transport, artifact writer, command surface, filesystem architecture, and release workflow remain unchanged; POSIX mode and chmod failure semantics continue to be tested on platforms that implement them.
 
@@ -190,7 +190,7 @@ The CLI talks to remote services directly through helper modules such as:
 
 - `src/lib/env.ts`
 - `src/lib/dotenv.ts`
-- `src/lib/user-api-key.ts`
+- `src/lib/credential-safety.ts`
 - `src/lib/oauth-pkce.ts`
 - `src/lib/oauth-loopback.ts`
 - `src/lib/supabase-session.ts`
@@ -205,7 +205,7 @@ This is where the CLI-owned remote access contract lives.
 
 The preferred interactive path is `auth login`: a registered public OAuth client opens the browser, keeps state/verifier/code only in memory, receives one exact fixed-port `127.0.0.1` callback, exchanges the code with S256 PKCE, verifies UserInfo, and writes a schema-v2 access/refresh session atomically under the existing state lock. Refreshes use the OAuth token endpoint, replace rotated refresh tokens, and never fall back to password sign-in. `auth status` examines only the bound local record and marks itself not online-verified; `auth whoami` reuses the live redacted identity receipt; `auth doctor-auth` combines local readiness and live identity, returning a human login handoff before network access when the local OAuth session is missing. `auth logout` removes only a matching local project/client session; the Next Connected applications surface owns grant revocation.
 
-`TIANGONG_LCA_ACCESS_TOKEN` is the explicit headless path. It is verified against Auth, cached only in process memory, never written to the session file, and has no automatic refresh/replay path. The reversible `TIANGONG_LCA_API_KEY` remains only as a bounded compatibility bootstrap when no OAuth/access-token configuration is selected or `legacy-user-api-key` is explicit. All remote command families consume the same resolved access-token interface, so OAuth does not fork database/Edge request code.
+`TIANGONG_LCA_ACCESS_TOKEN` is the explicit headless path. It is verified against Auth, cached only in process memory, never written to the session file, and has no automatic refresh/replay path. All remote command families consume the same resolved access-token interface, so OAuth does not fork database/Edge request code. There is no password/API-key bootstrap or alternate user bearer.
 
 ### Workflow command families
 

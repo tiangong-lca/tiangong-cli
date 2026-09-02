@@ -68,8 +68,6 @@ test('release JSON dispatch forwards every explicit flag and environment overrid
       'artifact-id',
       '--artifact-path',
       'chunks/lci.jsonl.gz',
-      '--api-key',
-      'override-key',
       '--base-url',
       'https://override.example/functions/v1',
       '--timeout-ms',
@@ -91,7 +89,6 @@ test('release JSON dispatch forwards every explicit flag and environment overrid
   assert.equal(observed[0].dryRun, true);
   assert.equal(observed[0].force, true);
   assert.equal(observed[0].artifactPath, 'chunks/lci.jsonl.gz');
-  assert.equal(observed[0].env.TIANGONG_LCA_API_KEY, 'override-key');
   assert.equal(observed[0].env.TIANGONG_LCA_API_BASE_URL, 'https://override.example/functions/v1');
 });
 

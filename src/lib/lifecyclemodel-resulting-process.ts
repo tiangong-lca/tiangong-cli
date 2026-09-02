@@ -184,15 +184,11 @@ function requireRemoteProcessLookupRuntime(env: NodeJS.ProcessEnv) {
   }
 
   if (
-    ![
-      env.TIANGONG_LCA_OAUTH_CLIENT_ID,
-      env.TIANGONG_LCA_ACCESS_TOKEN,
-      env.TIANGONG_LCA_API_KEY,
-    ].some((value) => typeof value === 'string' && value.trim())
+    ![env.TIANGONG_LCA_OAUTH_CLIENT_ID, env.TIANGONG_LCA_ACCESS_TOKEN].some(
+      (value) => typeof value === 'string' && value.trim(),
+    )
   ) {
-    missing.push(
-      'TIANGONG_LCA_OAUTH_CLIENT_ID or TIANGONG_LCA_ACCESS_TOKEN or TIANGONG_LCA_API_KEY',
-    );
+    missing.push('TIANGONG_LCA_OAUTH_CLIENT_ID or TIANGONG_LCA_ACCESS_TOKEN');
   }
 
   if (

@@ -52,7 +52,7 @@ Review note, 2026-08-25: Issue #224 pins repository and workflow setup to Node 2
 
 Review note, 2026-08-25: Issue #226 publishes that 0.1.0 compatibility boundary through the existing setup. It adds no secret, environment, dependency, runner, Trusted Publisher setting, workflow filename, tag rule, service-role credential, or fallback client; `TIANGONG_CLI_RELEASE_AUTOMATION_TOKEN`, immutable pnpm/setup v2.0.2, Node 24, and native pnpm OIDC/provenance remain unchanged.
 
-Review note, 2026-08-25: Issue #228 requires no GitHub secret, environment, Trusted Publisher setting, workflow filename, tag rule, dependency, service-role credential, or alternate publication path. `TIANGONG_LCA_TEST_API_KEY` belongs only to the ignored local Data Foundry env used by the explicit read-only case runner; it must not be copied into repository settings, Actions secrets, publish jobs, package assets, or provenance inputs.
+Review note, 2026-08-25: Issue #228 requires no GitHub secret, environment, Trusted Publisher setting, workflow filename, tag rule, dependency, service-role credential, or alternate publication path.
 
 Review note, 2026-08-25: Issue #230 publishes 0.1.1 through the existing merge-triggered tag and native pnpm Trusted Publishing workflows. `.nvmrc`, engines, release detection, quality, tag, and publish jobs all pin Node 24.19.0. `quality-gate.yml` is a reusable exact-platform pre-tag dependency, and exact dev-only `sigstore@5.0.0` cryptographically verifies public provenance. The temporary consumer fixes pnpm 11.23.0, verifies registry signatures, and replaces user/global config with private public-registry-only files. It adds no secret, environment, runner class, Trusted Publisher setting, tag pattern, published dependency, service-role credential, test-account credential, or alternate authentication/publication surface.
 
@@ -104,7 +104,7 @@ Review note, 2026-07-16: Issue #182's protected-verifier hash-domain fix require
 
 Review note, 2026-07-16: Issue #184 publishes 0.0.28 through the existing merge-triggered tag and npm Trusted Publishing workflows. It requires no new secret, environment, runner, Trusted Publisher setting, workflow, tag rule, credential, or database change.
 
-Review note, 2026-07-16: Issue #186 requires no new GitHub secret, npm token, Trusted Publisher setting, workflow, or tag rule. The LCI/LCIA data-release runtime uses an operator's existing user API key and publishable key outside GitHub Actions; a service-role key must not be configured in the CLI or standalone release project.
+Review note, 2026-07-16: Issue #186 requires no new GitHub secret, npm token, Trusted Publisher setting, workflow, or tag rule. The LCI/LCIA data-release runtime uses the shared OAuth actor session and publishable key outside GitHub Actions; a service-role key must not be configured in the CLI or standalone release project.
 
 Review note, 2026-07-17: Issue #191 is a test-only Windows portability prerequisite for CLI 0.0.29. It requires no new secret, runner, environment, Trusted Publisher setting, workflow, tag rule, credential, or database change.
 

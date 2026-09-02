@@ -1,5 +1,4 @@
 import assert from 'node:assert/strict';
-import { execFileSync } from 'node:child_process';
 import {
   chmodSync,
   existsSync,
@@ -13,17 +12,11 @@ import { createRequire, syncBuiltinESMExports } from 'node:module';
 import os from 'node:os';
 import path from 'node:path';
 import test from 'node:test';
-import { CliError } from '../src/lib/errors.js';
-import type { FetchLike, ResponseLike } from '../src/lib/http.js';
+import type { ResponseLike } from '../src/lib/http.js';
 import { loadDistModule } from './helpers/load-dist-module.js';
-import {
-  __testInternals,
-  createSupabaseDataRuntime,
-  resolveSupabaseUserSession,
-} from '../src/lib/supabase-session.js';
+import { __testInternals } from '../src/lib/supabase-session.js';
 import type { SupabaseRestRuntime } from '../src/lib/supabase-client.js';
-import { fingerprintSecret, fingerprintUserApiKey } from '../src/lib/user-api-key.js';
-import { makeSupabaseAuthResponse } from './helpers/supabase-auth.js';
+import { fingerprintSecret } from '../src/lib/credential-safety.js';
 
 const require = createRequire(import.meta.url);
 const mutableFs = require('node:fs') as typeof import('node:fs');
@@ -38,16 +31,9 @@ function clearSessionState(): void {
 function makeRuntime(overrides: Partial<SupabaseRestRuntime> = {}): SupabaseRestRuntime {
   const runtime: SupabaseRestRuntime = {
     apiBaseUrl: 'https://example.supabase.co/functions/v1',
-    authMode: 'legacy_user_api_key',
-    userApiKey: Buffer.from(
-      JSON.stringify({
-        email: 'user@example.com',
-        password: 'secret-password',
-      }),
-      'utf8',
-    ).toString('base64'),
-    oauthClientId: null,
-    oauthRedirectUri: null,
+    authMode: 'oauth',
+    oauthClientId: '123e4567-e89b-42d3-a456-426614174000',
+    oauthRedirectUri: 'http://127.0.0.1:49191/oauth/callback',
     accessToken: null,
     publishableKey: 'sb-publishable-key',
     sessionFile: null,
@@ -79,7 +65,14 @@ function makeJsonResponse(
 }
 
 function makeSession(
-  overrides: Parameters<typeof makeSupabaseAuthResponse>[0] = {},
+  overrides: {
+    accessToken?: string;
+    refreshToken?: string;
+    expiresIn?: number;
+    expiresAt?: number;
+    userId?: string;
+    email?: string;
+  } = {},
 ): Record<string, unknown> {
   return {
     access_token: overrides.accessToken ?? 'access-token',
@@ -92,38 +85,6 @@ function makeSession(
       aud: 'authenticated',
       role: 'authenticated',
       email: overrides.email ?? 'user@example.com',
-    },
-  };
-}
-
-function makeAuthFetch(plan: {
-  passwordResponses?: ResponseLike[];
-  refreshResponses?: ResponseLike[];
-}): {
-  fetchImpl: FetchLike;
-  counts: { password: number; refresh: number };
-} {
-  const passwordResponses = [...(plan.passwordResponses ?? [makeSupabaseAuthResponse()])];
-  const refreshResponses = [...(plan.refreshResponses ?? [makeSupabaseAuthResponse()])];
-  const counts = { password: 0, refresh: 0 };
-
-  return {
-    counts,
-    fetchImpl: async (input) => {
-      const url = String(input);
-      if (url.includes('/auth/v1/token?grant_type=password')) {
-        const response = passwordResponses[Math.min(counts.password, passwordResponses.length - 1)];
-        counts.password += 1;
-        return response as ResponseLike;
-      }
-
-      if (url.includes('/auth/v1/token?grant_type=refresh_token')) {
-        const response = refreshResponses[Math.min(counts.refresh, refreshResponses.length - 1)];
-        counts.refresh += 1;
-        return response as ResponseLike;
-      }
-
-      throw new Error(`Unexpected auth fetch URL: ${url}`);
     },
   };
 }
@@ -301,7 +262,7 @@ test('session record helpers parse, persist, fingerprint, and clean up memoized 
     assert.equal(record.publishable_key_fingerprint, fingerprintSecret(runtime.publishableKey));
     assert.equal(
       record.auth_binding_fingerprint,
-      fingerprintUserApiKey(runtime.userApiKey as string),
+      fingerprintSecret(`oauth-client:${runtime.oauthClientId as string}`),
     );
     assert.equal(__testInternals.isSessionFresh(record, now), true);
     assert.equal(
@@ -503,189 +464,6 @@ test('withSessionOperationLock serializes same-key tasks and releases the queue'
   assert.equal(__testInternals.SESSION_OPERATION_CHAINS.size, 0);
 });
 
-test('resolveSupabaseUserSession signs in once, then serves cache and memory hits', async () => {
-  clearSessionState();
-  const dir = mkdtempSync(path.join(os.tmpdir(), 'tg-cli-session-resolve-'));
-  const sessionFile = path.join(dir, 'session.json');
-  const runtime = makeRuntime({ sessionFile });
-  const { fetchImpl, counts } = makeAuthFetch({});
-
-  try {
-    const signedIn = await resolveSupabaseUserSession({
-      runtime,
-      fetchImpl,
-      timeoutMs: 25,
-      now: new Date('2026-04-06T00:00:00.000Z'),
-    });
-    assert.equal(signedIn.source, 'legacy_signin');
-    assert.equal(counts.password, 1);
-    assert.equal(existsSync(sessionFile), true);
-
-    const identity = __testInternals.buildRuntimeIdentity(runtime);
-    __testInternals.dropMemoizedRecord(identity);
-
-    const cached = await resolveSupabaseUserSession({
-      runtime,
-      fetchImpl,
-      timeoutMs: 25,
-      now: new Date('2026-04-06T00:00:01.000Z'),
-    });
-    assert.equal(cached.source, 'cache');
-    assert.equal(counts.password, 1);
-
-    const memoized = await resolveSupabaseUserSession({
-      runtime,
-      fetchImpl,
-      timeoutMs: 25,
-      now: new Date('2026-04-06T00:00:02.000Z'),
-    });
-    assert.equal(memoized.source, 'memory');
-    assert.equal(counts.password, 1);
-  } finally {
-    clearSessionState();
-    rmSync(dir, { recursive: true, force: true });
-  }
-});
-
-test('resolveSupabaseUserSession refreshes stale sessions and falls back to sign-in when refresh fails', async () => {
-  clearSessionState();
-  const dir = mkdtempSync(path.join(os.tmpdir(), 'tg-cli-session-refresh-'));
-  const sessionFile = path.join(dir, 'session.json');
-  const runtime = makeRuntime({ sessionFile });
-  const identity = __testInternals.buildRuntimeIdentity(runtime);
-  const staleRecord = __testInternals.buildCachedSessionRecord({
-    runtime: identity,
-    session: makeSession({
-      accessToken: 'stale-access-token',
-      refreshToken: 'stale-refresh-token',
-      expiresAt: 1_775_519_000,
-    }) as never,
-    userEmail: 'user@example.com',
-    now: new Date('2026-04-05T23:00:00.000Z'),
-  });
-  __testInternals.writeCachedSessionRecord(sessionFile, staleRecord);
-
-  try {
-    const refreshedPlan = makeAuthFetch({
-      refreshResponses: [makeSupabaseAuthResponse({ accessToken: 'refreshed-access-token' })],
-    });
-    const refreshed = await resolveSupabaseUserSession({
-      runtime,
-      fetchImpl: refreshedPlan.fetchImpl,
-      timeoutMs: 25,
-      now: new Date('2026-04-06T00:00:00.000Z'),
-      forceRefresh: true,
-    });
-    assert.equal(refreshed.source, 'refresh');
-    assert.equal(refreshed.accessToken, 'refreshed-access-token');
-    assert.equal(refreshedPlan.counts.refresh, 1);
-
-    __testInternals.writeCachedSessionRecord(sessionFile, staleRecord);
-    __testInternals.dropMemoizedRecord(identity);
-    const fallbackPlan = makeAuthFetch({
-      refreshResponses: [
-        makeJsonResponse(
-          { error: 'invalid_grant', error_description: 'refresh token not found' },
-          { ok: false, status: 400 },
-        ),
-      ],
-      passwordResponses: [makeSupabaseAuthResponse({ accessToken: 'relogged-access-token' })],
-    });
-    const relogged = await resolveSupabaseUserSession({
-      runtime,
-      fetchImpl: fallbackPlan.fetchImpl,
-      timeoutMs: 25,
-      now: new Date('2026-04-06T00:00:00.000Z'),
-      forceRefresh: true,
-    });
-    assert.equal(relogged.source, 'legacy_signin');
-    assert.equal(relogged.accessToken, 'relogged-access-token');
-    assert.equal(fallbackPlan.counts.refresh, 1);
-    assert.equal(fallbackPlan.counts.password, 1);
-  } finally {
-    clearSessionState();
-    rmSync(dir, { recursive: true, force: true });
-  }
-});
-
-test('resolveSupabaseUserSession supports memory-only mode, force reauth, and invalid API-key failures', async () => {
-  clearSessionState();
-  const runtime = makeRuntime({
-    disableSessionCache: true,
-  });
-  const authPlan = makeAuthFetch({
-    passwordResponses: [makeSupabaseAuthResponse({ accessToken: 'memory-only-token' })],
-  });
-
-  const first = await resolveSupabaseUserSession({
-    runtime,
-    fetchImpl: authPlan.fetchImpl,
-    timeoutMs: 25,
-    now: new Date('2026-04-06T00:00:00.000Z'),
-  });
-  assert.equal(first.source, 'legacy_signin');
-  assert.equal(first.sessionFile, null);
-
-  const second = await resolveSupabaseUserSession({
-    runtime,
-    fetchImpl: authPlan.fetchImpl,
-    timeoutMs: 25,
-    now: new Date('2026-04-06T00:00:01.000Z'),
-  });
-  assert.equal(second.source, 'memory');
-
-  clearSessionState();
-  const forceReauthRuntime = makeRuntime({
-    disableSessionCache: true,
-    forceReauth: true,
-  });
-  const forceReauthPlan = makeAuthFetch({
-    passwordResponses: [
-      makeSupabaseAuthResponse({ accessToken: 'force-reauth-token-1' }),
-      makeSupabaseAuthResponse({ accessToken: 'force-reauth-token-2' }),
-    ],
-  });
-  await resolveSupabaseUserSession({
-    runtime: forceReauthRuntime,
-    fetchImpl: forceReauthPlan.fetchImpl,
-    timeoutMs: 25,
-    now: new Date('2026-04-06T00:00:00.000Z'),
-  });
-  await resolveSupabaseUserSession({
-    runtime: forceReauthRuntime,
-    fetchImpl: forceReauthPlan.fetchImpl,
-    timeoutMs: 25,
-    now: new Date('2026-04-06T00:00:01.000Z'),
-  });
-  assert.equal(forceReauthPlan.counts.password, 2);
-
-  await assert.rejects(
-    () =>
-      resolveSupabaseUserSession({
-        runtime: makeRuntime({
-          disableSessionCache: true,
-          forceReauth: true,
-          userApiKey: 'not-a-real-api-key',
-        }),
-        fetchImpl: authPlan.fetchImpl,
-        timeoutMs: 25,
-      }),
-    (error) => error instanceof CliError && error.code === 'USER_API_KEY_INVALID',
-  );
-
-  const defaultTimeoutPlan = makeAuthFetch({
-    passwordResponses: [makeSupabaseAuthResponse({ accessToken: 'default-timeout-token' })],
-  });
-  const defaultTimeoutSession = await resolveSupabaseUserSession({
-    runtime: makeRuntime({
-      disableSessionCache: true,
-      forceReauth: true,
-    }),
-    fetchImpl: defaultTimeoutPlan.fetchImpl,
-  });
-  assert.equal(defaultTimeoutSession.accessToken, 'default-timeout-token');
-});
-
 test('internal session helpers cover refresh null paths, direct resolve branches, and runtime wrappers', async () => {
   clearSessionState();
   const dir = mkdtempSync(path.join(os.tmpdir(), 'tg-cli-session-internals-'));
@@ -732,7 +510,6 @@ test('internal session helpers cover refresh null paths, direct resolve branches
         runtime,
         runtimeIdentity: identity,
         refreshToken: '',
-        userEmail: 'user@example.com',
         fetchImpl: async () => {
           throw new Error('unreachable');
         },
@@ -746,7 +523,6 @@ test('internal session helpers cover refresh null paths, direct resolve branches
         runtime,
         runtimeIdentity: identity,
         refreshToken: 'refresh-token',
-        userEmail: 'user@example.com',
         fetchImpl: async () =>
           makeJsonResponse(
             { error: 'invalid_grant', error_description: 'network failure' },
@@ -765,7 +541,6 @@ test('internal session helpers cover refresh null paths, direct resolve branches
           projectBaseUrl: 'not a valid supabase url',
         },
         refreshToken: 'refresh-token',
-        userEmail: 'user@example.com',
         fetchImpl: async () => {
           throw new Error('should not call fetch');
         },
@@ -774,82 +549,12 @@ test('internal session helpers cover refresh null paths, direct resolve branches
       }),
       null,
     );
-    const refreshFallbackEmailRecord = await __testInternals.refreshWithRefreshToken({
-      runtime,
-      runtimeIdentity: identity,
-      refreshToken: 'refresh-token',
-      userEmail: 'fallback@example.com',
-      fetchImpl: makeAuthFetch({
-        refreshResponses: [makeSupabaseAuthResponse({ email: '' })],
-      }).fetchImpl,
-      timeoutMs: 25,
-      now: new Date('2026-04-06T00:00:00.000Z'),
-    });
-    assert.equal(refreshFallbackEmailRecord?.user_email, 'fallback@example.com');
-
-    const signInPlan = makeAuthFetch({
-      passwordResponses: [makeSupabaseAuthResponse({ accessToken: 'wrapper-signin-token' })],
-      refreshResponses: [makeSupabaseAuthResponse({ accessToken: 'wrapper-refresh-token' })],
-    });
-    const dataRuntime = createSupabaseDataRuntime({
-      runtime: makeRuntime({
-        disableSessionCache: true,
-      }),
-      fetchImpl: signInPlan.fetchImpl,
-      timeoutMs: 25,
-      now: new Date('2026-04-06T00:00:00.000Z'),
-    });
-    assert.equal(await dataRuntime.getAccessToken(), 'wrapper-signin-token');
-    assert.equal(await dataRuntime.refreshAccessToken?.(), 'wrapper-refresh-token');
-
-    await assert.rejects(
-      () =>
-        __testInternals.signInWithUserApiKey({
-          runtime,
-          runtimeIdentity: identity,
-          fetchImpl: async () => makeJsonResponse({}, { ok: true, status: 200 }),
-          timeoutMs: 25,
-          now: new Date('2026-04-06T00:00:00.000Z'),
-        }),
-      /Failed to sign in with TIANGONG_LCA_API_KEY/u,
-    );
-    await assert.rejects(
-      () =>
-        __testInternals.signInWithUserApiKey({
-          runtime,
-          runtimeIdentity: identity,
-          fetchImpl: async () =>
-            makeJsonResponse(
-              {
-                error: 'invalid_credentials',
-                error_description: 'bad password',
-              },
-              { ok: false, status: 400 },
-            ),
-          timeoutMs: 25,
-          now: new Date('2026-04-06T00:00:00.000Z'),
-        }),
-      (error) =>
-        error instanceof CliError &&
-        error.code === 'SUPABASE_AUTH_SIGN_IN_FAILED' &&
-        String(error.details).includes('bad password'),
-    );
-
-    const fallbackEmailRecord = await __testInternals.signInWithUserApiKey({
-      runtime,
-      runtimeIdentity: identity,
-      fetchImpl: makeAuthFetch({
-        passwordResponses: [makeSupabaseAuthResponse({ email: '' })],
-      }).fetchImpl,
-      timeoutMs: 25,
-      now: new Date('2026-04-06T00:00:00.000Z'),
-    });
-    assert.equal(fallbackEmailRecord.user_email, 'user@example.com');
-
     const authClient = __testInternals.createSupabaseAuthClient(
       identity,
       runtime.publishableKey,
-      signInPlan.fetchImpl,
+      async () => {
+        throw new Error('unused');
+      },
       25,
     );
     assert.ok(authClient);
@@ -857,83 +562,6 @@ test('internal session helpers cover refresh null paths, direct resolve branches
     clearSessionState();
     rmSync(dir, { recursive: true, force: true });
   }
-});
-
-test('signInWithUserApiKey falls back to the default missing-session detail when auth returns null error and null session', () => {
-  const output = execFileSync(
-    process.execPath,
-    [
-      '--experimental-test-module-mocks',
-      '--import',
-      'tsx',
-      '--input-type=module',
-      '--eval',
-      `
-      import { mock } from 'node:test';
-
-      mock.module('@supabase/supabase-js', {
-        namedExports: {
-          createClient() {
-            return {
-              auth: {
-                async signInWithPassword() {
-                  return { data: { session: null, user: null }, error: null };
-                },
-              },
-            };
-          },
-        },
-      });
-
-      const mod = await import('./src/lib/supabase-session.ts?mock-signin-fallback-detail');
-      const runtime = {
-        apiBaseUrl: 'https://example.supabase.co/functions/v1',
-        userApiKey: Buffer.from(
-          JSON.stringify({
-            email: 'user@example.com',
-            password: 'secret-password',
-          }),
-          'utf8',
-        ).toString('base64'),
-        publishableKey: 'sb-publishable-key',
-        sessionFile: null,
-        disableSessionCache: true,
-        forceReauth: false,
-      };
-      const identity = mod.__testInternals.buildRuntimeIdentity(runtime);
-
-      try {
-        await mod.__testInternals.signInWithUserApiKey({
-          runtime,
-          runtimeIdentity: identity,
-          fetchImpl: async () => {
-            throw new Error('unused');
-          },
-          timeoutMs: 25,
-          now: new Date('2026-04-06T00:00:00.000Z'),
-        });
-      } catch (error) {
-        console.log(JSON.stringify({
-          code: error?.code,
-          details: error?.details,
-        }));
-      }
-    `,
-    ],
-    {
-      cwd: path.resolve('.'),
-      encoding: 'utf8',
-      env: {
-        ...process.env,
-        NODE_NO_WARNINGS: '1',
-      },
-    },
-  ).trim();
-
-  assert.deepEqual(JSON.parse(output), {
-    code: 'SUPABASE_AUTH_SIGN_IN_FAILED',
-    details: 'Supabase auth session missing from sign-in response.',
-  });
 });
 
 test('state-lock helpers behave the same from the built dist module', async () => {

@@ -55,17 +55,16 @@ test('resolveEnv reports missing when nothing is available', () => {
 test('readRuntimeEnv returns the canonical TianGong LCA runtime config', () => {
   const runtime = readRuntimeEnv({
     TIANGONG_LCA_API_BASE_URL: 'https://example.com/functions/v1',
-    TIANGONG_LCA_API_KEY: 'secret-token',
+    TIANGONG_LCA_ACCESS_TOKEN: 'secret-token',
     TIANGONG_LCA_SUPABASE_PUBLISHABLE_KEY: 'sb-publishable-key',
   });
 
   assert.deepEqual(runtime, {
     apiBaseUrl: 'https://example.com/functions/v1',
-    apiKey: 'secret-token',
     authMode: null,
     oauthClientId: null,
     oauthRedirectUri: null,
-    accessToken: null,
+    accessToken: 'secret-token',
     region: 'us-east-1',
     supabasePublishableKey: 'sb-publishable-key',
     sessionFile: null,
@@ -86,7 +85,6 @@ test('readRuntimeEnv includes OAuth and headless configuration', () => {
     }),
     {
       apiBaseUrl: 'https://example.com',
-      apiKey: null,
       authMode: 'oauth',
       oauthClientId: 'client-id',
       oauthRedirectUri: 'http://127.0.0.1:49191/oauth/callback',
@@ -119,15 +117,15 @@ test('buildDoctorReport records canonical TianGong LCA env keys', () => {
   const report = buildDoctorReport(
     {
       TIANGONG_LCA_API_BASE_URL: 'https://example.com',
-      TIANGONG_LCA_API_KEY: 'secret-token',
+      TIANGONG_LCA_ACCESS_TOKEN: 'secret-token',
       TIANGONG_LCA_SUPABASE_PUBLISHABLE_KEY: 'sb-publishable-key',
     },
     { loaded: true, path: '/tmp/.env', count: 3 },
   );
 
   assert.equal(report.ok, true);
-  const apiKeyCheck = report.checks.find((check) => check.key === 'TIANGONG_LCA_API_KEY');
-  assert.equal(apiKeyCheck?.source, 'env');
+  const accessTokenCheck = report.checks.find((check) => check.key === 'TIANGONG_LCA_ACCESS_TOKEN');
+  assert.equal(accessTokenCheck?.source, 'env');
   const publishableCheck = report.checks.find(
     (check) => check.key === 'TIANGONG_LCA_SUPABASE_PUBLISHABLE_KEY',
   );

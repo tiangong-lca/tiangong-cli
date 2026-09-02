@@ -607,7 +607,7 @@ test('runPublish uses state-aware process draft writes and generic source update
       inputPath: requestPath,
       env: buildSupabaseTestEnv({
         TIANGONG_LCA_API_BASE_URL: 'https://example.supabase.co',
-        TIANGONG_LCA_API_KEY: 'key',
+        TIANGONG_LCA_ACCESS_TOKEN: 'key',
       }),
       fetchImpl: withSupabaseAuth(async (url, init) => {
         observed.push({
@@ -896,7 +896,7 @@ test('runPublish uses save_lifecycle_model_bundle for lifecyclemodels by default
       inputPath: requestPath,
       env: buildSupabaseTestEnv({
         TIANGONG_LCA_API_BASE_URL: 'https://example.supabase.co',
-        TIANGONG_LCA_API_KEY: 'key',
+        TIANGONG_LCA_ACCESS_TOKEN: 'key',
       }),
       fetchImpl: withSupabaseAuth(async (url, init) => {
         observed.push({
@@ -1050,7 +1050,7 @@ test('runPublish passes null lifecyclemodel metadata to the default executor whe
       inputPath: requestPath,
       env: buildSupabaseTestEnv({
         TIANGONG_LCA_API_BASE_URL: 'https://example.supabase.co',
-        TIANGONG_LCA_API_KEY: 'key',
+        TIANGONG_LCA_ACCESS_TOKEN: 'key',
       }),
       fetchImpl: withSupabaseAuth(async (url, init) => {
         if (String(url).includes('/lifecyclemodels?select=')) {
@@ -1096,7 +1096,7 @@ test('runPublish fails truthfully when a visible process row cannot use the draf
       inputPath: requestPath,
       env: buildSupabaseTestEnv({
         TIANGONG_LCA_API_BASE_URL: 'https://example.supabase.co',
-        TIANGONG_LCA_API_KEY: 'key',
+        TIANGONG_LCA_ACCESS_TOKEN: 'key',
       }),
       fetchImpl: withSupabaseAuth(async (url) => {
         if (String(url).includes('/processes?select=')) {

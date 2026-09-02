@@ -117,7 +117,8 @@ test('executeRemoteCommand validates required API config and unsupported command
           inputPath: filePath,
           env: buildSupabaseTestEnv({
             TIANGONG_LCA_API_BASE_URL: 'https://example.com',
-            TIANGONG_LCA_API_KEY: '',
+            TIANGONG_LCA_AUTH_MODE: 'access-token',
+            TIANGONG_LCA_ACCESS_TOKEN: '',
             TIANGONG_LCA_REGION: 'us-east-1',
           }),
           timeoutMs: 50,
@@ -127,7 +128,7 @@ test('executeRemoteCommand validates required API config and unsupported command
             throw new Error('unreachable');
           },
         }),
-      /Missing Supabase REST runtime env: TIANGONG_LCA_OAUTH_CLIENT_ID or TIANGONG_LCA_ACCESS_TOKEN or TIANGONG_LCA_API_KEY/u,
+      /Access-token auth mode requires TIANGONG_LCA_ACCESS_TOKEN/u,
     );
 
     await assert.rejects(

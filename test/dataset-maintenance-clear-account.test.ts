@@ -141,6 +141,36 @@ test('runDatasetMaintenanceClearAccount writes a dry-run account snapshot', asyn
   rmSync(outDir, { recursive: true, force: true });
 });
 
+test('clear-account uses the verified session email when current-user omits email', async () => {
+  const outDir = mkdtempSync(path.join(os.tmpdir(), 'tg-clear-account-session-email-'));
+  let userCalls = 0;
+  try {
+    const report = await runDatasetMaintenanceClearAccount({
+      outDir,
+      env: buildSupabaseTestEnv({
+        TIANGONG_LCA_API_BASE_URL: 'https://example.supabase.co/functions/v1',
+        TIANGONG_LCA_DISABLE_SESSION_CACHE: '1',
+        TIANGONG_LCA_ACCESS_TOKEN: 'session-email-access-token',
+      }),
+      fetchImpl: async (input) => {
+        const url = String(input);
+        if (url.endsWith('/auth/v1/user')) {
+          userCalls += 1;
+          return userCalls === 1
+            ? makeSupabaseAuthResponse({ email: 'session@example.com', userId: 'user-1' })
+            : jsonResponse({ id: 'user-1' });
+        }
+        return jsonResponse([]);
+      },
+    });
+
+    assert.equal(report.account.email, 'session@example.com');
+    assert.equal(userCalls, 2);
+  } finally {
+    rmSync(outDir, { recursive: true, force: true });
+  }
+});
+
 test('runDatasetMaintenanceClearAccount deletes account rows and verifies readback', async () => {
   const outDir = mkdtempSync(path.join(os.tmpdir(), 'tg-clear-account-commit-'));
   const deletedTables: string[] = [];

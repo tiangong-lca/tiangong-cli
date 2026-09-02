@@ -394,7 +394,7 @@ test('runLifecyclemodelSaveDraft validates commit runtime and executes remote wr
       commit: true,
       env: buildSupabaseTestEnv({
         TIANGONG_LCA_API_BASE_URL: 'https://example.supabase.co/functions/v1',
-        TIANGONG_LCA_API_KEY: 'key',
+        TIANGONG_LCA_ACCESS_TOKEN: 'key',
       }),
       fetchImpl,
       validateLifecyclemodelPayloadImpl: VALIDATION_OK,
@@ -415,7 +415,7 @@ test('runLifecyclemodelSaveDraft validates commit runtime and executes remote wr
       commit: true,
       env: buildSupabaseTestEnv({
         TIANGONG_LCA_API_BASE_URL: 'https://example.supabase.co/functions/v1',
-        TIANGONG_LCA_API_KEY: 'key',
+        TIANGONG_LCA_ACCESS_TOKEN: 'key',
       }),
       fetchImpl: failingFetch,
       validateLifecyclemodelPayloadImpl: VALIDATION_OK,

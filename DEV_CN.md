@@ -207,7 +207,9 @@ pnpm add --global @tiangong-lca/cli
 
 本项目会自动加载仓库根目录下的 `.env` 文件。
 
-Review note, 2026-08-31: Issue #244 新增 `auth login|status|whoami|doctor-auth|logout`。交互登录使用注册过的 public OAuth client、S256 PKCE、随机 state、精确固定端口 `127.0.0.1` 回调与无 shell 系统浏览器；verifier/code 不落盘，OAuth access/rotating refresh token 在现有进程锁与文件锁下原子写入 schema-v2 私有 session。`status` 只读本地 metadata 且明确不是 online verification；`whoami` 复用 live redacted identity receipt；`doctor-auth` 缺少本地 session 时先返回 human login handoff，ready 后才做 live read。`TIANGONG_LCA_ACCESS_TOKEN` 是只在进程内缓存、在线校验且不自动 refresh 的 headless 入口。旧可逆 `TIANGONG_LCA_API_KEY` 仅在没有 OAuth/headless 配置或显式 `legacy-user-api-key` 模式时作为迁移兼容；OAuth 失败绝不回退密码登录。
+Review note, 2026-08-31: Issue #244 新增 `auth login|status|whoami|doctor-auth|logout`。交互登录使用注册过的 public OAuth client、S256 PKCE、随机 state、精确固定端口 `127.0.0.1` 回调与无 shell 系统浏览器；verifier/code 不落盘，OAuth access/rotating refresh token 在现有进程锁与文件锁下原子写入 schema-v2 私有 session。`status` 只读本地 metadata 且明确不是 online verification；`whoami` 复用 live redacted identity receipt；`doctor-auth` 缺少本地 session 时先返回 human login handoff，ready 后才做 live read。`TIANGONG_LCA_ACCESS_TOKEN` 是只在进程内缓存、在线校验且不自动 refresh 的 headless 入口；OAuth 失败绝不回退密码登录。
+
+Review note, 2026-09-01: Issue #260 删除用户 API-key/password bootstrap、legacy session/mode/source、`--api-key`/env、旧 production-case runner 及相关 fixture/doc。所有用户远程命令只支持浏览器 OAuth 或显式、在线验证、仅进程内的短期 headless access token。
 
 Review note, 2026-08-31: Issue #247 修复并发 CLI 进程交接 `session.json.lock` 时的 metadata TOCTOU。读取操作不再先检查存在性；`readFileSync` 返回 `ENOENT` 表示前一 owner 已完成释放，权限/I/O 等其他错误继续原样失败。锁创建、metadata schema、stale owner、timeout、reentrancy、cleanup、session bytes 与认证选择均不变。
 
@@ -231,7 +233,7 @@ TIANGONG_LCA_FORCE_REAUTH=false
 
 `TIANGONG_LCA_OAUTH_CLIENT_ID` 是环境专属、已注册的 public client ID，不是 secret。先在可信终端运行 `tiangong-lca auth login`；后续 Edge Functions 与 direct Supabase 命令统一使用 OAuth access token，过期前按需旋转 refresh token。默认回调必须与 OAuth client 中登记的完整 URI 完全一致；OAuth client redirect URI 不支持 wildcard。
 
-headless 任务可显式设置 `TIANGONG_LCA_AUTH_MODE=access-token` 与短期 `TIANGONG_LCA_ACCESS_TOKEN`。该 token 在线校验后只在当前进程复用，不写 session 文件，也不做 refresh/replay。迁移期旧调用方可显式设置 `TIANGONG_LCA_AUTH_MODE=legacy-user-api-key` 与 `TIANGONG_LCA_API_KEY`；这是 password-equivalent 兼容面，不得用于新集成。
+headless 任务可显式设置 `TIANGONG_LCA_AUTH_MODE=access-token` 与短期 `TIANGONG_LCA_ACCESS_TOKEN`。该 token 在线校验后只在当前进程复用，不写 session 文件，也不做 refresh/replay。
 
 此外，只有在显式启用 `tiangong-lca review process --enable-llm` 或 `tiangong-lca review flow --enable-llm` 时，才会额外使用这一组可选变量。这一整组配置默认都是 optional；只有打开 review LLM 模式时才需要填写。`TIANGONG_LCA_REVIEW_LLM_BASE_URL` 应指向一个 OpenAI-compatible Responses API 根地址，CLI 会向 `<base_url>/responses` 发请求：
 
@@ -327,14 +329,6 @@ Data API schema 不依赖 PostgREST 的默认 `public`。默认且唯一支持�
 - `node ./dist/src/main.js ...`
 
 `pnpm start -- ...` 仍可用于本地开发时的“先构建再执行”，但它不是 skills / 文档的 canonical 公共入口。
-
-显式授权的生产身份只读 case 使用窄环境 runner；`--env-file` 必须指向 ignored Foundry `.env`，`--out-dir` 必须是尚不存在的私有目录。命令先 clean-build TS7；plain-Node runner 不接受 `--cli-bin`，它单次读取/hash 当前 source/config/lock 与 freshly generated runtime/runner，把 exact built buffers 私有 snapshot 后再只读取三项白名单变量，将 `TIANGONG_LCA_TEST_API_KEY` 映射给 snapshot child，并强制 `TIANGONG_LCA_DISABLE_SESSION_CACHE=true`、`TIANGONG_LCA_FORCE_REAUTH=true`：
-
-```text
-pnpm case:auth-identity:production -- --env-file <foundry-ignored-.env> --expected-project-ref <project-ref> --expected-user-id <user-id> --out-dir <new-private-case-directory>
-```
-
-该 runner 不进入 CI，不保存 raw stdout/stderr，不接受 argv key，不做任何 dataset 写入；它还必须在发布 passed artifacts 前清理 runtime snapshot。POSIX 下目录/文件固定为 `0700`/`0600`；Windows mode bits 不是 ACL 证明，调用方必须选择只允许当前用户访问的父目录并继承其 ACL。回执是本地 canonical hash 证明，不是服务器签名 attestation。
 
 ```bash
 node ./bin/tiangong-lca.js --help

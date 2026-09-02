@@ -36,16 +36,15 @@ test('requireSupabaseRestRuntime, URL derivation, and auth headers follow the sh
   assert.deepEqual(
     requireSupabaseRestRuntime({
       TIANGONG_LCA_API_BASE_URL: ' https://example.supabase.co/functions/v1 ',
-      TIANGONG_LCA_API_KEY: ' secret-token ',
+      TIANGONG_LCA_ACCESS_TOKEN: ' secret-token ',
       TIANGONG_LCA_SUPABASE_PUBLISHABLE_KEY: ' sb-publishable-key ',
     } as NodeJS.ProcessEnv),
     {
       apiBaseUrl: 'https://example.supabase.co/functions/v1',
-      authMode: 'legacy_user_api_key',
-      userApiKey: 'secret-token',
+      authMode: 'access_token',
       oauthClientId: null,
       oauthRedirectUri: null,
-      accessToken: null,
+      accessToken: 'secret-token',
       publishableKey: 'sb-publishable-key',
       sessionFile: null,
       disableSessionCache: false,
@@ -62,7 +61,7 @@ test('requireSupabaseRestRuntime, URL derivation, and auth headers follow the sh
         JSON.stringify({
           missing: [
             'TIANGONG_LCA_API_BASE_URL',
-            'TIANGONG_LCA_OAUTH_CLIENT_ID or TIANGONG_LCA_ACCESS_TOKEN or TIANGONG_LCA_API_KEY',
+            'TIANGONG_LCA_OAUTH_CLIENT_ID or TIANGONG_LCA_ACCESS_TOKEN',
             'TIANGONG_LCA_SUPABASE_PUBLISHABLE_KEY',
           ],
         }),
@@ -102,18 +101,17 @@ test('requireSupabaseRestRuntime, URL derivation, and auth headers follow the sh
   assert.deepEqual(
     requireSupabaseRestRuntime({
       TIANGONG_LCA_API_BASE_URL: 'https://example.supabase.co/functions/v1',
-      TIANGONG_LCA_API_KEY: 'secret-token',
+      TIANGONG_LCA_ACCESS_TOKEN: 'secret-token',
       TIANGONG_LCA_SUPABASE_PUBLISHABLE_KEY: 'sb-publishable-key',
       TIANGONG_LCA_DISABLE_SESSION_CACHE: '1',
       TIANGONG_LCA_FORCE_REAUTH: 'yes',
     } as NodeJS.ProcessEnv),
     {
       apiBaseUrl: 'https://example.supabase.co/functions/v1',
-      authMode: 'legacy_user_api_key',
-      userApiKey: 'secret-token',
+      authMode: 'access_token',
       oauthClientId: null,
       oauthRedirectUri: null,
-      accessToken: null,
+      accessToken: 'secret-token',
       publishableKey: 'sb-publishable-key',
       sessionFile: null,
       disableSessionCache: true,
@@ -124,18 +122,17 @@ test('requireSupabaseRestRuntime, URL derivation, and auth headers follow the sh
   assert.deepEqual(
     requireSupabaseRestRuntime({
       TIANGONG_LCA_API_BASE_URL: 'https://example.supabase.co/functions/v1',
-      TIANGONG_LCA_API_KEY: 'secret-token',
+      TIANGONG_LCA_ACCESS_TOKEN: 'secret-token',
       TIANGONG_LCA_SUPABASE_PUBLISHABLE_KEY: 'sb-publishable-key',
       TIANGONG_LCA_DISABLE_SESSION_CACHE: 'true',
       TIANGONG_LCA_FORCE_REAUTH: 'on',
     } as NodeJS.ProcessEnv),
     {
       apiBaseUrl: 'https://example.supabase.co/functions/v1',
-      authMode: 'legacy_user_api_key',
-      userApiKey: 'secret-token',
+      authMode: 'access_token',
       oauthClientId: null,
       oauthRedirectUri: null,
-      accessToken: null,
+      accessToken: 'secret-token',
       publishableKey: 'sb-publishable-key',
       sessionFile: null,
       disableSessionCache: true,
@@ -146,18 +143,17 @@ test('requireSupabaseRestRuntime, URL derivation, and auth headers follow the sh
   assert.deepEqual(
     requireSupabaseRestRuntime({
       TIANGONG_LCA_API_BASE_URL: 'https://example.supabase.co/functions/v1',
-      TIANGONG_LCA_API_KEY: 'secret-token',
+      TIANGONG_LCA_ACCESS_TOKEN: 'secret-token',
       TIANGONG_LCA_SUPABASE_PUBLISHABLE_KEY: 'sb-publishable-key',
       TIANGONG_LCA_DISABLE_SESSION_CACHE: 'off',
       TIANGONG_LCA_FORCE_REAUTH: 'off',
     } as NodeJS.ProcessEnv),
     {
       apiBaseUrl: 'https://example.supabase.co/functions/v1',
-      authMode: 'legacy_user_api_key',
-      userApiKey: 'secret-token',
+      authMode: 'access_token',
       oauthClientId: null,
       oauthRedirectUri: null,
-      accessToken: null,
+      accessToken: 'secret-token',
       publishableKey: 'sb-publishable-key',
       sessionFile: null,
       disableSessionCache: false,
@@ -166,7 +162,7 @@ test('requireSupabaseRestRuntime, URL derivation, and auth headers follow the sh
   );
 });
 
-test('Supabase runtime prefers OAuth/access-token modes and keeps legacy bootstrap explicit', () => {
+test('Supabase runtime supports OAuth and explicit access-token modes', () => {
   const base = {
     TIANGONG_LCA_API_BASE_URL: 'https://example.supabase.co/functions/v1',
     TIANGONG_LCA_SUPABASE_PUBLISHABLE_KEY: 'sb-publishable-key',
@@ -179,7 +175,6 @@ test('Supabase runtime prefers OAuth/access-token modes and keeps legacy bootstr
     {
       apiBaseUrl: base.TIANGONG_LCA_API_BASE_URL,
       authMode: 'oauth',
-      userApiKey: null,
       oauthClientId: '123e4567-e89b-42d3-a456-426614174000',
       oauthRedirectUri: 'http://127.0.0.1:49191/oauth/callback',
       accessToken: null,
@@ -194,12 +189,10 @@ test('Supabase runtime prefers OAuth/access-token modes and keeps legacy bootstr
       ...base,
       TIANGONG_LCA_ACCESS_TOKEN: ' access-token ',
       TIANGONG_LCA_OAUTH_CLIENT_ID: '123e4567-e89b-42d3-a456-426614174000',
-      TIANGONG_LCA_API_KEY: 'legacy-key',
     }),
     {
       apiBaseUrl: base.TIANGONG_LCA_API_BASE_URL,
       authMode: 'access_token',
-      userApiKey: null,
       oauthClientId: null,
       oauthRedirectUri: null,
       accessToken: 'access-token',
@@ -216,14 +209,6 @@ test('Supabase runtime prefers OAuth/access-token modes and keeps legacy bootstr
     TIANGONG_LCA_OAUTH_REDIRECT_URI: 'http://127.0.0.1:55000/oauth/callback',
   });
   assert.equal(customRedirect.oauthRedirectUri, 'http://127.0.0.1:55000/oauth/callback');
-  assert.equal(
-    requireSupabaseRestRuntime({
-      ...base,
-      TIANGONG_LCA_AUTH_MODE: 'legacy-user-api-key',
-      TIANGONG_LCA_API_KEY: 'legacy-key',
-    }).authMode,
-    'legacy_user_api_key',
-  );
 });
 
 test('explicit Supabase auth modes fail closed when configuration is incomplete', () => {
@@ -234,13 +219,16 @@ test('explicit Supabase auth modes fail closed when configuration is incomplete'
   for (const [mode, code] of [
     ['oauth', 'SUPABASE_OAUTH_CLIENT_ID_REQUIRED'],
     ['access-token', 'SUPABASE_ACCESS_TOKEN_REQUIRED'],
-    ['legacy-user-api-key', 'SUPABASE_LEGACY_API_KEY_REQUIRED'],
   ] as const) {
     assert.throws(
       () => requireSupabaseRestRuntime({ ...base, TIANGONG_LCA_AUTH_MODE: mode }),
       (error) => error instanceof CliError && error.code === code,
     );
   }
+  assert.throws(
+    () => requireSupabaseRestRuntime({ ...base, TIANGONG_LCA_AUTH_MODE: 'legacy-user-api-key' }),
+    (error) => error instanceof CliError && error.code === 'SUPABASE_AUTH_MODE_INVALID',
+  );
   assert.throws(
     () => requireSupabaseRestRuntime({ ...base, TIANGONG_LCA_AUTH_MODE: 'unknown' }),
     (error) => error instanceof CliError && error.code === 'SUPABASE_AUTH_MODE_INVALID',

@@ -37,9 +37,9 @@ checkPaths:
   - scripts/docpact
   - scripts/docpact-gate.sh
   - scripts/install-git-hooks.sh
-lastReviewedAt: 2026-09-02
-lastReviewedCommit: 72e27f3421937d8c07dcad77372fb3f548436e44
-lastReviewedNote: 'Reviewed for Issue #257: CLI 0.1.6 publishes the merged dependency graph through a release-only package/version-fixture change; runtime, dependencies, lock bytes, exports, OAuth, and release automation stay fixed.'
+lastReviewedAt: 2026-08-31
+lastReviewedCommit: 499c910d07bb6a5e2e1cd8e4403a5a617d4269bb
+lastReviewedNote: 'Reviewed for Issue #260: CLI 0.1.7 removes the user API-key/password bootstrap, legacy session compatibility, and local production-case runner while preserving OAuth/headless safety and release gates.'
 related:
   - .docpact/config.yaml
   - docs/agents/repo-validation.md
@@ -55,7 +55,9 @@ related:
 
 `tiangong-lca-cli` owns the checked-in public `tiangong-lca` CLI contract: command nouns and verbs, launcher behavior, local artifact workflow, remote session/auth handling, and the repo-level release gate. Start here when the task may change what the CLI does or how it is validated.
 
-Review note, 2026-08-31: Issue #244 implements `auth login|status|whoami|doctor-auth|logout` and makes a registered public Supabase OAuth client the preferred session source. Login uses Authorization Code + S256 PKCE, a cryptographic state value, one exact `http://127.0.0.1:<registered-port>/oauth/callback`, and a shell-free system browser. The verifier and authorization code remain memory-only; the token response is byte-bounded; OAuth refresh-token rotation happens under the existing process/file locks and is atomically persisted as schema v2 in a private `0700` directory / `0600` file on POSIX. `status` reads only matching local metadata and explicitly says it is not online verification; `whoami` runs the redacted live identity receipt; `doctor-auth` combines both and returns a human login handoff without password bootstrap. Normal commands consume the access token. `TIANGONG_LCA_ACCESS_TOKEN` is an explicit short-lived headless path that is verified online, memoized only for the process, never persisted, and never auto-refreshed. The old reversible `TIANGONG_LCA_API_KEY` remains only as a compatibility fallback when OAuth/access-token configuration is absent or the explicit legacy mode is selected. OAuth failures never fall back to password sign-in. Package version, dependency graph, public library exports, and release automation remain unchanged.
+Review note, 2026-08-31: Issue #244 implements `auth login|status|whoami|doctor-auth|logout` and makes a registered public Supabase OAuth client the preferred session source. Login uses Authorization Code + S256 PKCE, a cryptographic state value, one exact `http://127.0.0.1:<registered-port>/oauth/callback`, and a shell-free system browser. The verifier and authorization code remain memory-only; the token response is byte-bounded; OAuth refresh-token rotation happens under the existing process/file locks and is atomically persisted as schema v2 in a private `0700` directory / `0600` file on POSIX. `status` reads only matching local metadata and explicitly says it is not online verification; `whoami` runs the redacted live identity receipt; `doctor-auth` combines both and returns a human login handoff without password bootstrap. Normal commands consume the access token. `TIANGONG_LCA_ACCESS_TOKEN` is an explicit short-lived headless path that is verified online, memoized only for the process, never persisted, and never auto-refreshed. OAuth failures never fall back to password sign-in.
+
+Review note, 2026-09-01: Issue #260 makes OAuth or the explicit verified headless access-token mode mandatory for every user-authenticated remote command. The reversible user API-key parser, password sign-in, legacy session schema/mode/source, CLI flags/env, historical production-case runner, fixtures, and setup docs are removed. OAuth PKCE, private rotating refresh sessions, local logout, live identity verification, RLS request adapters, exact 100% coverage, package provenance, and four-platform release gates remain mandatory.
 
 Review note, 2026-08-31: Issue #247 hardens that OAuth/session lock against a real inter-process release race. `readStateLockMetadata()` no longer checks existence before reading; one `readFileSync` returning `ENOENT` means the owner already released the lock, while malformed/empty metadata behavior and every non-`ENOENT` read failure remain fail-closed. Lock creation, stale-owner policy, reentrancy, timeout, cleanup, session bytes, package version, and release automation are unchanged.
 
