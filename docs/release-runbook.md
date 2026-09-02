@@ -26,7 +26,7 @@ checkPaths:
   - scripts/docpact-gate.sh
   - scripts/install-git-hooks.sh
 lastReviewedAt: 2026-09-02
-lastReviewedCommit: cb5be8f1e209f69570f4c7ef4ef29d61af52eed7
+lastReviewedCommit: 2bd3158d0ef4813ed30744c2bc6c7f084ae45dd9
 lastReviewedNote: 'Reviewed after integrating Issues #262 and #263: Production bootstrap and additive Process ownership keep version 0.1.7; a separate patch release must retain four-platform, Trusted Publishing, zero-config OAuth, installed Skills, and consumer-contract proof.'
 related:
   - ../AGENTS.md

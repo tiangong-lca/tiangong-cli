@@ -22,7 +22,7 @@ checkPaths:
   - src/**
   - test/**
 lastReviewedAt: 2026-09-02
-lastReviewedCommit: cb5be8f1e209f69570f4c7ef4ef29d61af52eed7
+lastReviewedCommit: 2bd3158d0ef4813ed30744c2bc6c7f084ae45dd9
 lastReviewedNote: '为 Issues #262、#263 集成复核：Production profile 与自定义/headless 运行时继续互斥；Process 命令解析精确 model_id/model_version 对，禁止仅提供版本，并保持旧调用省略字段的兼容行为。'
 related:
   - ../AGENTS.md
