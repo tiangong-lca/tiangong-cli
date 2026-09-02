@@ -168,7 +168,7 @@ export const DATA_API_RPC_TARGETS = {
   cmd_dataset_save_draft: {
     targetSchema: 'api',
     signature:
-      'api.cmd_dataset_save_draft(p_table text, p_id uuid, p_version text, p_json_ordered jsonb, p_model_id uuid, p_rule_verification boolean, p_audit jsonb)',
+      'api.cmd_dataset_save_draft(p_table text, p_id uuid, p_version text, p_json_ordered jsonb, p_model_id uuid, p_rule_verification boolean, p_audit jsonb, p_model_version text)',
   },
 } as const satisfies Record<string, RpcTarget>;
 
@@ -178,9 +178,9 @@ export const DATA_API_CONTRACT = {
   schemaVersion: 'tiangong-lca-cli.data-api-contract.v1',
   databaseContract: {
     repository: 'tiangong-lca/database-engine',
-    databaseCommit: '0a97cc761f8127ca379ab7d4df4395dab255707a',
-    migrationHead: '20260807103000',
-    migrationSetGitTreeSha: '116c1f08b5490eec630f997403b07c3fcb830a69',
+    databaseCommit: '1320dcc506fe37af6b625ae30fbe0bec38cf87c6',
+    migrationHead: '20260902104500',
+    migrationSetGitTreeSha: '88e212220c0037cee673d0522340d3cca5e791dd',
     contractMigrations: {
       fullSchemaCutover: {
         path: 'supabase/migrations/20260805130000_full_schema_cutover.sql',
@@ -190,21 +190,29 @@ export const DATA_API_CONTRACT = {
         path: 'supabase/migrations/20260806160000_api_contract_closure.sql',
         sha256: 'e0e7aec8e03d70c60ee0d5c2b332ce73fa7b4b229725c9a9fcb0e1a1d7e8c511',
       },
+      processModelVersionContract: {
+        path: 'supabase/migrations/20260902100000_process_model_version_contract.sql',
+        sha256: '99cbaf474098281ea8c57fcef093174d0ef78a18300f133dd8cc6f9e59a4a29b',
+      },
+      processSaveDraftModelVersion: {
+        path: 'supabase/migrations/20260902103509_add_process_model_version_to_dataset_save_draft.sql',
+        sha256: 'ca93f3279673e292803bd8c477aec76b772c7246e16114808d31e64994037723',
+      },
       migrationHead: {
-        path: 'supabase/migrations/20260807103000_data_product_consumer_facades.sql',
-        sha256: 'd7fe990d487a75a8aecced5af580d27f176e74ac00f18e7fa6e6d88733152646',
+        path: 'supabase/migrations/20260902104500_use_exact_model_version_in_review_ownership.sql',
+        sha256: '538ec3001f7683b57817e4a89973ded127522ce94521720ed583de99711bbe60',
       },
     },
     contractReady: true,
-    snapshotRole: 'frozen-post-cutover-api-contract',
-    provenanceIssue: 'tiangong-lca/database-engine#422',
+    snapshotRole: 'frozen-process-model-version-contract',
+    provenanceIssue: 'tiangong-lca/database-engine#589',
     publicCoreTableCount: 9,
     publicRoutineCount: 0,
   },
   profiles: {
     'api-contract-v1': {
       phase: 'contract',
-      description: 'Frozen api RPC profile for database-engine migration head 20260807103000.',
+      description: 'Frozen api RPC profile for database-engine migration head 20260902104500.',
     },
   },
   corePublicRelations: CORE_PUBLIC_RELATIONS,

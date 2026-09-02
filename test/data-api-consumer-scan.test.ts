@@ -41,8 +41,8 @@ test('consumer-zero scan inventories every active relation and api RPC without r
   assert.equal(report.inventory.rpc_names.length, 16);
   assert.equal(report.inventory.rpc_names.includes('cmd_dataset_alias_plan_guarded'), false);
   assert.equal(report.contract.contractReady, true);
-  assert.equal(report.contract.databaseCommit, '0a97cc761f8127ca379ab7d4df4395dab255707a');
-  assert.equal(report.contract.migrationHead, '20260807103000');
+  assert.equal(report.contract.databaseCommit, '1320dcc506fe37af6b625ae30fbe0bec38cf87c6');
+  assert.equal(report.contract.migrationHead, '20260902104500');
 });
 
 test('scan rejects a static non-core relation', () => {

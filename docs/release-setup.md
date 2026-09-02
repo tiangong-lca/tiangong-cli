@@ -25,8 +25,8 @@ checkPaths:
   - scripts/docpact-gate.sh
   - scripts/install-git-hooks.sh
 lastReviewedAt: 2026-09-02
-lastReviewedCommit: 3254d6167662121ca871090f6e57ff2a55578f28
-lastReviewedNote: 'Reviewed for Issue #266: CLI 0.1.8 reuses existing merge/tag/four-platform Trusted Publishing setup with no new credential, secret, dependency, workflow, environment, or alternate publication path.'
+lastReviewedCommit: f56c5349414c73a7f3f967ebd667064ce08a26e3
+lastReviewedNote: 'Reviewed for release #266 after #262/#263 integration: no publishing secret, workflow, dependency, or alternate path changes; the independently owned database #589 production rollout is a required compatibility prerequisite.'
 related:
   - ../AGENTS.md
   - ../.docpact/config.yaml

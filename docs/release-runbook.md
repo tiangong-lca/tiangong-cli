@@ -26,8 +26,8 @@ checkPaths:
   - scripts/docpact-gate.sh
   - scripts/install-git-hooks.sh
 lastReviewedAt: 2026-09-02
-lastReviewedCommit: 3254d6167662121ca871090f6e57ff2a55578f28
-lastReviewedNote: 'Reviewed for Issue #266: 0.1.8 follows merged bootstrap #263 via a version-only PR, exact-head and merge four-platform gates, automatic tag/Trusted Publishing, and verified CLI/Skills/docs workspace handoff.'
+lastReviewedCommit: f56c5349414c73a7f3f967ebd667064ce08a26e3
+lastReviewedNote: 'Reviewed for release #266 after concurrent main #262: prepare 0.1.8 with unchanged reviewed runtime, but do not merge or publish until database #589 production compatibility is proved; repeat all release-head gates.'
 related:
   - ../AGENTS.md
   - ../.docpact/config.yaml
@@ -125,6 +125,8 @@ Do not use this document for one-time repository or npm registry setup. For one-
 ## Preconditions
 
 Review note, 2026-09-02: Issue #266 releases the Production bootstrap from merge `d74edd8ed22f78056784326fb26e11741a1363b8` as 0.1.8. npm/tag absence was proved before RED fixture checkpoint `17d920d`; package checkpoint `3254d61` changes only version identity. Keep the lock, dependencies, runtime, and workflows byte-identical, prove all four platforms before and after merge, then verify signed registry provenance and fresh zero-config browser/installed Skills consumers. Skills #91 and public Docs #180 join the exact workspace handoff.
+
+Concurrent-main note, 2026-09-02: PR #264 / Issue #262 subsequently merged as `f56c5349414c73a7f3f967ebd667064ce08a26e3`. Release #266 preserves that reviewed runtime and repeats validation against this new base; the release-only diff remains version/fixtures/governed evidence. The new Process draft adapter sends `p_model_version` and requires database-engine #589 / migration head `20260902104500`. Do not merge the release PR or start automatic npm publication until production RPC compatibility and the required deployment are proved. This release task does not implicitly authorize that independently owned production schema rollout.
 
 Before starting a release:
 

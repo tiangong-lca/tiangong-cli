@@ -31,8 +31,8 @@ checkPaths:
   - scripts/docpact-gate.sh
   - scripts/install-git-hooks.sh
 lastReviewedAt: 2026-09-02
-lastReviewedCommit: 3254d6167662121ca871090f6e57ff2a55578f28
-lastReviewedNote: 'Reviewed for Issue #266: only package identity and four existing version fixtures advance to 0.1.8; the merged single-profile auth/remote architecture, exports, dependencies, and lock remain unchanged.'
+lastReviewedCommit: f56c5349414c73a7f3f967ebd667064ce08a26e3
+lastReviewedNote: 'Reviewed for release #266 on main f56c534: bundled OAuth bootstrap and additive exact Model-version adapters are retained unchanged; the release-only delta stays metadata and production database compatibility is a gate.'
 related:
   - ../../AGENTS.md
   - ../../.docpact/config.yaml
@@ -257,6 +257,7 @@ These modules share one contract:
 - `process/flow build-plan` validates minimum authoring contracts and writes standard gate artifacts before downstream materialization or publish handoff; materialize now creates canonical `processDataSet` / `flowDataSet` wrappers from plan fields when no canonical payload is supplied
 - `process save-draft` validates canonical payloads with `ProcessSchema` before remote writes and accepts `--target-user-id` as an account/write guard that must match the current CLI auth user and any visible draft owner
 - `flow publish-version` and `process publish-build` validate canonical payloads with `FlowSchema` / `ProcessSchema` before publish planning or handoff artifacts proceed
+- Process dataset writers forward nullable `modelVersion` with `modelId`. `publish run` derives an exact source LifecycleModel identity from canonical Process metadata when present, rejects a version without an id, and persists that pair for resulting Processes; it does not discover or substitute the latest Model revision. Missing `modelVersion` deliberately preserves the database's legacy same-version fallback
 - `publish run` writes a deterministic `verification-report.json` next to the final publish report so downstream automation can read blockers without parsing execution details
 - `runtime-rulesets` maps CLI-local QA, dedup, and publish findings to stable methodology rule ids so Foundry and UI handoffs can consume one ruleset profile contract
 - maintenance and QA commands still emit artifact-first local outputs and remain covered by the strict `src/**/*.ts` coverage gate

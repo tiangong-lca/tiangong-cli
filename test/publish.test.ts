@@ -586,7 +586,15 @@ test('runPublish uses state-aware process draft writes and generic source update
 
   writeJson(requestPath, {
     inputs: {
-      processes: [makeCanonicalProcess('proc-default-rest')],
+      processes: [
+        {
+          json_ordered: makeCanonicalProcess('proc-default-rest'),
+          metadata: {
+            generated_from_lifecyclemodel_id: 'model-default-rest',
+            generated_from_lifecyclemodel_version: '01.01.021',
+          },
+        },
+      ],
       sources: [makeSource('src-default-rest')],
     },
     publish: {
@@ -671,10 +679,188 @@ test('runPublish uses state-aware process draft writes and generic source update
       status: 'success',
       operation: 'update_existing',
     });
+    assert.equal(report.processes[0].model_id, 'model-default-rest');
+    assert.equal(report.processes[0].model_version, '01.01.021');
+    assert.deepEqual(JSON.parse(observed[1]?.body ?? '{}'), {
+      p_table: 'processes',
+      p_id: 'proc-default-rest',
+      p_version: '01.01.000',
+      p_json_ordered: makeCanonicalProcess('proc-default-rest'),
+      p_model_id: 'model-default-rest',
+      p_model_version: '01.01.021',
+      p_audit: {
+        command: 'tiangong-lca publish run',
+        source: 'input',
+        bundle_path: null,
+      },
+    });
     assert.deepEqual(
       observed.map((entry) => entry.method),
       ['GET', 'POST', 'GET', 'POST'],
     );
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+test('runPublish forwards projected Process model references to custom executors', async () => {
+  const dir = mkdtempSync(path.join(os.tmpdir(), 'tg-cli-publish-process-model-ref-'));
+  const requestPath = path.join(dir, 'request.json');
+  let observedProcessModel: unknown;
+
+  writeJson(requestPath, {
+    inputs: {
+      processes: [
+        {
+          json_ordered: makeCanonicalProcess('proc-projected'),
+          metadata: {
+            generated_from_lifecyclemodel_id: 'model-projected',
+            generated_from_lifecyclemodel_version: '01.01.021',
+          },
+        },
+      ],
+    },
+    publish: {
+      commit: true,
+    },
+  });
+
+  try {
+    const report = await runPublish({
+      inputPath: requestPath,
+      executors: {
+        processes: (args) => {
+          observedProcessModel = args.processModel;
+          return { inserted: true };
+        },
+      },
+      validateProcessPayloadImpl: VALIDATION_OK,
+    });
+
+    assert.equal(report.processes[0].status, 'executed');
+    assert.deepEqual(observedProcessModel, {
+      modelId: 'model-projected',
+      modelVersion: '01.01.021',
+    });
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+test('runPublish resolves every canonical Process model-reference tier without latest lookup', async () => {
+  const dir = mkdtempSync(path.join(os.tmpdir(), 'tg-cli-publish-process-model-tiers-'));
+  const requestPath = path.join(dir, 'request.json');
+  const observed = new Map<string, unknown>();
+  const projectionPayload = makeCanonicalProcess('proc-projection');
+  (projectionPayload as Record<string, unknown>).projectionMetadata = {
+    generated_from_lifecyclemodel_id: 'model-projection',
+    generated_from_lifecyclemodel_version: '02.00.000',
+  };
+  const nestedPayload = makeCanonicalProcess('proc-nested');
+  const nestedInformation = (
+    (nestedPayload.processDataSet as Record<string, unknown>).processInformation as Record<
+      string,
+      unknown
+    >
+  ).dataSetInformation as Record<string, unknown>;
+  nestedInformation.generatedFromLifecycleModel = {
+    id: 'model-nested',
+    version: '03.00.000',
+  };
+
+  writeJson(requestPath, {
+    inputs: {
+      processes: [
+        {
+          json_ordered: makeCanonicalProcess('proc-direct'),
+          model_id: 'model-direct',
+          model_version: '01.00.000',
+        },
+        { json_ordered: projectionPayload },
+        { json_ordered: nestedPayload },
+        {
+          json_ordered: makeCanonicalProcess('proc-legacy'),
+          modelId: 'model-legacy',
+        },
+        {
+          json_ordered: makeCanonicalProcess('proc-independent'),
+          modelId: null,
+        },
+      ],
+    },
+    publish: { commit: true },
+  });
+
+  try {
+    const report = await runPublish({
+      inputPath: requestPath,
+      executors: {
+        processes: (args) => {
+          observed.set(args.id, args.processModel);
+          return { inserted: true };
+        },
+      },
+      validateProcessPayloadImpl: VALIDATION_OK,
+    });
+
+    assert.equal(report.status, 'completed');
+    assert.deepEqual(observed.get('proc-direct'), {
+      modelId: 'model-direct',
+      modelVersion: '01.00.000',
+    });
+    assert.deepEqual(observed.get('proc-projection'), {
+      modelId: 'model-projection',
+      modelVersion: '02.00.000',
+    });
+    assert.deepEqual(observed.get('proc-nested'), {
+      modelId: 'model-nested',
+      modelVersion: '03.00.000',
+    });
+    assert.deepEqual(observed.get('proc-legacy'), {
+      modelId: 'model-legacy',
+      modelVersion: null,
+    });
+    assert.equal(observed.get('proc-independent'), undefined);
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+test('runPublish rejects Process model versions without model ids', async () => {
+  const dir = mkdtempSync(path.join(os.tmpdir(), 'tg-cli-publish-invalid-model-ref-'));
+  const requestPath = path.join(dir, 'request.json');
+  let executorCalls = 0;
+
+  writeJson(requestPath, {
+    inputs: {
+      processes: [
+        {
+          json_ordered: makeCanonicalProcess('proc-invalid-model-ref'),
+          modelVersion: '01.01.021',
+        },
+      ],
+    },
+    publish: {
+      commit: true,
+    },
+  });
+
+  try {
+    const report = await runPublish({
+      inputPath: requestPath,
+      executors: {
+        processes: () => {
+          executorCalls += 1;
+          return { inserted: true };
+        },
+      },
+      validateProcessPayloadImpl: VALIDATION_OK,
+    });
+
+    assert.equal(executorCalls, 0);
+    assert.equal(report.processes[0].status, 'failed');
+    assert.match(report.processes[0].error?.message ?? '', /requires modelId/u);
+    assert.equal(report.verification.status, 'blocked');
   } finally {
     rmSync(dir, { recursive: true, force: true });
   }

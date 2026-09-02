@@ -32,8 +32,8 @@ checkPaths:
   - scripts/docpact-gate.sh
   - scripts/install-git-hooks.sh
 lastReviewedAt: 2026-09-02
-lastReviewedCommit: 3254d6167662121ca871090f6e57ff2a55578f28
-lastReviewedNote: 'Reviewed for Issue #266: 0.1.8 requires absence proof, RED version fixtures, exact 100%, package consumers, all four real platforms, cryptographic publication proof, and fresh OAuth/installed Skills acceptance.'
+lastReviewedCommit: f56c5349414c73a7f3f967ebd667064ce08a26e3
+lastReviewedNote: 'Reviewed for release #266 after #262/#263 integration: rerun exact 100%, four-platform, clean OAuth/Skills and Process ownership tests; require production RPC compatibility before automatic publication.'
 related:
   - ../../AGENTS.md
   - ../../.docpact/config.yaml
@@ -61,6 +61,8 @@ For protected-branch parity, the authoritative full gate is:
 ```bash
 pnpm prepush:gate
 ```
+
+Process ownership-version changes require focused `dataset-command`, `process-save-draft`, and `publish` tests in addition to the baseline. Prove exact `modelId`/`modelVersion` forwarding, omission-compatible legacy fallback, rejection of `modelVersion` without `modelId`, precedence among canonical source metadata forms, and absence of any latest-Model lookup. The final proof remains the exact-100% `pnpm prepush:gate`.
 
 Review note, 2026-08-25: Issue #224 fixes local and CI proof to Node 24, pnpm 11.23.0, TypeScript 7.0.2, and type-aware Oxlint. `pnpm test:package` is mandatory: it rejects alternate or nested lockfiles, legacy TypeScript/ESLint bridges, active npm package-management commands, unpinned pnpm CI bootstrap, and development-tool leakage into the tarball; it also installs and executes the packed artifact through a package-manager-neutral consumer. The feature version remains 0.0.33, while a separate 0.1.0 release PR is recommended after merge and all gates pass.
 
