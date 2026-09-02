@@ -709,7 +709,8 @@ Options:
   --json            Print compact JSON; default output is pretty JSON
   -h, --help
 
-Required env:
+Official Production requires no environment configuration. Run auth login directly.
+For a custom environment, configure its complete public tuple (never mix projects):
   TIANGONG_LCA_API_BASE_URL
   TIANGONG_LCA_SUPABASE_PUBLISHABLE_KEY
   TIANGONG_LCA_OAUTH_CLIENT_ID
@@ -755,7 +756,8 @@ Safety:
   tokens, full email addresses, session paths, or credential-derived fingerprints. Production guards
   must pass both expected assertions and require assertions.mode="intent-bound".
 
-Required env:
+Official Production uses the bundled public profile and a prior "tiangong-lca auth login".
+For a custom environment, configure:
   TIANGONG_LCA_API_BASE_URL
   TIANGONG_LCA_SUPABASE_PUBLISHABLE_KEY
   TIANGONG_LCA_OAUTH_CLIENT_ID and a prior "tiangong-lca auth login"
@@ -793,7 +795,8 @@ Options:
   --timeout-ms <n> Request timeout in milliseconds
   -h, --help
 
-Required env:
+Official Production: run "tiangong-lca auth login" with no env setup.
+Custom environment (complete matching tuple required):
   TIANGONG_LCA_API_BASE_URL
   TIANGONG_LCA_SUPABASE_PUBLISHABLE_KEY
   TIANGONG_LCA_OAUTH_CLIENT_ID and a prior "tiangong-lca auth login"
@@ -816,7 +819,8 @@ Options:
   --timeout-ms <n> Request timeout in milliseconds
   -h, --help
 
-Required env:
+Official Production: run "tiangong-lca auth login" with no env setup.
+Custom environment (complete matching tuple required):
   TIANGONG_LCA_API_BASE_URL
   TIANGONG_LCA_SUPABASE_PUBLISHABLE_KEY
   TIANGONG_LCA_OAUTH_CLIENT_ID and a prior "tiangong-lca auth login"
@@ -860,7 +864,8 @@ Options:
   --timeout-ms <n>        Request timeout in milliseconds (default 60000)
   -h, --help
 
-Required environment:
+Official Production: run "tiangong-lca auth login" with no env setup.
+Custom environment (complete matching tuple required):
   TIANGONG_LCA_API_BASE_URL
   TIANGONG_LCA_SUPABASE_PUBLISHABLE_KEY
   TIANGONG_LCA_OAUTH_CLIENT_ID and a prior "tiangong-lca auth login"
@@ -1541,7 +1546,7 @@ Options:
   -h, --help
 
 Environment:
-  TIANGONG_LCA_API_BASE_URL, TIANGONG_LCA_SUPABASE_PUBLISHABLE_KEY, and a configured OAuth session
+  Official Production profile (no env setup), or a complete custom URL/key/client; prior auth login
 
 Outputs written under --out-dir:
   - outputs/remote-verification-report.json
@@ -1766,7 +1771,7 @@ Options:
 
 Environment:
   none for local dry-run
-  TIANGONG_LCA_API_BASE_URL, TIANGONG_LCA_SUPABASE_PUBLISHABLE_KEY, and a configured OAuth session
+  Official Production profile (no env setup), or a complete custom URL/key/client; prior auth login
   when --commit executes remote writes
 
 Outputs written under --out-dir:
@@ -1884,7 +1889,8 @@ Options:
   --json                Print compact JSON
   -h, --help
 
-Required env:
+Official Production: run "tiangong-lca auth login" with no env setup.
+Custom environment (complete matching tuple required):
   TIANGONG_LCA_API_BASE_URL
   TIANGONG_LCA_OAUTH_CLIENT_ID and a prior "tiangong-lca auth login"
   TIANGONG_LCA_SUPABASE_PUBLISHABLE_KEY
@@ -1913,7 +1919,8 @@ Options:
   --json                          Print compact JSON
   -h, --help
 
-Required env:
+Official Production: run "tiangong-lca auth login" with no env setup.
+Custom environment (complete matching tuple required):
   TIANGONG_LCA_API_BASE_URL
   TIANGONG_LCA_OAUTH_CLIENT_ID and a prior "tiangong-lca auth login"
   TIANGONG_LCA_SUPABASE_PUBLISHABLE_KEY
@@ -1956,7 +1963,8 @@ Options:
   --json                     Print compact JSON
   -h, --help
 
-Required env:
+Official Production: run "tiangong-lca auth login" with no env setup.
+Custom environment (complete matching tuple required):
   TIANGONG_LCA_API_BASE_URL
   TIANGONG_LCA_OAUTH_CLIENT_ID and a prior "tiangong-lca auth login"
   TIANGONG_LCA_SUPABASE_PUBLISHABLE_KEY
@@ -2005,7 +2013,8 @@ Options:
   --json                    Print compact JSON
   -h, --help
 
-Environment:
+Official Production: run "tiangong-lca auth login" with no env setup.
+Custom environment (complete matching tuple required):
   TIANGONG_LCA_API_BASE_URL
   TIANGONG_LCA_OAUTH_CLIENT_ID and a prior "tiangong-lca auth login"
   TIANGONG_LCA_SUPABASE_PUBLISHABLE_KEY
@@ -2038,7 +2047,7 @@ Options:
 
 Environment:
   none for local dry-run
-  TIANGONG_LCA_API_BASE_URL, TIANGONG_LCA_SUPABASE_PUBLISHABLE_KEY, and a configured OAuth session
+  Official Production profile (no env setup), or a complete custom URL/key/client; prior auth login
   when --commit publishes prepared rows
 
 Outputs written under --out-dir:
@@ -2283,6 +2292,8 @@ Options:
   -h, --help
 
 Remote lookup env (only when process_sources.allow_remote_lookup=true):
+  Official Production uses its bundled profile and a prior "tiangong-lca auth login".
+  A custom environment requires the complete matching tuple:
   TIANGONG_LCA_API_BASE_URL
   TIANGONG_LCA_OAUTH_CLIENT_ID and a prior "tiangong-lca auth login"
   TIANGONG_LCA_SUPABASE_PUBLISHABLE_KEY
@@ -2316,7 +2327,7 @@ Options:
 
 Environment:
   none for local dry-run
-  TIANGONG_LCA_API_BASE_URL, TIANGONG_LCA_SUPABASE_PUBLISHABLE_KEY, and a configured OAuth session
+  Official Production profile (no env setup), or a complete custom URL/key/client; prior auth login
   when --commit executes remote writes
 
 Local gate:
@@ -2488,7 +2499,8 @@ Options:
   --json               Print compact JSON
   -h, --help
 
-Required env:
+Official Production: run "tiangong-lca auth login" with no env setup.
+Custom environment (complete matching tuple required):
   TIANGONG_LCA_API_BASE_URL
   TIANGONG_LCA_OAUTH_CLIENT_ID and a prior "tiangong-lca auth login"
   TIANGONG_LCA_SUPABASE_PUBLISHABLE_KEY
@@ -2516,7 +2528,8 @@ Options:
   --json                          Print compact JSON
   -h, --help
 
-Required env:
+Official Production: run "tiangong-lca auth login" with no env setup.
+Custom environment (complete matching tuple required):
   TIANGONG_LCA_API_BASE_URL
   TIANGONG_LCA_OAUTH_CLIENT_ID and a prior "tiangong-lca auth login"
   TIANGONG_LCA_SUPABASE_PUBLISHABLE_KEY
@@ -2674,7 +2687,7 @@ Options:
 
 Environment:
   none for local dry-run
-  TIANGONG_LCA_API_BASE_URL, TIANGONG_LCA_SUPABASE_PUBLISHABLE_KEY, and a configured OAuth session
+  Official Production profile (no env setup), or a complete custom URL/key/client; prior auth login
   when --commit executes remote writes
 
 Local gate:
@@ -2730,7 +2743,8 @@ Options:
   --json               Print compact JSON
   -h, --help
 
-Required env:
+Official Production: run "tiangong-lca auth login" with no env setup.
+Custom environment (complete matching tuple required):
   TIANGONG_LCA_API_BASE_URL
   TIANGONG_LCA_OAUTH_CLIENT_ID and a prior "tiangong-lca auth login"
   TIANGONG_LCA_SUPABASE_PUBLISHABLE_KEY

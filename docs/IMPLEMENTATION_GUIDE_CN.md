@@ -22,8 +22,8 @@ checkPaths:
   - src/**
   - test/**
 lastReviewedAt: 2026-09-02
-lastReviewedCommit: 068d793e06cfeedfb6c4aa79fd82d0c57c615f5e
-lastReviewedNote: '为 Issue #262 复核：Process 命令从元数据解析精确 model_id/model_version 对，禁止仅提供版本，并保持旧调用省略字段的兼容行为。'
+lastReviewedCommit: cb5be8f1e209f69570f4c7ef4ef29d61af52eed7
+lastReviewedNote: '为 Issues #262、#263 集成复核：Production profile 与自定义/headless 运行时继续互斥；Process 命令解析精确 model_id/model_version 对，禁止仅提供版本，并保持旧调用省略字段的兼容行为。'
 related:
   - ../AGENTS.md
   - ../.docpact/config.yaml
@@ -1094,11 +1094,13 @@ outputs/evidence-search-declaration.json
 
 ### 5.1 统一命名
 
-Issue #244（2026-08-31）把 active session 设计从 password-equivalent bootstrap 升级为 Supabase OAuth 2.1。`auth login` 使用 public client、S256 PKCE、state、固定 `127.0.0.1` 回调和无 shell 浏览器；token refresh 在原有进程/文件锁下原子更新 schema-v2 私有文件。headless 可显式注入短期 actor access token；旧 API key 仅是迁移兼容，OAuth 失败不回退密码。
+当前 active session 使用 Supabase OAuth 2.1。`auth login` 使用 public client、S256 PKCE、state、固定 `127.0.0.1` 回调和无 shell 浏览器；token refresh 在原有进程/文件锁下原子更新 schema-v2 私有文件。headless 可显式注入短期 actor access token；旧 API key/password bootstrap 已移除，OAuth 失败不回退密码。
+
+Issue #263 将官方 Production public profile 统一收口到 `src/lib/env.ts`。安装后的首次 `auth login` 无需 `.env`；auth、remote adapters 和 doctor 使用同一 URL/key/client/callback/region 来源。未登录 `status` / `doctor-auth` 返回 `login-required`（exit 1），不触发远程调用。只有完整自定义环境才能覆盖默认值；非 Production URL/client/key/callback 禁止混补，已知 Production key/client 与自定义 URL 的组合显式失败。空白模板与精确 Production URL 别名可以使用默认 profile。Skills 不复制生产常量。
 
 `auth status` 只读取当前 project/client 绑定的本地 session metadata，不发网络请求、不 refresh，并明确输出 `onlineVerified: false`；`auth whoami` 复用 live redacted identity receipt；`auth doctor-auth` 先做 local status，缺失 session 时直接返回 `login-required` 并把终端交还人类，ready 时才做 live receipt。三者都不输出完整邮箱、token、session path 或 credential fingerprint，也不接受密码/code/token argv。
 
-公开命令面的标准变量名：
+自定义环境的标准变量名（官方 Production 不需要填写）：
 
 ```bash
 TIANGONG_LCA_API_BASE_URL=
@@ -1114,12 +1116,13 @@ TIANGONG_LCA_FORCE_REAUTH=false
 
 其中：
 
-- `TIANGONG_LCA_OAUTH_CLIENT_ID` 是环境专属 public client ID；先运行 `tiangong-lca auth login`
+- `TIANGONG_LCA_OAUTH_CLIENT_ID` 是环境专属 public client ID；官方 Production 内置，先运行 `tiangong-lca auth login`
 - authorization code、PKCE verifier/state 不进入 argv 或磁盘；access/refresh token 不进入 stdout/report
 - 运行时统一使用 actor access token，既用于 Edge Functions，也用于 direct Supabase
-- `TIANGONG_LCA_SUPABASE_PUBLISHABLE_KEY` 是 authenticated CLI 命令的必需项
+- `TIANGONG_LCA_SUPABASE_PUBLISHABLE_KEY` 是 public 配置，官方 Production 从 profile 解析，自定义环境必须显式给出
 - `TIANGONG_LCA_SESSION_FILE`、`TIANGONG_LCA_DISABLE_SESSION_CACHE`、`TIANGONG_LCA_FORCE_REAUTH` 是可选 session cache 控制项
-- headless 使用 `TIANGONG_LCA_AUTH_MODE=access-token` + `TIANGONG_LCA_ACCESS_TOKEN`，只在进程内复用且不 refresh
+- headless 必须显式配置目标 URL/publishable key，再使用 `TIANGONG_LCA_AUTH_MODE=access-token` + `TIANGONG_LCA_ACCESS_TOKEN`；仅 token 不得默认投递 Production，只在进程内复用且不 refresh
+- `hasSupabaseRestRuntime` 保留 configured-only 探测，不因内置 profile 自动启用原本本地的 publish executor；显式 remote lookup 和 commit/审批边界不变
 
 按需启用的可选 QA-only 变量：只有显式启用 `tiangong-lca qa process --enable-llm` 或 `tiangong-lca qa flow --enable-llm` 时才需要配置。`TIANGONG_LCA_REVIEW_LLM_BASE_URL` 应指向 OpenAI-compatible Responses API 根地址，CLI 会向 `<base_url>/responses` 发请求。
 
@@ -1162,14 +1165,14 @@ TIANGONG_LCA_COVERAGE=0
 - `release *` 复用同一 actor session；不读取/持久化 API key，不在请求体生成 credential fingerprint，也不接受 service-role
 - `TIANGONG_LCA_KB_SEARCH_*` 与 `TIANGONG_LCA_UNSTRUCTURED_*` 目前只属于 internal/preparatory 层，不属于公开命令契约
 
-下表“远程认证环境”指 `API_BASE_URL + SUPABASE_PUBLISHABLE_KEY + OAuth client/已登录 session`，或显式短期 headless access token。
+下表“远程认证环境”指官方 Production profile + 已登录 session，完整自定义 URL/key/client + 已登录 session，或显式 URL/key/短期 headless access token。
 
 命令级 env 矩阵：
 
 | 命令组 | 必需 env |
 | --- | --- |
 | `doctor` | 无 |
-| `auth login` | API base、publishable key、OAuth client ID |
+| `auth login` | 官方 Production 无；自定义环境需完整 URL/key/client |
 | `auth status` | 同一远程认证环境；只检查本地 session readiness |
 | `auth whoami` | 同一远程认证环境；执行 live redacted identity receipt |
 | `auth doctor-auth` | 同一远程认证环境；local readiness + live redacted identity |

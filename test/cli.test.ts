@@ -107,10 +107,10 @@ test('executeCli returns doctor text and success status', async () => {
   assert.match(result.stdout, /\[OK /u);
 });
 
-test('executeCli doctor text reports loaded dotenv metadata and missing keys', async () => {
+test('executeCli doctor reports loaded dotenv metadata and incomplete custom configuration', async () => {
   const result = await executeCli(['doctor'], {
     env: {
-      TIANGONG_LCA_REGION: 'cn-east-1',
+      TIANGONG_LCA_OAUTH_CLIENT_ID: '123e4567-e89b-42d3-a456-426614174000',
     } as NodeJS.ProcessEnv,
     dotEnvStatus: {
       loaded: true,

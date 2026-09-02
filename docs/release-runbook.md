@@ -26,8 +26,8 @@ checkPaths:
   - scripts/docpact-gate.sh
   - scripts/install-git-hooks.sh
 lastReviewedAt: 2026-09-02
-lastReviewedCommit: 068d793e06cfeedfb6c4aa79fd82d0c57c615f5e
-lastReviewedNote: 'Reviewed for Issue #262: the additive Process ownership fields do not change package versioning, four-platform publication, OAuth, provenance, or consumer release gates.'
+lastReviewedCommit: cb5be8f1e209f69570f4c7ef4ef29d61af52eed7
+lastReviewedNote: 'Reviewed after integrating Issues #262 and #263: Production bootstrap and additive Process ownership keep version 0.1.7; a separate patch release must retain four-platform, Trusted Publishing, zero-config OAuth, installed Skills, and consumer-contract proof.'
 related:
   - ../AGENTS.md
   - ../.docpact/config.yaml

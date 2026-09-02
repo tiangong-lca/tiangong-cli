@@ -66,9 +66,9 @@ test('requireSupabaseRestRuntime reads the shared CLI env contract', () => {
   );
 });
 
-test('requireSupabaseRestRuntime rejects missing env keys', () => {
+test('configured-only Supabase runtime rejects missing env keys', () => {
   assert.throws(
-    () => requireSupabaseRestRuntime({} as NodeJS.ProcessEnv),
+    () => requireSupabaseRestRuntime({}, { allowProductionDefaults: false }),
     (error) => {
       assert.ok(error instanceof CliError);
       assert.equal(error.code, 'SUPABASE_REST_ENV_REQUIRED');

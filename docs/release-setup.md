@@ -25,8 +25,8 @@ checkPaths:
   - scripts/docpact-gate.sh
   - scripts/install-git-hooks.sh
 lastReviewedAt: 2026-09-02
-lastReviewedCommit: 068d793e06cfeedfb6c4aa79fd82d0c57c615f5e
-lastReviewedNote: 'Reviewed for Issue #262: the additive Process ownership contract requires no new secret, workflow, credential, environment, tag, or publication path.'
+lastReviewedCommit: cb5be8f1e209f69570f4c7ef4ef29d61af52eed7
+lastReviewedNote: 'Reviewed after integrating Issues #262 and #263: bundled public OAuth configuration and additive Process ownership require no new secret, workflow, credential, dependency, environment, tag, or publication path.'
 related:
   - ../AGENTS.md
   - ../.docpact/config.yaml
