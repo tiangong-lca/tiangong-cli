@@ -31,9 +31,9 @@ checkPaths:
   - test/auth-identity*.test.ts
   - test/public-auth-identity-receipt.test.ts
   - test/lca-release*.test.ts
-lastReviewedAt: 2026-08-31
-lastReviewedCommit: 499c910d07bb6a5e2e1cd8e4403a5a617d4269bb
-lastReviewedNote: 'Reviewed for Issue #260: CLI 0.1.7 removes the password-equivalent API-key bootstrap and historical runner; OAuth or an explicit verified headless token is required for every user-authenticated remote command.'
+lastReviewedAt: 2026-09-02
+lastReviewedCommit: cb5be8f1e209f69570f4c7ef4ef29d61af52eed7
+lastReviewedNote: 'Reviewed for Issue #263: official Production login needs no env; complete custom environments, explicit headless destinations, private sessions, and local publish opt-in remain enforced.'
 ---
 
 # TianGong LCA CLI
@@ -104,7 +104,8 @@ One-off published run:
 
 ```bash
 pnpm dlx @tiangong-lca/cli@latest --help
-pnpm dlx @tiangong-lca/cli@latest doctor
+pnpm dlx @tiangong-lca/cli@latest auth login
+pnpm dlx @tiangong-lca/cli@latest auth doctor-auth --json
 pnpm dlx @tiangong-lca/cli@latest flow --help
 ```
 
@@ -113,7 +114,8 @@ Install the published CLI:
 ```bash
 pnpm add --global @tiangong-lca/cli
 tiangong-lca --help
-tiangong-lca doctor
+tiangong-lca auth login
+tiangong-lca auth doctor-auth --json
 tiangong-lca flow --help
 ```
 
@@ -138,12 +140,17 @@ The packed ESM, CJS dynamic-import, and TypeScript consumers exercise every publ
 
 ## Env
 
-Remote commands require:
+Official Production requires **no environment setup**. Run `tiangong-lca auth login` from a trusted terminal and finish authorization in your browser. The CLI bundles the public Production project URL, publishable key, CLI OAuth client ID, registered loopback callback, and region as one profile in `src/lib/env.ts`. These are application configuration, not user credentials; no client secret is used. Skills and external consumers must reuse the CLI rather than copy this profile.
+
+Before the first login, `auth status --json` and `auth doctor-auth --json` return `login-required` (exit 1), not a missing-client configuration error. `doctor --json` reports the public profile fields as `source: "default"`; this is configuration readiness, not proof of a logged-in user.
+
+Only Dev, self-hosted, or a custom public client needs explicit configuration. Supply the complete matching tuple from that environment's administrator:
 
 ```bash
-TIANGONG_LCA_API_BASE_URL=
-TIANGONG_LCA_SUPABASE_PUBLISHABLE_KEY=
-TIANGONG_LCA_OAUTH_CLIENT_ID=
+TIANGONG_LCA_API_BASE_URL=https://<your-project>.supabase.co/functions/v1
+TIANGONG_LCA_SUPABASE_PUBLISHABLE_KEY=<that-project-publishable-key>
+TIANGONG_LCA_OAUTH_CLIENT_ID=<that-project-registered-public-client-id>
+TIANGONG_LCA_OAUTH_REDIRECT_URI=http://127.0.0.1:49191/oauth/callback
 TIANGONG_LCA_REGION=us-east-1
 ```
 
@@ -151,8 +158,10 @@ Notes:
 
 - `TIANGONG_LCA_API_BASE_URL` accepts the project root, `/functions/v1`, or `/rest/v1`.
 - `TIANGONG_LCA_OAUTH_CLIENT_ID` is the environment-specific registered public CLI client; it is not a secret.
+- Blank public fields and the exact official Production URL aliases use the bundled profile. Any non-Production URL, client, key, or callback disables profile completion; incomplete custom configuration fails before browser/network access. An explicit custom URL cannot be combined with the known Production key or client. Changing `--base-url` also requires a matching complete environment.
 - Run `tiangong-lca auth login` once in a trusted terminal. All Edge Function and direct Supabase commands then reuse the OAuth access token and rotate the refresh token on demand.
-- For approved headless execution, set `TIANGONG_LCA_AUTH_MODE=access-token` and inject one short-lived `TIANGONG_LCA_ACCESS_TOKEN`. It is verified online, kept only in process memory, and never refreshed.
+- For approved headless execution, explicitly set the destination `TIANGONG_LCA_API_BASE_URL`, its `TIANGONG_LCA_SUPABASE_PUBLISHABLE_KEY`, and `TIANGONG_LCA_AUTH_MODE=access-token`, then inject one short-lived `TIANGONG_LCA_ACCESS_TOKEN`. A token alone never selects Production. It is verified online, kept only in process memory, and never refreshed.
+- Bundled configuration does not enable implicit remote publishing. Local-first publish executor selection still requires explicit configured remote runtime; existing `--commit`, remote-lookup, identity, and approval gates are unchanged.
 
 Optional session control:
 

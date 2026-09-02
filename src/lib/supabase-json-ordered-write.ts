@@ -165,7 +165,9 @@ export function hasSupabaseRestRuntime(env: NodeJS.ProcessEnv | undefined): bool
     return false;
   }
   try {
-    requireSupabaseRestRuntime(env);
+    // Config-free auth must not turn an otherwise local workflow into a remote
+    // publisher merely because the official Production profile is available.
+    requireSupabaseRestRuntime(env, { allowProductionDefaults: false });
     return true;
   } catch {
     return false;

@@ -31,9 +31,9 @@ checkPaths:
   - scripts/docpact
   - scripts/docpact-gate.sh
   - scripts/install-git-hooks.sh
-lastReviewedAt: 2026-08-31
-lastReviewedCommit: 499c910d07bb6a5e2e1cd8e4403a5a617d4269bb
-lastReviewedNote: 'Reviewed for Issue #260: CLI 0.1.7 broker-era proof removes API-key/password/session compatibility and the historical runner while retaining exact 100%, OAuth/headless, four-platform, and provenance gates.'
+lastReviewedAt: 2026-09-02
+lastReviewedCommit: cb5be8f1e209f69570f4c7ef4ef29d61af52eed7
+lastReviewedNote: 'Reviewed for Issue #263: clean installed consumers, isolated PKCE/session proof, partial/cross-project rejection, and offline publish regression join unchanged exact-100% and four-platform gates.'
 related:
   - ../../AGENTS.md
   - ../../.docpact/config.yaml
@@ -99,6 +99,8 @@ Review note, 2026-08-31: Issue #256 keeps package 0.1.5 and upgrades Supabase JS
 Review note, 2026-08-31: Issue #257 records npm/tag 0.1.6 absence, commits RED fixtures before the package bump, and requires a release-only diff from merge `490eb08990bf339935f7a5402add063618d844d2`. Local proof is frozen install, 12/12 package/tarball, complete pre-push exact-100%, audit, and Docpact. Remote proof must show all four exact platform/architecture jobs at 100% before merge, then merge-bound `cli-v0.1.6`, native Trusted Publishing, cryptographic provenance/integrity/signatures, and fresh credential-free OAuth/TIDAS consumers before root integration.
 
 When command-surface, release-gate, or governed docs change, also run the repo-local documentation governance gate:
+
+Issue #263 adds clean first-install proof: source and built runtime share one Production profile; empty/blank environments, exact aliases, partial custom settings, cross-project mixing, explicit headless destinations, and `--base-url` overrides are covered without live credentials. An isolated installed tarball consumer must run `doctor`, `auth status`, and `auth doctor-auth` without any public config and return truthful defaults / `login-required`, without creating a session. Deterministic PKCE login/status/live-doctor/logout tests use only fake tokens and an isolated private session. Flow/process/lifecyclemodel dry-runs share the profile, while configured-only local publish selection stays offline. Release acceptance additionally exercises a fresh published CLI with a real human-controlled browser login and installed Skills; repository tests never require a live grant or secret. The exact 100% and four-platform gates remain mandatory.
 
 ```bash
 scripts/docpact validate-config --root . --strict

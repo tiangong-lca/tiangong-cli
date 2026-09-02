@@ -4,6 +4,7 @@ import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { writeJsonArtifact } from './artifacts.js';
 import { CliError } from './errors.js';
+import { resolveProductionRuntimeEnv } from './env.js';
 import type { FetchLike } from './http.js';
 import { readJsonInput } from './io.js';
 import { buildRunId, resolveRunLayout } from './run.js';
@@ -177,7 +178,8 @@ function nowIso(now: Date = new Date()): string {
   return now.toISOString();
 }
 
-function requireRemoteProcessLookupRuntime(env: NodeJS.ProcessEnv) {
+function requireRemoteProcessLookupRuntime(configuredEnv: NodeJS.ProcessEnv) {
+  const env = resolveProductionRuntimeEnv(configuredEnv);
   const missing: string[] = [];
   if (typeof env.TIANGONG_LCA_API_BASE_URL !== 'string' || !env.TIANGONG_LCA_API_BASE_URL.trim()) {
     missing.push('TIANGONG_LCA_API_BASE_URL');

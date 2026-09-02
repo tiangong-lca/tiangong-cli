@@ -30,9 +30,9 @@ checkPaths:
   - scripts/docpact
   - scripts/docpact-gate.sh
   - scripts/install-git-hooks.sh
-lastReviewedAt: 2026-08-31
-lastReviewedCommit: 499c910d07bb6a5e2e1cd8e4403a5a617d4269bb
-lastReviewedNote: 'Reviewed for Issue #260: CLI 0.1.7 removes user API-key/password bootstrap and legacy session/runner architecture; OAuth or explicit verified headless tokens remain the only actor paths.'
+lastReviewedAt: 2026-09-02
+lastReviewedCommit: cb5be8f1e209f69570f4c7ef4ef29d61af52eed7
+lastReviewedNote: 'Reviewed for Issue #263: auth, remote adapters, and doctor share one Production profile; configured-only publish detection opts out and session/PKCE/request ownership is unchanged.'
 related:
   - ../../AGENTS.md
   - ../../.docpact/config.yaml
@@ -203,6 +203,8 @@ The CLI talks to remote services directly through helper modules such as:
 
 This is where the CLI-owned remote access contract lives.
 
+`src/lib/env.ts` owns one bundled official Production public profile. `readRuntimeEnv`, `requireSupabaseRestRuntime`, the explicit resulting-process remote lookup, and doctor all resolve the same public URL/key/client/callback/region. Empty/blank configuration and exact Production aliases can complete that profile; any custom public field requires a complete matching environment instead. Known Production key/client values cannot be sent to a foreign URL. Headless bearer injection always requires an explicit destination/key. The configured-only `hasSupabaseRestRuntime` probe opts out of defaults so local publish executor selection never becomes remote merely because the package ships a profile. Session project/client binding and explicit remote/commit/approval gates remain unchanged; neither Skills nor a server-side token broker owns a second copy.
+
 The preferred interactive path is `auth login`: a registered public OAuth client opens the browser, keeps state/verifier/code only in memory, receives one exact fixed-port `127.0.0.1` callback, exchanges the code with S256 PKCE, verifies UserInfo, and writes a schema-v2 access/refresh session atomically under the existing state lock. Refreshes use the OAuth token endpoint, replace rotated refresh tokens, and never fall back to password sign-in. `auth status` examines only the bound local record and marks itself not online-verified; `auth whoami` reuses the live redacted identity receipt; `auth doctor-auth` combines local readiness and live identity, returning a human login handoff before network access when the local OAuth session is missing. `auth logout` removes only a matching local project/client session; the Next Connected applications surface owns grant revocation.
 
 `TIANGONG_LCA_ACCESS_TOKEN` is the explicit headless path. It is verified against Auth, cached only in process memory, never written to the session file, and has no automatic refresh/replay path. All remote command families consume the same resolved access-token interface, so OAuth does not fork database/Edge request code. There is no password/API-key bootstrap or alternate user bearer.
@@ -227,7 +229,7 @@ These files own the public CLI semantics for those workflows.
 `src/lib/lca-release.ts` is deliberately a narrow authenticated adapter, not a second release control plane:
 
 - `src/cli.ts` owns `release prepare|upload|finalize|approve|publish|readback-verify|unpublish|status|current|calculation-bundle|calculation-artifact|artifact-download` parsing, help, and human/JSON rendering.
-- The normal OAuth session supplies the user access token; the explicit headless actor token and bounded legacy bootstrap use the same request adapter. No service-role credential or release-specific API key is accepted, and release payloads contain no credential-derived fingerprint.
+- The normal OAuth session supplies the user access token; the explicit headless actor token uses the same request adapter. No legacy bootstrap, service-role credential, or release-specific API key is accepted, and release payloads contain no credential-derived fingerprint.
 - Edge/Database assert the live `data_product_manager` role for private and mutating actions. CLI-side checks are input and integrity checks, never an authorization substitute.
 - Upload requires exactly the Unit Process and standalone LifecycleModel+Result profiles in both TIDAS and ILCD. Local size, SHA-256, media type, and profile/format cardinality are validated before requesting signed upload URLs.
 - Calculation Bundle projections, chunks, and ZIPs are file-first. The CLI writes atomically with private permissions, refuses overwrite without `--force`, and exposes downloaded bytes only after exact size and SHA-256 verification.
