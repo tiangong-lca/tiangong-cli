@@ -1,3 +1,5 @@
+import { DEFAULT_OAUTH_REDIRECT_URI } from './oauth-loopback.js';
+
 export type EnvSpec = {
   key: string;
   required: boolean;
@@ -25,6 +27,77 @@ export const ENV_KEYS = {
   forceReauth: 'TIANGONG_LCA_FORCE_REAUTH',
 } as const;
 
+const PRODUCTION_PROJECT_URL = 'https://qgzvkongdjqiiamzbbts.supabase.co';
+
+// Public application configuration, not user credentials. Keep this as the one
+// source used by auth, remote adapters, and doctor; Skills must not copy it.
+export const OFFICIAL_PRODUCTION_PROFILE = Object.freeze({
+  apiBaseUrl: `${PRODUCTION_PROJECT_URL}/functions/v1`,
+  supabasePublishableKey: 'sb_publishable_EFWH4E61tpAtf82WQ37xTA_Fxa5OPyg',
+  oauthClientId: '1837c6d3-3c9d-48e0-bbf7-b532b78f9f76',
+  oauthRedirectUri: DEFAULT_OAUTH_REDIRECT_URI,
+  region: 'us-east-1',
+});
+
+const PRODUCTION_ENV_DEFAULTS: Readonly<Record<string, string>> = Object.freeze({
+  [ENV_KEYS.apiBaseUrl]: OFFICIAL_PRODUCTION_PROFILE.apiBaseUrl,
+  [ENV_KEYS.supabasePublishableKey]: OFFICIAL_PRODUCTION_PROFILE.supabasePublishableKey,
+  [ENV_KEYS.oauthClientId]: OFFICIAL_PRODUCTION_PROFILE.oauthClientId,
+  [ENV_KEYS.oauthRedirectUri]: OFFICIAL_PRODUCTION_PROFILE.oauthRedirectUri,
+});
+
+function runtimeToken(value: unknown): string {
+  return typeof value === 'string' ? value.trim() : '';
+}
+
+function isProductionBase(value: string): boolean {
+  return [
+    PRODUCTION_PROJECT_URL,
+    `${PRODUCTION_PROJECT_URL}/functions/v1`,
+    `${PRODUCTION_PROJECT_URL}/rest/v1`,
+  ].includes(value.replace(/\/+$/u, ''));
+}
+
+export function hasProductionProfileMismatch(env: NodeJS.ProcessEnv): boolean {
+  const base = runtimeToken(env[ENV_KEYS.apiBaseUrl]);
+  return Boolean(
+    base &&
+    !isProductionBase(base) &&
+    (runtimeToken(env[ENV_KEYS.oauthClientId]).toLowerCase() ===
+      OFFICIAL_PRODUCTION_PROFILE.oauthClientId ||
+      runtimeToken(env[ENV_KEYS.supabasePublishableKey]) ===
+        OFFICIAL_PRODUCTION_PROFILE.supabasePublishableKey),
+  );
+}
+
+function productionDefaults(env: NodeJS.ProcessEnv): Readonly<Record<string, string>> {
+  const mode = runtimeToken(env[ENV_KEYS.authMode]).toLowerCase();
+  // A caller-supplied bearer must always have an explicit destination and key.
+  if ((mode && mode !== 'oauth') || runtimeToken(env[ENV_KEYS.accessToken])) return {};
+
+  const base = runtimeToken(env[ENV_KEYS.apiBaseUrl]);
+  if (base && !isProductionBase(base)) return {};
+
+  for (const key of [
+    ENV_KEYS.supabasePublishableKey,
+    ENV_KEYS.oauthClientId,
+    ENV_KEYS.oauthRedirectUri,
+  ]) {
+    const configured = runtimeToken(env[key]);
+    const value = key === ENV_KEYS.oauthClientId ? configured.toLowerCase() : configured;
+    if (value && value !== PRODUCTION_ENV_DEFAULTS[key]) return {};
+  }
+  return PRODUCTION_ENV_DEFAULTS;
+}
+
+export function resolveProductionRuntimeEnv(env: NodeJS.ProcessEnv): NodeJS.ProcessEnv {
+  const resolved = { ...env };
+  for (const [key, value] of Object.entries(productionDefaults(env))) {
+    if (!runtimeToken(env[key])) resolved[key] = value;
+  }
+  return resolved;
+}
+
 export const ENV_SPECS: EnvSpec[] = [
   {
     key: ENV_KEYS.apiBaseUrl,
@@ -35,7 +108,7 @@ export const ENV_SPECS: EnvSpec[] = [
     key: ENV_KEYS.region,
     required: false,
     description: 'Target TianGong LCA API region',
-    defaultValue: 'us-east-1',
+    defaultValue: OFFICIAL_PRODUCTION_PROFILE.region,
   },
   {
     key: ENV_KEYS.supabasePublishableKey,
@@ -129,20 +202,23 @@ function parseBooleanEnv(value: string | null): boolean {
 
 export function resolveEnv(spec: EnvSpec, env: NodeJS.ProcessEnv): ResolvedEnv {
   const envValue = env[spec.key];
-  if (envValue) {
+  if (envValue && (!Object.hasOwn(PRODUCTION_ENV_DEFAULTS, spec.key) || runtimeToken(envValue))) {
     return {
       key: spec.key,
       source: 'env',
-      value: envValue,
+      value: envValue as string,
       present: true,
     };
   }
 
-  if (spec.defaultValue !== undefined) {
+  const defaults = productionDefaults(env);
+  const defaultValue =
+    spec.defaultValue ?? (Object.hasOwn(defaults, spec.key) ? defaults[spec.key] : undefined);
+  if (defaultValue !== undefined) {
     return {
       key: spec.key,
       source: 'default',
-      value: spec.defaultValue,
+      value: defaultValue,
       present: true,
     };
   }
@@ -209,6 +285,7 @@ export function buildDoctorReport(
 
   return {
     ok:
+      !hasProductionProfileMismatch(env) &&
       checks.every((check) => !check.required || check.present) &&
       [ENV_KEYS.oauthClientId, ENV_KEYS.accessToken].some(
         (key) => checks.find((check) => check.key === key)?.present,

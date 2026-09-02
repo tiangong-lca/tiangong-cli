@@ -1,5 +1,6 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
+import { loadDistModule } from './helpers/load-dist-module.js';
 import {
   __testInternals,
   buildDoctorReport,
@@ -131,7 +132,7 @@ test('buildDoctorReport records canonical TianGong LCA env keys', () => {
   );
   assert.equal(publishableCheck?.source, 'env');
 
-  assert.equal(buildDoctorReport({}, { loaded: false, path: '', count: 0 }).ok, false);
+  assert.equal(buildDoctorReport({}, { loaded: false, path: '', count: 0 }).ok, true);
   assert.equal(
     buildDoctorReport(
       {
@@ -143,4 +144,15 @@ test('buildDoctorReport records canonical TianGong LCA env keys', () => {
     ).ok,
     true,
   );
+});
+
+test('built runtime and source expose the same official bootstrap and doctor behavior', async () => {
+  const built = await loadDistModule<typeof import('../src/lib/env.js')>('src/lib/env.js');
+  assert.deepEqual(built.readRuntimeEnv({}), readRuntimeEnv({}));
+  assert.equal(
+    built.resolveEnv({ key: 'A', required: false, description: 'demo' }, {}).present,
+    false,
+  );
+  assert.equal(built.maskSecret('1234567890'), maskSecret('1234567890'));
+  assert.equal(built.buildDoctorReport({}, { loaded: false, path: '', count: 0 }).ok, true);
 });

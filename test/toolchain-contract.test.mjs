@@ -691,6 +691,7 @@ maybePackTest(
         process.platform === 'win32' ? 'tiangong-lca.cmd' : 'tiangong-lca',
       );
       assertRootBinBehavior(installedBinPath, consumerRoot, installedManifest.version);
+      assertProductionBootstrap(installedBinPath, consumerRoot);
       assertModuleHostBehavior(consumerRoot, cleanRepository, installedManifest.version);
 
       const consumerTree = pnpmList(consumerRoot, 'typescript');
@@ -960,11 +961,40 @@ function copyCleanPackageSource(destination) {
   }
 }
 
-function runBin(binPath, args, cwd) {
+function assertProductionBootstrap(binPath, cwd) {
+  const sessionFile = join(cwd, 'private-session', 'session.json');
+  const env = { TIANGONG_LCA_SESSION_FILE: sessionFile };
+  const doctor = runBin(binPath, ['doctor', '--json'], cwd, env);
+  assertSuccessfulExit(doctor);
+  const checks = JSON.parse(doctor.stdout).checks;
+  for (const key of [
+    'TIANGONG_LCA_API_BASE_URL',
+    'TIANGONG_LCA_SUPABASE_PUBLISHABLE_KEY',
+    'TIANGONG_LCA_OAUTH_CLIENT_ID',
+  ]) {
+    assert.equal(checks.find((check) => check.key === key)?.source, 'default');
+  }
+  for (const command of ['status', 'doctor-auth']) {
+    const result = runBin(binPath, ['auth', command, '--json'], cwd, env);
+    assert.ifError(result.error);
+    assert.equal(result.status, 1, result.stderr || result.stdout);
+    assert.equal(JSON.parse(result.stdout).status, 'login-required');
+    assert.equal(result.stderr, '');
+  }
+  assert.equal(existsSync(sessionFile), false, 'readiness checks must not create a session');
+  const invalid = runBin(binPath, ['auth', 'status', '--json'], cwd, {
+    ...env,
+    TIANGONG_LCA_API_BASE_URL: 'https://custom.supabase.co',
+  });
+  assert.equal(invalid.status, 2, invalid.stderr || invalid.stdout);
+}
+
+function runBin(binPath, args, cwd, env = {}) {
   return spawnSync(binPath, args, {
     cwd,
     encoding: 'utf8',
-    env: runtimeEnvironment(),
+    env: { ...runtimeEnvironment(), ...env },
+    timeout: 30_000,
     shell: process.platform === 'win32',
   });
 }

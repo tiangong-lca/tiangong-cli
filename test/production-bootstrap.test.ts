@@ -56,6 +56,25 @@ test('official endpoint aliases and blank example values share the bundled profi
     assert.equal(runtime.publishableKey, KEY);
     assert.equal(runtime.oauthRedirectUri, CALLBACK);
   }
+  assert.equal(
+    requireSupabaseRestRuntime({ TIANGONG_LCA_OAUTH_CLIENT_ID: CLIENT.toUpperCase() })
+      .oauthClientId,
+    CLIENT,
+  );
+});
+
+test('explicit Production identifiers cannot be paired with a different project', () => {
+  for (const extra of [
+    { TIANGONG_LCA_SUPABASE_PUBLISHABLE_KEY: KEY, TIANGONG_LCA_OAUTH_CLIENT_ID: USER },
+    { TIANGONG_LCA_SUPABASE_PUBLISHABLE_KEY: 'custom-key', TIANGONG_LCA_OAUTH_CLIENT_ID: CLIENT },
+  ]) {
+    const env = { TIANGONG_LCA_API_BASE_URL: 'https://dev.supabase.co', ...extra };
+    assert.throws(
+      () => requireSupabaseRestRuntime(env),
+      (error) => error instanceof CliError && error.code === 'SUPABASE_RUNTIME_PROFILE_MISMATCH',
+    );
+    assert.equal(buildDoctorReport(env, dotEnvStatus).ok, false);
+  }
 });
 
 test('partial custom endpoints, identities, callbacks, and headless tokens never inherit Production', () => {
@@ -154,6 +173,7 @@ test('clean CLI auth and search use Production without repo env or a preexisting
         JSON.parse(result.stdout).request.url,
         `${PROJECT}/functions/v1/${family}_hybrid_search`,
       );
+      assert.equal(JSON.parse(result.stdout).request.headers['x-region'], 'us-east-1');
     }
     const custom = await executeCli(
       [

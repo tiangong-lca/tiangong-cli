@@ -53,7 +53,7 @@ test('requireSupabaseRestRuntime, URL derivation, and auth headers follow the sh
   );
 
   assert.throws(
-    () => requireSupabaseRestRuntime({} as NodeJS.ProcessEnv),
+    () => requireSupabaseRestRuntime({}, { allowProductionDefaults: false }),
     (error) =>
       error instanceof CliError &&
       error.code === 'SUPABASE_REST_ENV_REQUIRED' &&

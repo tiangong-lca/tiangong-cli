@@ -22,9 +22,9 @@ checkPaths:
   - src/**
   - scripts/**
   - .github/workflows/**
-lastReviewedAt: 2026-08-31
-lastReviewedCommit: f6430d1b6c73589df77c449d3dfb871b976277b9
-lastReviewedNote: 'Reviewed for Issue #256: CLI 0.1.5 更新到 Node 24 最新兼容 Supabase/开发依赖，精确固定 TIDAS SDK 0.2.0，并把 peer 检查与 Prettier 3.9 格式纳入门禁。'
+lastReviewedAt: 2026-09-02
+lastReviewedCommit: cb5be8f1e209f69570f4c7ef4ef29d61af52eed7
+lastReviewedNote: 'Reviewed for Issue #263: 官方 Production 零配置登录、完整自定义环境、显式 headless 目标和本地 publish opt-in 与统一 CLI profile 对齐。'
 related:
   - AGENTS.md
   - .docpact/config.yaml
@@ -215,9 +215,11 @@ Review note, 2026-08-31: Issue #247 修复并发 CLI 进程交接 `session.json.
 
 Review note, 2026-08-31: Issue #250 修复 0.1.4 release matrix 的 Windows coverage gap。session cache 私有 read/write helper 可由测试显式注入 `linux`/`win32`，生产调用仍默认 `process.platform`；因此每个 runner 都能证明 POSIX private-mode 拒绝、目录/文件 chmod 以及 Windows 跳过目录 chmod。session schema、atomic rename、token、公开 API、依赖与认证行为不变。
 
-初始化时，把 `.env.example` 复制成仓库根目录下的 `.env`。推荐直接用编辑器或文件管理器完成这一步，这样 macOS / Linux / Windows 都不需要自行翻译 shell 命令。
+官方 Production 无需创建 `.env`，安装后直接运行 `tiangong-lca auth login`，在浏览器完成授权，再运行 `tiangong-lca auth doctor-auth --json`。未登录时 `auth status` / `doctor-auth` 返回 `login-required`（exit 1），而不是缺少 client ID。`doctor` 的配置就绪不等于用户已登录。
 
-当前统一 CLI 的公开命令面必需环境变量是这一组：
+`src/lib/env.ts` 是唯一 Production public profile 的来源，统一提供 URL、publishable key、CLI public client、已注册 callback 和 region。Skills 不复制这些值。只有 Dev/self-hosted/custom client 才需要按 `.env.example` 配置完整的同项目 URL/key/client；自定义 callback 也必须已注册。空白 public 字段或精确的官方 URL 别名可用默认 profile；任一不匹配的显式字段均禁止混补 Production，已知 Production client/key 不得搭配自定义 URL。`--base-url` 也不能绕过这个边界。
+
+自定义环境使用的标准变量（下列空值只是模板，不是官方 Production 的前置要求）：
 
 ```bash
 TIANGONG_LCA_API_BASE_URL=
@@ -233,7 +235,7 @@ TIANGONG_LCA_FORCE_REAUTH=false
 
 `TIANGONG_LCA_OAUTH_CLIENT_ID` 是环境专属、已注册的 public client ID，不是 secret。先在可信终端运行 `tiangong-lca auth login`；后续 Edge Functions 与 direct Supabase 命令统一使用 OAuth access token，过期前按需旋转 refresh token。默认回调必须与 OAuth client 中登记的完整 URI 完全一致；OAuth client redirect URI 不支持 wildcard。
 
-headless 任务可显式设置 `TIANGONG_LCA_AUTH_MODE=access-token` 与短期 `TIANGONG_LCA_ACCESS_TOKEN`。该 token 在线校验后只在当前进程复用，不写 session 文件，也不做 refresh/replay。
+headless 任务必须显式设置目标 `TIANGONG_LCA_API_BASE_URL`、其 `TIANGONG_LCA_SUPABASE_PUBLISHABLE_KEY`、`TIANGONG_LCA_AUTH_MODE=access-token` 与短期 `TIANGONG_LCA_ACCESS_TOKEN`。只给 token 不会隐式选择 Production。该 token 在线校验后只在当前进程复用，不写 session 文件，也不做 refresh/replay。
 
 此外，只有在显式启用 `tiangong-lca review process --enable-llm` 或 `tiangong-lca review flow --enable-llm` 时，才会额外使用这一组可选变量。这一整组配置默认都是 optional；只有打开 review LLM 模式时才需要填写。`TIANGONG_LCA_REVIEW_LLM_BASE_URL` 应指向一个 OpenAI-compatible Responses API 根地址，CLI 会向 `<base_url>/responses` 发请求：
 
@@ -258,7 +260,7 @@ TIANGONG_LCA_UNSTRUCTURED_CHUNK_TYPE=false
 TIANGONG_LCA_UNSTRUCTURED_RETURN_TXT=true
 ```
 
-当前也不需要额外配置通用的 `SUPABASE_URL`、`SUPABASE_KEY` 或 `TIANGONG_LCA_TIDAS_SDK_DIR`。CLI 会从 `TIANGONG_LCA_API_BASE_URL` 派生原生 `@supabase/supabase-js` client，复用 OAuth/headless/迁移兼容解析出的 actor access token，并直接从 `package.json` 依赖加载 `@tiangong-lca/tidas-sdk`。
+当前也不需要额外配置通用的 `SUPABASE_URL`、`SUPABASE_KEY` 或 `TIANGONG_LCA_TIDAS_SDK_DIR`。CLI 会从解析后的 `TIANGONG_LCA_API_BASE_URL` 派生原生 `@supabase/supabase-js` client，复用 OAuth/headless 解析出的 actor access token，并直接从 `package.json` 依赖加载 `@tiangong-lca/tidas-sdk`。
 
 Data API schema 不依赖 PostgREST 的默认 `public`。默认且唯一支持的配置为 `TIANGONG_LCA_DATA_API_PROFILE=api-contract-v1`；省略变量时也解析为该冻结合同，旧 `legacy-public-v1` 会在发送前失败。九张核心实体表继续显式使用 `public`，16 个 CLI RPC 则全部显式使用 `api`。当前合同固定到 database-engine commit `0a97cc761f8127ca379ab7d4df4395dab255707a`、migration head `20260807103000`，并在 manifest 中保存 migration tree 与关键 migration 的精确 hash。`private.cmd_dataset_alias_plan_guarded(jsonb)` 是不可暴露的内部 executor，不再是 CLI Data API capability；生产 alias 执行只使用 `run-protected` 的 preflight/gate/admit/read 四个 `api` façade。CLI 不接受 anon 或 service-role Data API 身份；GET/HEAD 与 manifest 明确分类为 read 的 RPC 仅在 401/403 后最多 refresh/replay 一次，relation write、mutation/unknown RPC 均不自动重放。
 
@@ -272,14 +274,14 @@ Data API schema 不依赖 PostgREST 的默认 `public`。默认且唯一支持�
 - CLI 仓库内部虽然已经有 `kb-search` / `unstructured` 模块，但当前没有任何公开命令消费这些 env
 - `.env.example` 会把这类 key 标成 internal/preparatory，防止代码和文档脱节，也防止调用方误认为它们已经是稳定公开 contract
 
-下表的“远程认证环境”指上面的 `API_BASE_URL + SUPABASE_PUBLISHABLE_KEY + OAuth client/已登录 session`，或显式 headless access token；迁移兼容模式另需显式 legacy mode 与旧 API key。
+下表的“远程认证环境”指官方 Production 默认 profile + 已登录 session，或完整自定义 URL/key/client + 已登录 session，或显式 URL/key/headless token。内置 profile 不会让原本本地执行的 publish 自动选择远程 executor；该选择仍要求显式远程配置，`--commit`、remote lookup、身份与审批 gate 不变。旧 API key/password 路径已移除。
 
 命令级 env 现实如下：
 
 | 命令组 | 必需 env |
 | --- | --- |
 | `doctor` | 无 |
-| `auth login` | `TIANGONG_LCA_API_BASE_URL`、`TIANGONG_LCA_SUPABASE_PUBLISHABLE_KEY`、`TIANGONG_LCA_OAUTH_CLIENT_ID` |
+| `auth login` | 官方 Production 无；自定义环境需完整 URL/key/client |
 | `auth status` | 远程认证环境；只检查本地 readiness，不访问网络或 refresh |
 | `auth whoami` | 远程认证环境；执行 live redacted identity receipt |
 | `auth doctor-auth` | 远程认证环境；local readiness + live redacted identity |

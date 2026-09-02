@@ -1031,10 +1031,15 @@ test('runLifecyclemodelBuildResultingProcess rejects unresolved process lookups 
         allow_remote_lookup: true,
       },
     });
-    await assertCliErrorAsync(
-      () => runLifecyclemodelBuildResultingProcess({ inputPath: requestPath }),
-      'LIFECYCLEMODEL_REMOTE_LOOKUP_ENV_REQUIRED',
-    );
+    for (const env of [
+      { TIANGONG_LCA_API_BASE_URL: 'https://custom.supabase.co' },
+      { TIANGONG_LCA_OAUTH_CLIENT_ID: '123e4567-e89b-42d3-a456-426614174000' },
+    ]) {
+      await assertCliErrorAsync(
+        () => runLifecyclemodelBuildResultingProcess({ inputPath: requestPath, env }),
+        'LIFECYCLEMODEL_REMOTE_LOOKUP_ENV_REQUIRED',
+      );
+    }
 
     writeJson(requestPath, {
       source_model: {

@@ -1,5 +1,6 @@
 import { createClient, type PostgrestError } from '@supabase/supabase-js';
 import { CliError } from './errors.js';
+import { hasProductionProfileMismatch, resolveProductionRuntimeEnv } from './env.js';
 import type { FetchLike, ResponseLike } from './http.js';
 import { DEFAULT_OAUTH_REDIRECT_URI, requireOAuthLoopbackRedirectUri } from './oauth-loopback.js';
 import { requireOAuthClientId } from './oauth-pkce.js';
@@ -71,7 +72,23 @@ function resolveSupabaseAuthMode(options: {
   return null;
 }
 
-export function requireSupabaseRestRuntime(env: NodeJS.ProcessEnv): SupabaseRestRuntime {
+export function requireSupabaseRestRuntime(
+  configuredEnv: NodeJS.ProcessEnv,
+  options: { allowProductionDefaults?: boolean } = {},
+): SupabaseRestRuntime {
+  if (hasProductionProfileMismatch(configuredEnv)) {
+    throw new CliError(
+      'Official Production OAuth configuration cannot be used with another API project.',
+      {
+        code: 'SUPABASE_RUNTIME_PROFILE_MISMATCH',
+        exitCode: 2,
+      },
+    );
+  }
+  const env =
+    options.allowProductionDefaults === false
+      ? configuredEnv
+      : resolveProductionRuntimeEnv(configuredEnv);
   const apiBaseUrl = trimToken(env.TIANGONG_LCA_API_BASE_URL);
   const oauthClientId = trimToken(env.TIANGONG_LCA_OAUTH_CLIENT_ID);
   const accessToken = trimToken(env.TIANGONG_LCA_ACCESS_TOKEN);
