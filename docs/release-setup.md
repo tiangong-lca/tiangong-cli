@@ -25,8 +25,8 @@ checkPaths:
   - scripts/docpact-gate.sh
   - scripts/install-git-hooks.sh
 lastReviewedAt: 2026-09-02
-lastReviewedCommit: cb5be8f1e209f69570f4c7ef4ef29d61af52eed7
-lastReviewedNote: 'Reviewed for Issue #263: bundling existing public OAuth application configuration adds no client secret, GitHub secret, dependency, workflow, publishing credential, or alternate publication path.'
+lastReviewedCommit: 3254d6167662121ca871090f6e57ff2a55578f28
+lastReviewedNote: 'Reviewed for Issue #266: CLI 0.1.8 reuses existing merge/tag/four-platform Trusted Publishing setup with no new credential, secret, dependency, workflow, environment, or alternate publication path.'
 related:
   - ../AGENTS.md
   - ../.docpact/config.yaml

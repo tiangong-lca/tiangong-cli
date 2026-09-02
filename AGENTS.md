@@ -38,8 +38,8 @@ checkPaths:
   - scripts/docpact-gate.sh
   - scripts/install-git-hooks.sh
 lastReviewedAt: 2026-09-02
-lastReviewedCommit: cb5be8f1e209f69570f4c7ef4ef29d61af52eed7
-lastReviewedNote: 'Reviewed for Issue #263: the CLI owns one public Production bootstrap; custom-project isolation, explicit headless targets, offline publish selection, and clean installed-consumer proof are mandatory.'
+lastReviewedCommit: 3254d6167662121ca871090f6e57ff2a55578f28
+lastReviewedNote: 'Reviewed for Issue #266: CLI 0.1.8 releases the merged Production bootstrap; the version-only delta preserves runtime, OAuth safety, exact dependencies, lock bytes, and automated four-platform/provenance gates.'
 related:
   - .docpact/config.yaml
   - docs/agents/repo-validation.md

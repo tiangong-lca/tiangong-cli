@@ -32,8 +32,8 @@ checkPaths:
   - scripts/docpact-gate.sh
   - scripts/install-git-hooks.sh
 lastReviewedAt: 2026-09-02
-lastReviewedCommit: cb5be8f1e209f69570f4c7ef4ef29d61af52eed7
-lastReviewedNote: 'Reviewed for Issue #263: clean installed consumers, isolated PKCE/session proof, partial/cross-project rejection, and offline publish regression join unchanged exact-100% and four-platform gates.'
+lastReviewedCommit: 3254d6167662121ca871090f6e57ff2a55578f28
+lastReviewedNote: 'Reviewed for Issue #266: 0.1.8 requires absence proof, RED version fixtures, exact 100%, package consumers, all four real platforms, cryptographic publication proof, and fresh OAuth/installed Skills acceptance.'
 related:
   - ../../AGENTS.md
   - ../../.docpact/config.yaml

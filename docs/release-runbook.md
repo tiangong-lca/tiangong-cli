@@ -26,8 +26,8 @@ checkPaths:
   - scripts/docpact-gate.sh
   - scripts/install-git-hooks.sh
 lastReviewedAt: 2026-09-02
-lastReviewedCommit: cb5be8f1e209f69570f4c7ef4ef29d61af52eed7
-lastReviewedNote: 'Reviewed for Issue #263: the bootstrap feature keeps version 0.1.7; a separate patch release must retain four-platform/Trusted Publishing proof and add fresh zero-config OAuth and installed Skills acceptance before workspace integration.'
+lastReviewedCommit: 3254d6167662121ca871090f6e57ff2a55578f28
+lastReviewedNote: 'Reviewed for Issue #266: 0.1.8 follows merged bootstrap #263 via a version-only PR, exact-head and merge four-platform gates, automatic tag/Trusted Publishing, and verified CLI/Skills/docs workspace handoff.'
 related:
   - ../AGENTS.md
   - ../.docpact/config.yaml
@@ -123,6 +123,8 @@ Use this document for:
 Do not use this document for one-time repository or npm registry setup. For one-time setup, see [release-setup.md](./release-setup.md).
 
 ## Preconditions
+
+Review note, 2026-09-02: Issue #266 releases the Production bootstrap from merge `d74edd8ed22f78056784326fb26e11741a1363b8` as 0.1.8. npm/tag absence was proved before RED fixture checkpoint `17d920d`; package checkpoint `3254d61` changes only version identity. Keep the lock, dependencies, runtime, and workflows byte-identical, prove all four platforms before and after merge, then verify signed registry provenance and fresh zero-config browser/installed Skills consumers. Skills #91 and public Docs #180 join the exact workspace handoff.
 
 Before starting a release:
 

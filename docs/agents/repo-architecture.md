@@ -31,8 +31,8 @@ checkPaths:
   - scripts/docpact-gate.sh
   - scripts/install-git-hooks.sh
 lastReviewedAt: 2026-09-02
-lastReviewedCommit: cb5be8f1e209f69570f4c7ef4ef29d61af52eed7
-lastReviewedNote: 'Reviewed for Issue #263: auth, remote adapters, and doctor share one Production profile; configured-only publish detection opts out and session/PKCE/request ownership is unchanged.'
+lastReviewedCommit: 3254d6167662121ca871090f6e57ff2a55578f28
+lastReviewedNote: 'Reviewed for Issue #266: only package identity and four existing version fixtures advance to 0.1.8; the merged single-profile auth/remote architecture, exports, dependencies, and lock remain unchanged.'
 related:
   - ../../AGENTS.md
   - ../../.docpact/config.yaml
