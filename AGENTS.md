@@ -38,8 +38,8 @@ checkPaths:
   - scripts/docpact-gate.sh
   - scripts/install-git-hooks.sh
 lastReviewedAt: 2026-09-02
-lastReviewedCommit: 2bd3158d0ef4813ed30744c2bc6c7f084ae45dd9
-lastReviewedNote: 'Reviewed after integrating Issues #262 and #263: the CLI owns one isolated Production bootstrap, while Process writes preserve an optional exact model_id/model_version pair, reject version without ID, and never resolve the latest Model.'
+lastReviewedCommit: f56c5349414c73a7f3f967ebd667064ce08a26e3
+lastReviewedNote: 'Reviewed for release #266 after parallel main #262/#263: CLI 0.1.8 preserves Production bootstrap isolation and exact Process/Model version pairs; publication requires production database #589 compatibility plus the unchanged release gates.'
 related:
   - .docpact/config.yaml
   - docs/agents/repo-validation.md

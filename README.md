@@ -32,13 +32,13 @@ checkPaths:
   - test/public-auth-identity-receipt.test.ts
   - test/lca-release*.test.ts
 lastReviewedAt: 2026-09-02
-lastReviewedCommit: cb5be8f1e209f69570f4c7ef4ef29d61af52eed7
-lastReviewedNote: 'Reviewed for Issue #263: official Production login needs no env; complete custom environments, explicit headless destinations, private sessions, and local publish opt-in remain enforced.'
+lastReviewedCommit: 3254d6167662121ca871090f6e57ff2a55578f28
+lastReviewedNote: 'Reviewed for Issue #266: published CLI 0.1.8 ships zero-config official Production login and complete custom/headless boundaries through the existing verified release path.'
 ---
 
 # TianGong LCA CLI
 
-Package: `@tiangong-lca/cli` Executable: `tiangong-lca` Current package version: `0.1.7` Node: `24.19.0`
+Package: `@tiangong-lca/cli` Executable: `tiangong-lca` Current package version: `0.1.8` Node: `24.19.0`
 
 Repository development is single-track on pnpm `11.24.0` and TypeScript `7.0.2`. The published package remains a clean, package-manager-neutral consumer artifact: it contains runtime files only, not pnpm, TypeScript, Oxlint, tests, source-only tooling, or repository lockfiles.
 

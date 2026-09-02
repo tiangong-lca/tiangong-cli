@@ -31,8 +31,8 @@ checkPaths:
   - scripts/docpact-gate.sh
   - scripts/install-git-hooks.sh
 lastReviewedAt: 2026-09-02
-lastReviewedCommit: 2bd3158d0ef4813ed30744c2bc6c7f084ae45dd9
-lastReviewedNote: 'Reviewed after integrating Issues #262 and #263: auth, remote adapters, and doctor share one isolated Production profile; Process command adapters preserve an optional exact LifecycleModel ownership pair without a lookup or relationship entity.'
+lastReviewedCommit: f56c5349414c73a7f3f967ebd667064ce08a26e3
+lastReviewedNote: 'Reviewed for release #266 on main f56c534: bundled OAuth bootstrap and additive exact Model-version adapters are retained unchanged; the release-only delta stays metadata and production database compatibility is a gate.'
 related:
   - ../../AGENTS.md
   - ../../.docpact/config.yaml

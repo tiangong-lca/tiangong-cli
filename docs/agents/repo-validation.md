@@ -32,8 +32,8 @@ checkPaths:
   - scripts/docpact-gate.sh
   - scripts/install-git-hooks.sh
 lastReviewedAt: 2026-09-02
-lastReviewedCommit: 2bd3158d0ef4813ed30744c2bc6c7f084ae45dd9
-lastReviewedNote: 'Reviewed after integrating Issues #262 and #263: exact-coverage proof covers Production bootstrap isolation plus pair precedence, forwarding, legacy omission, invalid partial ownership, and the no-latest-Model invariant.'
+lastReviewedCommit: f56c5349414c73a7f3f967ebd667064ce08a26e3
+lastReviewedNote: 'Reviewed for release #266 after #262/#263 integration: rerun exact 100%, four-platform, clean OAuth/Skills and Process ownership tests; require production RPC compatibility before automatic publication.'
 related:
   - ../../AGENTS.md
   - ../../.docpact/config.yaml
