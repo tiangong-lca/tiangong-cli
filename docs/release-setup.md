@@ -25,8 +25,8 @@ checkPaths:
   - scripts/docpact-gate.sh
   - scripts/install-git-hooks.sh
 lastReviewedAt: 2026-09-02
-lastReviewedCommit: cb5be8f1e209f69570f4c7ef4ef29d61af52eed7
-lastReviewedNote: 'Reviewed for Issue #263: bundling existing public OAuth application configuration adds no client secret, GitHub secret, dependency, workflow, publishing credential, or alternate publication path.'
+lastReviewedCommit: 2bd3158d0ef4813ed30744c2bc6c7f084ae45dd9
+lastReviewedNote: 'Reviewed after integrating Issues #262 and #263: bundled public OAuth configuration and additive Process ownership require no new secret, workflow, credential, dependency, environment, tag, or publication path.'
 related:
   - ../AGENTS.md
   - ../.docpact/config.yaml

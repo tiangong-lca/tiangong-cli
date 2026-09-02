@@ -19,13 +19,13 @@ test('data api manifest freezes the exact database contract and complete CLI inv
   assert.equal(DATA_API_CONTRACT.schemaVersion, 'tiangong-lca-cli.data-api-contract.v1');
   assert.equal(
     DATA_API_CONTRACT.databaseContract.databaseCommit,
-    '0a97cc761f8127ca379ab7d4df4395dab255707a',
+    '1320dcc506fe37af6b625ae30fbe0bec38cf87c6',
   );
-  assert.equal(DATA_API_CONTRACT.databaseContract.migrationHead, '20260807103000');
+  assert.equal(DATA_API_CONTRACT.databaseContract.migrationHead, '20260902104500');
   assert.equal(DATA_API_CONTRACT.databaseContract.contractReady, true);
   assert.equal(
     DATA_API_CONTRACT.databaseContract.migrationSetGitTreeSha,
-    '116c1f08b5490eec630f997403b07c3fcb830a69',
+    '88e212220c0037cee673d0522340d3cca5e791dd',
   );
   assert.deepEqual(DATA_API_CONTRACT.databaseContract.contractMigrations, {
     fullSchemaCutover: {
@@ -36,15 +36,26 @@ test('data api manifest freezes the exact database contract and complete CLI inv
       path: 'supabase/migrations/20260806160000_api_contract_closure.sql',
       sha256: 'e0e7aec8e03d70c60ee0d5c2b332ce73fa7b4b229725c9a9fcb0e1a1d7e8c511',
     },
+    processModelVersionContract: {
+      path: 'supabase/migrations/20260902100000_process_model_version_contract.sql',
+      sha256: '99cbaf474098281ea8c57fcef093174d0ef78a18300f133dd8cc6f9e59a4a29b',
+    },
+    processSaveDraftModelVersion: {
+      path: 'supabase/migrations/20260902103509_add_process_model_version_to_dataset_save_draft.sql',
+      sha256: 'ca93f3279673e292803bd8c477aec76b772c7246e16114808d31e64994037723',
+    },
     migrationHead: {
-      path: 'supabase/migrations/20260807103000_data_product_consumer_facades.sql',
-      sha256: 'd7fe990d487a75a8aecced5af580d27f176e74ac00f18e7fa6e6d88733152646',
+      path: 'supabase/migrations/20260902104500_use_exact_model_version_in_review_ownership.sql',
+      sha256: '538ec3001f7683b57817e4a89973ded127522ce94521720ed583de99711bbe60',
     },
   });
-  assert.equal(DATA_API_CONTRACT.databaseContract.snapshotRole, 'frozen-post-cutover-api-contract');
+  assert.equal(
+    DATA_API_CONTRACT.databaseContract.snapshotRole,
+    'frozen-process-model-version-contract',
+  );
   assert.equal(
     DATA_API_CONTRACT.databaseContract.provenanceIssue,
-    'tiangong-lca/database-engine#422',
+    'tiangong-lca/database-engine#589',
   );
   assert.equal(DATA_API_CONTRACT.databaseContract.publicCoreTableCount, 9);
   assert.equal(DATA_API_CONTRACT.databaseContract.publicRoutineCount, 0);

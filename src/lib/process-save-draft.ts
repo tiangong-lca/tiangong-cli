@@ -68,6 +68,7 @@ export type SyncStateAwareProcessRecordOptions = {
   timeoutMs?: number;
   audit?: JsonObject;
   modelId?: string | null;
+  modelVersion?: string | null;
   targetUserId?: string | null;
 };
 
@@ -248,6 +249,7 @@ async function saveDraft(options: {
   fetchImpl: FetchLike;
   audit?: JsonObject;
   modelId?: string | null;
+  modelVersion?: string | null;
 }): Promise<ProcessSaveDraftRpcResult> {
   const capability = resolveDataApiCapability({
     kind: 'rpc',
@@ -271,6 +273,7 @@ async function saveDraft(options: {
         p_version: options.version,
         p_json_ordered: options.payload,
         p_model_id: options.modelId ?? null,
+        p_model_version: options.modelVersion ?? null,
         p_audit: options.audit ?? null,
       },
       timeoutMs: options.timeoutMs,
@@ -329,6 +332,13 @@ export async function syncStateAwareProcessRecord(
       env: options.env,
       fetchImpl: options.fetchImpl,
       timeoutMs,
+      extraData:
+        options.modelId !== undefined || options.modelVersion !== undefined
+          ? {
+              modelId: options.modelId ?? null,
+              modelVersion: options.modelVersion ?? null,
+            }
+          : undefined,
     });
   }
 
@@ -347,6 +357,7 @@ export async function syncStateAwareProcessRecord(
       fetchImpl: options.fetchImpl,
       audit: options.audit,
       modelId: options.modelId,
+      modelVersion: options.modelVersion,
     }),
     visible_row: draftRow,
   };

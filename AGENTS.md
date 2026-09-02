@@ -38,8 +38,8 @@ checkPaths:
   - scripts/docpact-gate.sh
   - scripts/install-git-hooks.sh
 lastReviewedAt: 2026-09-02
-lastReviewedCommit: cb5be8f1e209f69570f4c7ef4ef29d61af52eed7
-lastReviewedNote: 'Reviewed for Issue #263: the CLI owns one public Production bootstrap; custom-project isolation, explicit headless targets, offline publish selection, and clean installed-consumer proof are mandatory.'
+lastReviewedCommit: 2bd3158d0ef4813ed30744c2bc6c7f084ae45dd9
+lastReviewedNote: 'Reviewed after integrating Issues #262 and #263: the CLI owns one isolated Production bootstrap, while Process writes preserve an optional exact model_id/model_version pair, reject version without ID, and never resolve the latest Model.'
 related:
   - .docpact/config.yaml
   - docs/agents/repo-validation.md
