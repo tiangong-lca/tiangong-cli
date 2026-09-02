@@ -25,8 +25,8 @@ checkPaths:
   - scripts/docpact-gate.sh
   - scripts/install-git-hooks.sh
 lastReviewedAt: 2026-09-02
-lastReviewedCommit: 72e27f3421937d8c07dcad77372fb3f548436e44
-lastReviewedNote: 'Reviewed for Issue #257: CLI 0.1.6 reuses the existing merge-triggered four-platform, tag, and native pnpm Trusted Publishing setup with no new secret, workflow, credential, environment, or publication path.'
+lastReviewedCommit: 068d793e06cfeedfb6c4aa79fd82d0c57c615f5e
+lastReviewedNote: 'Reviewed for Issue #262: the additive Process ownership contract requires no new secret, workflow, credential, environment, tag, or publication path.'
 related:
   - ../AGENTS.md
   - ../.docpact/config.yaml

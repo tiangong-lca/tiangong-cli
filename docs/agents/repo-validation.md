@@ -31,9 +31,9 @@ checkPaths:
   - scripts/docpact
   - scripts/docpact-gate.sh
   - scripts/install-git-hooks.sh
-lastReviewedAt: 2026-08-31
-lastReviewedCommit: 499c910d07bb6a5e2e1cd8e4403a5a617d4269bb
-lastReviewedNote: 'Reviewed for Issue #260: CLI 0.1.7 broker-era proof removes API-key/password/session compatibility and the historical runner while retaining exact 100%, OAuth/headless, four-platform, and provenance gates.'
+lastReviewedAt: 2026-09-02
+lastReviewedCommit: 068d793e06cfeedfb6c4aa79fd82d0c57c615f5e
+lastReviewedNote: 'Reviewed for Issue #262: exact-coverage proof covers pair precedence, forwarding, legacy omission, invalid partial ownership, and the no-latest-Model invariant.'
 related:
   - ../../AGENTS.md
   - ../../.docpact/config.yaml

@@ -25,9 +25,9 @@ checkPaths:
   - scripts/docpact
   - scripts/docpact-gate.sh
   - scripts/install-git-hooks.sh
-lastReviewedAt: 2026-09-01
-lastReviewedCommit: 72e27f3421937d8c07dcad77372fb3f548436e44
-lastReviewedNote: 'Reviewed for Issue #260: CLI 0.1.7 removes user API-key/password bootstrap and legacy session/runner compatibility, preserves OAuth/headless proof gates, and uses the existing four-platform Trusted Publishing path.'
+lastReviewedAt: 2026-09-02
+lastReviewedCommit: 068d793e06cfeedfb6c4aa79fd82d0c57c615f5e
+lastReviewedNote: 'Reviewed for Issue #262: the additive Process ownership fields do not change package versioning, four-platform publication, OAuth, provenance, or consumer release gates.'
 related:
   - ../AGENTS.md
   - ../.docpact/config.yaml

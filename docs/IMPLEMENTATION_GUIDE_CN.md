@@ -22,8 +22,8 @@ checkPaths:
   - src/**
   - test/**
 lastReviewedAt: 2026-09-02
-lastReviewedCommit: 72e27f3421937d8c07dcad77372fb3f548436e44
-lastReviewedNote: 'Reviewed for Issue #256: Node 24 最新兼容依赖与 Prettier 3.9 格式迁移不改变命令、OAuth/session、精确 TIDAS 0.2 或发布所有权，并由 package contract 保持 env 矩阵为合法两列表格。'
+lastReviewedCommit: 068d793e06cfeedfb6c4aa79fd82d0c57c615f5e
+lastReviewedNote: '为 Issue #262 复核：Process 命令从元数据解析精确 model_id/model_version 对，禁止仅提供版本，并保持旧调用省略字段的兼容行为。'
 related:
   - ../AGENTS.md
   - ../.docpact/config.yaml

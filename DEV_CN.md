@@ -23,8 +23,8 @@ checkPaths:
   - scripts/**
   - .github/workflows/**
 lastReviewedAt: 2026-09-02
-lastReviewedCommit: 72e27f3421937d8c07dcad77372fb3f548436e44
-lastReviewedNote: 'Reviewed for Issue #256: CLI 0.1.5 更新到 Node 24 最新兼容 Supabase/开发依赖，精确固定 TIDAS SDK 0.2.0，并把 peer 检查与 Prettier 3.9 格式纳入门禁。'
+lastReviewedCommit: 068d793e06cfeedfb6c4aa79fd82d0c57c615f5e
+lastReviewedNote: '为 Issue #262 复核：Process 写入可选地透传精确 model_id/model_version 对；原有 Node、依赖、OAuth 与开发门禁不变。'
 related:
   - AGENTS.md
   - .docpact/config.yaml

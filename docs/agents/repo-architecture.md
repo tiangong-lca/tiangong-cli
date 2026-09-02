@@ -30,9 +30,9 @@ checkPaths:
   - scripts/docpact
   - scripts/docpact-gate.sh
   - scripts/install-git-hooks.sh
-lastReviewedAt: 2026-08-31
-lastReviewedCommit: 499c910d07bb6a5e2e1cd8e4403a5a617d4269bb
-lastReviewedNote: 'Reviewed for Issue #260: CLI 0.1.7 removes user API-key/password bootstrap and legacy session/runner architecture; OAuth or explicit verified headless tokens remain the only actor paths.'
+lastReviewedAt: 2026-09-02
+lastReviewedCommit: 068d793e06cfeedfb6c4aa79fd82d0c57c615f5e
+lastReviewedNote: 'Reviewed for Issue #262: Process metadata parsing and command adapters preserve an optional exact LifecycleModel ownership pair without introducing a lookup or a new relationship entity.'
 related:
   - ../../AGENTS.md
   - ../../.docpact/config.yaml
