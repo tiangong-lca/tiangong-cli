@@ -189,7 +189,7 @@ test('bootstrap adoption, verified local seeds and incomplete publication retain
   }
 });
 
-test('default cache selection and component structure failures remain conservative', async () => {
+test('default cache selection and component structure failures remain conservative', async (t) => {
   const { verifyRuntimeComponent } = await import('../src/lib/runtime/manager.js');
   const { defaultRuntimeCache } = await import('../src/lib/runtime/storage.js');
   const f = runtimeComponentFixture(),
@@ -205,6 +205,27 @@ test('default cache selection and component structure failures remain conservati
     });
     const state = result.components[0]!;
     const file = path.join(state.root, 'bin', 'tool');
+    const lstat = fs.lstatSync;
+    t.mock.method(fs, 'lstatSync', (...args: unknown[]) => {
+      const stat = Reflect.apply(lstat, fs, args) as fs.Stats | fs.BigIntStats;
+      if (String(args[0]) === file)
+        Reflect.set(
+          stat,
+          'mode',
+          typeof stat.mode === 'bigint'
+            ? (stat.mode & ~BigInt(0o777)) | BigInt(0o644)
+            : (stat.mode & ~0o777) | 0o644,
+        );
+      return stat;
+    });
+    assert.throws(
+      () => verifyRuntimeComponent(state.root, trusted.manifest.components[0]!, 'linux-x64'),
+      /executable mode changed/u,
+    );
+    assert.doesNotThrow(() =>
+      verifyRuntimeComponent(state.root, trusted.manifest.components[0]!, 'win32-x64'),
+    );
+    t.mock.restoreAll();
     fs.unlinkSync(file);
     assert.throws(
       () => verifyRuntimeComponent(state.root, trusted.manifest.components[0]!, result.platform),
@@ -226,6 +247,7 @@ test('default cache selection and component structure failures remain conservati
     assert.deepEqual(await pruneRuntimeComponents(trusted), { removed: [], retained: [] });
     assert.ok(fs.existsSync(defaultRuntimeCache()));
   } finally {
+    t.mock.restoreAll();
     for (const key of keys) {
       if (old[key] === undefined) delete process.env[key];
       else process.env[key] = old[key];

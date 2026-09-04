@@ -42,7 +42,7 @@ test('runtime launch binds argv and keeps leases until aborted in-flight work dr
       async (executable, argv, child) => {
         assert.ok(executable.startsWith(fs.realpathSync(f.cacheDir)));
         assert.equal(argv[0], '--fixed');
-        assert.ok(argv[1]?.endsWith('metadata/license.txt'));
+        assert.ok(argv[1]?.split(path.sep).join('/').endsWith('metadata/license.txt'));
         assert.equal(argv[2], '--json');
         assert.equal(child.shell, false);
         assert.equal(child.env?.TIANGONG_LCA_PASSWORD, undefined);
@@ -329,7 +329,7 @@ test('launch defaults remain isolated and post-install drift is rejected before 
       argv: [],
       fetchImpl: async () => new Response(f.archive),
     }).catch((error) => ({ error }));
-    assert.ok(result.error);
+    assert.ok('error' in result ? result.error : result.status !== 0);
     const cache = defaultRuntimeCache();
     fs.mkdirSync(path.join(cache, 'work'), { recursive: true });
     await assert.rejects(

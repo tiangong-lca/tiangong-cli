@@ -205,6 +205,11 @@ test('strict component manifests reject ambiguity, missing metadata and unsafe c
     (linux.launches as Json[])[0]!.platform = 'linux-x64';
     linux.minimum_hosts = { 'linux-x64': { os_release: '4.18.0', glibc: '2.28' } };
     parseRuntimeManifest(linux);
+    const mac = clone(f.manifest);
+    component(mac).platform = 'darwin-arm64';
+    (mac.launches as Json[])[0]!.platform = 'darwin-arm64';
+    mac.minimum_hosts = { 'darwin-arm64': { os_release: '24.0.0', glibc: null } };
+    parseRuntimeManifest(mac);
   } finally {
     f.close();
   }
