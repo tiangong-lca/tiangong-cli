@@ -481,14 +481,14 @@ function resolveTidasBinary(explicitValue: string | undefined, env: NodeJS.Proce
 function assertSupportedPlatform(platform: NodeJS.Platform, arch: string): void {
   const supported =
     (platform === 'linux' && (arch === 'x64' || arch === 'arm64')) ||
-    (platform === 'darwin' && (arch === 'x64' || arch === 'arm64')) ||
+    (platform === 'darwin' && arch === 'arm64') ||
     (platform === 'win32' && arch === 'x64');
   if (!supported) {
     throw new CliError(`No supported Rust tidas artifact exists for ${platform}/${arch}.`, {
       code: 'DATASET_IMPORT_LCA_PLATFORM_UNSUPPORTED',
       exitCode: 69,
       details: {
-        supported: ['linux/x64', 'linux/arm64', 'darwin/x64', 'darwin/arm64', 'win32/x64'],
+        supported: ['linux/x64', 'linux/arm64', 'darwin/arm64', 'win32/x64'],
       },
     });
   }

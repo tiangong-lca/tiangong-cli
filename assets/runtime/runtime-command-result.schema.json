@@ -1,0 +1,95 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "urn:tiangong-lca:runtime-command-result:v1",
+  "oneOf": [
+    {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["schema", "manifest_sha256", "platform", "status", "components"],
+      "properties": {
+        "schema": {
+          "const": "tiangong-lca.runtime-status.v1"
+        },
+        "manifest_sha256": {
+          "type": "string",
+          "pattern": "^[0-9a-f]{64}$"
+        },
+        "platform": {
+          "enum": ["darwin-arm64", "linux-x64", "linux-arm64", "win32-x64"]
+        },
+        "status": {
+          "enum": ["ready", "missing", "blocked"]
+        },
+        "components": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": ["id", "version", "key", "status", "root", "reason"],
+            "properties": {
+              "id": {
+                "type": "string"
+              },
+              "version": {
+                "type": "string"
+              },
+              "key": {
+                "type": "string",
+                "pattern": "^[0-9a-f]{64}$"
+              },
+              "status": {
+                "enum": ["ready", "missing", "unverified", "corrupt"]
+              },
+              "root": {
+                "type": "string"
+              },
+              "reason": {
+                "type": ["string", "null"]
+              }
+            }
+          },
+          "maxItems": 128
+        }
+      }
+    },
+    {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["schema", "removed", "retained"],
+      "properties": {
+        "schema": {
+          "const": "tiangong-lca.runtime-prune.v1"
+        },
+        "removed": {
+          "type": "array",
+          "items": {
+            "type": "string",
+            "pattern": "^[0-9a-f]{64}$"
+          },
+          "maxItems": 128
+        },
+        "retained": {
+          "type": "array",
+          "items": {
+            "type": "string",
+            "pattern": "^[0-9a-f]{64}$"
+          },
+          "maxItems": 128
+        }
+      }
+    },
+    {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["schema", "released"],
+      "properties": {
+        "schema": {
+          "const": "tiangong-lca.runtime-lease-release.v1"
+        },
+        "released": {
+          "type": "boolean"
+        }
+      }
+    }
+  ]
+}

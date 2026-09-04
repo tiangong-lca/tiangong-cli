@@ -1,0 +1,254 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "urn:tiangong-lca:runtime-bootstrap-lock:v1",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schema",
+    "bootstrap_protocol",
+    "posix_script_sha256",
+    "powershell_script_sha256",
+    "manifest_url",
+    "manifest_bytes",
+    "manifest_sha256",
+    "app_entry",
+    "darwin_arm64_component_key",
+    "darwin_arm64_archive_url",
+    "darwin_arm64_archive_bytes",
+    "darwin_arm64_archive_sha256",
+    "darwin_arm64_integrity_path",
+    "darwin_arm64_integrity_sha256",
+    "darwin_arm64_file_count",
+    "darwin_arm64_node_path",
+    "darwin_arm64_cli_path",
+    "linux_x64_component_key",
+    "linux_x64_archive_url",
+    "linux_x64_archive_bytes",
+    "linux_x64_archive_sha256",
+    "linux_x64_integrity_path",
+    "linux_x64_integrity_sha256",
+    "linux_x64_file_count",
+    "linux_x64_node_path",
+    "linux_x64_cli_path",
+    "linux_arm64_component_key",
+    "linux_arm64_archive_url",
+    "linux_arm64_archive_bytes",
+    "linux_arm64_archive_sha256",
+    "linux_arm64_integrity_path",
+    "linux_arm64_integrity_sha256",
+    "linux_arm64_file_count",
+    "linux_arm64_node_path",
+    "linux_arm64_cli_path",
+    "win32_x64_component_key",
+    "win32_x64_archive_url",
+    "win32_x64_archive_bytes",
+    "win32_x64_archive_sha256",
+    "win32_x64_integrity_path",
+    "win32_x64_integrity_sha256",
+    "win32_x64_file_count",
+    "win32_x64_node_path",
+    "win32_x64_cli_path"
+  ],
+  "properties": {
+    "schema": {
+      "const": "tiangong-lca.runtime-bootstrap-lock.v1"
+    },
+    "bootstrap_protocol": {
+      "const": "tiangong-lca.runtime-bootstrap.v1"
+    },
+    "posix_script_sha256": {
+      "type": "string",
+      "pattern": "^[0-9a-f]{64}$"
+    },
+    "powershell_script_sha256": {
+      "type": "string",
+      "pattern": "^[0-9a-f]{64}$"
+    },
+    "manifest_url": {
+      "type": "string",
+      "format": "uri",
+      "pattern": "^https://"
+    },
+    "manifest_bytes": {
+      "type": "integer",
+      "minimum": 1,
+      "maximum": 33554432
+    },
+    "manifest_sha256": {
+      "type": "string",
+      "pattern": "^[0-9a-f]{64}$"
+    },
+    "app_entry": {
+      "type": "string",
+      "pattern": "^[a-z0-9][a-z0-9._-]{0,63}$"
+    },
+    "darwin_arm64_component_key": {
+      "type": "string",
+      "pattern": "^[0-9a-f]{64}$"
+    },
+    "darwin_arm64_archive_url": {
+      "type": "string",
+      "format": "uri",
+      "pattern": "^https://"
+    },
+    "darwin_arm64_archive_bytes": {
+      "type": "integer",
+      "minimum": 1,
+      "maximum": 536870912
+    },
+    "darwin_arm64_archive_sha256": {
+      "type": "string",
+      "pattern": "^[0-9a-f]{64}$"
+    },
+    "darwin_arm64_integrity_path": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 255
+    },
+    "darwin_arm64_integrity_sha256": {
+      "type": "string",
+      "pattern": "^[0-9a-f]{64}$"
+    },
+    "darwin_arm64_file_count": {
+      "type": "integer",
+      "minimum": 1,
+      "maximum": 50000
+    },
+    "darwin_arm64_node_path": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 255
+    },
+    "darwin_arm64_cli_path": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 255
+    },
+    "linux_x64_component_key": {
+      "type": "string",
+      "pattern": "^[0-9a-f]{64}$"
+    },
+    "linux_x64_archive_url": {
+      "type": "string",
+      "format": "uri",
+      "pattern": "^https://"
+    },
+    "linux_x64_archive_bytes": {
+      "type": "integer",
+      "minimum": 1,
+      "maximum": 536870912
+    },
+    "linux_x64_archive_sha256": {
+      "type": "string",
+      "pattern": "^[0-9a-f]{64}$"
+    },
+    "linux_x64_integrity_path": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 255
+    },
+    "linux_x64_integrity_sha256": {
+      "type": "string",
+      "pattern": "^[0-9a-f]{64}$"
+    },
+    "linux_x64_file_count": {
+      "type": "integer",
+      "minimum": 1,
+      "maximum": 50000
+    },
+    "linux_x64_node_path": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 255
+    },
+    "linux_x64_cli_path": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 255
+    },
+    "linux_arm64_component_key": {
+      "type": "string",
+      "pattern": "^[0-9a-f]{64}$"
+    },
+    "linux_arm64_archive_url": {
+      "type": "string",
+      "format": "uri",
+      "pattern": "^https://"
+    },
+    "linux_arm64_archive_bytes": {
+      "type": "integer",
+      "minimum": 1,
+      "maximum": 536870912
+    },
+    "linux_arm64_archive_sha256": {
+      "type": "string",
+      "pattern": "^[0-9a-f]{64}$"
+    },
+    "linux_arm64_integrity_path": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 255
+    },
+    "linux_arm64_integrity_sha256": {
+      "type": "string",
+      "pattern": "^[0-9a-f]{64}$"
+    },
+    "linux_arm64_file_count": {
+      "type": "integer",
+      "minimum": 1,
+      "maximum": 50000
+    },
+    "linux_arm64_node_path": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 255
+    },
+    "linux_arm64_cli_path": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 255
+    },
+    "win32_x64_component_key": {
+      "type": "string",
+      "pattern": "^[0-9a-f]{64}$"
+    },
+    "win32_x64_archive_url": {
+      "type": "string",
+      "format": "uri",
+      "pattern": "^https://"
+    },
+    "win32_x64_archive_bytes": {
+      "type": "integer",
+      "minimum": 1,
+      "maximum": 536870912
+    },
+    "win32_x64_archive_sha256": {
+      "type": "string",
+      "pattern": "^[0-9a-f]{64}$"
+    },
+    "win32_x64_integrity_path": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 255
+    },
+    "win32_x64_integrity_sha256": {
+      "type": "string",
+      "pattern": "^[0-9a-f]{64}$"
+    },
+    "win32_x64_file_count": {
+      "type": "integer",
+      "minimum": 1,
+      "maximum": 50000
+    },
+    "win32_x64_node_path": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 255
+    },
+    "win32_x64_cli_path": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 255
+    }
+  }
+}

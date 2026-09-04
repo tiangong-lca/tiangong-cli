@@ -17,8 +17,8 @@ checkPaths:
   - package.json
   - src/**
   - test/**
-lastReviewedAt: 2026-08-20
-lastReviewedCommit: 0b0518fb2b35446ebdeab72ca6de634677ae72b8
+lastReviewedAt: 2026-09-05
+lastReviewedCommit: c1e6009ede464ccf2e34a5b198438e4da2d7246e
 lastReviewedNote: 'Reviewed for Issue #214: the remote identity and derivative contract cleanup adds no skill-owned compatibility surface.'
 related:
   - ../AGENTS.md
@@ -29,11 +29,13 @@ related:
 
 # TianGong Skills -> CLI 迁移清单（审计修订版）
 
+2026-09-05 复核：Issue #274 新增一对 CLI-owned 的预 Node bootstrap：POSIX `tiangong-runtime-bootstrap.sh` 与 Windows PowerShell `.ps1`。它们只验证相邻 lock、下载/校验运行组件并把控制权交给 TypeScript CLI manager；不承载 LCA 业务、认证、数据写入或兼容逻辑。两者共享机器合同和跨平台测试，因此不是已退役的 POSIX-only 业务 shell shim，也不改变“业务运行时已脱离 Python 和无法跨平台 shell”的结论。
+
 这份文档替代上一版“迁移已全部完成”的口径。
 
 当前更准确的判断是：
 
-- `tiangong-lca-cli` 和 `tiangong-lca-skills` 的主运行时路径，已经完全收敛到 TypeScript / Node + `tiangong-lca` CLI
+- `tiangong-lca-cli` 和 `tiangong-lca-skills` 的业务运行时路径已经完全收敛到 TypeScript / Node + `tiangong-lca` CLI；唯一 shell 是进入 Node 之前成对交付的 POSIX/PowerShell bootstrap
 - 仓库治理、开发质量门、公开文档和跨平台验证已经形成可验证闭环
 - 这可以证明主运行时已经脱离 Python 和无法跨平台的 shell
 - 但如果要满足更严格的“一句话标准”，还必须同时清掉 direct dependency / env / docs / CI 的剩余收口项；不能只拿本 checklist 直接下“完全是”的结论
@@ -76,7 +78,7 @@ related:
 - [x] `tiangong-lca-cli` 的稳定入口是 Node：`bin/tiangong-lca.js` -> `dist/src/main.js`
 - [x] `tiangong-lca-skills` 当前保留的 wrapper 入口都是原生 Node `.mjs`
 - [x] skills wrapper 当前的 canonical 路径是 `wrapper -> tiangong-lca`
-- [x] 两个仓库当前没有现存的 `.py` 或 `.sh` 运行时文件
+- [x] 两个仓库没有业务 `.py` 或 POSIX-only `.sh` runtime；CLI #274 的预 Node POSIX bootstrap 有对应 PowerShell 实现、固定 lock 和 byte/cold-start 测试
 - [x] 业务 Python runtime、shell shim、MCP transport 已不再是主执行路径
 - [x] `tiangong-lca-cli` 已把 `.env.example`、README、`DEV_CN.md` 收敛成 public / optional / internal-preparatory 三层 env 说明
 - [x] `tiangong-lca-cli` 的本地 coverage 路径已改成 Node-only 脚本，不再依赖 POSIX 风格内联 env 赋值
@@ -178,7 +180,7 @@ related:
 
 ### Phase 7：最终审计与关账
 
-- [x] 重新跑代码扫描推荐扫描项： `rg --files -g '*.py' -g '*.sh'` `rg -n 'init_skill\\.py|quick_validate\\.py|run_lifecyclemodel_review\\.py|validate\\.py'` `rg -n 'curl -o-|install\\.sh \\| bash|cp \\.env\\.example \\.env|TIANGONG_LCA_COVERAGE=1'` 验收标准：结果只剩明确允许的历史说明，且不再出现在主路径文档和质量门里已完成：`tiangong-lca-cli` 与 `tiangong-lca-skills` 均未再发现运行时 `.py` / `.sh` 文件；命中项只剩 checklist 自身的历史整改记录，以及 `tiangong-lca-skills/lifecyclemodel-automated-builder/references/source-analysis.md` 中明确标注为 historical upstream note 的 `validate.py` 背景说明
+- [x] 重新跑代码扫描推荐扫描项： `rg --files -g '*.py' -g '*.sh'` `rg -n 'init_skill\\.py|quick_validate\\.py|run_lifecyclemodel_review\\.py|validate\\.py'` `rg -n 'curl -o-|install\\.sh \\| bash|cp \\.env\\.example \\.env|TIANGONG_LCA_COVERAGE=1'` 验收标准：结果只剩明确允许的历史说明，以及 CLI #274 成对、非业务、预 Node 的 bootstrap；不再存在 Python/POSIX-only 业务主路径已完成：`tiangong-lca-cli` 与 `tiangong-lca-skills` 均未再发现业务运行时 `.py` / POSIX-only `.sh` 文件；CLI #274 的成对 bootstrap 是受治理的启动适配器；其他命中项只剩 checklist 自身的历史整改记录，以及 `tiangong-lca-skills/lifecyclemodel-automated-builder/references/source-analysis.md` 中明确标注为 historical upstream note 的 `validate.py` 背景说明
 
 - [x] 重新跑最小 smoke test 推荐命令： `node ./bin/tiangong-lca.js --help` `node ./bin/tiangong-lca.js doctor --json` `node ./scripts/validate-skills.mjs --help` 以及至少两个 representative wrapper 的 `--help` 验收标准：所有入口都只经过 Node / CLI 路径，不再依赖 Python 或 shell shim已完成：`node ./bin/tiangong-lca.js --help`、`node ./bin/tiangong-lca.js doctor --json`、`node ./scripts/validate-skills.mjs --help`、`node ./process-automated-builder/scripts/run-process-automated-builder.mjs --help`、`node ./lifecyclemodel-recursive-orchestrator/scripts/run-lifecyclemodel-recursive-orchestrator.mjs --help` 均已执行，入口链路只经过 Node / CLI
 

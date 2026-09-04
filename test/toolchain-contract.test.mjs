@@ -44,6 +44,25 @@ const EXPECTED_BATCH_RUNTIME_EXPORTS = Object.freeze([
   'sha256BatchJson',
   'withBatchRunLock',
 ]);
+const EXPECTED_RUNTIME_RUNTIME_EXPORTS = Object.freeze([
+  'CLI_RUNTIME_DESCRIPTOR_SCHEMA',
+  'CLI_RUNTIME_EXPECTATION_SCHEMA',
+  'RUNTIME_ARCHIVE_FORMAT',
+  'RUNTIME_BOOTSTRAP_PROTOCOL',
+  'RUNTIME_MANIFEST_SCHEMA',
+  'RUNTIME_PLATFORMS',
+  'assertCliRuntimeMatches',
+  'assertWorkspaceCompatibility',
+  'describeCliRuntime',
+  'ensureRuntimeComponents',
+  'executeRuntimeLaunch',
+  'inspectRuntimeComponents',
+  'loadTrustedRuntimeManifest',
+  'parseRuntimeManifest',
+  'pruneRuntimeComponents',
+  'trustRuntimeManifest',
+  'writeRuntimeComponentArchive',
+]);
 const EXPECTED_AUTH_IDENTITY_RUNTIME_EXPORTS = Object.freeze([
   'AUTH_IDENTITY_MAX_TIMEOUT_MS',
   'AUTH_IDENTITY_RECEIPT_SCHEMA',
@@ -134,7 +153,10 @@ test('pnpm build permissions and release-age exceptions are exact and versioned'
   const exceptions = [...workspaceText.matchAll(/^  - ['"]?(.+?)['"]?$/gmu)].map(
     (match) => match[1],
   );
-  assert.equal(exceptions.length, 21);
+  assert.equal(exceptions.length, 20);
+  assert.equal(exceptions.includes('@oxlint/binding-darwin-x64@1.80.0'), false);
+  for (const target of ['darwin-arm64', 'linux-x64-gnu', 'linux-arm64-gnu', 'win32-x64-msvc'])
+    assert.ok(exceptions.includes(`@oxlint/binding-${target}@1.80.0`));
   assert.deepEqual(
     exceptions.filter(
       (entry) =>
@@ -574,6 +596,10 @@ test('the package exposes only the launcher and typed public primitive subpaths'
       types: './dist/src/command-spec.d.ts',
       import: './dist/src/command-spec.js',
     },
+    './runtime': {
+      types: './dist/src/runtime.d.ts',
+      import: './dist/src/runtime.js',
+    },
     './batch': {
       types: './dist/src/batch.d.ts',
       import: './dist/src/batch.js',
@@ -730,6 +756,11 @@ function assertRootBinBehavior(binPath, cwd, expectedVersion) {
   assert.equal(version.stdout, `${expectedVersion}\n`);
   assert.equal(version.stderr, '');
 
+  const runtime = runBin(binPath, ['runtime', 'describe', '--json'], cwd);
+  assertSuccessfulExit(runtime);
+  assert.equal(JSON.parse(runtime.stdout).package.version, expectedVersion);
+  assert.equal(runtime.stderr, '');
+
   const error = runBin(binPath, ['--definitely-unknown'], cwd);
   assert.ifError(error.error);
   assert.equal(error.status, 2, error.stderr || error.stdout);
@@ -747,6 +778,7 @@ function assertModuleHostBehavior(consumerRoot, compilerRoot, expectedVersion) {
   const authIdentitySpecifier = `${PACKAGE_JSON.name}/auth-identity-receipt`;
   const commandSpecSpecifier = `${PACKAGE_JSON.name}/command-spec`;
   const batchSpecifier = `${PACKAGE_JSON.name}/batch`;
+  const runtimeSpecifier = `${PACKAGE_JSON.name}/runtime`;
   const esmHostPath = join(consumerRoot, 'esm-host.mjs');
   const cjsHostPath = join(consumerRoot, 'cjs-host.cjs');
   const rootHostPath = join(consumerRoot, 'root-host.mjs');
@@ -763,6 +795,13 @@ function assertModuleHostBehavior(consumerRoot, compilerRoot, expectedVersion) {
       `import { parseAuthIdentityReceipt } from '${authIdentitySpecifier}';`,
       `import { createFoundryCommandSpec } from '${commandSpecSpecifier}';`,
       `import * as batchApi from '${batchSpecifier}';`,
+      `import * as runtimeApi from '${runtimeSpecifier}';`,
+      `import { describeCliRuntime, assertCliRuntimeMatches, CLI_RUNTIME_EXPECTATION_SCHEMA } from '${runtimeSpecifier}';`,
+      `if (JSON.stringify(Object.keys(runtimeApi).sort()) !== ${JSON.stringify(JSON.stringify([...EXPECTED_RUNTIME_RUNTIME_EXPORTS].sort()))}) throw new Error('ESM runtime named-export contract failed');`,
+      `let manifestRejected=false; try { runtimeApi.parseRuntimeManifest({}); } catch(error) { manifestRejected=error?.code==='RUNTIME_MANIFEST_INVALID'; } if(!manifestRejected) throw new Error('Runtime manifest parser failed open');`,
+      'const observedRuntime = describeCliRuntime();',
+      `if (observedRuntime.package.version !== '${expectedVersion}' || observedRuntime.scope !== 'cli-package') throw new Error('ESM runtime descriptor failed');`,
+      'assertCliRuntimeMatches({ schema: CLI_RUNTIME_EXPECTATION_SCHEMA, package_version: observedRuntime.package.version, platform: observedRuntime.platform, content_sha256: observedRuntime.content_sha256, node_version: observedRuntime.node.version, node_sha256: observedRuntime.node.sha256 });',
       `import { createBatchContract, runBoundedBatch, withBatchRunLock } from '${batchSpecifier}';`,
       `if (JSON.stringify(Object.keys(batchApi).sort()) !== ${JSON.stringify(JSON.stringify([...EXPECTED_BATCH_RUNTIME_EXPORTS].sort()))}) throw new Error('ESM batch named-export contract failed');`,
       `if (JSON.stringify(Object.keys(authIdentityApi).sort()) !== ${JSON.stringify(JSON.stringify([...EXPECTED_AUTH_IDENTITY_RUNTIME_EXPORTS].sort()))}) throw new Error('ESM auth identity named-export contract failed');`,
@@ -801,6 +840,12 @@ function assertModuleHostBehavior(consumerRoot, compilerRoot, expectedVersion) {
   writeFileSync(
     typescriptHostPath,
     [
+      `import { describeCliRuntime, assertCliRuntimeMatches, ensureRuntimeComponents, type CliRuntimeDescriptor, type CliRuntimeExpectation, type RuntimeManifest, type RuntimeManagerOptions } from '${runtimeSpecifier}';`,
+      'const observedRuntime: CliRuntimeDescriptor = describeCliRuntime();',
+      "const expectation: CliRuntimeExpectation = { schema: 'tiangong-lca.cli-runtime-expectation.v1', package_version: observedRuntime.package.version, platform: observedRuntime.platform, content_sha256: observedRuntime.content_sha256, node_version: observedRuntime.node.version, node_sha256: observedRuntime.node.sha256 };",
+      'assertCliRuntimeMatches(expectation);',
+      'const ensure = ensureRuntimeComponents; const managerOptions: RuntimeManagerOptions = {};',
+      'void ensure; void managerOptions; const manifestType: RuntimeManifest | null = null; void manifestType;',
       `import { createFoundryCommandSpec, type FoundryCommandSpec } from '${commandSpecSpecifier}';`,
       `import { parseAuthIdentityReceipt, type AuthIdentityReceipt } from '${authIdentitySpecifier}';`,
       `import { createBatchContract, runBoundedBatch, withBatchRunLock, type BatchRunLockReceipt, type BatchRunResult } from '${batchSpecifier}';`,
@@ -834,6 +879,9 @@ function assertModuleHostBehavior(consumerRoot, compilerRoot, expectedVersion) {
       `  const { parseAuthIdentityReceipt } = authIdentityApi;`,
       `  const { createFoundryCommandSpec } = await import('${commandSpecSpecifier}');`,
       `  const batchApi = await import('${batchSpecifier}');`,
+      `  const runtimeApi = await import('${runtimeSpecifier}');`,
+      `  if (JSON.stringify(Object.keys(runtimeApi).sort()) !== ${JSON.stringify(JSON.stringify([...EXPECTED_RUNTIME_RUNTIME_EXPORTS].sort()))}) throw new Error('CJS runtime named-export contract failed');`,
+      `  if (runtimeApi.describeCliRuntime().package.version !== '${expectedVersion}') throw new Error('CJS runtime descriptor failed');`,
       `  const { createBatchContract, runBoundedBatch, withBatchRunLock } = batchApi;`,
       `  if (JSON.stringify(Object.keys(batchApi).sort()) !== ${JSON.stringify(JSON.stringify([...EXPECTED_BATCH_RUNTIME_EXPORTS].sort()))}) throw new Error('CJS batch named-export contract failed');`,
       `  if (JSON.stringify(Object.keys(authIdentityApi).sort()) !== ${JSON.stringify(JSON.stringify([...EXPECTED_AUTH_IDENTITY_RUNTIME_EXPORTS].sort()))}) throw new Error('CJS auth identity named-export contract failed');`,
@@ -933,6 +981,15 @@ function assertPackedFiles(fileMetadata) {
     'the packed auth identity declaration is missing',
   );
   assert.ok(packedFiles.includes('dist/src/batch.d.ts'), 'the packed batch declaration is missing');
+  for (const file of [
+    'dist/src/runtime.d.ts',
+    'assets/runtime/cli-runtime-descriptor.schema.json',
+    'assets/runtime/cli-runtime-expectation.schema.json',
+    'assets/runtime/runtime-manifest.schema.json',
+    'assets/runtime/runtime-command-result.schema.json',
+    'assets/runtime/runtime-bootstrap-lock.schema.json',
+  ])
+    assert.ok(packedFiles.includes(file), 'the packed runtime contract is missing: ' + file);
   assert.deepEqual(
     forbidden,
     [],

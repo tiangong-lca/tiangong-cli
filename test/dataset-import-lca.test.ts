@@ -319,12 +319,12 @@ test('discovery, platform, source, target, and runtime bounds fail closed', asyn
     for (const [platform, arch] of [
       ['linux', 'x64'],
       ['linux', 'arm64'],
-      ['darwin', 'x64'],
       ['darwin', 'arm64'],
       ['win32', 'x64'],
     ] as const) {
       assert.doesNotThrow(() => __testInternals.assertSupportedPlatform(platform, arch));
     }
+    assert.throws(() => __testInternals.assertSupportedPlatform('darwin', 'x64'), /No supported/u);
     assert.throws(() => __testInternals.assertSupportedPlatform('win32', 'arm64'), /No supported/u);
     assert.throws(() => __testInternals.assertSupportedPlatform('freebsd', 'x64'), /No supported/u);
 

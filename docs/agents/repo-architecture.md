@@ -41,6 +41,8 @@ related:
   - ../../DEV_CN.md
 ---
 
+The `src/runtime.ts` public facade and bounded `src/lib/runtime/**` owners expose package/Node/asset identity through one read-only API and `runtime describe`. [The runtime distribution contract](runtime-distribution-contract.md) separates this package observation from complete component/dependency provenance, host ABI readiness and task authorization. `src/main.ts` admits supported architecture tuples before loading user configuration and bypasses dotenv for runtime commands. The manifest/manager/cache/lease/exec owners are now implemented under #274; the no-Node POSIX/PowerShell bootstrap is implemented under `scripts/bootstrap/`; public component assembly and C1 qualification remain required.
+
 ## Repo Shape
 
 This repo is organized around one stable launcher plus a library-style `src/lib/**` tree that implements command families and shared helpers.
@@ -152,6 +154,8 @@ Review note, 2026-07-25: Issue #208 adds only an admission artifact path: an ext
 | `src/cli.ts` | top-level command dispatch, parsing, and help routing |
 | `src/auth-identity-receipt.ts` | supported offline parser/constants/types package subpath for safe identity receipts |
 | `src/command-spec.ts` | supported content-bound CommandSpec package subpath |
+| `src/runtime.ts` | supported installed CLI/Node/asset inspection and exact expectation API |
+| `src/lib/runtime/**` | bounded runtime descriptor, file integrity and distribution command owners |
 | `src/batch.ts` | stable re-export facade for the supported batch package subpath |
 | `src/lib/batch/**` | bounded acyclic owners for batch types, contracts/errors, run locks, projection, scheduler runtime, attempts/recovery, and engine coordination |
 | `src/lib/oauth-pkce.ts` | strict Supabase public-client authorize/token/refresh/UserInfo protocol with S256 PKCE and bounded responses |
@@ -175,14 +179,15 @@ If a task changes help output, exit behavior, or how subcommands are registered,
 
 ### Typed public primitives
 
-The package root remains intentionally unsupported. Three explicit module subpaths are owned here:
+The package root remains intentionally unsupported. Four explicit module subpaths are owned here:
 
+- `@tiangong-lca/cli/runtime` owns package/Node observations and exact expectation checks. The public facade describes its own source/emitted package through bounded file owners; it does not confer component provenance, task permission or data completion.
 - `@tiangong-lca/cli/auth-identity-receipt` directly re-exports the exact safe-projection parser, schema/timeout constants, and receipt types from the existing auth owner. It exposes no fresh-session/network runner or test internals; internal `dist/src/lib/**` remains unreachable through package exports.
 - `@tiangong-lca/cli/command-spec` preserves `tiangong-foundry.command-spec.v1` exact keys and canonical authority over executable, argv, and artifact bindings. `display` never executes. Artifact bytes and SHA-256 are revalidated before sync or async `shell:false` spawn; timeout, abort, clock, sleep, resolver, and spawn are injectable, but timeout values must fit Node's timer maximum.
 - `@tiangong-lca/cli/batch` separates overall run identity from exact per-item identity/content/policy contracts. It preflights every projection before unsafe work and rechecks identity/content/policy/resource before resumed acceptance or claim. Identity drift or getter failure yields `BatchItemIdentityDriftError` plus `item_identity_drift` without execution, while every already-started worker drains before return. Escaping infrastructure errors atomically mark the scheduler fatal where serialized, close new claims, drain all claimed workers with `allSettled`, and reject with the first recorded cause. It caps concurrency at 64 and serializes matching exclusive keys through per-resource FIFO cursors whose heads enter a private binary min-heap. Blocked items remain unclaimed, later free keys can run, stop/rejection gates same-key successor exposure, and normal ready scheduling is near `O(n log k)`. It exposes input, resource-aware claim, and completion order and awaits a monotonic event sink. Read retry is explicitly classified and timer-capped; mutation retry is configuration-invalid, and consumed attempts can proceed only through explicit readback recovery.
 - The same batch subpath exposes one run-directory lock domain independent of identity. It uses a physical create-only state lock across processes and an owner/scope token in async context: only a still-live scope owned by the current holder may reenter, while siblings and callbacks inherited from a completed scope contend. The physical owner and top-level promise stay active until detached nested scopes drain; local waiters wake only after physical cleanup, and live or foreign-host locks are never stale-deleted. Public callers supply no PID, host, or ownership clock; timeout/poll inputs must be non-negative safe integers within Node's timer maximum.
 
-These primitives contain no Foundry profile, LCA stage, endpoint, artifact filename, credential, or blocker taxonomy. Callers project those domain facts at their own boundary.
+The auth, CommandSpec and batch primitives contain no Foundry profile, LCA stage, endpoint, artifact filename, credential, or blocker taxonomy. Runtime inspection additionally owns the CLI package layout and file inventory only. Callers project those domain facts at their own boundary.
 
 ### Session and remote access layer
 

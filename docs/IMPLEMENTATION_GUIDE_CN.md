@@ -32,6 +32,8 @@ related:
   - ./agents/repo-validation.md
 ---
 
+#274 新增 `runtime describe --json` 与公开 `@tiangong-lca/cli/runtime` 模块，检查 CLI 包、资产和 Node 文件内容。runtime 命令不加载项目 `.env`，不登录、不下载；启动入口拒绝 macOS Intel，同时保留 Linux/Windows x64。组件 manifest、安装缓存、离线复用、lease/prune 和受控执行已由 #274 实现；无 Node 的 POSIX/PowerShell bootstrap 已实现并由相邻 lock 固定；公开组件和四平台 C1 仍需发行资格验证，见 [Runtime Distribution Contract](./agents/runtime-distribution-contract.md)。该 API 尚未随现有公开 0.1.9 发布。
+
 # TianGong LCA CLI 实施指南
 
 Review note, 2026-08-31: Issue #256 keeps package 0.1.5 and the existing implementation architecture while refreshing Supabase JS/tooling to the latest Node 24-compatible releases. TIDAS SDK is pinned exactly to npm-latest 0.2.0, peer checks join the pre-push gate, and Prettier 3.9's mechanical rewrite is isolated. Issue #257 owns the later version-only 0.1.6 publication.

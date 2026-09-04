@@ -5,9 +5,20 @@ import process from 'node:process';
 import { pathToFileURL } from 'node:url';
 import { executeCli } from './cli.js';
 import { loadDotEnv } from './lib/dotenv.js';
+import { isRuntimeCommand } from './lib/runtime/command.js';
+import { runtimePlatform } from './lib/runtime/descriptor.js';
+import { toErrorPayload } from './lib/errors.js';
 
 export async function main(argv: string[], env: NodeJS.ProcessEnv = process.env): Promise<number> {
-  const dotEnvStatus = loadDotEnv(process.cwd(), env);
+  try {
+    runtimePlatform(process.platform, process.arch);
+  } catch (error) {
+    process.stderr.write(`${JSON.stringify(toErrorPayload(error))}\n`);
+    return 69;
+  }
+  const dotEnvStatus = isRuntimeCommand(argv)
+    ? { loaded: false, path: path.join(process.cwd(), '.env'), count: 0 }
+    : loadDotEnv(process.cwd(), env);
   const result = await executeCli(argv, {
     env,
     dotEnvStatus,

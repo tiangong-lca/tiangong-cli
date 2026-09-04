@@ -51,6 +51,8 @@ related:
   - docs/release-setup.md
 ---
 
+Runtime distribution work is owned by [the runtime distribution contract](docs/agents/runtime-distribution-contract.md). Issue #274 adds the public `./runtime` inspection/manager API and `runtime describe|ensure|status|prune|lease-release|exec`. Component installation is manifest/SHA/inventory/lease bound and grants no task or data authority; the no-Node POSIX/PowerShell bootstrap is checked in under `scripts/bootstrap/`; adjacent product locks are generated only after a product manifest exists. Public C1 and component qualification remain separate gates. New CLI launches and TIDAS artifact selection support only macOS arm64, Linux x64/arm64 and Windows x64. The macOS Intel Oxlint release-age exception is removed; transitive lockfile records remain untouched.
+
 Private live-account testing is maintainer-only and requires explicit account authorization. Follow [the live case guide](docs/agents/live-case-testing.md); public CLI authentication remains OAuth-only and personal credentials never enter public CI.
 
 ## Repo Contract
@@ -97,7 +99,7 @@ Review note, 2026-06-07: release 0.0.14 keeps the CLI-owned dataset classificati
 
 Review note, 2026-06-11: release 0.0.15 keeps command nouns/verbs, repo ownership, and release workflow boundaries unchanged. `dataset import-lca convert` now matches the tidas-tools 0.0.28 import_lca CLI surface: the wrapper no longer passes a bare `--process-bundles` flag, forwards `--no-process-bundles` when bundles are disabled, and derives report bundle/mapping file fields from on-disk state.
 
-Review note, 2026-08-20: Issue #222 keeps `dataset import-lca convert` on the unified Rust runtime and advances its native compatibility gate to the stable `0.2.x` line. The adapter requires `tidas.operation-report.v1`, forwards only native import controls, and preserves native exit classes and atomic publication. The CLI does not bundle a platform binary or copy import domain logic; the npm package carries only a small smoke fixture. Supported artifact targets are Linux x86_64/ARM64, macOS Intel/Apple Silicon, and Windows x86_64; Windows ARM64 fails closed.
+Review note, 2026-08-20: Issue #222 keeps `dataset import-lca convert` on the unified Rust runtime and advances its native compatibility gate to the stable `0.2.x` line. The adapter requires `tidas.operation-report.v1`, forwards only native import controls, and preserves native exit classes and atomic publication. The CLI does not bundle a platform binary or copy import domain logic; the npm package carries only a small smoke fixture. Supported artifact targets are Linux x86_64/ARM64, macOS Apple Silicon (arm64), and Windows x86_64; Windows ARM64 fails closed.
 
 Review note, 2026-07-11: `dataset maintenance plan/apply/verify` is now the CLI-owned v1 row-level maintenance contract. It freezes exact current-user RLS scope and audit artifacts before any write, executes only approved `save_draft` / `delete` actions through platform command paths, and verifies the result with an independent readback.
 
