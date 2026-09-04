@@ -17,6 +17,7 @@ import {
   loadPrivateCredentials,
   LOGIN_ORIGIN,
   safeCaseReport,
+  withCaseBrowser,
   type CaseStage,
 } from './case-safety.js';
 
@@ -65,9 +66,8 @@ async function main(): Promise<void> {
   };
   stage = 'browser-login';
   const browser = await chromium.launch({ headless: true, env: cleanEnv });
-  const browserContext = await browser.newContext({ locale: 'en-US', acceptDownloads: false });
   // No tracing, HAR, video, screenshots, saved browser storage, or response logging.
-  try {
+  await withCaseBrowser(browser, async (browserContext) => {
     const page = await browserContext.newPage();
     page.setDefaultTimeout(45_000);
     // Abort navigation off the reviewed auth, login and loopback origins.
@@ -108,10 +108,7 @@ async function main(): Promise<void> {
         await allow.click();
       },
     });
-  } finally {
-    await browserContext.close();
-    await browser.close();
-  }
+  });
   stage = 'source-identity';
   const session = await resolveSupabaseUserSession({
     runtime,

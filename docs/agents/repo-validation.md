@@ -32,7 +32,7 @@ checkPaths:
   - scripts/docpact-gate.sh
   - scripts/install-git-hooks.sh
 lastReviewedAt: 2026-09-04
-lastReviewedCommit: b4701984b4a86fe4680fa5995d0a0b6753dbdfd6
+lastReviewedCommit: 1b159e7092151b981895661a5c2371e9d13e3301
 lastReviewedNote: 'Reviewed for CLI #268: private OAuth case harness and exact dev-only Playwright; public OAuth behavior, package runtime, four-platform release and 100% src coverage requirements remain unchanged.'
 related:
   - ../../AGENTS.md

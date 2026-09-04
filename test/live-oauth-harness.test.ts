@@ -16,6 +16,7 @@ import {
   createPrivateCase,
   loadPrivateCredentials,
   safeCaseReport,
+  withCaseBrowser,
 } from '../scripts/live/case-safety.js';
 
 test('credentials are private, unique, and never echoed in validation failures', () => {
@@ -93,4 +94,36 @@ test('public report projects only known non-sensitive result fields', () => {
   });
   assert.deepEqual(Object.keys(result).sort(), ['caseId', 'schema', 'stage', 'status']);
   assert.equal(JSON.stringify(result).includes('session'), false);
+});
+
+test('browser is closed when context creation or teardown fails', async () => {
+  for (const failure of ['create', 'run', 'context-close', 'none']) {
+    const calls: string[] = [];
+    const operation = withCaseBrowser(
+      {
+        async newContext() {
+          calls.push('create');
+          if (failure === 'create') throw new Error('create');
+          return {
+            async close() {
+              calls.push('context-close');
+              if (failure === 'context-close') throw new Error('close');
+            },
+          };
+        },
+        async close() {
+          calls.push('browser-close');
+        },
+      },
+      async () => {
+        calls.push('run');
+        if (failure === 'run') throw new Error('run');
+        return true;
+      },
+    );
+    if (failure === 'none') assert.equal(await operation, true);
+    else await assert.rejects(operation);
+    assert.equal(calls.at(-1), 'browser-close');
+    if (failure !== 'create') assert.equal(calls.at(-2), 'context-close');
+  }
 });

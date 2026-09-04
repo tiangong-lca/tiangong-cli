@@ -16,7 +16,7 @@ checkPaths:
   - package.json
   - test/toolchain-contract.test.mjs
 lastReviewedAt: 2026-09-04
-lastReviewedCommit: b4701984b4a86fe4680fa5995d0a0b6753dbdfd6
+lastReviewedCommit: 1b159e7092151b981895661a5c2371e9d13e3301
 lastReviewedNote: 'CLI #268 adds explicit private real OAuth qualification for workspace #980.'
 related:
   - repo-validation.md
@@ -54,4 +54,4 @@ Missing credentials, browser dependencies, CAPTCHA/MFA, rejected login, network 
 
 ## Public verification
 
-`node --import tsx --test test/live-oauth-harness.test.ts` checks credential file safety, exact origin enforcement, checkout isolation and output projection with synthetic inputs. The ordinary full CLI gate retains 100% source coverage and validates packed-consumer boundaries. Public CI never invokes `live:oauth`, downloads a browser for it, or receives personal account secrets.
+`node --import tsx --test test/live-oauth-harness.test.ts` checks credential file safety, exact origin enforcement, checkout isolation and output projection with synthetic inputs. The ordinary full CLI gate retains 100% source coverage and validates packed-consumer boundaries. Browser cleanup regression cases also prove browser closure when context creation, case execution or context teardown fails. Public CI never invokes `live:oauth`, downloads a browser for it, or receives personal account secrets.

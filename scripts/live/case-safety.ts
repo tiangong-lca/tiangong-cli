@@ -92,3 +92,22 @@ export function safeCaseReport(input: {
     status: input.status,
   };
 }
+
+export async function withCaseBrowser<Context extends { close(): Promise<void> }, Result>(
+  browser: {
+    newContext(options: { locale: string; acceptDownloads: boolean }): Promise<Context>;
+    close(): Promise<void>;
+  },
+  run: (context: Context) => Promise<Result>,
+): Promise<Result> {
+  try {
+    const context = await browser.newContext({ locale: 'en-US', acceptDownloads: false });
+    try {
+      return await run(context);
+    } finally {
+      await context.close();
+    }
+  } finally {
+    await browser.close();
+  }
+}
