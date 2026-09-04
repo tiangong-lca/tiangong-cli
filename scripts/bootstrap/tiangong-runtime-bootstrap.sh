@@ -128,10 +128,14 @@ if [ -e "$cache" ] && [ -L "$cache" ]; then fail cache_is_link; fi
 mkdir -p "$cache"
 if [ -e "$marker" ]; then [ -f "$marker" ] && [ ! -L "$marker" ] && [ "$(cat "$marker")" = '{"schema":"tiangong-lca.runtime-cache.v1"}' ] || fail cache_marker_invalid
 else
-  [ "$(find "$cache" -mindepth 1 -maxdepth 1 -print | wc -l | tr -d '[:space:]')" = 0 ] || fail cache_not_owned
-  if ! (set -C; printf '%s\n' '{"schema":"tiangong-lca.runtime-cache.v1"}' > "$marker") 2>/dev/null; then
-    tries=0; while [ ! -s "$marker" ] && [ "$tries" -lt 20 ]; do tries=$((tries + 1)); sleep 0.05; done
-    [ "$(cat "$marker" 2>/dev/null || true)" = '{"schema":"tiangong-lca.runtime-cache.v1"}' ] || fail cache_marker_invalid
+  if [ -e "$marker" ]; then
+    [ -f "$marker" ] && [ ! -L "$marker" ] && [ "$(cat "$marker")" = '{"schema":"tiangong-lca.runtime-cache.v1"}' ] || fail cache_marker_invalid
+  else
+    [ "$(find "$cache" -mindepth 1 -maxdepth 1 -print | wc -l | tr -d '[:space:]')" = 0 ] || { [ -e "$marker" ] || fail cache_not_owned; }
+    if ! (set -C; printf '%s\n' '{"schema":"tiangong-lca.runtime-cache.v1"}' > "$marker") 2>/dev/null; then
+      tries=0; while [ ! -s "$marker" ] && [ "$tries" -lt 20 ]; do tries=$((tries + 1)); sleep 0.05; done
+      [ "$(cat "$marker" 2>/dev/null || true)" = '{"schema":"tiangong-lca.runtime-cache.v1"}' ] || fail cache_marker_invalid
+    fi
   fi
 fi
 
@@ -170,7 +174,7 @@ else
   validate_archive "$temp/component.tar.gz" "$integrity_relative" "$file_count" "$temp/list" "$temp/verbose" "$temp/expected"
   rm -rf "$temp/root"; mkdir "$temp/root"; tar -xzf "$temp/component.tar.gz" -C "$temp/root" || fail archive_extract_failed
   verify_component_root "$temp/root" "$integrity_relative" "$integrity_sha" "$file_count"
-  mkdir "$target"; mv "$temp/root" "$root"
+  publish="$temp/component"; mkdir "$publish"; mv "$temp/root" "$publish/root"; mv "$publish" "$target"
 fi
 node="$root/$node_relative"; cli="$root/$cli_relative"
 [ -x "$node" ] && [ -f "$cli" ] && [ ! -L "$node" ] && [ ! -L "$cli" ] || fail bootstrap_entry_invalid
