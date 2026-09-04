@@ -37,9 +37,9 @@ checkPaths:
   - scripts/docpact
   - scripts/docpact-gate.sh
   - scripts/install-git-hooks.sh
-lastReviewedAt: 2026-09-04
-lastReviewedCommit: b15c074b1f10314e4835fd64cb7079c8aa9fec3d
-lastReviewedNote: 'Reviewed for CLI #272: release-only 0.1.9 after support export #270; runtime, dependencies, lock bytes, public exports and publication mechanics are unchanged.'
+lastReviewedAt: 2026-09-05
+lastReviewedCommit: 20cf32fd45ae1072bb67db27c74d3d81629206f4
+lastReviewedNote: 'Reviewed for CLI #275: release-only 0.1.10 publishes merged runtime manager/bootstrap #274; runtime, dependencies, lock bytes and workflows stay at reviewed merge 20cf32f while release proof adds native and public provenance consumers.'
 related:
   - .docpact/config.yaml
   - docs/agents/repo-validation.md
@@ -51,7 +51,7 @@ related:
   - docs/release-setup.md
 ---
 
-Runtime distribution work is owned by [the runtime distribution contract](docs/agents/runtime-distribution-contract.md). Issue #274 adds the public `./runtime` inspection/manager API and `runtime describe|ensure|status|prune|lease-release|exec`. Component installation is manifest/SHA/inventory/lease bound and grants no task or data authority; the no-Node POSIX/PowerShell bootstrap is checked in under `scripts/bootstrap/`; adjacent product locks are generated only after a product manifest exists. Public C1 and component qualification remain separate gates. New CLI launches and TIDAS artifact selection support only macOS arm64, Linux x64/arm64 and Windows x64. The macOS Intel Oxlint release-age exception is removed; transitive lockfile records remain untouched.
+Runtime distribution work is owned by [the runtime distribution contract](docs/agents/runtime-distribution-contract.md). Issue #274 adds the public `./runtime` inspection/manager API and `runtime describe|ensure|status|prune|lease-release|exec`. Component installation is manifest/SHA/inventory/lease bound and grants no task or data authority; the no-Node POSIX/PowerShell bootstrap is checked in under `scripts/bootstrap/`; adjacent product locks are generated only after a product manifest exists. CLI #275 designates 0.1.10 as the C1 package release; public product component qualification remains a separate downstream gate. New CLI launches and TIDAS artifact selection support only macOS arm64, Linux x64/arm64 and Windows x64. The macOS Intel Oxlint release-age exception is removed; transitive lockfile records remain untouched.
 
 Private live-account testing is maintainer-only and requires explicit account authorization. Follow [the live case guide](docs/agents/live-case-testing.md); public CLI authentication remains OAuth-only and personal credentials never enter public CI.
 

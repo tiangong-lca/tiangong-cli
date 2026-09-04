@@ -31,16 +31,16 @@ checkPaths:
   - test/auth-identity*.test.ts
   - test/public-auth-identity-receipt.test.ts
   - test/lca-release*.test.ts
-lastReviewedAt: 2026-09-04
-lastReviewedCommit: b15c074b1f10314e4835fd64cb7079c8aa9fec3d
-lastReviewedNote: 'Reviewed for CLI #272: release-only 0.1.9 after support export #270; runtime, dependencies, lock bytes, public exports and publication mechanics are unchanged.'
+lastReviewedAt: 2026-09-05
+lastReviewedCommit: 20cf32fd45ae1072bb67db27c74d3d81629206f4
+lastReviewedNote: 'Reviewed for CLI #275: release-only 0.1.10 publishes merged runtime manager/bootstrap #274; runtime, dependencies, lock bytes and workflows stay at reviewed merge 20cf32f while release proof adds native and public provenance consumers.'
 ---
 
-The upcoming C1 release adds `tiangong-lca runtime describe --json` and the explicit `@tiangong-lca/cli/runtime` API for package, asset and Node content inspection. Runtime inspection loads no project `.env`, performs no authentication and downloads nothing. See [the runtime distribution contract](docs/agents/runtime-distribution-contract.md) for exact fields, trust boundaries and the remaining component-manager/bootstrap gates. Published CLI 0.1.9 does not yet provide this new API.
+CLI 0.1.10 is the designated C1 release for `tiangong-lca runtime describe --json` and the explicit `@tiangong-lca/cli/runtime` API for package, asset and Node content inspection. Runtime inspection loads no project `.env`, performs no authentication and downloads nothing. See [the runtime distribution contract](docs/agents/runtime-distribution-contract.md) for exact fields and trust boundaries; verify public availability and provenance before treating the candidate version as released.
 
 # TianGong LCA CLI
 
-Package: `@tiangong-lca/cli` Executable: `tiangong-lca` Current package version: `0.1.9` Node: `24.19.0`
+Package: `@tiangong-lca/cli` Executable: `tiangong-lca` Current package version: `0.1.10` Node: `24.19.0`
 
 Repository development is single-track on pnpm `11.24.0` and TypeScript `7.0.2`. The published package remains a clean, package-manager-neutral consumer artifact: it contains runtime files only, not pnpm, TypeScript, Oxlint, tests, source-only tooling, or repository lockfiles.
 
@@ -133,7 +133,7 @@ node ./bin/tiangong-lca.js --help
 
 The package exposes only these supported module APIs in addition to the executable launcher subpath:
 
-- `@tiangong-lca/cli/runtime` (introduced by #274, pending C1 publication) describes CLI package, asset and Node content and compares them against independently trusted exact expectations. It also exposes strict manifest loading, ensure/status/prune and manifest-declared execution with component locks, complete file verification and leases. These operations do not authenticate by themselves or attest a complete public production component. The no-Node bootstrap sources are checked in under `scripts/bootstrap/` and consume only an adjacent product-generated lock; C1/public component qualification remains pending.
+- `@tiangong-lca/cli/runtime` (introduced by #274 and designated for C1 0.1.10) describes CLI package, asset and Node content and compares them against independently trusted exact expectations. It also exposes strict manifest loading, ensure/status/prune and manifest-declared execution with component locks, complete file verification and leases. These operations do not authenticate by themselves or attest a complete public production component. The no-Node bootstrap sources are checked in under `scripts/bootstrap/` and consume only an adjacent product-generated lock; C1 package verification belongs to #275; public product component qualification remains downstream.
 - `@tiangong-lca/cli/auth-identity-receipt` parses the exact safe receipt projection offline and exports its schema, Node-safe timeout ceiling, and receipt types. It does not expose session resolution, network execution, or test internals; callers that need a fresh receipt still invoke the CLI command.
 - `@tiangong-lca/cli/command-spec` parses, creates, artifact-binds, and executes exact `tiangong-foundry.command-spec.v1` objects. `display` is diagnostic only; executable plus argv and binding bytes/SHA-256 form the canonical authority. Sync and async execution always use `shell:false`; async callers may inject resolver, clock, sleep, spawn, timeout, and abort adapters. `timeoutMs` must fit Node's maximum timer delay.
 - `@tiangong-lca/cli/batch` runs bounded generic work with an overall run contract and a required per-item `{ item_id, content_sha256, policy_sha256 }` contract. Every identity/content/policy/resource projection is validated before work starts and rechecked before resumed acceptance or a fresh claim. Identity changes or getter failures emit `item_identity_drift` with `BatchItemIdentityDriftError`, execute zero attempts, and do not let the batch return before other in-flight items drain. An escaping scheduler/event/stop callback records the first infrastructure error, closes further claims, awaits all worker settlements, then rejects. Input order, truthful resource-aware claim order, completion order, pause/stop behavior, awaited monotonic events, and exception isolation are explicit. Optional exclusive keys serialize only matching resources; a blocked key remains unclaimed and consumes no worker while later free keys may use the public ceiling of 64 workers. Per-resource FIFO queues expose only their head through an ordered binary min-heap, giving near `O(n log k)` ready scheduling for `k` resources.
