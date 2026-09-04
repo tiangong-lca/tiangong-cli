@@ -27,12 +27,12 @@ test('runtime parsing stays local, strict and independent of user dotenv configu
     assert.equal(isRuntimeCommand(args), false);
   for (const args of [['runtime'], ['--', 'runtime'], ['--help', '-v', 'runtime']])
     assert.equal(isRuntimeCommand(args), true);
-  assert.match(runRuntimeCommand(null, []).stdout, /Usage/u);
-  assert.match(runRuntimeCommand('describe', ['--help']).stdout, /No authentication/u);
-  assert.match(runRuntimeCommand('describe', [], () => descriptor).stdout, /Content/u);
-  assert.throws(() => runRuntimeCommand('future', []), /Unknown runtime/u);
-  assert.throws(() => runRuntimeCommand('describe', ['--token', 'forbidden']), /declared flags/u);
-  assert.throws(() => runRuntimeCommand('describe', ['unexpected']), /declared flags/u);
+  assert.match((await runRuntimeCommand(null, [])).stdout, /Usage/u);
+  assert.match((await runRuntimeCommand('describe', ['--help'])).stdout, /No authentication/u);
+  assert.match((await runRuntimeCommand('describe', [], () => descriptor)).stdout, /Content/u);
+  await assert.rejects(runRuntimeCommand('future', []), /Unknown runtime/u);
+  await assert.rejects(runRuntimeCommand('describe', ['--token', 'forbidden']), /declared flags/u);
+  await assert.rejects(runRuntimeCommand('describe', ['unexpected']), /declared flags/u);
   const invalid = await executeCli(['runtime', 'future', '--json'], deps);
   assert.equal(invalid.exitCode, 2);
 

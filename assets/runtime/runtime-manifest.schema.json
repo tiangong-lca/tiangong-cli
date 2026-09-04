@@ -1,0 +1,380 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "urn:tiangong-lca:runtime-manifest:v1",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schema",
+    "bootstrap_protocol",
+    "product",
+    "minimum_hosts",
+    "workspace",
+    "components",
+    "launches"
+  ],
+  "properties": {
+    "schema": {
+      "const": "tiangong-lca.runtime-manifest.v1"
+    },
+    "bootstrap_protocol": {
+      "const": "tiangong-lca.runtime-bootstrap.v1"
+    },
+    "product": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["id", "version"],
+      "properties": {
+        "id": {
+          "type": "string",
+          "pattern": "^[a-z0-9][a-z0-9._-]{0,63}$"
+        },
+        "version": {
+          "type": "string",
+          "pattern": "^(0|[1-9][0-9]*)\\.(0|[1-9][0-9]*)\\.(0|[1-9][0-9]*)$"
+        }
+      }
+    },
+    "minimum_hosts": {
+      "type": "object",
+      "additionalProperties": false,
+      "minProperties": 1,
+      "properties": {
+        "darwin-arm64": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["os_release", "glibc"],
+          "properties": {
+            "os_release": {
+              "type": "string",
+              "pattern": "^(0|[1-9][0-9]*)\\.(0|[1-9][0-9]*)\\.(0|[1-9][0-9]*)$"
+            },
+            "glibc": {
+              "type": "null"
+            }
+          }
+        },
+        "linux-x64": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["os_release", "glibc"],
+          "properties": {
+            "os_release": {
+              "type": "string",
+              "pattern": "^(0|[1-9][0-9]*)\\.(0|[1-9][0-9]*)\\.(0|[1-9][0-9]*)$"
+            },
+            "glibc": {
+              "type": "string",
+              "pattern": "^[0-9]+\\.[0-9]+$"
+            }
+          }
+        },
+        "linux-arm64": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["os_release", "glibc"],
+          "properties": {
+            "os_release": {
+              "type": "string",
+              "pattern": "^(0|[1-9][0-9]*)\\.(0|[1-9][0-9]*)\\.(0|[1-9][0-9]*)$"
+            },
+            "glibc": {
+              "type": "string",
+              "pattern": "^[0-9]+\\.[0-9]+$"
+            }
+          }
+        },
+        "win32-x64": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["os_release", "glibc"],
+          "properties": {
+            "os_release": {
+              "type": "string",
+              "pattern": "^(0|[1-9][0-9]*)\\.(0|[1-9][0-9]*)\\.(0|[1-9][0-9]*)$"
+            },
+            "glibc": {
+              "type": "null"
+            }
+          }
+        }
+      }
+    },
+    "workspace": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["read", "write"],
+      "properties": {
+        "read": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": ["schema", "features"],
+            "properties": {
+              "schema": {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 256
+              },
+              "features": {
+                "type": "array",
+                "items": {
+                  "type": "string",
+                  "minLength": 1,
+                  "maxLength": 256
+                },
+                "maxItems": 64,
+                "minItems": 0
+              }
+            }
+          },
+          "maxItems": 32,
+          "minItems": 0
+        },
+        "write": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": ["schema", "features"],
+            "properties": {
+              "schema": {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 256
+              },
+              "features": {
+                "type": "array",
+                "items": {
+                  "type": "string",
+                  "minLength": 1,
+                  "maxLength": 256
+                },
+                "maxItems": 64,
+                "minItems": 0
+              }
+            }
+          },
+          "maxItems": 32,
+          "minItems": 0
+        }
+      }
+    },
+    "components": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "id",
+          "version",
+          "platform",
+          "archive",
+          "files",
+          "content_sha256",
+          "production_lock",
+          "sbom",
+          "licenses",
+          "provenance",
+          "protocols",
+          "asset_fingerprints"
+        ],
+        "properties": {
+          "id": {
+            "type": "string",
+            "pattern": "^[a-z0-9][a-z0-9._-]{0,63}$"
+          },
+          "version": {
+            "type": "string",
+            "pattern": "^(0|[1-9][0-9]*)\\.(0|[1-9][0-9]*)\\.(0|[1-9][0-9]*)$"
+          },
+          "platform": {
+            "enum": ["darwin-arm64", "linux-x64", "linux-arm64", "win32-x64"]
+          },
+          "archive": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": ["format", "url", "bytes", "sha256"],
+            "properties": {
+              "format": {
+                "const": "tar-gzip-ustar-v1"
+              },
+              "url": {
+                "type": "string",
+                "format": "uri",
+                "maxLength": 4096
+              },
+              "bytes": {
+                "type": "integer",
+                "minimum": 1,
+                "maximum": 536870912
+              },
+              "sha256": {
+                "type": "string",
+                "pattern": "^[0-9a-f]{64}$"
+              }
+            }
+          },
+          "files": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "additionalProperties": false,
+              "required": ["path", "bytes", "sha256", "mode"],
+              "properties": {
+                "path": {
+                  "type": "string",
+                  "minLength": 1,
+                  "maxLength": 255
+                },
+                "bytes": {
+                  "type": "integer",
+                  "minimum": 0,
+                  "maximum": 536870912
+                },
+                "sha256": {
+                  "type": "string",
+                  "pattern": "^[0-9a-f]{64}$"
+                },
+                "mode": {
+                  "enum": [420, 493]
+                }
+              }
+            },
+            "maxItems": 50000,
+            "minItems": 1
+          },
+          "content_sha256": {
+            "type": "string",
+            "pattern": "^[0-9a-f]{64}$"
+          },
+          "production_lock": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 255
+          },
+          "sbom": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 255
+          },
+          "licenses": {
+            "type": "array",
+            "items": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 255
+            },
+            "maxItems": 64,
+            "minItems": 1
+          },
+          "provenance": {
+            "type": "array",
+            "items": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 255
+            },
+            "maxItems": 64,
+            "minItems": 1
+          },
+          "protocols": {
+            "type": "array",
+            "items": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 256
+            },
+            "maxItems": 32,
+            "minItems": 1
+          },
+          "asset_fingerprints": {
+            "type": "object",
+            "maxProperties": 64,
+            "additionalProperties": {
+              "type": "string",
+              "pattern": "^[0-9a-f]{64}$"
+            }
+          }
+        }
+      },
+      "maxItems": 128,
+      "minItems": 1
+    },
+    "launches": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["id", "platform", "executable", "environment", "argv"],
+        "properties": {
+          "id": {
+            "type": "string",
+            "pattern": "^[a-z0-9][a-z0-9._-]{0,63}$"
+          },
+          "platform": {
+            "enum": ["darwin-arm64", "linux-x64", "linux-arm64", "win32-x64"]
+          },
+          "executable": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": ["component", "path"],
+            "properties": {
+              "component": {
+                "type": "string",
+                "pattern": "^[a-z0-9][a-z0-9._-]{0,63}$"
+              },
+              "path": {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 255
+              }
+            }
+          },
+          "environment": {
+            "enum": ["isolated", "cli-auth"]
+          },
+          "argv": {
+            "type": "array",
+            "items": {
+              "oneOf": [
+                {
+                  "type": "object",
+                  "additionalProperties": false,
+                  "required": ["component", "path"],
+                  "properties": {
+                    "component": {
+                      "type": "string",
+                      "pattern": "^[a-z0-9][a-z0-9._-]{0,63}$"
+                    },
+                    "path": {
+                      "type": "string",
+                      "minLength": 1,
+                      "maxLength": 255
+                    }
+                  }
+                },
+                {
+                  "type": "object",
+                  "additionalProperties": false,
+                  "required": ["literal"],
+                  "properties": {
+                    "literal": {
+                      "type": "string",
+                      "minLength": 1,
+                      "maxLength": 4096
+                    }
+                  }
+                }
+              ]
+            },
+            "maxItems": 32,
+            "minItems": 0
+          }
+        }
+      },
+      "maxItems": 64,
+      "minItems": 1
+    }
+  }
+}

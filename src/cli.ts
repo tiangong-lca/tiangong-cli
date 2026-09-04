@@ -560,7 +560,7 @@ Usage:
 Commands:
 Implemented Commands:
   doctor     show environment diagnostics
-  runtime    describe installed CLI package and executable identity
+  runtime    describe | ensure | status | prune | lease-release | exec
   auth       login | status | whoami | doctor-auth | logout | identity-receipt
   search     flow | process | lifecyclemodel
   process    get | list | identity-preflight | build-plan | scope-statistics | dedup-review | auto-build | resume-build | publish-build | complete-required-fields | save-draft | batch-build | refresh-references | verify-rows
@@ -7358,7 +7358,8 @@ export async function executeCli(argv: string[], deps: CliDeps): Promise<CliResu
       return { exitCode: 0, stdout: `${renderMainHelp(deps.dotEnvStatus)}\n`, stderr: '' };
     }
 
-    if (command === 'runtime') return runRuntimeCommand(subcommand, commandArgs);
+    if (command === 'runtime')
+      return await runRuntimeCommand(subcommand, commandArgs, undefined, deps.fetchImpl, deps.env);
 
     if (command === 'doctor') {
       const doctorFlags = parseDoctorFlags(commandArgs);

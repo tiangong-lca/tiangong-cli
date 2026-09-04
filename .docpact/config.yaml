@@ -1,3 +1,4 @@
+# Review note, 2026-09-05: #274 adds the public runtime descriptor/manager, strict component manifest/archive/cache/lease/exec owners and four-target CLI admission; the existing public-library, command, validation and runtime-distribution rules cover them without moving data authorization.
 version: 1
 layout: repo
 # Review note, 2026-09-04: #272 releases 0.1.9 with package identity and four exact-version fixtures only; existing validation/release routes and ownership are unchanged.

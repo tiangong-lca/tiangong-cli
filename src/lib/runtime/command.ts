@@ -1,4 +1,7 @@
 import { parseArgs } from 'node:util';
+import type { FetchLike } from '../http.js';
+import { runRuntimeExecCommand } from './exec-command.js';
+import { runManagedRuntimeCommand } from './managed-command.js';
 import { CliError } from '../errors.js';
 import { describeCliRuntime } from '../../runtime.js';
 import type { CliRuntimeDescriptor } from './types.js';
@@ -10,11 +13,16 @@ export function isRuntimeCommand(argv: readonly string[]): boolean {
   return argv[index] === 'runtime';
 }
 
-export function runRuntimeCommand(
+export async function runRuntimeCommand(
   subcommand: string | null,
   args: string[],
   describe: () => CliRuntimeDescriptor = describeCliRuntime,
-): { exitCode: number; stdout: string; stderr: string } {
+  fetchImpl?: FetchLike,
+  env?: NodeJS.ProcessEnv,
+): Promise<{ exitCode: number; stdout: string; stderr: string }> {
+  if (subcommand === 'exec') return runRuntimeExecCommand(args, fetchImpl, env);
+  if (subcommand && ['ensure', 'status', 'prune', 'lease-release'].includes(subcommand))
+    return runManagedRuntimeCommand(subcommand, args, fetchImpl);
   let flags: { help?: boolean; json?: boolean };
   try {
     flags = parseArgs({
@@ -36,7 +44,7 @@ export function runRuntimeCommand(
     return {
       exitCode: 0,
       stdout:
-        'Usage: tiangong-lca runtime describe [--json]\n\nDescribe the installed CLI package, assets and Node executable. No authentication, user env file or download.\n',
+        'Usage: tiangong-lca runtime describe [--json] | ensure | status | prune | lease-release | exec\n\nDescribe the installed CLI package, assets and Node executable. No authentication, user env file or download.\n',
       stderr: '',
     };
   if (subcommand !== 'describe')
