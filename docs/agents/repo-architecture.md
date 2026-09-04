@@ -30,9 +30,9 @@ checkPaths:
   - scripts/docpact
   - scripts/docpact-gate.sh
   - scripts/install-git-hooks.sh
-lastReviewedAt: 2026-09-02
-lastReviewedCommit: f56c5349414c73a7f3f967ebd667064ce08a26e3
-lastReviewedNote: 'Reviewed for release #266 on main f56c534: bundled OAuth bootstrap and additive exact Model-version adapters are retained unchanged; the release-only delta stays metadata and production database compatibility is a gate.'
+lastReviewedAt: 2026-09-04
+lastReviewedCommit: b4701984b4a86fe4680fa5995d0a0b6753dbdfd6
+lastReviewedNote: 'Reviewed for CLI #268: private OAuth case harness and exact dev-only Playwright; public OAuth behavior, package runtime, four-platform release and 100% src coverage requirements remain unchanged.'
 related:
   - ../../AGENTS.md
   - ../../.docpact/config.yaml
@@ -328,6 +328,10 @@ Artifact materialization and local state handling cluster around:
 - `src/lib/state-lock.ts`
 
 If a task changes output layout, locking, or local run roots, inspect these first.
+
+### Private live-case driver
+
+`scripts/live/` uses the existing OAuth browser-opener adapter with real PKCE, callback, exchange and userinfo. Playwright is an exact dev-only dependency. The driver, browser, raw private case context, and account values are excluded from the package. See [the live case guide](live-case-testing.md).
 
 ### Repo-local validation and release gates
 

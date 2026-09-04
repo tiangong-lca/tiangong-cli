@@ -1,5 +1,6 @@
 version: 1
 layout: repo
+# Review note, 2026-09-04: Issue #268 adds private live OAuth testing under existing validation ownership and a governed maintainer guide; no public auth or release surface changes.
 # Review note, 2026-09-02: Issue #266 changes package identity and four existing fixtures to 0.1.8 after bootstrap merge d74edd8; existing release/test/doc routes apply and runtime, lock, dependencies, exports, workflows, and ownership remain unchanged.
 # Review note, 2026-09-02: Issue #263 keeps Production bootstrap ownership in existing env/remote-session routes, adds clean installed-consumer proof, and preserves configured-only local publish selection; no ownership or release path changes.
 # Review note, 2026-09-01: Issue #260 removes the API-key/password bootstrap, legacy session/runner/docs, and routes the remaining credential-safety helper through the existing remote-session/auth governance without changing repository ownership.
@@ -49,8 +50,8 @@ layout: repo
 # Review note, 2026-08-31: Issue #252 is the replacement 0.1.5 release after failed-unpublished 0.1.4 and merged Windows coverage #250. It changes package identity and four existing version fixtures only; current release/test/doc routes own the change and no runtime, dependency, export, lock, workflow, or ownership rule changes.
 # Review note, 2026-08-31: Issue #256 refreshes package/lock/test and formatter-owned source/docs under existing validation/release/governed-doc routes, pins the reviewed npm-latest TIDAS SDK 0.2.0 exactly, and keeps version 0.1.5 plus public command/export ownership unchanged. Issue #257 separately owns the later 0.1.6 release-only path.
 # Review note, 2026-08-31: Issue #257 is the release-only 0.1.6 delivery for merged dependency Issue #256. It changes package identity and four existing exact-version fixtures only; current release/test/doc routes own the change while runtime, dependencies, lock bytes, exports, workflows, and ownership remain unchanged.
-lastReviewedAt: '2026-09-02'
-lastReviewedCommit: 'f56c5349414c73a7f3f967ebd667064ce08a26e3'
+lastReviewedAt: "2026-09-04"
+lastReviewedCommit: "b4701984b4a86fe4680fa5995d0a0b6753dbdfd6"
 
 catalog:
   repos:
@@ -59,6 +60,7 @@ catalog:
       canonicalRepo: tiangong-lca/tiangong-cli
       entryDoc: AGENTS.md
       workflowDocs:
+        - docs/agents/live-case-testing.md
         - docs/agents/repo-validation.md
         - docs/agents/repo-architecture.md
         - DEV_CN.md
@@ -360,6 +362,7 @@ routing:
 
 docInventory:
   include:
+    - docs/agents/live-case-testing.md
     - AGENTS.md
     - README.md
     - DEV_CN.md
@@ -613,6 +616,26 @@ rules:
       - path: DEV_CN.md
         mode: review_or_update
     reason: Session, env, and remote adapter changes alter the CLI-owned runtime boundary and proof assumptions.
+  - id: cli-private-live-case-contract
+    scope: repo
+    repo: cli
+    triggers:
+      - path: scripts/live/**
+        kind: private-test-harness
+      - path: test/live-oauth-harness.test.ts
+        kind: repo-test
+      - path: docs/agents/live-case-testing.md
+        kind: deep-doc
+    requiredDocs:
+      - path: docs/agents/live-case-testing.md
+        mode: review_or_update
+      - path: docs/agents/repo-validation.md
+        mode: review_or_update
+      - path: AGENTS.md
+        mode: review_or_update
+      - path: .docpact/config.yaml
+        mode: review_or_update
+    reason: Private real-account evidence must stay isolated from public authentication, artifacts, dependencies and CI.
   - id: cli-validation-and-release-contract
     scope: repo
     repo: cli

@@ -88,6 +88,8 @@ const FORBIDDEN_PUBLISHED_TOOLS = new Set([
   'lint-staged',
   'oxlint',
   'oxlint-tsgolint',
+  'playwright',
+  'playwright-core',
   'prettier',
   'ts-jest',
   'ts-node',

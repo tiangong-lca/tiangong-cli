@@ -31,9 +31,9 @@ checkPaths:
   - test/auth-identity*.test.ts
   - test/public-auth-identity-receipt.test.ts
   - test/lca-release*.test.ts
-lastReviewedAt: 2026-09-02
-lastReviewedCommit: 3254d6167662121ca871090f6e57ff2a55578f28
-lastReviewedNote: 'Reviewed for Issue #266: published CLI 0.1.8 ships zero-config official Production login and complete custom/headless boundaries through the existing verified release path.'
+lastReviewedAt: 2026-09-04
+lastReviewedCommit: b4701984b4a86fe4680fa5995d0a0b6753dbdfd6
+lastReviewedNote: 'Reviewed for CLI #268: private OAuth case harness and exact dev-only Playwright; public OAuth behavior, package runtime, four-platform release and 100% src coverage requirements remain unchanged.'
 ---
 
 # TianGong LCA CLI

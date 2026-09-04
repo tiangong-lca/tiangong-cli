@@ -31,9 +31,9 @@ checkPaths:
   - scripts/docpact
   - scripts/docpact-gate.sh
   - scripts/install-git-hooks.sh
-lastReviewedAt: 2026-09-02
-lastReviewedCommit: f56c5349414c73a7f3f967ebd667064ce08a26e3
-lastReviewedNote: 'Reviewed for release #266 after #262/#263 integration: rerun exact 100%, four-platform, clean OAuth/Skills and Process ownership tests; require production RPC compatibility before automatic publication.'
+lastReviewedAt: 2026-09-04
+lastReviewedCommit: b4701984b4a86fe4680fa5995d0a0b6753dbdfd6
+lastReviewedNote: 'Reviewed for CLI #268: private OAuth case harness and exact dev-only Playwright; public OAuth behavior, package runtime, four-platform release and 100% src coverage requirements remain unchanged.'
 related:
   - ../../AGENTS.md
   - ../../.docpact/config.yaml
@@ -172,6 +172,10 @@ Review note, 2026-07-24: Issue #204 adds a production-scale regression for the a
 Review note, 2026-07-25: Issue #206 extends that regression to require the exact `id.asc,version.asc` primary-key order on every all-visible page while retaining the no-`user_id` and exact-count assertions. The test continues to prove that incomplete scans or inbound references dispatch zero mutations.
 
 Review note, 2026-07-25: Issue #208 adds positive proof that a fresh exact-SHA all-process proof skips only the unfiltered live scan and still performs protected deletes, plus negative vectors for stale, foreign-project, foreign-actor, wrong-plan, wrong-target-binding, non-SELECT, nonzero-inbound, P0, chunk-gap, chunk-inbound, SHA-mismatch, incomplete-option, and wrong-mode evidence. Existing live-scan regressions remain required.
+
+## Private real-account qualification
+
+[The live case guide](live-case-testing.md) owns the explicit, private OAuth case driver. Public gates run deterministic safety tests without account credentials or browser downloads. Record source OAuth and installed-package proof separately; environment failures are not product RED evidence.
 
 ## Validation Matrix
 
