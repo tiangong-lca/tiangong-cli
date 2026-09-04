@@ -66,7 +66,8 @@
     "release:check-tag": "node ./scripts/ci/check-release-tag.cjs cli",
     "release:assert-unpublished": "node ./scripts/ci/release-version.cjs assert-unpublished",
     "release:verify-published": "node ./scripts/ci/verify-published-release.cjs",
-    "clean": "node --eval \"import('node:fs').then(({ rmSync }) => rmSync('dist', { recursive: true, force: true }))\""
+    "clean": "node --eval \"import('node:fs').then(({ rmSync }) => rmSync('dist', { recursive: true, force: true }))\"",
+    "live:oauth": "node --import tsx ./scripts/live/oauth-case.ts"
   },
   "lint-staged": {
     "**/*.{js,jsx,ts,tsx,cjs,mjs}": "oxlint --type-aware --format=stylish --deny-warnings",
@@ -91,6 +92,7 @@
     "lint-staged": "^17.4.1",
     "oxlint": "^1.80.0",
     "oxlint-tsgolint": "^7.0.2001",
+    "playwright": "1.62.1",
     "prettier": "3.9.6",
     "sigstore": "5.0.0",
     "tsx": "^4.23.13",

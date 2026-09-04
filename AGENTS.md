@@ -37,9 +37,9 @@ checkPaths:
   - scripts/docpact
   - scripts/docpact-gate.sh
   - scripts/install-git-hooks.sh
-lastReviewedAt: 2026-09-02
-lastReviewedCommit: f56c5349414c73a7f3f967ebd667064ce08a26e3
-lastReviewedNote: 'Reviewed for release #266 after parallel main #262/#263: CLI 0.1.8 preserves Production bootstrap isolation and exact Process/Model version pairs; publication requires production database #589 compatibility plus the unchanged release gates.'
+lastReviewedAt: 2026-09-04
+lastReviewedCommit: 1b159e7092151b981895661a5c2371e9d13e3301
+lastReviewedNote: 'Reviewed for CLI #268: private OAuth case harness and exact dev-only Playwright; public OAuth behavior, package runtime, four-platform release and 100% src coverage requirements remain unchanged.'
 related:
   - .docpact/config.yaml
   - docs/agents/repo-validation.md
@@ -50,6 +50,8 @@ related:
   - docs/release-runbook.md
   - docs/release-setup.md
 ---
+
+Private live-account testing is maintainer-only and requires explicit account authorization. Follow [the live case guide](docs/agents/live-case-testing.md); public CLI authentication remains OAuth-only and personal credentials never enter public CI.
 
 ## Repo Contract
 

@@ -25,9 +25,9 @@ checkPaths:
   - scripts/docpact
   - scripts/docpact-gate.sh
   - scripts/install-git-hooks.sh
-lastReviewedAt: 2026-09-02
-lastReviewedCommit: f56c5349414c73a7f3f967ebd667064ce08a26e3
-lastReviewedNote: 'Reviewed for release #266 after concurrent main #262: prepare 0.1.8 with unchanged reviewed runtime, but do not merge or publish until database #589 production compatibility is proved; repeat all release-head gates.'
+lastReviewedAt: 2026-09-04
+lastReviewedCommit: 1b159e7092151b981895661a5c2371e9d13e3301
+lastReviewedNote: 'Reviewed for CLI #268: private OAuth case harness and exact dev-only Playwright; public OAuth behavior, package runtime, four-platform release and 100% src coverage requirements remain unchanged.'
 related:
   - ../AGENTS.md
   - ../.docpact/config.yaml
