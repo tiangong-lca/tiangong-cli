@@ -987,6 +987,7 @@ function assertPackedFiles(fileMetadata) {
     'assets/runtime/cli-runtime-expectation.schema.json',
     'assets/runtime/runtime-manifest.schema.json',
     'assets/runtime/runtime-command-result.schema.json',
+    'assets/runtime/runtime-bootstrap-lock.schema.json',
   ])
     assert.ok(packedFiles.includes(file), 'the packed runtime contract is missing: ' + file);
   assert.deepEqual(

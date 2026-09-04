@@ -44,7 +44,7 @@ related:
   - ../release-setup.md
 ---
 
-Issue #274 adds runtime descriptor and expectation schemas, file/manifest/asset/Node drift and race tests, immutable observations, explicit four-tuple admission, dotenv-free runtime commands, and clean ESM/CJS/TypeScript packed consumers. Private real-case RED proves public CLI 0.1.9 lacks this surface after actual fresh OAuth identity; candidate GREEN must use an installed package and preserve the frozen input. Package-only hashes do not qualify a full production dependency component. Manager proof additionally requires manifest/parser/path/download/archive/cache/concurrency/lease/exec coverage, a real managed C0 identity case, and final no-Node/bootstrap/public-component qualification. Existing exact-100% coverage and all four release hosts remain mandatory.
+Issue #274 adds runtime descriptor and expectation schemas, file/manifest/asset/Node drift and race tests, immutable observations, explicit four-tuple admission, dotenv-free runtime commands, and clean ESM/CJS/TypeScript packed consumers. Private real-case RED proves public CLI 0.1.9 lacks this surface after actual fresh OAuth identity; candidate GREEN must use an installed package and preserve the frozen input. Package-only hashes do not qualify a full production dependency component. Manager proof additionally requires manifest/parser/path/download/archive/cache/concurrency/lease/exec coverage, a real managed C0 identity case, and byte-bound bootstrap-lock, no-Node POSIX/PowerShell, concurrency/warm/offline and native platform proof. Public-component/C1 qualification remains final release evidence. Existing exact-100% coverage and all four release hosts remain mandatory.
 
 ## Default Baseline
 

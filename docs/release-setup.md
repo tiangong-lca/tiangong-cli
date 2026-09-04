@@ -34,7 +34,7 @@ related:
   - ./agents/repo-validation.md
 ---
 
-Issue #274 introduces runtime inspection, component manager and distribution contracts without changing Trusted Publisher settings, workflow names, registry credentials or the release-only main-merge path. Native component/bootstrap publication and product manifests require their complete owner workflows and qualification; adding the descriptor export alone does not publish or qualify them.
+Issue #274 introduces runtime inspection, component manager, bootstrap and distribution contracts without changing Trusted Publisher settings, workflow names, registry credentials or the release-only main-merge path. Native component/bootstrap publication and product manifests require their complete owner workflows and qualification; adding the descriptor export alone does not publish or qualify them.
 
 # Release Setup
 

@@ -35,7 +35,7 @@ related:
   - ./agents/repo-validation.md
 ---
 
-Issue #274 adds the forthcoming C1 `./runtime` API, machine schemas and `runtime describe` to packed consumer proof. This feature branch does not bump or publish 0.1.9. Prepare a separate exact-version release after the complete manager and no-Node bootstrap scope and four-platform gate pass; validate public package identity independently of its self-reported descriptor. A CLI-only descriptor does not substitute for the later frozen production-component manifest.
+Issue #274 adds the forthcoming C1 `./runtime` API, machine schemas and `runtime describe` to packed consumer proof. This feature branch does not bump or publish 0.1.9. Prepare a separate exact-version release after the complete manager/no-Node bootstrap feature PR and four-platform gate pass; validate public package identity independently of its self-reported descriptor. A CLI-only descriptor does not substitute for the later frozen production-component manifest.
 
 # CLI Release Runbook
 

@@ -16,8 +16,8 @@ checkPaths:
   - src/lib/supabase-client.ts
   - src/lib/tidas-sdk-package-validator.ts
   - test/**
-lastReviewedAt: 2026-08-20
-lastReviewedCommit: 0b0518fb2b35446ebdeab72ca6de634677ae72b8
+lastReviewedAt: 2026-09-05
+lastReviewedCommit: c1e6009ede464ccf2e34a5b198438e4da2d7246e
 lastReviewedNote: 'Reviewed for Issue #214: no direct dependency or package-boundary change is introduced.'
 related:
   - ../AGENTS.md
@@ -45,6 +45,8 @@ related:
 - 直到 repo 级验证、PR、workspace integration 全部完成，才算结束。
 
 当前状态：
+
+2026-09-05 复核：Issue #274 的 runtime descriptor、component manager 与无 Node bootstrap 全部复用 Node 内置能力和现有 CLI 依赖；`package.json` 与 `pnpm-lock.yaml` 未变化，本文件继续保持历史 TODO 记录用途。
 
 2026-07-23 复核：Issue #196 只使用 Node 原生文件能力把 execution ledger 的写入与 `fsync` 保持在同一可写 descriptor 上，不新增或改变 Supabase JS、TIDAS SDK 或其他直接依赖；本文件继续保持历史 TODO 记录用途。
 
