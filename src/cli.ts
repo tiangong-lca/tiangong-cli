@@ -5,6 +5,11 @@ import { CliError, toErrorPayload } from './lib/errors.js';
 import type { FetchLike } from './lib/http.js';
 import { stringifyJson } from './lib/io.js';
 import { loadCliPackageVersion } from './lib/package-version.js';
+import {
+  runDatasetSupportCacheExport,
+  type RunDatasetSupportCacheExportOptions,
+  type DatasetSupportCacheExportReport,
+} from './lib/dataset-support-cache.js';
 import { requireSupabaseRestRuntime } from './lib/supabase-client.js';
 import {
   inspectSupabaseAuthStatus,
@@ -325,6 +330,9 @@ import {
 } from './lib/dataset-source-upload-attachments.js';
 
 export type CliDeps = {
+  runDatasetSupportCacheExportImpl?: (
+    options: RunDatasetSupportCacheExportOptions,
+  ) => Promise<DatasetSupportCacheExportReport>;
   env: NodeJS.ProcessEnv;
   dotEnvStatus: DotEnvLoadResult;
   fetchImpl: FetchLike;
@@ -554,7 +562,7 @@ Implemented Commands:
   auth       login | status | whoami | doctor-auth | logout | identity-receipt
   search     flow | process | lifecyclemodel
   process    get | list | identity-preflight | build-plan | scope-statistics | dedup-review | auto-build | resume-build | publish-build | complete-required-fields | save-draft | batch-build | refresh-references | verify-rows
-  dataset    contract get | context-pack | classification children/path/audit/apply | curation-queue build/next/verify | import-lca convert | author | patch apply | save-draft | source upload-attachments | validate | verify-remote | bilingual extract/apply/validate | evidence-search plan/run | references rewrite/refresh-remote | maintenance clear-account/plan/apply/verify/flow-identity
+  dataset    support-cache export | contract get | context-pack | classification children/path/audit/apply | curation-queue build/next/verify | import-lca convert | author | patch apply | save-draft | source upload-attachments | validate | verify-remote | bilingual extract/apply/validate | evidence-search plan/run | references rewrite/refresh-remote | maintenance clear-account/plan/apply/verify/flow-identity
   flow       get | list | identity-preflight | build-plan | fetch-rows | materialize-decisions | remediate | publish-version | publish-reviewed-data | build-alias-map | scan-process-flow-refs | plan-process-flow-repairs | apply-process-flow-repairs | regen-product | validate-processes
   lifecyclemodel auto-build | validate-build | publish-build | save-draft | graph | build-resulting-process | publish-resulting-process | orchestrate
   qa         process | flow | lifecyclemodel
@@ -925,6 +933,7 @@ function renderDatasetHelp(): string {
   tiangong-lca dataset <subcommand> [options]
 
 Implemented Subcommands:
+  support-cache export Export complete observed canonical support rows through OAuth
   contract get        Write TIDAS schema / methodology / ruleset contract artifacts
   context-pack        Write an AI-ready TIDAS contract context pack
   classification       Navigate bundled TIDAS classification schemas or apply selected classifications
@@ -7906,6 +7915,49 @@ export async function executeCli(argv: string[], deps: CliDeps): Promise<CliResu
         stdout: stringifyJson(report, datasetFlags.json),
         stderr: '',
       };
+    }
+
+    if (command === 'dataset' && subcommand === 'support-cache') {
+      const help =
+        'Usage: tiangong-lca dataset support-cache export --out-dir <fresh-dir> [--state-code <int>] [--page-size <1..5000>] [--timeout-ms <1..120000>] [--expected-project-ref <ref>] [--expected-user-id <uuid>] [--json]';
+      const action = commandArgs[0];
+      if (!action || action === '--help' || action === '-h')
+        return { exitCode: 0, stdout: help + '\n', stderr: '' };
+      if (action !== 'export')
+        throw new CliError('dataset support-cache action must be export.', {
+          code: 'DATASET_SUPPORT_CACHE_ACTION_INVALID',
+          exitCode: 2,
+        });
+      const { values } = parseArgs({
+        args: commandArgs.slice(1),
+        strict: true,
+        allowPositionals: false,
+        options: {
+          'out-dir': { type: 'string' },
+          'state-code': { type: 'string', multiple: true },
+          'page-size': { type: 'string' },
+          'timeout-ms': { type: 'string' },
+          'expected-project-ref': { type: 'string' },
+          'expected-user-id': { type: 'string' },
+          json: { type: 'boolean' },
+          help: { type: 'boolean', short: 'h' },
+        },
+      });
+      if (values.help) return { exitCode: 0, stdout: help + '\n', stderr: '' };
+      const report = await (deps.runDatasetSupportCacheExportImpl ?? runDatasetSupportCacheExport)({
+        outDir: values['out-dir'] ?? '',
+        env: deps.env,
+        fetchImpl: deps.fetchImpl,
+        cliVersion: loadCliPackageVersion(import.meta.url),
+        stateCodes: values['state-code']?.map((value) =>
+          value.trim() ? Number(value) : Number.NaN,
+        ),
+        pageSize: values['page-size'] === undefined ? undefined : Number(values['page-size']),
+        timeoutMs: values['timeout-ms'] === undefined ? undefined : Number(values['timeout-ms']),
+        expectedProjectRef: values['expected-project-ref'],
+        expectedUserId: values['expected-user-id'],
+      });
+      return { exitCode: 0, stdout: stringifyJson(report, values.json ?? false), stderr: '' };
     }
 
     if (command === 'dataset' && subcommand === 'verify-remote') {

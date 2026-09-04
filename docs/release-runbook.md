@@ -26,8 +26,8 @@ checkPaths:
   - scripts/docpact-gate.sh
   - scripts/install-git-hooks.sh
 lastReviewedAt: 2026-09-04
-lastReviewedCommit: 1b159e7092151b981895661a5c2371e9d13e3301
-lastReviewedNote: 'Reviewed for CLI #268: private OAuth case harness and exact dev-only Playwright; public OAuth behavior, package runtime, four-platform release and 100% src coverage requirements remain unchanged.'
+lastReviewedCommit: ee56a45fcbb7ed1453fbd85d20b51358a273a580
+lastReviewedNote: 'Reviewed for CLI #270: OAuth-only support export reuses identity, Data API and exact-count pagination; observed stability is non-transactional, output completion is atomic, and ownership, dependencies and mutation rules remain unchanged.'
 related:
   - ../AGENTS.md
   - ../.docpact/config.yaml
