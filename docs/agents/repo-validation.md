@@ -44,6 +44,8 @@ related:
   - ../release-setup.md
 ---
 
+Issue #274 adds runtime descriptor and expectation schemas, file/manifest/asset/Node drift and race tests, immutable observations, explicit four-tuple admission, dotenv-free runtime commands, and clean ESM/CJS/TypeScript packed consumers. Private real-case RED proves public CLI 0.1.9 lacks this surface after actual fresh OAuth identity; candidate GREEN must use an installed package and preserve the frozen input. Package-only hashes do not qualify a full production dependency component. Existing exact-100% coverage and all four release hosts remain mandatory.
+
 ## Default Baseline
 
 Unless the change is doc-only, the minimum local baseline is:
@@ -119,7 +121,7 @@ Review note, 2026-06-07: release 0.0.14 requires the same local proof plus focus
 
 Review note, 2026-06-11: release 0.0.15 requires the same local proof plus focused dataset import-lca coverage for the tidas-tools 0.0.28 bundle-flag adaptation and disk-derived report fields. Publication remains PR merge to upstream `main`, tag workflow, and npm Trusted Publishing.
 
-Review note, 2026-08-20: Issue #222 proof must cover binary-discovery precedence, the five supported release targets and Windows ARM64 rejection, compatible `0.2.x` patch versions, protocol/version/report/exit mismatch rejection, native runtime flag translation, cancellation exit 130, and absence of active Python/check-out discovery. Run the packaged SimaPro fixture through the checksum-verified v0.2.0 artifact with Python unavailable, inspect `pnpm --filter @tiangong-lca/cli --fail-if-no-match pack --dry-run` for the fixture, then run the complete `pnpm prepush:gate` and docpact gates.
+Review note, 2026-08-20: Issue #222 proof must cover binary-discovery precedence, the four supported release targets (macOS Intel retired by #274) and Windows ARM64 rejection, compatible `0.2.x` patch versions, protocol/version/report/exit mismatch rejection, native runtime flag translation, cancellation exit 130, and absence of active Python/check-out discovery. Run the packaged SimaPro fixture through the checksum-verified v0.2.0 artifact with Python unavailable, inspect `pnpm --filter @tiangong-lca/cli --fail-if-no-match pack --dry-run` for the fixture, then run the complete `pnpm prepush:gate` and docpact gates.
 
 Review note, 2026-07-30: Issue #214 proof must assert that identity preflight emits only `lexical_weight` plus `semantic_weight`, and that protected derivative reads/snapshots no longer require the retired lexical column. Focused identity-preflight and dataset-maintenance suites plus the exact-coverage pre-push gate remain mandatory.
 

@@ -34,6 +34,8 @@ related:
   - ./agents/repo-validation.md
 ---
 
+Issue #274 introduces runtime inspection and distribution contracts without changing Trusted Publisher settings, workflow names, registry credentials or the release-only main-merge path. Native component/bootstrap publication and product manifests require their complete owner workflows and qualification; adding the descriptor export alone does not publish or qualify them.
+
 # Release Setup
 
 This document captures the one-time repository and registry configuration required for the `tiangong-lca-cli` npm release workflows.

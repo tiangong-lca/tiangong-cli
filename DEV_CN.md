@@ -34,6 +34,8 @@ related:
   - docs/IMPLEMENTATION_GUIDE_CN.md
 ---
 
+当前 #274 平台合同仅支持 macOS arm64、Linux x64/arm64、Windows x64；不通过旧版安装器回退 macOS Intel。运行时描述/组件分发的 owner 与验证边界见 [Runtime Distribution Contract](docs/agents/runtime-distribution-contract.md)。
+
 # 项目配置
 
 本项目是 TianGong 的统一 CLI 仓库，本地与 CI 运行时基线固定为 Node 24.19.0，开发工具链固定为 pnpm 11.24.0、TypeScript 7.0.2 与 type-aware Oxlint，但发布运行时只执行 `dist/` 下的构建产物。
@@ -72,7 +74,7 @@ Review note, 2026-06-07: release 0.0.14 keeps maintainer runtime and release gui
 
 Review note, 2026-06-11: release 0.0.15 keeps maintainer runtime and release guidance unchanged. `dataset import-lca convert` now adapts to the tidas-tools 0.0.28 process-bundle flags (no bare `--process-bundles`, `--no-process-bundles` only when disabled) and reports bundle/mapping files from actual on-disk state.
 
-Review note, 2026-08-20: `dataset import-lca convert` 只调用统一 Rust `tidas import`，按 `--tidas-bin`、`TIDAS_BIN`、PATH 的顺序定位 binary，并要求 `tidas.operation-report.v1` 与稳定 `0.2.x` 握手。npm 包不内置平台 binary，只包含可用于 clean-machine 验证的 SimaPro smoke fixture；binary 应来自带 checksum/provenance 的 tidas release 或 `cargo install tidas`。支持 Linux x86_64/ARM64、macOS Intel/Apple Silicon、Windows x86_64，不支持 Windows ARM64。
+Review note, 2026-08-20: `dataset import-lca convert` 只调用统一 Rust `tidas import`，按 `--tidas-bin`、`TIDAS_BIN`、PATH 的顺序定位 binary，并要求 `tidas.operation-report.v1` 与稳定 `0.2.x` 握手。npm 包不内置平台 binary，只包含可用于 clean-machine 验证的 SimaPro smoke fixture；binary 应来自带 checksum/provenance 的 tidas release 或 `cargo install tidas`。支持 Linux x86_64/ARM64、macOS Apple Silicon (arm64)、Windows x86_64，不支持 Windows ARM64。
 
 Review note, 2026-07-11: `dataset maintenance plan/apply/verify` is now an implemented current-user RLS command family. It adds no environment variables or release-path changes; commit remains bound to an immutable plan hash, current account confirmation, append-only per-action logs, and independent readback verification.
 

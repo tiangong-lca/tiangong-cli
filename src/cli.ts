@@ -1,4 +1,5 @@
 import { parseArgs } from 'node:util';
+import { runRuntimeCommand } from './lib/runtime/command.js';
 import { buildDoctorReport, readRuntimeEnv } from './lib/env.js';
 import type { DotEnvLoadResult } from './lib/dotenv.js';
 import { CliError, toErrorPayload } from './lib/errors.js';
@@ -559,6 +560,7 @@ Usage:
 Commands:
 Implemented Commands:
   doctor     show environment diagnostics
+  runtime    describe installed CLI package and executable identity
   auth       login | status | whoami | doctor-auth | logout | identity-receipt
   search     flow | process | lifecyclemodel
   process    get | list | identity-preflight | build-plan | scope-statistics | dedup-review | auto-build | resume-build | publish-build | complete-required-fields | save-draft | batch-build | refresh-references | verify-rows
@@ -1477,7 +1479,7 @@ Outputs written under --output-dir:
   - mapping.csv.gz when --write-mapping is used
 
 Runtime contract:
-  - Linux x86_64/ARM64, macOS Intel/Apple Silicon, and Windows x86_64 are supported.
+  - Linux x86_64/ARM64, macOS Apple Silicon (arm64), and Windows x86_64 are supported.
   - Windows ARM64 is unsupported.
   - The binary must report tidas.operation-report.v1 and a stable 0.2.x version.
   - Import publication, cancellation cleanup, and domain validation remain owned by Rust tidas.
@@ -7355,6 +7357,8 @@ export async function executeCli(argv: string[], deps: CliDeps): Promise<CliResu
     if (!command || command === 'help' || flags.help) {
       return { exitCode: 0, stdout: `${renderMainHelp(deps.dotEnvStatus)}\n`, stderr: '' };
     }
+
+    if (command === 'runtime') return runRuntimeCommand(subcommand, commandArgs);
 
     if (command === 'doctor') {
       const doctorFlags = parseDoctorFlags(commandArgs);

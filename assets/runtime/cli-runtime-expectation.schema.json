@@ -1,0 +1,38 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "urn:tiangong-lca:cli-runtime-expectation:v1",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schema",
+    "package_version",
+    "platform",
+    "content_sha256",
+    "node_version",
+    "node_sha256"
+  ],
+  "properties": {
+    "schema": {
+      "const": "tiangong-lca.cli-runtime-expectation.v1"
+    },
+    "package_version": {
+      "type": "string",
+      "pattern": "^(0|[1-9][0-9]*)\\.(0|[1-9][0-9]*)\\.(0|[1-9][0-9]*)$"
+    },
+    "platform": {
+      "enum": ["darwin-arm64", "linux-x64", "linux-arm64", "win32-x64"]
+    },
+    "content_sha256": {
+      "type": "string",
+      "pattern": "^[0-9a-f]{64}$"
+    },
+    "node_version": {
+      "type": "string",
+      "pattern": "^24\\.(?:19|[2-9][0-9]|[1-9][0-9]{2,})\\.(?:0|[1-9][0-9]*)$"
+    },
+    "node_sha256": {
+      "type": "string",
+      "pattern": "^[0-9a-f]{64}$"
+    }
+  }
+}
