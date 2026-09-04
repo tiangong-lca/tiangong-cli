@@ -32,8 +32,8 @@ checkPaths:
   - test/public-auth-identity-receipt.test.ts
   - test/lca-release*.test.ts
 lastReviewedAt: 2026-09-04
-lastReviewedCommit: b4701984b4a86fe4680fa5995d0a0b6753dbdfd6
-lastReviewedNote: 'Reviewed for CLI #268: private OAuth case harness and exact dev-only Playwright; public OAuth behavior, package runtime, four-platform release and 100% src coverage requirements remain unchanged.'
+lastReviewedCommit: ee56a45fcbb7ed1453fbd85d20b51358a273a580
+lastReviewedNote: 'Reviewed for CLI #270: OAuth-only support export reuses identity, Data API and exact-count pagination; observed stability is non-transactional, output completion is atomic, and ownership, dependencies and mutation rules remain unchanged.'
 ---
 
 # TianGong LCA CLI
@@ -188,6 +188,16 @@ The callback URI must exactly match the URI registered with the selected Supabas
 `auth status` is intentionally local-only and non-mutating. It reports whether a matching session can be used or refreshed, but sets `onlineVerified: false`; it never prints email, tokens, a session path, or a credential fingerprint. `auth whoami` performs the live redacted identity receipt. `auth doctor-auth` first checks local readiness, then performs that live check; a missing OAuth session returns `login-required` so a human can run `auth login`. An AI agent must never ask for or handle the user's password, authorization code, access token, or refresh token.
 
 Local logout does not revoke the server grant. To invalidate every refresh token for the CLI client, open Account → Connected applications and disconnect TianGong CLI.
+
+## Canonical support export
+
+```sh
+tiangong-lca dataset support-cache export --out-dir ./new-support-export --expected-project-ref <project-ref> --expected-user-id <user-id> --json
+```
+
+Export visible flow properties and unit groups through the CLI OAuth session. The default state filter is `100`; repeat `--state-code` to request other RLS-scoped states. The directory must be new. Two complete ordered reads must agree before private row files and an atomic `export-report.json` completion marker are published. The report includes identity, counts and file hashes; its observed stability is not a database transaction snapshot.
+
+Limits are 100,000 rows per table, 1,000 pages per table scan, 8 MiB per response, 64 MiB total response bytes and a 120-second operation deadline. An incomplete or changed read fails without publishing a completion marker. Use a fresh directory for a new attempt; no business data is written.
 
 ## Auth Identity Receipt
 

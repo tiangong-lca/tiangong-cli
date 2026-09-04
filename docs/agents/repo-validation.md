@@ -32,8 +32,8 @@ checkPaths:
   - scripts/docpact-gate.sh
   - scripts/install-git-hooks.sh
 lastReviewedAt: 2026-09-04
-lastReviewedCommit: 1b159e7092151b981895661a5c2371e9d13e3301
-lastReviewedNote: 'Reviewed for CLI #268: private OAuth case harness and exact dev-only Playwright; public OAuth behavior, package runtime, four-platform release and 100% src coverage requirements remain unchanged.'
+lastReviewedCommit: ee56a45fcbb7ed1453fbd85d20b51358a273a580
+lastReviewedNote: 'Reviewed for CLI #270: OAuth-only support export reuses identity, Data API and exact-count pagination; observed stability is non-transactional, output completion is atomic, and ownership, dependencies and mutation rules remain unchanged.'
 related:
   - ../../AGENTS.md
   - ../../.docpact/config.yaml
@@ -176,6 +176,10 @@ Review note, 2026-07-25: Issue #208 adds positive proof that a fresh exact-SHA a
 ## Private real-account qualification
 
 [The live case guide](live-case-testing.md) owns the explicit, private OAuth case driver. Public gates run deterministic safety tests without account credentials or browser downloads. Record source OAuth and installed-package proof separately; environment failures are not product RED evidence.
+
+## Support export qualification
+
+`test/dataset-support-cache.test.ts` covers capped/empty pagination, identity and OAuth gates, row/state/order/count/response errors, changing contents, resource bounds and publication races/cleanup. Private real read-only qualification uses the explicit account case driver; public CI uses synthetic fixtures.
 
 ## Validation Matrix
 

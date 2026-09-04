@@ -22,9 +22,9 @@ checkPaths:
   - src/**
   - scripts/**
   - .github/workflows/**
-lastReviewedAt: 2026-09-02
-lastReviewedCommit: 2bd3158d0ef4813ed30744c2bc6c7f084ae45dd9
-lastReviewedNote: '为 Issues #262、#263 集成复核：官方 Production 零配置登录继续与自定义/headless 目标隔离；Process 写入可选地透传精确 model_id/model_version 对，并保持省略字段的兼容行为。'
+lastReviewedAt: 2026-09-04
+lastReviewedCommit: ee56a45fcbb7ed1453fbd85d20b51358a273a580
+lastReviewedNote: 'Reviewed for CLI #270: OAuth-only support export reuses identity, Data API and exact-count pagination; observed stability is non-transactional, output completion is atomic, and ownership, dependencies and mutation rules remain unchanged.'
 related:
   - AGENTS.md
   - .docpact/config.yaml
