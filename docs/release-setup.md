@@ -24,9 +24,9 @@ checkPaths:
   - scripts/docpact
   - scripts/docpact-gate.sh
   - scripts/install-git-hooks.sh
-lastReviewedAt: 2026-09-04
-lastReviewedCommit: b15c074b1f10314e4835fd64cb7079c8aa9fec3d
-lastReviewedNote: 'Reviewed for CLI #272: release-only 0.1.9 after support export #270; runtime, dependencies, lock bytes, public exports and publication mechanics are unchanged.'
+lastReviewedAt: 2026-09-05
+lastReviewedCommit: 20cf32fd45ae1072bb67db27c74d3d81629206f4
+lastReviewedNote: 'Reviewed for CLI #275: release-only 0.1.10 publishes merged runtime manager/bootstrap #274; runtime, dependencies, lock bytes and workflows stay at reviewed merge 20cf32f while release proof adds native and public provenance consumers.'
 related:
   - ../AGENTS.md
   - ../.docpact/config.yaml
@@ -35,6 +35,8 @@ related:
 ---
 
 Issue #274 introduces runtime inspection, component manager, bootstrap and distribution contracts without changing Trusted Publisher settings, workflow names, registry credentials or the release-only main-merge path. Native component/bootstrap publication and product manifests require their complete owner workflows and qualification; adding the descriptor export alone does not publish or qualify them.
+
+Issue #275 uses that unchanged release path for 0.1.10: a version-only main PR triggers the existing four-platform tag workflow, and the resulting immutable `cli-v0.1.10` triggers native pnpm OIDC/provenance publication. No local publish, new token, settings bypass or product component claim is introduced.
 
 # Release Setup
 

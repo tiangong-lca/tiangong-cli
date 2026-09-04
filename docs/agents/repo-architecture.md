@@ -30,9 +30,9 @@ checkPaths:
   - scripts/docpact
   - scripts/docpact-gate.sh
   - scripts/install-git-hooks.sh
-lastReviewedAt: 2026-09-04
-lastReviewedCommit: b15c074b1f10314e4835fd64cb7079c8aa9fec3d
-lastReviewedNote: 'Reviewed for CLI #272: release-only 0.1.9 after support export #270; runtime, dependencies, lock bytes, public exports and publication mechanics are unchanged.'
+lastReviewedAt: 2026-09-05
+lastReviewedCommit: 20cf32fd45ae1072bb67db27c74d3d81629206f4
+lastReviewedNote: 'Reviewed for CLI #275: release-only 0.1.10 publishes merged runtime manager/bootstrap #274; runtime, dependencies, lock bytes and workflows stay at reviewed merge 20cf32f while release proof adds native and public provenance consumers.'
 related:
   - ../../AGENTS.md
   - ../../.docpact/config.yaml
@@ -41,7 +41,7 @@ related:
   - ../../DEV_CN.md
 ---
 
-The `src/runtime.ts` public facade and bounded `src/lib/runtime/**` owners expose package/Node/asset identity through one read-only API and `runtime describe`. [The runtime distribution contract](runtime-distribution-contract.md) separates this package observation from complete component/dependency provenance, host ABI readiness and task authorization. `src/main.ts` admits supported architecture tuples before loading user configuration and bypasses dotenv for runtime commands. The manifest/manager/cache/lease/exec owners are now implemented under #274; the no-Node POSIX/PowerShell bootstrap is implemented under `scripts/bootstrap/`; public component assembly and C1 qualification remain required.
+The `src/runtime.ts` public facade and bounded `src/lib/runtime/**` owners expose package/Node/asset identity through one read-only API and `runtime describe`. [The runtime distribution contract](runtime-distribution-contract.md) separates this package observation from complete component/dependency provenance, host ABI readiness and task authorization. `src/main.ts` admits supported architecture tuples before loading user configuration and bypasses dotenv for runtime commands. The manifest/manager/cache/lease/exec owners are now implemented under #274; the no-Node POSIX/PowerShell bootstrap is implemented under `scripts/bootstrap/`; #275 designates 0.1.10 as C1, while public product component assembly remains downstream.
 
 ## Repo Shape
 

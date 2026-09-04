@@ -19,8 +19,8 @@ checkPaths:
   - test/runtime-*.test.ts
   - package.json
 lastReviewedAt: 2026-09-05
-lastReviewedCommit: c99a6dcee1ccf8cd2fc78129d16ee719e19d7512
-lastReviewedNote: 'Introduced for #274; describes implemented package inspection and the remaining manager/bootstrap release gates.'
+lastReviewedCommit: 20cf32fd45ae1072bb67db27c74d3d81629206f4
+lastReviewedNote: 'Reviewed for #275 after merged #274: 0.1.10 is designated C1; F1 product components and Skills locks remain downstream.'
 related:
   - docs/agents/repo-architecture.md
   - docs/agents/repo-validation.md
@@ -33,7 +33,7 @@ The CLI owns generic component installation and runtime identity for workspace #
 
 ## Current public inspection surface
 
-`tiangong-lca runtime describe --json` and `@tiangong-lca/cli/runtime` describe the current built CLI package through the same implementation. The public library exports `describeCliRuntime`, `assertCliRuntimeMatches`, schema identifiers, supported platform tuples and types. The package root and private runtime subpaths remain closed. This API is introduced by #274 and requires its later C1 publication; released CLI 0.1.9 does not provide it.
+`tiangong-lca runtime describe --json` and `@tiangong-lca/cli/runtime` describe the current built CLI package through the same implementation. The public library exports `describeCliRuntime`, `assertCliRuntimeMatches`, schema identifiers, supported platform tuples and types. The package root and private runtime subpaths remain closed. This API was introduced by #274. Version 0.1.10 is the designated first public C1 package; callers must still verify registry availability, integrity and provenance before trusting that release.
 
 Inspection creates no files, authenticates nowhere and makes no network request. Runtime commands bypass CWD `.env` loading. The CLI launcher rejects retired/unsupported OS/architecture tuples before loading user configuration. Source development describes its built distribution; installed execution needs no source tree or Git.
 
@@ -51,7 +51,7 @@ Inventory identities hash compact UTF-8 `JSON.stringify` bytes in the declared f
 
 The descriptor's scope is `cli-package`. It does not attest transitive dependencies, a registry signature or the complete software component. The release-built component manifest must separately bind its frozen production dependency graph and every deployed file. The descriptor does not claim task authorization, data completion, OS minimum/ABI readiness or download qualification; the manager's host/manifest checks own those additional gates. Explicit Node 24.19+ within the stable Node 24 line and the four architecture tuples are the current package inspection admission boundaries.
 
-## Manager and bootstrap gates still required by #274
+## Manager and bootstrap contract
 
 `runtime ensure/status`, immutable manifest validation, bounded downloads/archive handling, installation locks, atomic publication, verified warm/offline cache reuse, leases and owned-cache-only prune are required before W07 is complete. This inspection API alone is not a runtime manager or a zero-setup installer.
 
@@ -63,7 +63,7 @@ Full release qualification requires all four supported CI hosts, no-global-Node/
 
 ## Managed components and execution
 
-The next #274 implementation adds `runtime ensure`, `status`, `prune`, `lease-release` and `exec`. They require an explicitly selected local manifest plus its independently trusted SHA-256. `status` is read-only; missing installations do not create a cache or access a registry. `ensure` installs only selected-host components. The manifest schema is `assets/runtime/runtime-manifest.schema.json`; status/prune/lease output uses `assets/runtime/runtime-command-result.schema.json`; the public parser additionally enforces cross-field identity, canonical file order/hash, path collisions, metadata references and read/write compatibility. Serialized objects are not verified manifests: the loader/byte verifier returns a branded immutable value.
+The merged #274 manager exposes `runtime ensure`, `status`, `prune`, `lease-release` and `exec`. They require an explicitly selected local manifest plus its independently trusted SHA-256. `status` is read-only; missing installations do not create a cache or access a registry. `ensure` installs only selected-host components. The manifest schema is `assets/runtime/runtime-manifest.schema.json`; status/prune/lease output uses `assets/runtime/runtime-command-result.schema.json`; the public parser additionally enforces cross-field identity, canonical file order/hash, path collisions, metadata references and read/write compatibility. Serialized objects are not verified manifests: the loader/byte verifier returns a branded immutable value.
 
 A manifest binds product/version, bootstrap protocol, per-platform minimum OS release and glibc, workspace read/write schemas and features, components and declared launches. `os_release` uses the platform's `os.release()` version, not a marketing release name. Linux requires a present, compatible runtime glibc; the host collector projects only that diagnostic header and never serializes the report or its environment. A write-compatible schema/feature set must also be readable. Foundry must still check its own task schema and execution gates.
 
@@ -79,7 +79,7 @@ Persistent leases pin exact component keys for an explicit non-secret id and own
 
 `exec` resolves only a manifest-declared executable/argv prefix, appends bounded application argv, rejects credential flags and requires an existing explicit work directory outside runtime/skill installation roots. It reuses CommandSpec, holds an execution lease and waits for child closure even after cancellation or output overflow. It never retries the application. Persistent task leases may coexist. Child environments contain essential platform paths only unless the trusted launch explicitly selects `cli-auth`, which forwards only the CLI's existing public/auth configuration and process-only access-token contract. Passwords, user API keys, `NODE_OPTIONS` and unrelated secrets are excluded. A child exit or an installed cache is not evidence of Foundry business completion.
 
-The no-Node bootstrap implementations live in `scripts/bootstrap/tiangong-runtime-bootstrap.sh` and `.ps1`. They pin system tools, verify their own bytes against an adjacent `tiangong-lca.runtime-bootstrap-lock.v1`, select only the four supported tuples, verify the cached/downloaded manifest and complete base component, and start its Node/CLI with a cleared environment and exact argv. The source repository deliberately has no product `bootstrap-lock.json`: Skills creates that adjacent lock only after the F1 manifest and four base components exist, preventing a C1/F1 publication cycle. Final public component publication, all-platform launch qualification and C1/F1 release integration remain required before W07 is complete. The private live proof installs actual Node 24.19 and public CLI 0.1.9 production files from a verified local seed, invokes real account identity through that managed pair, checks offline reuse and lease/prune behavior, and preserves original inputs. It does not claim that a public runtime component has already been released.
+The no-Node bootstrap implementations live in `scripts/bootstrap/tiangong-runtime-bootstrap.sh` and `.ps1`. They pin system tools, verify their own bytes against an adjacent `tiangong-lca.runtime-bootstrap-lock.v1`, select only the four supported tuples, verify the cached/downloaded manifest and complete base component, and start its Node/CLI with a cleared environment and exact argv. The source repository deliberately has no product `bootstrap-lock.json`: Skills creates that adjacent lock only after the F1 manifest and four base components exist, preventing a C1/F1 publication cycle. The 0.1.10 C1 package verifier closes the CLI-owned publication slice; public F1 product components, all-platform product cold starts, Skills locks and final integration remain downstream. The private live proof installs actual Node 24.19 and public CLI 0.1.9 production files from a verified local seed, invokes real account identity through that managed pair, checks offline reuse and lease/prune behavior, and preserves original inputs. It does not claim that a public runtime component has already been released.
 
 ## Bootstrap behavior
 

@@ -31,9 +31,9 @@ checkPaths:
   - scripts/docpact
   - scripts/docpact-gate.sh
   - scripts/install-git-hooks.sh
-lastReviewedAt: 2026-09-04
-lastReviewedCommit: b15c074b1f10314e4835fd64cb7079c8aa9fec3d
-lastReviewedNote: 'Reviewed for CLI #272: release-only 0.1.9 after support export #270; runtime, dependencies, lock bytes, public exports and publication mechanics are unchanged.'
+lastReviewedAt: 2026-09-05
+lastReviewedCommit: 20cf32fd45ae1072bb67db27c74d3d81629206f4
+lastReviewedNote: 'Reviewed for CLI #275: release-only 0.1.10 publishes merged runtime manager/bootstrap #274; runtime, dependencies, lock bytes and workflows stay at reviewed merge 20cf32f while release proof adds native and public provenance consumers.'
 related:
   - ../../AGENTS.md
   - ../../.docpact/config.yaml
@@ -45,6 +45,8 @@ related:
 ---
 
 Issue #274 adds runtime descriptor and expectation schemas, file/manifest/asset/Node drift and race tests, immutable observations, explicit four-tuple admission, dotenv-free runtime commands, and clean ESM/CJS/TypeScript packed consumers. Private real-case RED proves public CLI 0.1.9 lacks this surface after actual fresh OAuth identity; candidate GREEN must use an installed package and preserve the frozen input. Package-only hashes do not qualify a full production dependency component. Manager proof additionally requires manifest/parser/path/download/archive/cache/concurrency/lease/exec coverage, a real managed C0 identity case, and byte-bound bootstrap-lock, no-Node POSIX/PowerShell, concurrency/warm/offline and native platform proof. Public-component/C1 qualification remains final release evidence. Existing exact-100% coverage and all four release hosts remain mandatory.
+
+Issue #275 designates 0.1.10 as the release-only C1 publication of merged #274. Before merge it requires recorded npm/tag absence, a separate RED fixture commit, unchanged dependency/lock/runtime/workflow bytes, strict Docpact, package and ordinary consumers, exact 100% coverage, audit, and the four native hosts on the exact release head. After merge it requires one merge-bound tag, native pnpm Trusted Publishing, cryptographic registry/provenance verification, fresh credential-free `./runtime` consumers, the private published-C1 identity/runtime case, and exact root integration.
 
 ## Default Baseline
 
