@@ -32,8 +32,8 @@ checkPaths:
   - test/public-auth-identity-receipt.test.ts
   - test/lca-release*.test.ts
 lastReviewedAt: 2026-09-07
-lastReviewedCommit: 58191977a837e1cdd673ef6d77c35fa2a4caf7ed
-lastReviewedNote: 'Reviewed for CLI #278: explicit managed-host IPC carries original verified manifest bytes and selected context, with receiver validation, cancellation admission closure and lease drainage. Public package release/integration remains separately gated; dependencies, auth and business permissions are unchanged.'
+lastReviewedCommit: f766d9192419eafd1313062b4f692797ad1304bb
+lastReviewedNote: 'Reviewed for CLI #280: release-only 0.1.11 publishes managed-host interface #278 from main f766d91. Runtime, dependencies, lock, bootstrap scripts and workflows stay unchanged; release qualification retains exact coverage, native consumers, provenance and integration gates.'
 ---
 
 CLI 0.1.10 is the designated C1 release for `tiangong-lca runtime describe --json` and the explicit `@tiangong-lca/cli/runtime` API for package, asset and Node content inspection. Runtime inspection loads no project `.env`, performs no authentication and downloads nothing. See [the runtime distribution contract](docs/agents/runtime-distribution-contract.md) for exact fields and trust boundaries; verify public availability and provenance before treating the candidate version as released.
