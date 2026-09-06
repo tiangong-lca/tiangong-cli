@@ -31,12 +31,14 @@ checkPaths:
   - test/auth-identity*.test.ts
   - test/public-auth-identity-receipt.test.ts
   - test/lca-release*.test.ts
-lastReviewedAt: 2026-09-05
-lastReviewedCommit: 20cf32fd45ae1072bb67db27c74d3d81629206f4
-lastReviewedNote: 'Reviewed for CLI #275: release-only 0.1.10 publishes merged runtime manager/bootstrap #274; runtime, dependencies, lock bytes and workflows stay at reviewed merge 20cf32f while release proof adds native and public provenance consumers.'
+lastReviewedAt: 2026-09-07
+lastReviewedCommit: 58191977a837e1cdd673ef6d77c35fa2a4caf7ed
+lastReviewedNote: 'Reviewed for CLI #278: explicit managed-host IPC carries original verified manifest bytes and selected context, with receiver validation, cancellation admission closure and lease drainage. Public package release/integration remains separately gated; dependencies, auth and business permissions are unchanged.'
 ---
 
 CLI 0.1.10 is the designated C1 release for `tiangong-lca runtime describe --json` and the explicit `@tiangong-lca/cli/runtime` API for package, asset and Node content inspection. Runtime inspection loads no project `.env`, performs no authentication and downloads nothing. See [the runtime distribution contract](docs/agents/runtime-distribution-contract.md) for exact fields and trust boundaries; verify public availability and provenance before treating the candidate version as released.
+
+Issue #278 adds a managed Node host interface in source, for the subsequent qualified CLI release. A release manifest opts its launch into `tiangong-lca.runtime-host.v1`; the host calls `receiveRuntimeHostContext()` from `@tiangong-lca/cli/runtime` before application work. The immutable result carries the selected full manifest, work/cache directories, entry and actual host. `copyTrustedRuntimeManifestBytes(context.manifest)` supplies original verified bytes for another package instance's compatibility checks. The channel closes before the receiver returns, and ordinary task arguments or environment values cannot supply this context. See the runtime distribution contract for lifecycle and trust requirements.
 
 # TianGong LCA CLI
 

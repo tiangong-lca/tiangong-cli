@@ -76,7 +76,11 @@ export async function runRuntimeExecCommand(
           ? 1
           : (result.status ?? (result.signal ? 130 : 1)),
       stdout: result.stdout,
-      stderr: result.stderr,
+      stderr:
+        result.stderr ||
+        (result.error && 'code' in result.error && result.error.code === 'RUNTIME_HOST_CONTEXT'
+          ? `${result.error.message}\n`
+          : ''),
     };
   } catch (error) {
     if (abort.signal.aborted)

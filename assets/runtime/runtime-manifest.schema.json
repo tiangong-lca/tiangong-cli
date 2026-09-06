@@ -334,6 +334,9 @@
           "environment": {
             "enum": ["isolated", "cli-auth"]
           },
+          "context_protocol": {
+            "const": "tiangong-lca.runtime-host.v1"
+          },
           "argv": {
             "type": "array",
             "items": {

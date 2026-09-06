@@ -7,6 +7,7 @@ import {
   loadTrustedRuntimeManifest,
   assertTrustedManifest,
   assertWorkspaceCompatibility,
+  copyTrustedRuntimeManifestBytes,
 } from '../src/lib/runtime/manifest.js';
 import {
   record,
@@ -28,6 +29,24 @@ const component = (value: Json) => (value.components as Json[])[0]!;
 function fails(value: unknown) {
   assert.throws(() => parseRuntimeManifest(value), /Runtime manifest/u);
 }
+
+test('verified manifest snapshots preserve exact source bytes without accepting serialized authority', () => {
+  const f = runtimeComponentFixture();
+  try {
+    const original = Buffer.from(JSON.stringify(f.manifest, null, 2) + '\n');
+    const input = Buffer.from(original);
+    const trusted = trustRuntimeManifest(input, hash(input));
+    input.fill(0);
+    const copied = copyTrustedRuntimeManifestBytes(trusted);
+    assert.deepEqual(copied, original);
+    copied.fill(0);
+    assert.deepEqual(copyTrustedRuntimeManifestBytes(trusted), original);
+    assert.equal(hash(copyTrustedRuntimeManifestBytes(trusted)), trusted.sha256);
+    assert.throws(() => copyTrustedRuntimeManifestBytes({ ...trusted }), /independent trusted/u);
+  } finally {
+    f.close();
+  }
+});
 
 test('manifest trust is byte-bound, branded, immutable and read/write feature-specific', () => {
   const f = runtimeComponentFixture();

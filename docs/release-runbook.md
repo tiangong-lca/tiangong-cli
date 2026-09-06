@@ -25,15 +25,17 @@ checkPaths:
   - scripts/docpact
   - scripts/docpact-gate.sh
   - scripts/install-git-hooks.sh
-lastReviewedAt: 2026-09-05
-lastReviewedCommit: 20cf32fd45ae1072bb67db27c74d3d81629206f4
-lastReviewedNote: 'Reviewed for CLI #275: release-only 0.1.10 publishes merged runtime manager/bootstrap #274; runtime, dependencies, lock bytes and workflows stay at reviewed merge 20cf32f while release proof adds native and public provenance consumers.'
+lastReviewedAt: 2026-09-07
+lastReviewedCommit: 58191977a837e1cdd673ef6d77c35fa2a4caf7ed
+lastReviewedNote: 'Reviewed for CLI #278: explicit managed-host IPC carries original verified manifest bytes and selected context, with receiver validation, cancellation admission closure and lease drainage. Public package release/integration remains separately gated; dependencies, auth and business permissions are unchanged.'
 related:
   - ../AGENTS.md
   - ../.docpact/config.yaml
   - ./release-setup.md
   - ./agents/repo-validation.md
 ---
+
+Issue #278 is a feature delivery for the opt-in managed-host IPC protocol and public runtime receiver. It leaves package version, dependencies, lockfile, authentication, Trusted Publisher setup and release workflows unchanged. Publish this API only through a separately tracked version-bump PR after exact coverage, package consumers, all four native hosts and review pass; complete public provenance verification and exact workspace integration before Foundry/Skills consume it.
 
 Issue #274 delivered the C1 `./runtime` API, machine schemas, component manager, generic no-Node bootstrap sources and `runtime describe` to main merge `20cf32fd45ae1072bb67db27c74d3d81629206f4`. Issue #275 designates 0.1.10 as the separate release-only publication. Its public verifier must bind registry integrity and provenance independently of the package self-description; a CLI descriptor still does not substitute for a frozen product component manifest.
 
