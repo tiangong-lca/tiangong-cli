@@ -1,3 +1,4 @@
+# Review note, 2026-09-07: CLI #278 is covered by existing runtime/public-library/release rules; versioned host context, shared directory guards and receiving tests add no ownership or routing change.
 # Review note, 2026-09-05: #274 adds CLI-owned no-Node POSIX/PowerShell bootstrap and a flattened machine lock schema under the existing runtime-distribution rule; C1/F1 product locks and public components remain release outputs, not source defaults.
 # Review note, 2026-09-05: #274 adds the public runtime descriptor/manager, strict component manifest/archive/cache/lease/exec owners and four-target CLI admission; the existing public-library, command, validation and runtime-distribution rules cover them without moving data authorization.
 version: 1
@@ -55,8 +56,8 @@ layout: repo
 # Review note, 2026-08-31: Issue #252 is the replacement 0.1.5 release after failed-unpublished 0.1.4 and merged Windows coverage #250. It changes package identity and four existing version fixtures only; current release/test/doc routes own the change and no runtime, dependency, export, lock, workflow, or ownership rule changes.
 # Review note, 2026-08-31: Issue #256 refreshes package/lock/test and formatter-owned source/docs under existing validation/release/governed-doc routes, pins the reviewed npm-latest TIDAS SDK 0.2.0 exactly, and keeps version 0.1.5 plus public command/export ownership unchanged. Issue #257 separately owns the later 0.1.6 release-only path.
 # Review note, 2026-08-31: Issue #257 is the release-only 0.1.6 delivery for merged dependency Issue #256. It changes package identity and four existing exact-version fixtures only; current release/test/doc routes own the change while runtime, dependencies, lock bytes, exports, workflows, and ownership remain unchanged.
-lastReviewedAt: '2026-09-05'
-lastReviewedCommit: '20cf32fd45ae1072bb67db27c74d3d81629206f4'
+lastReviewedAt: '2026-09-07'
+lastReviewedCommit: '58191977a837e1cdd673ef6d77c35fa2a4caf7ed'
 
 catalog:
   repos:

@@ -31,9 +31,9 @@ checkPaths:
   - scripts/docpact
   - scripts/docpact-gate.sh
   - scripts/install-git-hooks.sh
-lastReviewedAt: 2026-09-05
-lastReviewedCommit: 20cf32fd45ae1072bb67db27c74d3d81629206f4
-lastReviewedNote: 'Reviewed for CLI #275: release-only 0.1.10 publishes merged runtime manager/bootstrap #274; runtime, dependencies, lock bytes and workflows stay at reviewed merge 20cf32f while release proof adds native and public provenance consumers.'
+lastReviewedAt: 2026-09-07
+lastReviewedCommit: 58191977a837e1cdd673ef6d77c35fa2a4caf7ed
+lastReviewedNote: 'Reviewed for CLI #278: explicit managed-host IPC carries original verified manifest bytes and selected context, with receiver validation, cancellation admission closure and lease drainage. Public package release/integration remains separately gated; dependencies, auth and business permissions are unchanged.'
 related:
   - ../../AGENTS.md
   - ../../.docpact/config.yaml
@@ -47,6 +47,8 @@ related:
 Issue #274 adds runtime descriptor and expectation schemas, file/manifest/asset/Node drift and race tests, immutable observations, explicit four-tuple admission, dotenv-free runtime commands, and clean ESM/CJS/TypeScript packed consumers. Private real-case RED proves public CLI 0.1.9 lacks this surface after actual fresh OAuth identity; candidate GREEN must use an installed package and preserve the frozen input. Package-only hashes do not qualify a full production dependency component. Manager proof additionally requires manifest/parser/path/download/archive/cache/concurrency/lease/exec coverage, a real managed C0 identity case, and byte-bound bootstrap-lock, no-Node POSIX/PowerShell, concurrency/warm/offline and native platform proof. Public-component/C1 qualification remains final release evidence. Existing exact-100% coverage and all four release hosts remain mandatory.
 
 Issue #275 designates 0.1.10 as the release-only C1 publication of merged #274. Before merge it requires recorded npm/tag absence, a separate RED fixture commit, unchanged dependency/lock/runtime/workflow bytes, strict Docpact, package and ordinary consumers, exact 100% coverage, audit, and the four native hosts on the exact release head. After merge it requires one merge-bound tag, native pnpm Trusted Publishing, cryptographic registry/provenance verification, fresh credential-free `./runtime` consumers, the private published-C1 identity/runtime case, and exact root integration.
+
+Issue #278 requires an actual managed Node plus compiled public-runtime host fixture, original-byte and mutation isolation, opt-in/legacy separation, exact message/PID/nonce validation, cache/cwd/executable drift rejection and explicit receiver confirmation. The negative matrix includes zero-exit missing handoff, malformed/repeated/late messages, send/disconnect failure, timeout, output overflow and cancellation before and after handoff. A real delayed-request RED proves that cancellation must stop later context admission; a caller-mutation RED proves host/argv snapshot ownership across asynchronous installation. Package export/declaration consumers, the unchanged bootstrap cases, exact 100% source coverage and all four native hosts remain required before the separate patch release.
 
 ## Default Baseline
 

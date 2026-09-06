@@ -21,6 +21,7 @@ import {
   RUNTIME_ARCHIVE_FORMAT,
   RUNTIME_BOOTSTRAP_PROTOCOL,
   RUNTIME_MANIFEST_SCHEMA,
+  RUNTIME_HOST_CONTEXT_PROTOCOL,
 } from './manifest-types.js';
 import type {
   ComponentFile,
@@ -31,7 +32,7 @@ import type {
   TrustedRuntimeManifest,
   WorkspaceCompatibility,
 } from './manifest-types.js';
-const trusted = new WeakSet<object>();
+const trusted = new WeakMap<object, Buffer>();
 
 function compatibility(value: unknown): WorkspaceCompatibility[] {
   const result = array(value, 32).map((item) => {
@@ -211,7 +212,21 @@ export function parseRuntimeManifest(value: unknown): RuntimeManifest {
     invalid('host/component platform coverage');
   const launches: RuntimeLaunch[] = array(item.launches, 64, 1).map((value) => {
     const launch = record(value, 'launch');
-    exact(launch, ['id', 'platform', 'executable', 'environment', 'argv'], 'launch');
+    const hasContext = Object.hasOwn(launch, 'context_protocol');
+    exact(
+      launch,
+      [
+        'id',
+        'platform',
+        'executable',
+        'environment',
+        'argv',
+        ...(hasContext ? ['context_protocol'] : []),
+      ],
+      'launch',
+    );
+    if (hasContext && launch.context_protocol !== RUNTIME_HOST_CONTEXT_PROTOCOL)
+      invalid('host context protocol');
     if (launch.environment !== 'isolated' && launch.environment !== 'cli-auth')
       invalid('launch environment');
     const target = platform(launch.platform);
@@ -228,6 +243,7 @@ export function parseRuntimeManifest(value: unknown): RuntimeManifest {
       platform: target,
       executable: componentPath(launch.executable, components, target, true),
       environment: launch.environment,
+      ...(hasContext ? { context_protocol: RUNTIME_HOST_CONTEXT_PROTOCOL } : {}),
       argv,
     };
   });
@@ -252,22 +268,25 @@ export function trustRuntimeManifest(
   expectedSha256: string,
 ): TrustedRuntimeManifest {
   sha(expectedSha256);
-  if (
-    bytes.byteLength > 32 * 1024 * 1024 ||
-    createHash('sha256').update(bytes).digest('hex') !== expectedSha256
-  )
+  if (bytes.byteLength > 32 * 1024 * 1024)
+    runtimeError(
+      'RUNTIME_MANIFEST_INTEGRITY',
+      'Runtime manifest bytes do not match the independent trust anchor.',
+    );
+  const snapshot = Buffer.from(bytes);
+  if (createHash('sha256').update(snapshot).digest('hex') !== expectedSha256)
     runtimeError(
       'RUNTIME_MANIFEST_INTEGRITY',
       'Runtime manifest bytes do not match the independent trust anchor.',
     );
   let value: unknown;
   try {
-    value = JSON.parse(Buffer.from(bytes).toString('utf8'));
+    value = JSON.parse(snapshot.toString('utf8'));
   } catch {
     invalid('JSON');
   }
   const result = Object.freeze({ sha256: expectedSha256, manifest: parseRuntimeManifest(value) });
-  trusted.add(result);
+  trusted.set(result, snapshot);
   return result;
 }
 export function loadTrustedRuntimeManifest(
@@ -285,6 +304,15 @@ export function assertTrustedManifest(value: TrustedRuntimeManifest): void {
       'RUNTIME_MANIFEST_UNTRUSTED',
       'Supply a manifest verified against an independent trusted digest.',
     );
+}
+export function copyTrustedRuntimeManifestBytes(value: TrustedRuntimeManifest): Buffer {
+  const bytes = trusted.get(value);
+  if (!bytes)
+    runtimeError(
+      'RUNTIME_MANIFEST_UNTRUSTED',
+      'Supply a manifest verified against an independent trusted digest.',
+    );
+  return Buffer.from(bytes);
 }
 export function componentKey(value: RuntimeComponent): string {
   return contentHash(value);

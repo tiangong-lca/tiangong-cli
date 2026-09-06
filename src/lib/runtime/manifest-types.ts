@@ -3,6 +3,7 @@ import type { RuntimePlatform } from './types.js';
 export const RUNTIME_MANIFEST_SCHEMA = 'tiangong-lca.runtime-manifest.v1' as const;
 export const RUNTIME_BOOTSTRAP_PROTOCOL = 'tiangong-lca.runtime-bootstrap.v1' as const;
 export const RUNTIME_ARCHIVE_FORMAT = 'tar-gzip-ustar-v1' as const;
+export const RUNTIME_HOST_CONTEXT_PROTOCOL = 'tiangong-lca.runtime-host.v1' as const;
 export type ComponentFile = Readonly<{
   path: string;
   bytes: number;
@@ -34,6 +35,7 @@ export type RuntimeLaunch = Readonly<{
   platform: RuntimePlatform;
   executable: ComponentPath;
   environment: 'isolated' | 'cli-auth';
+  context_protocol?: typeof RUNTIME_HOST_CONTEXT_PROTOCOL;
   argv: readonly (ComponentPath | Readonly<{ literal: string }>)[];
 }>;
 export type WorkspaceCompatibility = Readonly<{ schema: string; features: readonly string[] }>;
@@ -56,4 +58,11 @@ export type RuntimeHost = Readonly<{
   platform: RuntimePlatform;
   osRelease: string;
   glibc: string | null;
+}>;
+export type RuntimeHostContext = Readonly<{
+  manifest: TrustedRuntimeManifest;
+  cacheDir: string;
+  cwd: string;
+  entry: string;
+  host: RuntimeHost;
 }>;

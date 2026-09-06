@@ -1,10 +1,10 @@
 import fs from 'node:fs';
-import path from 'node:path';
 import { randomUUID } from 'node:crypto';
 import {
   createFoundryCommandSpec,
   executeFoundryCommandSpec,
   type FoundryCommandSpecSpawnResult,
+  type FoundryCommandSpecAsyncSpawnOptions,
 } from '../../command-spec.js';
 import {
   ensureRuntimeComponents,
@@ -17,7 +17,15 @@ import { cachePath, defaultRuntimeCache, openRuntimeCache } from './storage.js';
 import { assertTrustedManifest, componentKey } from './manifest.js';
 import { inspectRuntimeHost } from './host.js';
 import { runtimeError } from './files.js';
-import type { TrustedRuntimeManifest, ComponentPath } from './manifest-types.js';
+import {
+  runtimeWorkDirectory,
+  assertRuntimeWorkDirectoryOutsideInstall,
+} from './work-directory.js';
+import type {
+  TrustedRuntimeManifest,
+  ComponentPath,
+  RuntimeHostContext,
+} from './manifest-types.js';
 
 const systemKeys = [
   'PATH',
@@ -68,21 +76,37 @@ export type RuntimeExecutionOptions = RuntimeManagerOptions & {
   argv: readonly string[];
   env?: Record<string, string | undefined>;
 };
+export type RuntimeExecutionSpawn = (
+  executable: string,
+  argv: readonly string[],
+  options: FoundryCommandSpecAsyncSpawnOptions,
+  context?: RuntimeHostContext,
+) => Promise<FoundryCommandSpecSpawnResult>;
 export async function executeRuntimeLaunch(
   value: TrustedRuntimeManifest,
   options: RuntimeExecutionOptions,
-  spawnImpl?: Parameters<typeof executeFoundryCommandSpec>[1]['spawnImpl'],
+  spawnImpl?: RuntimeExecutionSpawn,
 ): Promise<FoundryCommandSpecSpawnResult> {
   assertTrustedManifest(value);
-  const host = options.host ?? inspectRuntimeHost();
+  const observedHost = options.host ?? inspectRuntimeHost();
+  const host = Object.freeze({
+    platform: observedHost.platform,
+    osRelease: observedHost.osRelease,
+    glibc: observedHost.glibc,
+  });
   const launch = value.manifest.launches.find(
     (item) => item.id === options.entry && item.platform === host.platform,
   );
   if (!launch)
     runtimeError('RUNTIME_LAUNCH_UNKNOWN', 'Selected runtime entry is not declared for this host.');
+  if (options.argv.length > 512)
+    runtimeError(
+      'RUNTIME_LAUNCH_ARGUMENT',
+      'Runtime argv must be bounded and contain no credential arguments.',
+    );
+  const applicationArgv = [...options.argv];
   if (
-    options.argv.length > 512 ||
-    options.argv.some(
+    applicationArgv.some(
       (arg) =>
         typeof arg !== 'string' ||
         arg.includes('\0') ||
@@ -96,23 +120,9 @@ export async function executeRuntimeLaunch(
       'RUNTIME_LAUNCH_ARGUMENT',
       'Runtime argv must be bounded and contain no credential arguments.',
     );
-  if (!path.isAbsolute(options.cwd) || !fs.statSync(options.cwd).isDirectory())
-    runtimeError(
-      'RUNTIME_LAUNCH_CWD',
-      'Runtime launch requires an explicit existing work directory.',
-    );
-  const cwd = fs.realpathSync(options.cwd),
+  const cwd = runtimeWorkDirectory(options.cwd),
     cache = openRuntimeCache(options.cacheDir ?? defaultRuntimeCache(), false);
-  const relative = path.relative(cache, cwd);
-  if (
-    relative === '' ||
-    (!relative.startsWith(`..${path.sep}`) && relative !== '..' && !path.isAbsolute(relative)) ||
-    /\/(?:\.agents|\.codex)\/skills(?:\/|$)/u.test(cwd.split(path.sep).join('/'))
-  )
-    runtimeError(
-      'RUNTIME_LAUNCH_CWD',
-      'A runtime cache or installed skill cannot be used as the work directory.',
-    );
+  assertRuntimeWorkDirectoryOutsideInstall(cwd, cache);
   const lease = { id: `execution-${randomUUID()}`, owner: `runtime-execution:${process.pid}` };
   let drain: Promise<FoundryCommandSpecSpawnResult> | undefined;
   try {
@@ -147,7 +157,7 @@ export async function executeRuntimeLaunch(
       .map(artifact);
     const argv = launch.argv
       .map((arg) => ('literal' in arg ? arg.literal : artifact(arg).path))
-      .concat([...options.argv]);
+      .concat(applicationArgv);
     const spec = createFoundryCommandSpec({
       executable: program.path,
       argv,
@@ -160,7 +170,13 @@ export async function executeRuntimeLaunch(
       maxBuffer: 16 * 1024 * 1024,
       resolveArtifactPath: (file) => file,
       spawnImpl: (executable, argv, childOptions) => {
-        drain = (spawnImpl ?? spawnRuntimeProcess)(executable, argv, childOptions);
+        const context = launch.context_protocol
+          ? Object.freeze({ manifest: value, cacheDir: cache, cwd, entry: launch.id, host })
+          : undefined;
+        const spawn = spawnImpl ?? spawnRuntimeProcess;
+        drain = context
+          ? spawn(executable, argv, childOptions, context)
+          : spawn(executable, argv, childOptions);
         return drain;
       },
     });

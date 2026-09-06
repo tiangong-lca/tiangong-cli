@@ -38,11 +38,13 @@ export {
   trustRuntimeManifest,
   loadTrustedRuntimeManifest,
   assertWorkspaceCompatibility,
+  copyTrustedRuntimeManifestBytes,
 } from './lib/runtime/manifest.js';
 export {
   RUNTIME_MANIFEST_SCHEMA,
   RUNTIME_BOOTSTRAP_PROTOCOL,
   RUNTIME_ARCHIVE_FORMAT,
+  RUNTIME_HOST_CONTEXT_PROTOCOL,
 } from './lib/runtime/manifest-types.js';
 export type {
   RuntimeManifest,
@@ -51,6 +53,7 @@ export type {
   ComponentFile,
   TrustedRuntimeManifest,
   RuntimeHost,
+  RuntimeHostContext,
   WorkspaceCompatibility,
 } from './lib/runtime/manifest-types.js';
 export {
@@ -65,5 +68,6 @@ export type {
 } from './lib/runtime/manager.js';
 
 export { executeRuntimeLaunch } from './lib/runtime/execute.js';
-export type { RuntimeExecutionOptions } from './lib/runtime/execute.js';
+export type { RuntimeExecutionOptions, RuntimeExecutionSpawn } from './lib/runtime/execute.js';
+export { receiveRuntimeHostContext } from './lib/runtime/host-context.js';
 export { writeRuntimeComponentArchive } from './lib/runtime/archive-writer.js';

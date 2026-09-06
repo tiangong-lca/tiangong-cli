@@ -8,6 +8,57 @@ import { executeRuntimeLaunch, runtimeChildEnvironment } from '../src/lib/runtim
 import { leasedRuntimeKeys, runtimeLeaseKey } from '../src/lib/runtime/leases.js';
 import { spawnRuntimeProcess } from '../src/lib/runtime/process.js';
 import { executeCli } from '../src/cli.js';
+import { inspectRuntimeHost } from '../src/lib/runtime/host.js';
+
+test('managed launch snapshots caller host and application arguments before asynchronous installation', async () => {
+  const f = runtimeComponentFixture();
+  const bytes = Buffer.from(
+    JSON.stringify({
+      ...f.manifest,
+      launches: [{ ...f.manifest.launches[0], context_protocol: 'tiangong-lca.runtime-host.v1' }],
+    }),
+  );
+  const trusted = trustRuntimeManifest(bytes, hash(bytes));
+  const originalHost = inspectRuntimeHost();
+  const host = { ...originalHost, secret: 'not-context' };
+  const argv = ['--json'];
+  try {
+    await assert.rejects(
+      executeRuntimeLaunch(trusted, {
+        cacheDir: f.cacheDir,
+        cwd: f.dir,
+        entry: 'tool',
+        argv: Array<string>(513).fill('x'),
+      }),
+      /bounded/u,
+    );
+    assert.equal(fs.existsSync(f.cacheDir), false);
+    await executeRuntimeLaunch(
+      trusted,
+      {
+        cacheDir: f.cacheDir,
+        cwd: f.dir,
+        entry: 'tool',
+        argv,
+        host,
+        fetchImpl: async () => {
+          host.platform = host.platform === 'linux-x64' ? 'darwin-arm64' : 'linux-x64';
+          argv[0] = '--password=late-input';
+          return new Response(f.archive);
+        },
+      },
+      async (_executable, actualArgv, _options, context) => {
+        assert.deepEqual(actualArgv, ['--json']);
+        assert.deepEqual(context?.host, originalHost);
+        assert.ok(Object.isFrozen(context?.host));
+        assert.equal(context?.manifest, trusted);
+        return { status: 0, signal: null, stdout: '', stderr: '' };
+      },
+    );
+  } finally {
+    f.close();
+  }
+});
 
 test('runtime launch binds argv and keeps leases until aborted in-flight work drains', async () => {
   const f = runtimeComponentFixture();
@@ -39,7 +90,9 @@ test('runtime launch binds argv and keeps leases until aborted in-flight work dr
         ...options,
         lease: { id: 'task', owner: 'urn:test' },
       },
-      async (executable, argv, child) => {
+      async (...received) => {
+        assert.equal(received.length, 3);
+        const [executable, argv, child] = received;
         assert.ok(executable.startsWith(fs.realpathSync(f.cacheDir)));
         assert.equal(argv[0], '--fixed');
         assert.ok(argv[1]?.split(path.sep).join('/').endsWith('metadata/license.txt'));
