@@ -26,8 +26,8 @@ checkPaths:
   - scripts/docpact-gate.sh
   - scripts/install-git-hooks.sh
 lastReviewedAt: 2026-09-07
-lastReviewedCommit: 58191977a837e1cdd673ef6d77c35fa2a4caf7ed
-lastReviewedNote: 'Reviewed for CLI #278: explicit managed-host IPC carries original verified manifest bytes and selected context, with receiver validation, cancellation admission closure and lease drainage. Public package release/integration remains separately gated; dependencies, auth and business permissions are unchanged.'
+lastReviewedCommit: f766d9192419eafd1313062b4f692797ad1304bb
+lastReviewedNote: 'Reviewed for CLI #280: release-only 0.1.11 publishes managed-host interface #278 from main f766d91. Runtime, dependencies, lock, bootstrap scripts and workflows stay unchanged; release qualification retains exact coverage, native consumers, provenance and integration gates.'
 related:
   - ../AGENTS.md
   - ../.docpact/config.yaml
