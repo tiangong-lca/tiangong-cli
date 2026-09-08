@@ -18,9 +18,9 @@ checkPaths:
   - scripts/bootstrap/**
   - test/runtime-*.test.ts
   - package.json
-lastReviewedAt: 2026-09-07
-lastReviewedCommit: 58191977a837e1cdd673ef6d77c35fa2a4caf7ed
-lastReviewedNote: 'Reviewed for CLI #278: explicit managed-host IPC carries original verified manifest bytes and selected context, with receiver validation, cancellation admission closure and lease drainage. Public package release/integration remains separately gated; dependencies, auth and business permissions are unchanged.'
+lastReviewedAt: 2026-09-08
+lastReviewedCommit: b9574422657d2262c1c4ab3b42e9a5a7b37a6883
+lastReviewedNote: 'Reviewed for CLI #287 after native CI: the original HTTP owner passed real public downloads and actual known/absent Content-Length checks on Windows PowerShell and PowerShell Core. Only a transient fixture cleanup EPERM remained; bounded removal retries now pass focused managed-host tests and the full local100% coverage gate. Production trust, authorization and cache-deletion policy remain unchanged.'
 related:
   - docs/agents/repo-architecture.md
   - docs/agents/repo-validation.md
@@ -98,5 +98,7 @@ The no-Node bootstrap implementations live in `scripts/bootstrap/tiangong-runtim
 The POSIX script fixes its tool search path to system directories, disables curl configuration, permits HTTPS only, enforces declared download limits and verifies SHA-256 before archive use. It detects Linux glibc x64/arm64 and native macOS arm64. An x64 macOS process may choose arm64 only when both Apple Silicon capability and translated-process checks pass. Intel Mac, musl and unknown hosts fail before network or cache installation.
 
 The PowerShell script uses the system `tar.exe`, `RuntimeInformation.OSArchitecture`, manual HTTPS redirects and bounded streaming. Windows arm64 fails before downloads. It checks archive names/types before full extraction, uses atomic cache marker and file locks, verifies all checksum entries, and launches through `ProcessStartInfo` with a cleared allowlisted environment and Windows argument quoting. Tests execute the POSIX source on this host and the Windows branch on Windows CI; both scripts have static no-eval/no-credential/no-execution-policy-bypass checks and source-copy byte equality.
+
+The HTTP owner loads the system `System.Net.Http` assembly for Windows PowerShell compatibility and reads `Content-Length` as a scalar or `$null`, as exposed by PowerShell. Present lengths must equal the trusted size; an absent header still requires the exact bounded stream byte count. Native Windows qualification tests the unchanged owner against a real public response in both system Windows PowerShell and PowerShell Core, plus real .NET known/absent header objects and mismatched-size refusal. Cached bootstrap success alone does not cover this download path.
 
 The flattened `assets/runtime/runtime-bootstrap-lock.schema.json` is intentionally simple enough for POSIX extraction without Node or `jq`. It binds both script SHA-256 values, bootstrap protocol, product manifest URL/bytes/SHA, launch id, and each platform base component/archive/checksum/file-count/Node/CLI path. Scripts always read `bootstrap-lock.json` beside themselves; no flag, environment variable, task file or downloaded document may replace it. Existing verified base components and manifests support warm/offline launch with no curl call; component adoption remains subject to the Node manager's independent full manifest check before other components or applications run.

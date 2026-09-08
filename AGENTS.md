@@ -37,9 +37,9 @@ checkPaths:
   - scripts/docpact
   - scripts/docpact-gate.sh
   - scripts/install-git-hooks.sh
-lastReviewedAt: 2026-09-07
-lastReviewedCommit: f766d9192419eafd1313062b4f692797ad1304bb
-lastReviewedNote: 'Reviewed for CLI #280: release-only 0.1.11 publishes managed-host interface #278 from main f766d91. Runtime, dependencies, lock, bootstrap scripts and workflows stay unchanged; release qualification retains exact coverage, native consumers, provenance and integration gates.'
+lastReviewedAt: 2026-09-08
+lastReviewedCommit: b9574422657d2262c1c4ab3b42e9a5a7b37a6883
+lastReviewedNote: 'Reviewed for CLI #287 after native CI: the original HTTP owner passed real public downloads and actual known/absent Content-Length checks on Windows PowerShell and PowerShell Core. Only a transient fixture cleanup EPERM remained; bounded removal retries now pass focused managed-host tests and the full local100% coverage gate. Production trust, authorization and cache-deletion policy remain unchanged.'
 related:
   - .docpact/config.yaml
   - docs/agents/repo-validation.md
