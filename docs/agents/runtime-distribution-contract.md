@@ -19,8 +19,8 @@ checkPaths:
   - test/runtime-*.test.ts
   - package.json
 lastReviewedAt: 2026-09-08
-lastReviewedCommit: 1f9f75fcae3c386e601b49a7da95df0d6a526f6f
-lastReviewedNote: 'Reviewed for CLI #287: real public Windows HTTP exposed boxed Content-Length values without HasValue. The canonical PowerShell bootstrap loads System.Net.Http and compares scalar/null lengths while retaining strict stream size, TLS/redirect, digest and publication checks. New native HTTP/header regressions run before the full Windows gate; a qualified patch release and unchanged consumer copies remain required before Foundry F1.'
+lastReviewedCommit: b9574422657d2262c1c4ab3b42e9a5a7b37a6883
+lastReviewedNote: 'Reviewed for CLI #287 after native CI: the original HTTP owner passed real public downloads and actual known/absent Content-Length checks on Windows PowerShell and PowerShell Core. Only a transient fixture cleanup EPERM remained; bounded removal retries now pass focused managed-host tests and the full local100% coverage gate. Production trust, authorization and cache-deletion policy remain unchanged.'
 related:
   - docs/agents/repo-architecture.md
   - docs/agents/repo-validation.md

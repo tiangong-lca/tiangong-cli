@@ -38,8 +38,8 @@ checkPaths:
   - scripts/docpact-gate.sh
   - scripts/install-git-hooks.sh
 lastReviewedAt: 2026-09-08
-lastReviewedCommit: 42d0b3a946afd075cb9499ecf30c0126665a1454
-lastReviewedNote: 'Reviewed for CLI #287 native CI: actual Windows HTTP checks passed, while a managed-host test failed only when deleting its owned temporary fixture with EPERM. The fixture now uses Node24 bounded recursive-removal retries; persistent failures still throw. Runtime/cache deletion policy, bootstrap bytes and release behavior are unchanged.'
+lastReviewedCommit: b9574422657d2262c1c4ab3b42e9a5a7b37a6883
+lastReviewedNote: 'Reviewed for CLI #287 after native CI: the original HTTP owner passed real public downloads and actual known/absent Content-Length checks on Windows PowerShell and PowerShell Core. Only a transient fixture cleanup EPERM remained; bounded removal retries now pass focused managed-host tests and the full local100% coverage gate. Production trust, authorization and cache-deletion policy remain unchanged.'
 related:
   - .docpact/config.yaml
   - docs/agents/repo-validation.md
