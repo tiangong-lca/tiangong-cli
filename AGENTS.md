@@ -209,6 +209,8 @@ Route those tasks to:
 
 ## Runtime Facts
 
+- `dataset overview describe|capture|catalog|analyze` owns read-only public all-owner topic inventories, explicit core membership, current statistics, exact-reference relationships and consistent Markdown/HTML/CSV/JSON artifacts. Skills own topic interpretation and workflow only. The capability protocol is `tiangong-lca.overview-capabilities.v1`; feature delivery does not bump the package or claim a compatible published Skills pin.
+
 - Repo-local documentation governance is encoded in `.docpact/config.yaml` and enforced locally by the pre-push docpact gate; `.github/workflows/ai-doc-lint.yml` is manual-dispatch fallback.
 - Package manager: exact `pnpm@11.24.0`, with one root workspace and lockfile
 - Compiler and lint: `typescript@7.0.2` plus type-aware Oxlint; no TypeScript 5/6 or ESLint bridge

@@ -222,6 +222,8 @@ The preferred interactive path is `auth login`: a registered public OAuth client
 
 ### Workflow command families
 
+`dataset-overview*.ts` owns the public-topic read/analysis boundary. Capture composes existing authenticated Data API and exact-count pagination owners, enforces all-owner state 100, bounds response work and writes a completion marker last. Records normalize canonical type-specific names and references; analysis applies explicit UUID membership, latest-public object counts and exact-only reference resolution. One-hop Flow usage is a bipartite association, while model instances and explicit output/input Flow references stay separate. The renderer uses the same semantic result for HTML/Markdown/CSV/JSON, escapes untrusted text and exposes display limits. Catalog/analysis are offline; no prior report, governance, solver, new dependency or package export is introduced.
+
 The widest feature families currently live in:
 
 - `src/lib/flow-*.ts`

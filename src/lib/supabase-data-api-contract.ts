@@ -40,6 +40,7 @@ export const DATA_API_RELATION_CONSUMERS = {
     'src/lib/process-refresh-references.ts',
   ],
   flows: [
+    'src/lib/dataset-overview-capture.ts',
     'src/lib/flow-read.ts',
     'src/lib/flow-list.ts',
     'src/lib/flow-publish-version.ts',
@@ -57,6 +58,7 @@ export const DATA_API_RELATION_CONSUMERS = {
     'src/lib/process-refresh-references.ts',
   ],
   lifecyclemodels: [
+    'src/lib/dataset-overview-capture.ts',
     'src/lib/lifecyclemodel-bundle-save.ts',
     'src/lib/process-dedup-review.ts',
     'src/lib/dataset-remote-verify.ts',
@@ -65,6 +67,7 @@ export const DATA_API_RELATION_CONSUMERS = {
     'src/lib/dataset-maintenance-clear-account.ts',
   ],
   processes: [
+    'src/lib/dataset-overview-capture.ts',
     'src/lib/process-get.ts',
     'src/lib/process-list.ts',
     'src/lib/process-save-draft.ts',

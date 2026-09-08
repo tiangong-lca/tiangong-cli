@@ -194,6 +194,24 @@ The callback URI must exactly match the URI registered with the selected Supabas
 
 Local logout does not revoke the server grant. To invalidate every refresh token for the CLI client, open Account → Connected applications and disconnect TianGong CLI.
 
+## Public topic overview
+
+`dataset overview` captures and describes current public Process, Flow and Model data for an industry, product or dataset type. It reads `state_code=100` across all owners and performs no database writes, governance or forecasting. A previous report is not required.
+
+```bash
+tiangong-lca dataset overview describe --json
+tiangong-lca auth status --json
+tiangong-lca dataset overview capture --out-dir ./topic/inventory --json
+tiangong-lca dataset overview catalog --inventory ./topic/inventory --scope ./topic/scope.json --out-dir ./topic/candidates --json
+tiangong-lca dataset overview analyze --inventory ./topic/inventory --scope ./topic/scope.json --out-dir ./topic/analysis --json
+```
+
+Start discovery with a scope containing `schema_version: 1`, `topic`, `boundary`, nonempty `terms`, and `core: []`. After inspecting candidates, populate `core` with `{ "table": "processes", "id": "<public UUID>", "reason": "<inclusion evidence>" }` entries; `flows` and `lifecyclemodels` are also supported. Descriptive keyword matches nominate candidates, not core members. Electricity use alone does not make a steel process part of the electricity industry.
+
+Analysis exports `overview.json`, `overview.md`, standalone interactive `overview.html`, `scope.json`, and CSV files for records, statistics with member identities, Flow usage and explicit model connections. Objects use their latest public version; public revisions and exact-reference context are counted separately. Shared Flow use is a possible association, not a selected supplier or allocation. Connection endpoints retain their own declared Flow UUID/version pairs. Missing metadata and unresolved references remain observations.
+
+Capture follows server-capped pages using exact counts and ordered UUID/version identities. It fails before publishing a completion marker on incomplete pagination or resource-limit errors. Defaults are 250 requested rows per page, 250,000 rows per table and 512 MiB of response bytes; see `capture --help` for bounded overrides. Multi-request reads do not claim a transactional snapshot. Catalog and analysis verify capture hashes/counts and run offline. Every output directory must be fresh.
+
 ## Canonical support export
 
 ```sh
