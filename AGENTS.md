@@ -37,9 +37,9 @@ checkPaths:
   - scripts/docpact
   - scripts/docpact-gate.sh
   - scripts/install-git-hooks.sh
-lastReviewedAt: 2026-09-07
-lastReviewedCommit: f766d9192419eafd1313062b4f692797ad1304bb
-lastReviewedNote: 'Reviewed for CLI #280: release-only 0.1.11 publishes managed-host interface #278 from main f766d91. Runtime, dependencies, lock, bootstrap scripts and workflows stay unchanged; release qualification retains exact coverage, native consumers, provenance and integration gates.'
+lastReviewedAt: 2026-09-08
+lastReviewedCommit: 1f9f75fcae3c386e601b49a7da95df0d6a526f6f
+lastReviewedNote: 'Reviewed for CLI #287: real public Windows HTTP exposed boxed Content-Length values without HasValue. The canonical PowerShell bootstrap loads System.Net.Http and compares scalar/null lengths while retaining strict stream size, TLS/redirect, digest and publication checks. New native HTTP/header regressions run before the full Windows gate; a qualified patch release and unchanged consumer copies remain required before Foundry F1.'
 related:
   - .docpact/config.yaml
   - docs/agents/repo-validation.md

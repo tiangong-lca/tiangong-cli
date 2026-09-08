@@ -41,5 +41,9 @@ jobs:
       - name: Install dependencies
         run: pnpm install --frozen-lockfile
 
+      - name: Verify Windows bootstrap HTTP behavior
+        if: runner.os == 'Windows'
+        run: pnpm exec tsx --test test/runtime-bootstrap-http.test.ts
+
       - name: Run canonical prepush gate
         run: pnpm run prepush:gate
