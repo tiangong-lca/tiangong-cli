@@ -19,8 +19,8 @@ checkPaths:
   - test/runtime-*.test.ts
   - package.json
 lastReviewedAt: 2026-09-08
-lastReviewedCommit: b9574422657d2262c1c4ab3b42e9a5a7b37a6883
-lastReviewedNote: 'Reviewed for CLI #287 after native CI: the original HTTP owner passed real public downloads and actual known/absent Content-Length checks on Windows PowerShell and PowerShell Core. Only a transient fixture cleanup EPERM remained; bounded removal retries now pass focused managed-host tests and the full local100% coverage gate. Production trust, authorization and cache-deletion policy remain unchanged.'
+lastReviewedCommit: f28aea717219b37a5f055acf08cb3d0a14b77c57
+lastReviewedNote: 'Reviewed for CLI #290: version-only 0.1.12 publishes the Windows HTTP bootstrap correction from merged mainf28aea7 after all four native gates. Only package identity, four version fixtures and single-line review metadata advance; dependency/lock/runtime behavior remain as the qualified source. Immutable tag, public provenance/package/script verification and downstream adoption are still required.'
 related:
   - docs/agents/repo-architecture.md
   - docs/agents/repo-validation.md
