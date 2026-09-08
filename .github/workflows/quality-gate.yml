@@ -34,6 +34,7 @@ jobs:
       - name: Set up pnpm and Node.js
         uses: pnpm/setup@84cb39b217b10273981911c288cd62326dc7c6d2 # v2.0.2
         with:
+          dest: ${{ runner.temp }}/pnpm
           runtime: node@24.19.0
           install: false
           cache: true
@@ -49,4 +50,9 @@ jobs:
         run: pnpm exec tsx --test test/runtime-bootstrap-http.test.ts
 
       - name: Run canonical prepush gate
+        if: runner.os != 'Linux'
         run: pnpm run prepush:gate
+
+      - name: Run canonical prepush gate as an unprivileged Linux user
+        if: runner.os == 'Linux'
+        run: bash scripts/ci/run-quality-gate.sh

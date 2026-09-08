@@ -33,6 +33,7 @@ jobs:
       - name: Set up pnpm and Node.js
         uses: pnpm/setup@84cb39b217b10273981911c288cd62326dc7c6d2 # v2.0.2
         with:
+          dest: ${{ runner.temp }}/pnpm
           runtime: node@24.19.0
           install: false
           cache: true
@@ -141,6 +142,7 @@ jobs:
       - name: Set up pnpm and Node.js
         uses: pnpm/setup@84cb39b217b10273981911c288cd62326dc7c6d2 # v2.0.2
         with:
+          dest: ${{ runner.temp }}/pnpm
           runtime: node@24.19.0
           install: false
           cache: true
@@ -149,7 +151,7 @@ jobs:
         run: pnpm install --frozen-lockfile
 
       - name: Run full pre-publish gate
-        run: pnpm run prepush:gate
+        run: bash scripts/ci/run-quality-gate.sh
 
   npm-publish:
     name: Publish npm package
@@ -171,6 +173,7 @@ jobs:
       - name: Set up pnpm and Node.js
         uses: pnpm/setup@84cb39b217b10273981911c288cd62326dc7c6d2 # v2.0.2
         with:
+          dest: ${{ runner.temp }}/pnpm
           runtime: node@24.19.0
           install: false
           cache: true

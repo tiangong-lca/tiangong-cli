@@ -257,3 +257,5 @@ Linux x64, Linux ARM64 and Windows x64 jobs use repository-scoped ephemeral Code
 Before merging a runner change, record the exact-head manual `quality-gate` run, all four native results, matching CodeBuild build IDs, queue/provisioning and execution duration, and cancellation cleanup. A rendered workflow or an AVAILABLE connection alone is not runtime qualification. Infrastructure roles, images, admission and connection configuration belong to tiangong-aws.
 
 The npm publishing job is the approved hosted-Linux exception (CLI #293): keep GitHub-hosted Ubuntu for npm Trusted Publishing and provenance. Do not replace OIDC with a long-lived token to pass qualification.
+
+CodeBuild Linux runs the unchanged complete gate through `scripts/ci/run-quality-gate.sh` as `codebuild-user`, so permission-denial tests retain their meaning. The adapter installs missing `hostname` and uses a pnpm toolchain under runner.temp; it neither skips tests nor changes coverage thresholds.
