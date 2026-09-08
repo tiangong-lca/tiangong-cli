@@ -129,6 +129,6 @@ export function runtimeComponentFixture() {
     manifestPath,
     sha256: hash(manifestBytes),
     cacheDir: path.join(dir, 'cache'),
-    close: () => fs.rmSync(dir, { recursive: true, force: true }),
+    close: () => fs.rmSync(dir, { recursive: true, force: true, maxRetries: 5, retryDelay: 100 }),
   };
 }

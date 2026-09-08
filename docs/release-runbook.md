@@ -26,8 +26,8 @@ checkPaths:
   - scripts/docpact-gate.sh
   - scripts/install-git-hooks.sh
 lastReviewedAt: 2026-09-08
-lastReviewedCommit: 1f9f75fcae3c386e601b49a7da95df0d6a526f6f
-lastReviewedNote: 'Reviewed for CLI #287: real public Windows HTTP exposed boxed Content-Length values without HasValue. The canonical PowerShell bootstrap loads System.Net.Http and compares scalar/null lengths while retaining strict stream size, TLS/redirect, digest and publication checks. New native HTTP/header regressions run before the full Windows gate; a qualified patch release and unchanged consumer copies remain required before Foundry F1.'
+lastReviewedCommit: 42d0b3a946afd075cb9499ecf30c0126665a1454
+lastReviewedNote: 'Reviewed for CLI #287 native CI: actual Windows HTTP checks passed, while a managed-host test failed only when deleting its owned temporary fixture with EPERM. The fixture now uses Node24 bounded recursive-removal retries; persistent failures still throw. Runtime/cache deletion policy, bootstrap bytes and release behavior are unchanged.'
 related:
   - ../AGENTS.md
   - ../.docpact/config.yaml
