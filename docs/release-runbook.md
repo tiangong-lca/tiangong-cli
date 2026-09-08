@@ -315,3 +315,5 @@ Use only that task's successful preflight continuation to complete delivery. Do 
 ## Local Docpact Push Gate
 
 The repository now includes a local pre-push gate that runs `scripts/docpact-gate.sh` and then `pnpm prepush:gate`. It is the ordinary local validation path. For a detected CLI version change, the merge-triggered tag workflow additionally calls the reusable four-platform pnpm matrix and makes tag creation depend on its success; the publish workflow retains its independent tag-bound release gate.
+
+CodeBuild release validation preserves the Linux gate adapter from the exact workflow commit before checking out the selected release tag. Existing-tag recovery therefore does not require an older tag to contain the new adapter, and the package and full gate still execute from the selected release commit.
