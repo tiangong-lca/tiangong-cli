@@ -7,7 +7,7 @@ on:
 jobs:
   quality-gate:
     name: quality-gate (${{ matrix.os }} / ${{ matrix.arch }})
-    runs-on: ${{ matrix.os }}
+    runs-on: ${{ matrix.os == 'macos-latest' && matrix.os || format('codebuild-tiangong-ci-cli-{0}-{1}-{2}', matrix.executor, github.run_id, github.run_attempt) }}
     strategy:
       fail-fast: false
       matrix:
@@ -15,15 +15,18 @@ jobs:
           - os: ubuntu-latest
             platform: linux
             arch: x64
+            executor: linux
           - os: windows-latest
             platform: win32
             arch: x64
+            executor: windows
           - os: macos-latest
             platform: darwin
             arch: arm64
           - os: ubuntu-24.04-arm
             platform: linux
             arch: arm64
+            executor: arm
     steps:
       - name: Checkout
         uses: actions/checkout@v7

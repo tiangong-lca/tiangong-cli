@@ -32,8 +32,8 @@ checkPaths:
   - scripts/docpact-gate.sh
   - scripts/install-git-hooks.sh
 lastReviewedAt: 2026-09-08
-lastReviewedCommit: f28aea717219b37a5f055acf08cb3d0a14b77c57
-lastReviewedNote: 'Reviewed for CLI #290: version-only 0.1.12 publishes the Windows HTTP bootstrap correction from merged mainf28aea7 after all four native gates. Only package identity, four version fixtures and single-line review metadata advance; dependency/lock/runtime behavior remain as the qualified source. Immutable tag, public provenance/package/script verification and downstream adoption are still required.'
+lastReviewedCommit: 6df087b0dda2544a0fd68f2a143559e81d20d60b
+lastReviewedNote: 'Reviewed for CLI #293: CodeBuild runner routing preserves the four-platform quality gate, exact coverage and package contracts; npm Trusted Publishing remains a separate migration decision.'
 related:
   - ../../AGENTS.md
   - ../../.docpact/config.yaml
@@ -249,3 +249,11 @@ Install the versioned local hook once per checkout:
 ```
 
 The `pre-push` hook runs `scripts/docpact-gate.sh`, which delegates CLI lookup to `scripts/docpact` and performs strict config validation plus enforced lint before the push leaves the machine. It then runs `pnpm prepush:gate` as the local test gate, including `pnpm test:package` and exact 100% source coverage. The wrapper checks `DOCPACT_BIN`, Cargo install locations, Homebrew install locations, and then `PATH`, so local agent shells should not fail only because bare `docpact` is unavailable. The default comparison base is `origin/main`. Override it for unusual stacks with `DOCPACT_BASE_REF=<ref>` or `scripts/docpact-gate.sh --base <ref>`. The gate writes its detailed report to a temporary file so normal pushes do not create `.docpact/runs/` artifacts.
+
+## CodeBuild runner qualification
+
+Linux x64, Linux ARM64 and Windows x64 jobs use repository-scoped ephemeral CodeBuild runners. macOS ARM64 uses GitHub-hosted `macos-latest`. Keep the exact platform assertion and complete `prepush:gate` on all four targets. Runner labels include `github.run_id` and `github.run_attempt`; there is no fallback label to GitHub-hosted Linux or Windows when CodeBuild is unavailable.
+
+Before merging a runner change, record the exact-head manual `quality-gate` run, all four native results, matching CodeBuild build IDs, queue/provisioning and execution duration, and cancellation cleanup. A rendered workflow or an AVAILABLE connection alone is not runtime qualification. Infrastructure roles, images, admission and connection configuration belong to tiangong-aws.
+
+The npm publishing job remains a separate release boundary: preserve Trusted Publishing and provenance until the migration exception is explicitly resolved in CLI #293. Do not replace OIDC with a long-lived token to pass qualification.
