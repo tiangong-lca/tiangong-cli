@@ -256,4 +256,4 @@ Linux x64, Linux ARM64 and Windows x64 jobs use repository-scoped ephemeral Code
 
 Before merging a runner change, record the exact-head manual `quality-gate` run, all four native results, matching CodeBuild build IDs, queue/provisioning and execution duration, and cancellation cleanup. A rendered workflow or an AVAILABLE connection alone is not runtime qualification. Infrastructure roles, images, admission and connection configuration belong to tiangong-aws.
 
-The npm publishing job remains a separate release boundary: preserve Trusted Publishing and provenance until the migration exception is explicitly resolved in CLI #293. Do not replace OIDC with a long-lived token to pass qualification.
+The npm publishing job is the approved hosted-Linux exception (CLI #293): keep GitHub-hosted Ubuntu for npm Trusted Publishing and provenance. Do not replace OIDC with a long-lived token to pass qualification.

@@ -11,7 +11,7 @@ permissions:
 jobs:
   release-context:
     if: github.repository == 'tiangong-lca/tiangong-cli'
-    runs-on: ubuntu-latest
+    runs-on: codebuild-tiangong-ci-cli-linux-${{ github.run_id }}-${{ github.run_attempt }}
     outputs:
       cli_changed: ${{ steps.release.outputs.cli_changed }}
       cli_tag: ${{ steps.release.outputs.cli_tag }}
@@ -52,8 +52,7 @@ jobs:
     if: >-
       github.repository == 'tiangong-lca/tiangong-cli' && needs.release-context.outputs.cli_changed == 'true' && needs.quality-gate.result == 'success'
 
-
-    runs-on: ubuntu-latest
+    runs-on: codebuild-tiangong-ci-cli-linux-${{ github.run_id }}-${{ github.run_attempt }}
     env:
       GH_TOKEN: ${{ secrets.TIANGONG_CLI_RELEASE_AUTOMATION_TOKEN }}
 

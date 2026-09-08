@@ -17,7 +17,7 @@ permissions:
 jobs:
   release-context:
     name: Release Context
-    runs-on: ubuntu-latest
+    runs-on: codebuild-tiangong-ci-cli-linux-${{ github.run_id }}-${{ github.run_attempt }}
     outputs:
       release_base: ${{ steps.release.outputs.release_base }}
       release_head: ${{ steps.release.outputs.release_head }}
@@ -113,7 +113,7 @@ jobs:
     name: Release Gate
     needs: release-context
     if: needs.release-context.outputs.should_release == 'true'
-    runs-on: ubuntu-latest
+    runs-on: codebuild-tiangong-ci-cli-linux-${{ github.run_id }}-${{ github.run_attempt }}
 
     steps:
       - name: Check out repository

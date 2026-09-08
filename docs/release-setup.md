@@ -210,3 +210,7 @@ Leave the environment name unset unless the workflow is explicitly updated to us
 ## Local Docpact Push Gate
 
 The repository now includes a local pre-push gate that runs `scripts/docpact-gate.sh` and then `pnpm prepush:gate`. It is the ordinary local validation path. Release automation additionally requires the reusable four-platform pnpm matrix before tag creation and retains an independent tag-bound gate before npm publishing.
+
+## Runner allocation
+
+Release context, validation and tag jobs use repository-scoped CodeBuild runners. Only `publish.yml` job `npm-publish` keeps GitHub-hosted Ubuntu: npm Trusted Publishing requires a hosted runner. This exception is approved in CLI #293; OIDC, provenance, exact-head quality gates and the no-local-publish rule remain mandatory. macOS ARM64 quality validation remains GitHub-hosted.
