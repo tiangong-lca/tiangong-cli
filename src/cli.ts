@@ -6,6 +6,7 @@ import { CliError, toErrorPayload } from './lib/errors.js';
 import type { FetchLike } from './lib/http.js';
 import { stringifyJson } from './lib/io.js';
 import { loadCliPackageVersion } from './lib/package-version.js';
+import { runDatasetOverview } from './lib/dataset-overview.js';
 import {
   runDatasetSupportCacheExport,
   type RunDatasetSupportCacheExportOptions,
@@ -331,6 +332,7 @@ import {
 } from './lib/dataset-source-upload-attachments.js';
 
 export type CliDeps = {
+  runDatasetOverviewImpl?: typeof runDatasetOverview;
   runDatasetSupportCacheExportImpl?: (
     options: RunDatasetSupportCacheExportOptions,
   ) => Promise<DatasetSupportCacheExportReport>;
@@ -564,7 +566,7 @@ Implemented Commands:
   auth       login | status | whoami | doctor-auth | logout | identity-receipt
   search     flow | process | lifecyclemodel
   process    get | list | identity-preflight | build-plan | scope-statistics | dedup-review | auto-build | resume-build | publish-build | complete-required-fields | save-draft | batch-build | refresh-references | verify-rows
-  dataset    support-cache export | contract get | context-pack | classification children/path/audit/apply | curation-queue build/next/verify | import-lca convert | author | patch apply | save-draft | source upload-attachments | validate | verify-remote | bilingual extract/apply/validate | evidence-search plan/run | references rewrite/refresh-remote | maintenance clear-account/plan/apply/verify/flow-identity
+  dataset    overview describe/capture/catalog/analyze | support-cache export | contract get | context-pack | classification children/path/audit/apply | curation-queue build/next/verify | import-lca convert | author | patch apply | save-draft | source upload-attachments | validate | verify-remote | bilingual extract/apply/validate | evidence-search plan/run | references rewrite/refresh-remote | maintenance clear-account/plan/apply/verify/flow-identity
   flow       get | list | identity-preflight | build-plan | fetch-rows | materialize-decisions | remediate | publish-version | publish-reviewed-data | build-alias-map | scan-process-flow-refs | plan-process-flow-repairs | apply-process-flow-repairs | regen-product | validate-processes
   lifecyclemodel auto-build | validate-build | publish-build | save-draft | graph | build-resulting-process | publish-resulting-process | orchestrate
   qa         process | flow | lifecyclemodel
@@ -935,6 +937,7 @@ function renderDatasetHelp(): string {
   tiangong-lca dataset <subcommand> [options]
 
 Implemented Subcommands:
+  overview            Capture public data and export topic statistics, relations and interactive HTML
   support-cache export Export complete observed canonical support rows through OAuth
   contract get        Write TIDAS schema / methodology / ruleset contract artifacts
   context-pack        Write an AI-ready TIDAS contract context pack
@@ -7920,6 +7923,11 @@ export async function executeCli(argv: string[], deps: CliDeps): Promise<CliResu
         stdout: stringifyJson(report, datasetFlags.json),
         stderr: '',
       };
+    }
+
+    if (command === 'dataset' && subcommand === 'overview') {
+      const report = await (deps.runDatasetOverviewImpl ?? runDatasetOverview)(commandArgs, deps);
+      return { exitCode: 0, stdout: stringifyJson(report, true), stderr: '' };
     }
 
     if (command === 'dataset' && subcommand === 'support-cache') {

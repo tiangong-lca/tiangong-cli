@@ -838,6 +838,8 @@ pnpm build
 
 ## 与 skills 的联动约定
 
+`lca-topic-overview` 调用原生 `dataset overview describe|capture|catalog|analyze`：CLI 负责公开数据清单、统计、精确引用关系与 HTML/Markdown/CSV/JSON，skill 负责主题解释、成员选择和结果讲解。公开范围固定为所有归属者的 `state_code=100`；不依赖报告，不做数据治理或展望。配套 feature PR 不代表该能力已经发布到 npm；消费者应检查 capability 协议，并显式选择含该实现的运行时。
+
 `tiangong-lca-skills` 后续不再各自维护独立 HTTP/MCP 入口，而是逐步收敛到这个 CLI。
 
 当前建议：

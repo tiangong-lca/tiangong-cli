@@ -605,6 +605,14 @@ tiangong-lca admin embedding-run --input ./jobs.json --dry-run
 
 而不是长自然语言参数和不稳定的 shell 拼接。
 
+### Public topic overview
+
+`dataset overview describe|capture|catalog|analyze` 为行业、产品和数据类型介绍提供只读能力。`describe` 输出 `tiangong-lca.overview-capabilities.v1`；`capture` 固定读取全部归属者的公开 Process、Flow、Model，复用 OAuth/Data API 和 exact-count 分页，按实际返回行数推进 offset，保存 UUID/version 有序清单及 hash。计数/分页/资源边界不完整时不产生成功清单，多请求读取不声称事务快照。
+
+`catalog` 仅按描述性名称、同义词、分类、类型和技术说明发现候选，不把 exchange 中提到电力的过程自动归入电力行业。`scope.json` 显式保存 topic、boundary、terms 和带 reason 的 table/UUID core 集合。`analyze` 按最新公开版本统计对象，公开修订数另列；参考产品依据精确公开 Flow 引用，空缺和未解析项单列。共用 Flow 的供需关联、Model 的过程实例、显式连接分别建模；连接两端各自的 Flow UUID/version 不被替换或推断。
+
+同一语义结果产生 `overview.json`、`overview.md`、交互 HTML 和清单/统计/Flow 使用/模型连接 CSV。分组保留成员标识，HTML 明示展示上限。缺失元数据是现状观察，不产生数据治理、修复、质量评级、预测、分配或计算流程。示例调用及资源参数见 README 的 Public topic overview。
+
 ### 4.3.0 `auth identity-receipt` 的最小 contract
 
 `tiangong-lca auth identity-receipt` 是 production-backed case 的身份前置证明，不是泛化 auth 管理器。运行顺序固定为：解析受控 auth runtime；从 canonical `https://<ref>.supabase.co` base 派生 project；在任何 session/network 前核对 `--expected-project-ref`；复用 OAuth/headless session；对 `/auth/v1/user` 做大小和 JSON shape 有界的 live GET；核对 session email 与 live email；最后核对 `--expected-user-id`。第一次 live GET 的 401/403 只在 OAuth session 可 refresh 时续期并重读一次，其他失败不重试。

@@ -189,6 +189,8 @@ Review note, 2026-07-25: Issue #208 adds positive proof that a fresh exact-SHA a
 
 ## Validation Matrix
 
+Topic overview qualification uses `test/dataset-overview.test.ts`: public-only capped pagination with repeated UUID versions, empty/error/resource-bound reads, capture hashes/counts, metadata discovery, electricity and non-electricity memberships, distinct object/revision/product/exchange/instance populations, exact model endpoint versions, cycles and unresolved references, output agreement, text/CSV escaping and offline command admission. Retain the full `pnpm prepush:gate` and exact coverage assertion. Qualify standalone HTML chart drilldown, record search/reset, relation selection and bounded mobile display in an isolated browser; this manual artifact check requires no account credentials and adds no browser download to the public gate. The companion Skills integration test invokes only the public built bin.
+
 | Change type | Minimum local proof | Additional proof when risk is higher | Notes |
 | --- | --- | --- | --- |
 | `bin/**`, `src/main.ts`, or `src/cli.ts` | `pnpm lint`; `pnpm test`; `pnpm build` | run the relevant `tiangong-lca --help` or subcommand help path after build | Launcher and dispatch changes affect the public command surface directly. |
