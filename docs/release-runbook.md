@@ -26,8 +26,8 @@ checkPaths:
   - scripts/docpact-gate.sh
   - scripts/install-git-hooks.sh
 lastReviewedAt: 2026-09-09
-lastReviewedCommit: 1318920e71282bf7fcd9ab975f21b7c5b7173073
-lastReviewedNote: 'Reviewed for CLI #300: POSIX bootstrap preserves verified archive file modes under the private umask, with real cold-install mode/inventory regression. Runtime manager integrity, source coverage, dependencies, version and release automation remain unchanged; a separate qualified C1 release and downstream adoption are required.'
+lastReviewedCommit: b32376e57253d106eaa5064b0740ac248156f936
+lastReviewedNote: 'Reviewed for CLI #302: version-only 0.1.13 publishes the qualified POSIX bootstrap mode correction from merged main b32376e. Only package identity, four version fixtures and review metadata advance; the frozen graph and runtime/release safeguards remain unchanged.'
 related:
   - ../AGENTS.md
   - ../.docpact/config.yaml

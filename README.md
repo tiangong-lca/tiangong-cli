@@ -31,9 +31,9 @@ checkPaths:
   - test/auth-identity*.test.ts
   - test/public-auth-identity-receipt.test.ts
   - test/lca-release*.test.ts
-lastReviewedAt: 2026-09-08
-lastReviewedCommit: f28aea717219b37a5f055acf08cb3d0a14b77c57
-lastReviewedNote: 'Reviewed for CLI #290: version-only 0.1.12 publishes the Windows HTTP bootstrap correction from merged mainf28aea7 after all four native gates. Only package identity, four version fixtures and single-line review metadata advance; dependency/lock/runtime behavior remain as the qualified source. Immutable tag, public provenance/package/script verification and downstream adoption are still required.'
+lastReviewedAt: 2026-09-09
+lastReviewedCommit: b32376e57253d106eaa5064b0740ac248156f936
+lastReviewedNote: 'Reviewed for CLI #302: version-only 0.1.13 publishes the qualified POSIX bootstrap mode correction from merged main b32376e. Only package identity, four version fixtures and review metadata advance; the frozen graph and runtime/release safeguards remain unchanged.'
 ---
 
 CLI 0.1.10 is the designated C1 release for `tiangong-lca runtime describe --json` and the explicit `@tiangong-lca/cli/runtime` API for package, asset and Node content inspection. Runtime inspection loads no project `.env`, performs no authentication and downloads nothing. See [the runtime distribution contract](docs/agents/runtime-distribution-contract.md) for exact fields and trust boundaries; verify public availability and provenance before treating the candidate version as released.
