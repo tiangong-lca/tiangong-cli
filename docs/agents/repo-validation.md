@@ -32,8 +32,8 @@ checkPaths:
   - scripts/docpact-gate.sh
   - scripts/install-git-hooks.sh
 lastReviewedAt: 2026-09-09
-lastReviewedCommit: 59d25a7edd9717e83f2943dcb37b84b45f7d5a2c
-lastReviewedNote: 'Reviewed for CLI #293: CodeBuild runner routing preserves the four-platform quality gate, exact coverage and package contracts; npm Trusted Publishing remains a separate migration decision.'
+lastReviewedCommit: 80b989aa8a9477530bd02c8eec451cd336c01d17
+lastReviewedNote: 'Reviewed for CLI #296: manual provider/cache/scheduling trials retain every canonical gate and platform; reusable release calls stay serial and npm Trusted Publishing stays GitHub-hosted.'
 related:
   - ../../AGENTS.md
   - ../../.docpact/config.yaml
@@ -269,3 +269,5 @@ Dispatch the reviewed workflow branch with `provider=hosted|codebuild`, `cache_e
 The controls are an experiment surface, not an automatic fallback or a replacement for release proof. Candidate checkout is separate from the reviewed workflow revision; verify both identities before treating results as comparable.
 
 Issue #296 software trial retains the full package consumer and exact-100% gates. Five fully mocked request-failure tests use `withAssertedRetryDelays` to record and assert the SDK's exact 1/2/4-second retry schedule while scheduling each callback on the next timer turn. Existing response/error/recovery assertions remain; real I/O, cancellation, deadlines and inter-process timing tests retain real clocks. Two helper tests reject missing waits and verify callback ordering, failure propagation and timer restoration. Production sources, dependencies and lockfile are unchanged. A failed Windows benchmark may run a separate TAP diagnostic of the failed architecture test; this never repairs the original failed gate or qualifies that run as a speed sample.
+
+The manual `scheduling=parallel` trial runs `lint → peers:check` alongside `test:package → test:coverage → test:coverage:assert-full`. It preserves each dependency chain, waits for both branches, retains any failure, and rejects a changed canonical command list before execution. Four negative/order tests cover the coordinator. The Linux wrapper retains a real unprivileged user for either mode. Reusable release calls and the default manual mode remain serial. Compare serial/parallel on the same exact candidate; local timing is a feasibility check, not evidence of cloud performance.

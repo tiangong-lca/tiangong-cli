@@ -26,8 +26,8 @@ checkPaths:
   - scripts/docpact-gate.sh
   - scripts/install-git-hooks.sh
 lastReviewedAt: 2026-09-09
-lastReviewedCommit: 59d25a7edd9717e83f2943dcb37b84b45f7d5a2c
-lastReviewedNote: 'Reviewed for CLI #293: CodeBuild runner routing preserves the four-platform quality gate, exact coverage and package contracts; npm Trusted Publishing remains a separate migration decision.'
+lastReviewedCommit: 80b989aa8a9477530bd02c8eec451cd336c01d17
+lastReviewedNote: 'Reviewed for CLI #296: manual provider/cache/scheduling trials retain every canonical gate and platform; reusable release calls stay serial and npm Trusted Publishing stays GitHub-hosted.'
 related:
   - ../AGENTS.md
   - ../.docpact/config.yaml
