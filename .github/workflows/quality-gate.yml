@@ -19,6 +19,11 @@ on:
         type: choice
         default: serial
         options: [serial, parallel]
+      cache_layout:
+        description: Manual cache probe; stable directory and exact keys, or isolated CodeBuild S3 projects.
+        type: choice
+        default: current
+        options: [current, stable-actions, s3]
       cache_enabled:
         description: Cache the pnpm store; disable for the no-cache comparison.
         type: boolean
@@ -38,7 +43,7 @@ permissions:
 jobs:
   quality-gate:
     name: quality-gate (${{ matrix.os }} / ${{ matrix.arch }})
-    runs-on: ${{ (matrix.os == 'macos-latest' || (github.event_name == 'workflow_dispatch' && inputs.provider == 'hosted')) && matrix.os || format('codebuild-tiangong-ci-cli-{0}-{1}-{2}{3}', matrix.executor, github.run_id, github.run_attempt, github.event_name == 'workflow_dispatch' && inputs.compute == 'large' && matrix.arch == 'x64' && '-large' || '') }}
+    runs-on: ${{ (matrix.os == 'macos-latest' || (github.event_name == 'workflow_dispatch' && inputs.provider == 'hosted')) && matrix.os || format('codebuild-tiangong-ci-cli-{0}{1}-{2}-{3}{4}{5}', matrix.executor, inputs.cache_layout == 's3' && '-cache-probe' || '', github.run_id, github.run_attempt, github.event_name == 'workflow_dispatch' && inputs.compute == 'large' && matrix.arch == 'x64' && '-large' || '', inputs.cache_layout == 's3' && ' buildspec-override:true' || '') }}
     strategy:
       fail-fast: false
       matrix:
@@ -74,13 +79,43 @@ jobs:
         run: >-
           node -e "const fs=require('node:fs'),cp=require('node:child_process'); const sha=process.env.EXPECTED_SHA; if(!/^[0-9a-f]{40}$/.test(sha)||cp.execFileSync('git',['-c','safe.directory='+process.cwd(),'rev-parse','HEAD'],{encoding:'utf8'}).trim()!==sha) throw Error('Exact candidate mismatch'); if(process.env.CACHE_EPOCH) fs.writeFileSync('.ci-benchmark-cache-key',Buffer.concat([fs.readFileSync('pnpm-lock.yaml'),Buffer.from(JSON.stringify({provider:process.env.BENCHMARK_PROVIDER,epoch:process.env.CACHE_EPOCH}))]));"
 
+      - name: Prepare stable cache experiment
+        if: github.event_name == 'workflow_dispatch' && inputs.cache_layout != 'current' && inputs.cache_layout != ''
+        shell: bash
+        env:
+          CACHE_LAYOUT: ${{ inputs.cache_layout }}
+          PROVIDER: ${{ inputs.provider }}
+          ENABLED: ${{ inputs.cache_enabled }}
+          EXACT_CANDIDATE: ${{ inputs.candidate_sha }}
+        run: |
+          [[ "$EXACT_CANDIDATE" =~ ^[0-9a-f]{40}$ ]]
+          if [[ "$CACHE_LAYOUT" == s3 ]]; then
+            test "$PROVIDER" == codebuild && test "$ENABLED" == true
+          fi
+          if [[ "$RUNNER_OS" == Windows ]]; then
+            cache_root=C:/tiangong-ci-cache/pnpm
+          else
+            cache_root=/tmp/tiangong-ci-cache/pnpm
+          fi
+          mkdir -p "$cache_root"
+          echo "pnpm_config_store_dir=$cache_root" >> "$GITHUB_ENV"
+          echo "CI_CACHE_ROOT=$cache_root" >> "$GITHUB_ENV"
+
+      - name: Restore exact experimental Actions cache
+        id: exact-cache
+        if: inputs.cache_layout != 'current' && inputs.cache_layout != '' && inputs.cache_enabled && (inputs.cache_layout != 's3' || runner.os == 'macOS')
+        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: ${{ env.CI_CACHE_ROOT }}
+          key: cli296-stable-${{ inputs.provider }}-${{ runner.os }}-${{ matrix.arch }}-node24.19.0-pnpm11.24.0-${{ hashFiles('pnpm-lock.yaml') }}-${{ inputs.cache_epoch }}
+
       - name: Set up pnpm and Node.js
         uses: pnpm/setup@84cb39b217b10273981911c288cd62326dc7c6d2 # v2.0.2
         with:
           dest: ${{ runner.temp }}/pnpm
           runtime: node@24.19.0
           install: false
-          cache: ${{ github.event_name != 'workflow_dispatch' || inputs.candidate_sha == '' || inputs.cache_enabled }}
+          cache: ${{ (inputs.cache_layout == '' || inputs.cache_layout == 'current') && (github.event_name != 'workflow_dispatch' || inputs.candidate_sha == '' || inputs.cache_enabled) }}
           cache-dependency-path: ${{ inputs.candidate_sha != '' && inputs.cache_epoch != '' && '.ci-benchmark-cache-key' || 'pnpm-lock.yaml' }}
 
       - name: Assert runner platform and architecture
@@ -95,6 +130,16 @@ jobs:
 
       - name: Install dependencies
         run: pnpm install --frozen-lockfile
+
+      - name: Preserve ordinary-user access to experimental store
+        if: runner.os == 'Linux' && inputs.cache_layout != 'current' && inputs.cache_layout != ''
+        shell: bash
+        run: |
+          test "$CI_CACHE_ROOT" == /tmp/tiangong-ci-cache/pnpm
+          if [[ $(id -u) == 0 ]]; then
+            test -n "${CODEBUILD_BUILD_ID:-}"
+            chown -R codebuild-user:codebuild-user "$CI_CACHE_ROOT"
+          fi
 
       - name: Verify Windows bootstrap HTTP behavior
         if: runner.os == 'Windows'
@@ -129,11 +174,14 @@ jobs:
           EXPECTED_SHA: ${{ inputs.candidate_sha }}
           BENCHMARK_PROVIDER: ${{ inputs.provider }}
           CACHE_ENABLED: ${{ inputs.cache_enabled }}
+          CACHE_LAYOUT: ${{ inputs.cache_layout || 'current' }}
+          ACTIONS_CACHE_HIT: ${{ steps.exact-cache.outputs.cache-hit }}
+          GATE_SUCCEEDED: ${{ job.status == 'success' }}
           GATE_SCHEDULING: ${{ inputs.scheduling || 'serial' }}
           REQUESTED_COMPUTE: ${{ inputs.compute || 'current' }}
           CACHE_EPOCH: ${{ inputs.cache_epoch }}
         run: >-
-          node -e "const fs=require('node:fs'),os=require('node:os'),cp=require('node:child_process'),c=require('node:crypto'); const files=['package.json','pnpm-lock.yaml','scripts/run-test-coverage.cjs']; const evidence={sha:cp.execFileSync('git',['-c','safe.directory='+process.cwd(),'rev-parse','HEAD'],{encoding:'utf8'}).trim(),expectedSha:process.env.EXPECTED_SHA,provider:process.env.BENCHMARK_PROVIDER,cacheEnabled:process.env.CACHE_ENABLED,scheduling:process.env.GATE_SCHEDULING,requestedCompute:process.env.REQUESTED_COMPUTE,cacheEpoch:process.env.CACHE_EPOCH,platform:process.platform,arch:process.arch,node:process.version,cpus:os.cpus().map(x=>x.model),parallelism:os.availableParallelism(),memory:os.totalmem(),hashes:Object.fromEntries(files.map(f=>[f,c.createHash('sha256').update(fs.readFileSync(f)).digest('hex')]))}; fs.writeFileSync('benchmark-environment.json',JSON.stringify(evidence,null,2)); console.log(JSON.stringify(evidence));"
+          node -e "const fs=require('node:fs'),os=require('node:os'),cp=require('node:child_process'),c=require('node:crypto'); const files=['package.json','pnpm-lock.yaml','scripts/run-test-coverage.cjs']; const evidence={sha:cp.execFileSync('git',['-c','safe.directory='+process.cwd(),'rev-parse','HEAD'],{encoding:'utf8'}).trim(),expectedSha:process.env.EXPECTED_SHA,provider:process.env.BENCHMARK_PROVIDER,cacheLayout:process.env.CACHE_LAYOUT,cacheStore:process.env.CI_CACHE_ROOT||null,actionsCacheHit:process.env.ACTIONS_CACHE_HIT||null,cacheSeed:process.env.CI_CACHE_ROOT&&fs.existsSync(process.env.CI_CACHE_ROOT+'/.ci-cache-seed')?fs.readFileSync(process.env.CI_CACHE_ROOT+'/.ci-cache-seed','utf8').trim():null,cacheEnabled:process.env.CACHE_ENABLED,scheduling:process.env.GATE_SCHEDULING,requestedCompute:process.env.REQUESTED_COMPUTE,cacheEpoch:process.env.CACHE_EPOCH,platform:process.platform,arch:process.arch,node:process.version,cpus:os.cpus().map(x=>x.model),parallelism:os.availableParallelism(),memory:os.totalmem(),hashes:Object.fromEntries(files.map(f=>[f,c.createHash('sha256').update(fs.readFileSync(f)).digest('hex')]))}; fs.writeFileSync('benchmark-environment.json',JSON.stringify(evidence,null,2)); console.log(JSON.stringify(evidence)); if(process.env.CI_CACHE_ROOT&&process.env.GATE_SUCCEEDED==='true') fs.writeFileSync(process.env.CI_CACHE_ROOT+'/.ci-cache-seed',process.env.GITHUB_RUN_ID);"
 
       - name: Upload benchmark evidence
         if: always() && github.event_name == 'workflow_dispatch' && inputs.candidate_sha != ''

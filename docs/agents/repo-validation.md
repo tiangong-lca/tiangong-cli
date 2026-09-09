@@ -32,7 +32,7 @@ checkPaths:
   - scripts/docpact-gate.sh
   - scripts/install-git-hooks.sh
 lastReviewedAt: 2026-09-09
-lastReviewedCommit: 777d9753e3d07c59c229ee315380fbf629a9755d
+lastReviewedCommit: c0a30c9aa30d74778700ed915bccf3da1b765138
 lastReviewedNote: 'Reviewed for CLI #296: manual provider/cache/scheduling trials retain every canonical gate and platform; reusable release calls stay serial and npm Trusted Publishing stays GitHub-hosted.'
 related:
   - ../../AGENTS.md
@@ -273,3 +273,5 @@ Issue #296 software trial retains the full package consumer and exact-100% gates
 The manual `scheduling=parallel` trial runs `lint → peers:check` alongside `test:package → test:coverage → test:coverage:assert-full`. It preserves each dependency chain, waits for both branches, retains any failure, and rejects a changed canonical command list before execution. Five negative/order tests cover the coordinator, including normalization of nonzero Windows statuses to a failing process exit. The Linux wrapper retains a real unprivileged user for either mode. Reusable release calls and the default manual mode remain serial. Compare serial/parallel on the same exact candidate; local timing is a feasibility check, not evidence of cloud performance.
 
 Only after the software comparisons, `compute=large` may override CodeBuild Linux x64 and Windows x64 to 8-vCPU/16-GiB LARGE for that run, using the [documented single-label size override](https://docs.aws.amazon.com/codebuild/latest/userguide/sample-github-action-runners-update-labels.html). An allocation assertion rejects a missing override before the gate. ARM, macOS, project defaults and ordinary release calls retain their existing configuration. Compare `current` and `large` with the same exact candidate and scheduling mode; never claim provider superiority without a comparable hosted larger-runner experiment.
+
+Manual cache experiments for #296 keep the complete gate and current compute: `current` preserves the existing setup cache, `stable-actions` uses an external pnpm store with exact provider/platform/lock/epoch keys and no prefix restore, and `s3` selects isolated `tiangong-ci-cli-<executor>-cache-probe` projects. macOS stays hosted with the exact Actions cache. Cache seeds and hit evidence are captured; Linux store ownership is transferred to the existing ordinary test user. No test result, coverage output or package artifact is reused as a passed check, and reusable release calls retain their existing defaults.
