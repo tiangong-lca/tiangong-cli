@@ -32,7 +32,7 @@ checkPaths:
   - scripts/docpact-gate.sh
   - scripts/install-git-hooks.sh
 lastReviewedAt: 2026-09-09
-lastReviewedCommit: c0a30c9aa30d74778700ed915bccf3da1b765138
+lastReviewedCommit: e10598106b1d9b428153ac58dc8558cb4ff7d33b
 lastReviewedNote: 'Reviewed for CLI #296: manual provider/cache/scheduling trials retain every canonical gate and platform; reusable release calls stay serial and npm Trusted Publishing stays GitHub-hosted.'
 related:
   - ../../AGENTS.md
@@ -274,4 +274,4 @@ The manual `scheduling=parallel` trial runs `lint → peers:check` alongside `te
 
 Only after the software comparisons, `compute=large` may override CodeBuild Linux x64 and Windows x64 to 8-vCPU/16-GiB LARGE for that run, using the [documented single-label size override](https://docs.aws.amazon.com/codebuild/latest/userguide/sample-github-action-runners-update-labels.html). An allocation assertion rejects a missing override before the gate. ARM, macOS, project defaults and ordinary release calls retain their existing configuration. Compare `current` and `large` with the same exact candidate and scheduling mode; never claim provider superiority without a comparable hosted larger-runner experiment.
 
-Manual cache experiments for #296 keep the complete gate and current compute: `current` preserves the existing setup cache, `stable-actions` uses an external pnpm store with exact provider/platform/lock/epoch keys and no prefix restore, and `s3` selects isolated `tiangong-ci-cli-<executor>-cache-probe` projects. macOS stays hosted with the exact Actions cache. Cache seeds and hit evidence are captured; Linux store ownership is transferred to the existing ordinary test user. No test result, coverage output or package artifact is reused as a passed check, and reusable release calls retain their existing defaults.
+Manual cache experiments for #296 keep the complete gate and current compute: `current` preserves the existing setup cache; `stable-actions` uses an external pnpm store with exact provider/platform/lock/epoch keys and no prefix restore. Cache seeds and hit evidence are captured, and Linux store ownership is transferred to the existing ordinary test user. No test result, coverage output or package artifact is reused as a passed check. Reusable release calls retain their existing defaults. The isolated S3 comparison was executed with workflow commit `e10598106b1d9b428153ac58dc8558cb4ff7d33b`; its selector is retired with the temporary AWS projects rather than leaving a selectable runner that no longer exists. Configuration, runs and cache evidence are retained in PR #297 and the workspace cache benchmark report.
