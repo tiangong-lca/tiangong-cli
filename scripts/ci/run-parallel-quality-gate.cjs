@@ -25,7 +25,7 @@ async function runParallelGate(scripts, run) {
         } catch {
           return 1;
         }
-        if (status !== 0) return Number.isInteger(status) && status > 0 ? status : 1;
+        if (status !== 0) return 1;
       }
       return 0;
     }),

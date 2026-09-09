@@ -36,7 +36,7 @@ test('parallel gate retains a static failure and waits for the complete other br
       calls.push(name);
       return name === 'lint' ? 7 : 0;
     }),
-    7,
+    1,
   );
   assert.deepEqual(calls, ['lint', 'test:package', 'test:coverage', 'test:coverage:assert-full']);
 });
@@ -68,4 +68,8 @@ test('parallel gate rejects canonical command drift before executing any branch'
     ),
     /must be re-reviewed/,
   );
+});
+
+test('parallel gate normalizes nonzero Windows statuses without wrapping to a zero process exit', async () => {
+  assert.equal(await gate.runParallelGate(scripts, async (name) => (name === 'lint' ? 256 : 0)), 1);
 });
