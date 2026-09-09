@@ -13,7 +13,7 @@ permissions:
 
 jobs:
   ai-doc-lint:
-    runs-on: codebuild-tiangong-ci-cli-linux-${{ github.run_id }}-${{ github.run_attempt }}
+    runs-on: ubuntu-latest
 
     steps:
       - name: Check out repository

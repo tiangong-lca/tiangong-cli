@@ -24,9 +24,9 @@ checkPaths:
   - scripts/docpact
   - scripts/docpact-gate.sh
   - scripts/install-git-hooks.sh
-lastReviewedAt: 2026-09-08
-lastReviewedCommit: 6df087b0dda2544a0fd68f2a143559e81d20d60b
-lastReviewedNote: 'Reviewed for CLI #293: CodeBuild runner routing preserves the four-platform quality gate, exact coverage and package contracts; npm Trusted Publishing remains a separate migration decision.'
+lastReviewedAt: 2026-09-09
+lastReviewedCommit: e0cdba4a37aa37cf1aef6245ac77cdf0db754931
+lastReviewedNote: 'Reviewed for CLI #298: restore all GitHub-hosted runners with unchanged full quality gates and existing-tag recovery.'
 related:
   - ../AGENTS.md
   - ../.docpact/config.yaml
@@ -213,4 +213,4 @@ The repository now includes a local pre-push gate that runs `scripts/docpact-gat
 
 ## Runner allocation
 
-Release context, validation and tag jobs use repository-scoped CodeBuild runners. Only `publish.yml` job `npm-publish` keeps GitHub-hosted Ubuntu: npm Trusted Publishing requires a hosted runner. This exception is approved in CLI #293; OIDC, provenance, exact-head quality gates and the no-local-publish rule remain mandatory. macOS ARM64 quality validation remains GitHub-hosted.
+All CI jobs use GitHub-hosted runners. The quality matrix covers Linux x64, Linux ARM64, Windows x64 and macOS Apple Silicon. Issue #298 reverses the CodeBuild routing after the benchmark showed limited total-wait benefit; no AWS runner is required. Existing-tag recovery continues through workflow_dispatch and the direct canonical gate from the tagged checkout.

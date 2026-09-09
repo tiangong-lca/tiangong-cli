@@ -25,9 +25,9 @@ checkPaths:
   - scripts/docpact
   - scripts/docpact-gate.sh
   - scripts/install-git-hooks.sh
-lastReviewedAt: 2026-09-08
-lastReviewedCommit: 6df087b0dda2544a0fd68f2a143559e81d20d60b
-lastReviewedNote: 'Reviewed for CLI #293: CodeBuild runner routing preserves the four-platform quality gate, exact coverage and package contracts; npm Trusted Publishing remains a separate migration decision.'
+lastReviewedAt: 2026-09-09
+lastReviewedCommit: e0cdba4a37aa37cf1aef6245ac77cdf0db754931
+lastReviewedNote: 'Reviewed for CLI #298: restore all GitHub-hosted runners with unchanged full quality gates and existing-tag recovery.'
 related:
   - ../AGENTS.md
   - ../.docpact/config.yaml
@@ -315,5 +315,3 @@ Use only that task's successful preflight continuation to complete delivery. Do 
 ## Local Docpact Push Gate
 
 The repository now includes a local pre-push gate that runs `scripts/docpact-gate.sh` and then `pnpm prepush:gate`. It is the ordinary local validation path. For a detected CLI version change, the merge-triggered tag workflow additionally calls the reusable four-platform pnpm matrix and makes tag creation depend on its success; the publish workflow retains its independent tag-bound release gate.
-
-CodeBuild release validation preserves the Linux gate adapter from the exact workflow commit before checking out the selected release tag. Existing-tag recovery therefore does not require an older tag to contain the new adapter, and the package and full gate still execute from the selected release commit.

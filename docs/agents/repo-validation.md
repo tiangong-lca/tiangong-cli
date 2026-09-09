@@ -31,9 +31,9 @@ checkPaths:
   - scripts/docpact
   - scripts/docpact-gate.sh
   - scripts/install-git-hooks.sh
-lastReviewedAt: 2026-09-08
-lastReviewedCommit: 6df087b0dda2544a0fd68f2a143559e81d20d60b
-lastReviewedNote: 'Reviewed for CLI #293: CodeBuild runner routing preserves the four-platform quality gate, exact coverage and package contracts; npm Trusted Publishing remains a separate migration decision.'
+lastReviewedAt: 2026-09-09
+lastReviewedCommit: e0cdba4a37aa37cf1aef6245ac77cdf0db754931
+lastReviewedNote: 'Reviewed for CLI #298: restore all GitHub-hosted runners with unchanged full quality gates and existing-tag recovery.'
 related:
   - ../../AGENTS.md
   - ../../.docpact/config.yaml
@@ -249,13 +249,3 @@ Install the versioned local hook once per checkout:
 ```
 
 The `pre-push` hook runs `scripts/docpact-gate.sh`, which delegates CLI lookup to `scripts/docpact` and performs strict config validation plus enforced lint before the push leaves the machine. It then runs `pnpm prepush:gate` as the local test gate, including `pnpm test:package` and exact 100% source coverage. The wrapper checks `DOCPACT_BIN`, Cargo install locations, Homebrew install locations, and then `PATH`, so local agent shells should not fail only because bare `docpact` is unavailable. The default comparison base is `origin/main`. Override it for unusual stacks with `DOCPACT_BASE_REF=<ref>` or `scripts/docpact-gate.sh --base <ref>`. The gate writes its detailed report to a temporary file so normal pushes do not create `.docpact/runs/` artifacts.
-
-## CodeBuild runner qualification
-
-Linux x64, Linux ARM64 and Windows x64 jobs use repository-scoped ephemeral CodeBuild runners. macOS ARM64 uses GitHub-hosted `macos-latest`. Keep the exact platform assertion and complete `prepush:gate` on all four targets. Runner labels include `github.run_id` and `github.run_attempt`; there is no fallback label to GitHub-hosted Linux or Windows when CodeBuild is unavailable.
-
-Before merging a runner change, record the exact-head manual `quality-gate` run, all four native results, matching CodeBuild build IDs, queue/provisioning and execution duration, and cancellation cleanup. A rendered workflow or an AVAILABLE connection alone is not runtime qualification. Infrastructure roles, images, admission and connection configuration belong to tiangong-aws.
-
-The npm publishing job is the approved hosted-Linux exception (CLI #293): keep GitHub-hosted Ubuntu for npm Trusted Publishing and provenance. Do not replace OIDC with a long-lived token to pass qualification.
-
-CodeBuild Linux runs the unchanged complete gate through `scripts/ci/run-quality-gate.sh` as `codebuild-user`, so permission-denial tests retain their meaning. The adapter installs missing `hostname` and uses a pnpm toolchain under runner.temp; it neither skips tests nor changes coverage thresholds.

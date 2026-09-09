@@ -7,7 +7,7 @@ on:
 jobs:
   quality-gate:
     name: quality-gate (${{ matrix.os }} / ${{ matrix.arch }})
-    runs-on: ${{ matrix.os == 'macos-latest' && matrix.os || format('codebuild-tiangong-ci-cli-{0}-{1}-{2}', matrix.executor, github.run_id, github.run_attempt) }}
+    runs-on: ${{ matrix.os }}
     strategy:
       fail-fast: false
       matrix:
@@ -15,18 +15,15 @@ jobs:
           - os: ubuntu-latest
             platform: linux
             arch: x64
-            executor: linux
           - os: windows-latest
             platform: win32
             arch: x64
-            executor: windows
           - os: macos-latest
             platform: darwin
             arch: arm64
           - os: ubuntu-24.04-arm
             platform: linux
             arch: arm64
-            executor: arm
     steps:
       - name: Checkout
         uses: actions/checkout@v7
@@ -34,7 +31,6 @@ jobs:
       - name: Set up pnpm and Node.js
         uses: pnpm/setup@84cb39b217b10273981911c288cd62326dc7c6d2 # v2.0.2
         with:
-          dest: ${{ runner.temp }}/pnpm
           runtime: node@24.19.0
           install: false
           cache: true
@@ -50,9 +46,4 @@ jobs:
         run: pnpm exec tsx --test test/runtime-bootstrap-http.test.ts
 
       - name: Run canonical prepush gate
-        if: runner.os != 'Linux'
         run: pnpm run prepush:gate
-
-      - name: Run canonical prepush gate as an unprivileged Linux user
-        if: runner.os == 'Linux'
-        run: bash scripts/ci/run-quality-gate.sh
