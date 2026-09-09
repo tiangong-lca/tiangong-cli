@@ -62,7 +62,7 @@ jobs:
           BENCHMARK_PROVIDER: ${{ inputs.provider }}
           CACHE_EPOCH: ${{ inputs.cache_epoch }}
         run: >-
-          node -e "const fs=require('node:fs'),cp=require('node:child_process'); const sha=process.env.EXPECTED_SHA; if(!/^[0-9a-f]{40}$/.test(sha)||cp.execFileSync('git',['rev-parse','HEAD'],{encoding:'utf8'}).trim()!==sha) throw Error('Exact candidate mismatch'); if(process.env.CACHE_EPOCH) fs.writeFileSync('.ci-benchmark-cache-key',Buffer.concat([fs.readFileSync('pnpm-lock.yaml'),Buffer.from(JSON.stringify({provider:process.env.BENCHMARK_PROVIDER,epoch:process.env.CACHE_EPOCH}))]));"
+          node -e "const fs=require('node:fs'),cp=require('node:child_process'); const sha=process.env.EXPECTED_SHA; if(!/^[0-9a-f]{40}$/.test(sha)||cp.execFileSync('git',['-c','safe.directory='+process.cwd(),'rev-parse','HEAD'],{encoding:'utf8'}).trim()!==sha) throw Error('Exact candidate mismatch'); if(process.env.CACHE_EPOCH) fs.writeFileSync('.ci-benchmark-cache-key',Buffer.concat([fs.readFileSync('pnpm-lock.yaml'),Buffer.from(JSON.stringify({provider:process.env.BENCHMARK_PROVIDER,epoch:process.env.CACHE_EPOCH}))]));"
 
       - name: Set up pnpm and Node.js
         uses: pnpm/setup@84cb39b217b10273981911c288cd62326dc7c6d2 # v2.0.2
@@ -99,7 +99,7 @@ jobs:
           CACHE_ENABLED: ${{ inputs.cache_enabled }}
           CACHE_EPOCH: ${{ inputs.cache_epoch }}
         run: >-
-          node -e "const fs=require('node:fs'),os=require('node:os'),cp=require('node:child_process'),c=require('node:crypto'); const files=['package.json','pnpm-lock.yaml','scripts/run-test-coverage.cjs']; const evidence={sha:cp.execFileSync('git',['rev-parse','HEAD'],{encoding:'utf8'}).trim(),expectedSha:process.env.EXPECTED_SHA,provider:process.env.BENCHMARK_PROVIDER,cacheEnabled:process.env.CACHE_ENABLED,cacheEpoch:process.env.CACHE_EPOCH,platform:process.platform,arch:process.arch,node:process.version,cpus:os.cpus().map(x=>x.model),parallelism:os.availableParallelism(),memory:os.totalmem(),hashes:Object.fromEntries(files.map(f=>[f,c.createHash('sha256').update(fs.readFileSync(f)).digest('hex')]))}; fs.writeFileSync('benchmark-environment.json',JSON.stringify(evidence,null,2)); console.log(JSON.stringify(evidence));"
+          node -e "const fs=require('node:fs'),os=require('node:os'),cp=require('node:child_process'),c=require('node:crypto'); const files=['package.json','pnpm-lock.yaml','scripts/run-test-coverage.cjs']; const evidence={sha:cp.execFileSync('git',['-c','safe.directory='+process.cwd(),'rev-parse','HEAD'],{encoding:'utf8'}).trim(),expectedSha:process.env.EXPECTED_SHA,provider:process.env.BENCHMARK_PROVIDER,cacheEnabled:process.env.CACHE_ENABLED,cacheEpoch:process.env.CACHE_EPOCH,platform:process.platform,arch:process.arch,node:process.version,cpus:os.cpus().map(x=>x.model),parallelism:os.availableParallelism(),memory:os.totalmem(),hashes:Object.fromEntries(files.map(f=>[f,c.createHash('sha256').update(fs.readFileSync(f)).digest('hex')]))}; fs.writeFileSync('benchmark-environment.json',JSON.stringify(evidence,null,2)); console.log(JSON.stringify(evidence));"
 
       - name: Upload benchmark evidence
         if: always() && github.event_name == 'workflow_dispatch' && inputs.candidate_sha != ''
