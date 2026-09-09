@@ -25,8 +25,8 @@ checkPaths:
   - scripts/docpact-gate.sh
   - scripts/install-git-hooks.sh
 lastReviewedAt: 2026-09-08
-lastReviewedCommit: 6df087b0dda2544a0fd68f2a143559e81d20d60b
-lastReviewedNote: 'Reviewed for CLI #293: CodeBuild runner routing preserves the four-platform quality gate, exact coverage and package contracts; npm Trusted Publishing remains a separate migration decision.'
+lastReviewedCommit: f28aea717219b37a5f055acf08cb3d0a14b77c57
+lastReviewedNote: 'Reviewed for CLI #290: version-only 0.1.12 publishes the Windows HTTP bootstrap correction from merged mainf28aea7 after all four native gates. Only package identity, four version fixtures and single-line review metadata advance; dependency/lock/runtime behavior remain as the qualified source. Immutable tag, public provenance/package/script verification and downstream adoption are still required.'
 related:
   - ../AGENTS.md
   - ../.docpact/config.yaml
@@ -210,7 +210,3 @@ Leave the environment name unset unless the workflow is explicitly updated to us
 ## Local Docpact Push Gate
 
 The repository now includes a local pre-push gate that runs `scripts/docpact-gate.sh` and then `pnpm prepush:gate`. It is the ordinary local validation path. Release automation additionally requires the reusable four-platform pnpm matrix before tag creation and retains an independent tag-bound gate before npm publishing.
-
-## Runner allocation
-
-Release context, validation and tag jobs use repository-scoped CodeBuild runners. Only `publish.yml` job `npm-publish` keeps GitHub-hosted Ubuntu: npm Trusted Publishing requires a hosted runner. This exception is approved in CLI #293; OIDC, provenance, exact-head quality gates and the no-local-publish rule remain mandatory. macOS ARM64 quality validation remains GitHub-hosted.

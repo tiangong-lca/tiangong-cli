@@ -38,8 +38,8 @@ checkPaths:
   - scripts/docpact-gate.sh
   - scripts/install-git-hooks.sh
 lastReviewedAt: 2026-09-08
-lastReviewedCommit: 6df087b0dda2544a0fd68f2a143559e81d20d60b
-lastReviewedNote: 'Reviewed for CLI #293: CodeBuild runner routing preserves the four-platform quality gate, exact coverage and package contracts; npm Trusted Publishing remains a separate migration decision.'
+lastReviewedCommit: f28aea717219b37a5f055acf08cb3d0a14b77c57
+lastReviewedNote: 'Reviewed for CLI #290: version-only 0.1.12 publishes the Windows HTTP bootstrap correction from merged mainf28aea7 after all four native gates. Only package identity, four version fixtures and single-line review metadata advance; dependency/lock/runtime behavior remain as the qualified source. Immutable tag, public provenance/package/script verification and downstream adoption are still required.'
 related:
   - .docpact/config.yaml
   - docs/agents/repo-validation.md
