@@ -1,3 +1,4 @@
+import { withAssertedRetryDelays } from './helpers/supabase-auth.js';
 import assert from 'node:assert/strict';
 import test from 'node:test';
 import { resolveDatasetCommandTransport } from '../src/lib/dataset-command.js';
@@ -323,65 +324,67 @@ test('supabase json_ordered helpers handle empty/text success payloads and inval
   );
 });
 
-test('supabase json_ordered write surfaces remote request failures and invalid JSON', async () => {
-  await assert.rejects(
-    () =>
-      syncSupabaseJsonOrderedRecord({
-        table: 'processes',
-        id: 'proc-http-fail',
-        version: '01.00.001',
-        payload: { processDataSet: {} },
-        writeMode: 'upsert_current_version',
-        env: buildSupabaseTestEnv({
-          TIANGONG_LCA_API_BASE_URL: 'https://example.supabase.co',
-          TIANGONG_LCA_ACCESS_TOKEN: 'key',
-        }),
-        fetchImpl: withSupabaseAuthBootstrap(async () => ({
-          ok: false,
-          status: 503,
-          headers: {
-            get() {
-              return null;
-            },
-          },
-          async text() {
-            return 'upstream unavailable';
-          },
-        })),
-      }),
-    (error) => {
-      assert.ok(error instanceof CliError);
-      assert.equal(error.code, 'REMOTE_REQUEST_FAILED');
-      return true;
-    },
-  );
-
-  await assert.rejects(
-    () =>
-      syncSupabaseJsonOrderedRecord({
-        table: 'processes',
-        id: 'proc-invalid-json',
-        version: '01.00.001',
-        payload: { processDataSet: {} },
-        writeMode: 'upsert_current_version',
-        env: buildSupabaseTestEnv({
-          TIANGONG_LCA_API_BASE_URL: 'https://example.supabase.co',
-          TIANGONG_LCA_ACCESS_TOKEN: 'key',
-        }),
-        fetchImpl: withSupabaseAuthBootstrap(async () =>
-          makeResponse({
-            ok: true,
-            status: 200,
-            body: '{"broken"',
+test('supabase json_ordered write surfaces remote request failures and invalid JSON', async (context) => {
+  await withAssertedRetryDelays(context, [1000, 2000, 4000], async () => {
+    await assert.rejects(
+      () =>
+        syncSupabaseJsonOrderedRecord({
+          table: 'processes',
+          id: 'proc-http-fail',
+          version: '01.00.001',
+          payload: { processDataSet: {} },
+          writeMode: 'upsert_current_version',
+          env: buildSupabaseTestEnv({
+            TIANGONG_LCA_API_BASE_URL: 'https://example.supabase.co',
+            TIANGONG_LCA_ACCESS_TOKEN: 'key',
           }),
-        ),
-      }),
-    (error) => {
-      assert.ok(error instanceof CliError);
-      assert.equal(error.code, 'REMOTE_INVALID_JSON');
-      return true;
-    },
-  );
+          fetchImpl: withSupabaseAuthBootstrap(async () => ({
+            ok: false,
+            status: 503,
+            headers: {
+              get() {
+                return null;
+              },
+            },
+            async text() {
+              return 'upstream unavailable';
+            },
+          })),
+        }),
+      (error) => {
+        assert.ok(error instanceof CliError);
+        assert.equal(error.code, 'REMOTE_REQUEST_FAILED');
+        return true;
+      },
+    );
+
+    await assert.rejects(
+      () =>
+        syncSupabaseJsonOrderedRecord({
+          table: 'processes',
+          id: 'proc-invalid-json',
+          version: '01.00.001',
+          payload: { processDataSet: {} },
+          writeMode: 'upsert_current_version',
+          env: buildSupabaseTestEnv({
+            TIANGONG_LCA_API_BASE_URL: 'https://example.supabase.co',
+            TIANGONG_LCA_ACCESS_TOKEN: 'key',
+          }),
+          fetchImpl: withSupabaseAuthBootstrap(async () =>
+            makeResponse({
+              ok: true,
+              status: 200,
+              body: '{"broken"',
+            }),
+          ),
+        }),
+      (error) => {
+        assert.ok(error instanceof CliError);
+        assert.equal(error.code, 'REMOTE_INVALID_JSON');
+        return true;
+      },
+    );
+  });
 });
 
 test('supabase json_ordered write rethrows insert conflicts when the row is still invisible', async () => {

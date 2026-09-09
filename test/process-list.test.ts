@@ -1,3 +1,4 @@
+import { withAssertedRetryDelays } from './helpers/supabase-auth.js';
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { CliError } from '../src/lib/errors.js';
@@ -318,42 +319,44 @@ test('runProcessList rejects conflicting and invalid pagination controls', async
   );
 });
 
-test('runProcessList rejects malformed remote payloads and honors retry boundaries', async () => {
-  const env = buildSupabaseTestEnv({
-    TIANGONG_LCA_API_BASE_URL: 'https://example.supabase.co',
+test('runProcessList rejects malformed remote payloads and honors retry boundaries', async (context) => {
+  await withAssertedRetryDelays(context, [1000, 2000, 4000], async () => {
+    const env = buildSupabaseTestEnv({
+      TIANGONG_LCA_API_BASE_URL: 'https://example.supabase.co',
+    });
+
+    await assert.rejects(
+      () =>
+        runProcessList({
+          ids: ['proc-1'],
+          stateCodes: [0],
+          env,
+          fetchImpl: jsonFetch([{}]),
+        }),
+      (error) => error instanceof CliError && error.code === 'SUPABASE_REST_RESPONSE_INVALID',
+    );
+
+    await assert.rejects(
+      () =>
+        runProcessList({
+          ids: ['proc-1'],
+          env,
+          fetchImpl: jsonFetch([[0]]),
+        }),
+      (error) => error instanceof CliError && error.code === 'SUPABASE_REST_RESPONSE_INVALID',
+    );
+
+    await assert.rejects(
+      () =>
+        runProcessList({
+          ids: ['proc-1'],
+          env,
+          maxAttempts: 1,
+          fetchImpl: jsonFetch([new Error('statement timeout')]),
+        }),
+      (error) => error instanceof CliError && error.code === 'REMOTE_REQUEST_FAILED',
+    );
   });
-
-  await assert.rejects(
-    () =>
-      runProcessList({
-        ids: ['proc-1'],
-        stateCodes: [0],
-        env,
-        fetchImpl: jsonFetch([{}]),
-      }),
-    (error) => error instanceof CliError && error.code === 'SUPABASE_REST_RESPONSE_INVALID',
-  );
-
-  await assert.rejects(
-    () =>
-      runProcessList({
-        ids: ['proc-1'],
-        env,
-        fetchImpl: jsonFetch([[0]]),
-      }),
-    (error) => error instanceof CliError && error.code === 'SUPABASE_REST_RESPONSE_INVALID',
-  );
-
-  await assert.rejects(
-    () =>
-      runProcessList({
-        ids: ['proc-1'],
-        env,
-        maxAttempts: 1,
-        fetchImpl: jsonFetch([new Error('statement timeout')]),
-      }),
-    (error) => error instanceof CliError && error.code === 'REMOTE_REQUEST_FAILED',
-  );
 });
 
 test('process-list helper internals normalize tokens and apply sparse order clauses', () => {

@@ -1,3 +1,5 @@
+import assert from 'node:assert/strict';
+import type { TestContext } from 'node:test';
 import { createHash } from 'node:crypto';
 import { chmodSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs';
 import os from 'node:os';
@@ -142,4 +144,27 @@ export function makeSupabaseAuthResponse(options: SupabaseTestSessionOptions = {
       return JSON.stringify(payload);
     },
   };
+}
+
+/** Replace only a test's mocked-request waits, while asserting every requested delay.
+ * Do not use for real I/O, cancellation, deadlines, or inter-process timing tests.
+ */
+export async function withAssertedRetryDelays(
+  context: TestContext,
+  expectedDelays: number[],
+  operation: () => Promise<void>,
+): Promise<void> {
+  const original = globalThis.setTimeout;
+  const observed: Array<number | undefined> = [];
+  const replacement = ((...args: Parameters<typeof setTimeout>) => {
+    observed.push(args[1]);
+    return original(args[0], 0, ...args.slice(2));
+  }) as typeof setTimeout;
+  const timer = context.mock.method(globalThis, 'setTimeout', replacement);
+  try {
+    await operation();
+  } finally {
+    timer.mock.restore();
+    assert.deepEqual(observed, expectedDelays, 'mocked request retry schedule must stay exact');
+  }
 }

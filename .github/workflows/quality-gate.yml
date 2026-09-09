@@ -70,7 +70,7 @@ jobs:
           dest: ${{ runner.temp }}/pnpm
           runtime: node@24.19.0
           install: false
-          cache: ${{ github.event_name != 'workflow_dispatch' || inputs.cache_enabled }}
+          cache: ${{ github.event_name != 'workflow_dispatch' || inputs.candidate_sha == '' || inputs.cache_enabled }}
           cache-dependency-path: ${{ inputs.candidate_sha != '' && inputs.cache_epoch != '' && '.ci-benchmark-cache-key' || 'pnpm-lock.yaml' }}
 
       - name: Assert runner platform and architecture
@@ -90,6 +90,11 @@ jobs:
       - name: Run canonical prepush gate as an unprivileged Linux user
         if: runner.os == 'Linux'
         run: bash scripts/ci/run-quality-gate.sh
+
+      - name: Diagnose Windows test process failure
+        if: failure() && runner.os == 'Windows' && github.event_name == 'workflow_dispatch' && inputs.candidate_sha != ''
+        continue-on-error: true
+        run: node --import tsx --test --test-reporter=tap test/public-batch-architecture.test.mjs
 
       - name: Record exact benchmark environment
         if: always() && github.event_name == 'workflow_dispatch' && inputs.candidate_sha != ''

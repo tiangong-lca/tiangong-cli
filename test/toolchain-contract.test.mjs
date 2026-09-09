@@ -387,7 +387,7 @@ test('workflows use the reviewed Node 24 pnpm setup, frozen installs, and truste
           !(
             displayPath(workflowPath) === '.github/workflows/quality-gate.yml' &&
             setup.cache ===
-              "${{ github.event_name != 'workflow_dispatch' || inputs.cache_enabled }}"
+              "${{ github.event_name != 'workflow_dispatch' || inputs.candidate_sha == '' || inputs.cache_enabled }}"
           ))
       ) {
         setupFindings.push({ file: displayPath(workflowPath), ...setup });

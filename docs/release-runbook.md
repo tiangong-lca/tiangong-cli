@@ -26,7 +26,7 @@ checkPaths:
   - scripts/docpact-gate.sh
   - scripts/install-git-hooks.sh
 lastReviewedAt: 2026-09-09
-lastReviewedCommit: e0cdba4a37aa37cf1aef6245ac77cdf0db754931
+lastReviewedCommit: 59d25a7edd9717e83f2943dcb37b84b45f7d5a2c
 lastReviewedNote: 'Reviewed for CLI #293: CodeBuild runner routing preserves the four-platform quality gate, exact coverage and package contracts; npm Trusted Publishing remains a separate migration decision.'
 related:
   - ../AGENTS.md
