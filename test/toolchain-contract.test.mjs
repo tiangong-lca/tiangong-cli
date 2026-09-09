@@ -383,7 +383,12 @@ test('workflows use the reviewed Node 24 pnpm setup, frozen installs, and truste
         setup.revision !== PNPM_SETUP_ACTION ||
         setup.runtime !== `node@${NODE_VERSION}` ||
         setup.install !== 'false' ||
-        setup.cache !== 'true'
+        (setup.cache !== 'true' &&
+          !(
+            displayPath(workflowPath) === '.github/workflows/quality-gate.yml' &&
+            setup.cache ===
+              "${{ github.event_name != 'workflow_dispatch' || inputs.cache_enabled }}"
+          ))
       ) {
         setupFindings.push({ file: displayPath(workflowPath), ...setup });
       }
@@ -1176,7 +1181,7 @@ function collectPnpmSetupBlocks(content) {
       revision: actionMatch[1],
       runtime: block.match(/^\s*runtime:\s*([^\s#]+)\s*$/mu)?.[1],
       install: block.match(/^\s*install:\s*([^\s#]+)\s*$/mu)?.[1],
-      cache: block.match(/^\s*cache:\s*([^\s#]+)\s*$/mu)?.[1],
+      cache: block.match(/^\s*cache:\s*([^\n#]+)$/mu)?.[1]?.trim(),
     });
   }
 

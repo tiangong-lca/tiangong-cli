@@ -31,8 +31,8 @@ checkPaths:
   - scripts/docpact
   - scripts/docpact-gate.sh
   - scripts/install-git-hooks.sh
-lastReviewedAt: 2026-09-08
-lastReviewedCommit: 6df087b0dda2544a0fd68f2a143559e81d20d60b
+lastReviewedAt: 2026-09-09
+lastReviewedCommit: e0cdba4a37aa37cf1aef6245ac77cdf0db754931
 lastReviewedNote: 'Reviewed for CLI #293: CodeBuild runner routing preserves the four-platform quality gate, exact coverage and package contracts; npm Trusted Publishing remains a separate migration decision.'
 related:
   - ../../AGENTS.md
@@ -259,3 +259,11 @@ Before merging a runner change, record the exact-head manual `quality-gate` run,
 The npm publishing job is the approved hosted-Linux exception (CLI #293): keep GitHub-hosted Ubuntu for npm Trusted Publishing and provenance. Do not replace OIDC with a long-lived token to pass qualification.
 
 CodeBuild Linux runs the unchanged complete gate through `scripts/ci/run-quality-gate.sh` as `codebuild-user`, so permission-denial tests retain their meaning. The adapter installs missing `hostname` and uses a pnpm toolchain under runner.temp; it neither skips tests nor changes coverage thresholds.
+
+## Manual runner comparison
+
+Issue #296 adds manual-only provider/cache/candidate controls to `quality-gate.yml`. Reusable release calls keep their CodeBuild routing, caching, full four-platform gate and tag ordering. No benchmark command publishes or deploys.
+
+Dispatch the reviewed workflow branch with `provider=hosted|codebuild`, `cache_enabled=true|false`, and an exact 40-character `candidate_sha`. Both providers check out the same candidate and execute its unchanged canonical gate, including full coverage and unprivileged Linux permission tests. An explicit `cache_epoch` binds a separate provider-specific dependency-cache namespace: change it for cold runs, reuse it for warm runs. macOS stays hosted as a control. Collect GitHub job/step timestamps including post-action cache work, runner environment, candidate script hashes, full logs and per-file coverage summaries. Failed or missing evidence is not a speed sample. Compare cold and warm runs separately; artifact overhead is present on both providers.
+
+The controls are an experiment surface, not an automatic fallback or a replacement for release proof. Candidate checkout is separate from the reviewed workflow revision; verify both identities before treating results as comparable.
