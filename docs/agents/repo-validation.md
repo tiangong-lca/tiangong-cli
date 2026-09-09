@@ -31,9 +31,9 @@ checkPaths:
   - scripts/docpact
   - scripts/docpact-gate.sh
   - scripts/install-git-hooks.sh
-lastReviewedAt: 2026-09-08
-lastReviewedCommit: 6df087b0dda2544a0fd68f2a143559e81d20d60b
-lastReviewedNote: 'Reviewed for CLI #293: CodeBuild runner routing preserves the four-platform quality gate, exact coverage and package contracts; npm Trusted Publishing remains a separate migration decision.'
+lastReviewedAt: 2026-09-09
+lastReviewedCommit: e10598106b1d9b428153ac58dc8558cb4ff7d33b
+lastReviewedNote: 'Reviewed for CLI #296: manual provider/cache/scheduling trials retain every canonical gate and platform; reusable release calls stay serial and npm Trusted Publishing stays GitHub-hosted.'
 related:
   - ../../AGENTS.md
   - ../../.docpact/config.yaml
@@ -259,3 +259,19 @@ Before merging a runner change, record the exact-head manual `quality-gate` run,
 The npm publishing job is the approved hosted-Linux exception (CLI #293): keep GitHub-hosted Ubuntu for npm Trusted Publishing and provenance. Do not replace OIDC with a long-lived token to pass qualification.
 
 CodeBuild Linux runs the unchanged complete gate through `scripts/ci/run-quality-gate.sh` as `codebuild-user`, so permission-denial tests retain their meaning. The adapter installs missing `hostname` and uses a pnpm toolchain under runner.temp; it neither skips tests nor changes coverage thresholds.
+
+## Manual runner comparison
+
+Issue #296 adds manual-only provider/cache/candidate controls to `quality-gate.yml`. Reusable release calls keep their CodeBuild routing, caching, full four-platform gate and tag ordering. No benchmark command publishes or deploys.
+
+Dispatch the reviewed workflow branch with `provider=hosted|codebuild`, `cache_enabled=true|false`, and an exact 40-character `candidate_sha`. Both providers check out the same candidate and execute its unchanged canonical gate, including full coverage and unprivileged Linux permission tests. An explicit `cache_epoch` binds a separate provider-specific dependency-cache namespace: change it for cold runs, reuse it for warm runs. macOS stays hosted as a control. Collect GitHub job/step timestamps including post-action cache work, runner environment, candidate script hashes, full logs and per-file coverage summaries. Failed or missing evidence is not a speed sample. Compare cold and warm runs separately; artifact overhead is present on both providers.
+
+The controls are an experiment surface, not an automatic fallback or a replacement for release proof. Candidate checkout is separate from the reviewed workflow revision; verify both identities before treating results as comparable.
+
+Issue #296 software trial retains the full package consumer and exact-100% gates. Five fully mocked request-failure tests use `withAssertedRetryDelays` to record and assert the SDK's exact 1/2/4-second retry schedule while scheduling each callback on the next timer turn. Existing response/error/recovery assertions remain; real I/O, cancellation, deadlines and inter-process timing tests retain real clocks. Two helper tests reject missing waits and verify callback ordering, failure propagation and timer restoration. Production sources, dependencies and lockfile are unchanged. A failed Windows benchmark may run a separate TAP diagnostic of the failed architecture test; this never repairs the original failed gate or qualifies that run as a speed sample.
+
+The manual `scheduling=parallel` trial runs `lint → peers:check` alongside `test:package → test:coverage → test:coverage:assert-full`. It preserves each dependency chain, waits for both branches, retains any failure, and rejects a changed canonical command list before execution. Five negative/order tests cover the coordinator, including normalization of nonzero Windows statuses to a failing process exit. The Linux wrapper retains a real unprivileged user for either mode. Reusable release calls and the default manual mode remain serial. Compare serial/parallel on the same exact candidate; local timing is a feasibility check, not evidence of cloud performance.
+
+Only after the software comparisons, `compute=large` may override CodeBuild Linux x64 and Windows x64 to 8-vCPU/16-GiB LARGE for that run, using the [documented single-label size override](https://docs.aws.amazon.com/codebuild/latest/userguide/sample-github-action-runners-update-labels.html). An allocation assertion rejects a missing override before the gate. ARM, macOS, project defaults and ordinary release calls retain their existing configuration. Compare `current` and `large` with the same exact candidate and scheduling mode; never claim provider superiority without a comparable hosted larger-runner experiment.
+
+Manual cache experiments for #296 keep the complete gate and current compute: `current` preserves the existing setup cache; `stable-actions` uses an external pnpm store with exact provider/platform/lock/epoch keys and no prefix restore. Cache seeds and hit evidence are captured, and Linux store ownership is transferred to the existing ordinary test user. No test result, coverage output or package artifact is reused as a passed check. Reusable release calls retain their existing defaults. The isolated S3 comparison was executed with workflow commit `e10598106b1d9b428153ac58dc8558cb4ff7d33b`; its selector is retired with the temporary AWS projects rather than leaving a selectable runner that no longer exists. Configuration, runs and cache evidence are retained in PR #297 and the workspace cache benchmark report.

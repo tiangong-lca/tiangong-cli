@@ -1,3 +1,4 @@
+import { withAssertedRetryDelays } from './helpers/supabase-auth.js';
 import assert from 'node:assert/strict';
 import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import os from 'node:os';
@@ -821,79 +822,81 @@ test('execution contract rejects local drift and owner/project mismatch before e
   }
 });
 
-test('execution contract recovers an orphan attempt and terminalizes a readback failure without replay', async () => {
-  const dir = mkdtempSync(path.join(os.tmpdir(), 'tg-cli-execution-contract-orphan-'));
-  const desired = flow('11111111-1111-1111-1111-111111111111', 'Desired');
-  const state = new Map<string, JsonObject>([[identity(desired).id, desired]]);
-  const writes: string[] = [];
-  const contractValue = contract({ desired: [desired] });
-  const contractPath = writeContract(dir, contractValue);
-  const parsedContract = __testInternals.parseExecutionContract(contractValue);
-  const action = parsedContract.actions[0]!;
-  const env = executionEnv(dir, 'orphan-1');
-  const ledgerRoot = __testInternals.executionLedgerRoot(env, parsedContract);
-  const attempt = ledgerEvent({
-    contractSha256: sha256Json(parsedContract),
-    action: action as unknown as JsonObject,
-    sequence: 1,
-    eventType: 'attempt_emitted',
-    outcome: null,
-  });
-  writeLedgerEvents(__testInternals.executionLedgerPath(ledgerRoot, action), [attempt]);
-  try {
-    const recovered = await runDatasetSaveDraft({
-      inputPath: path.join(dir, 'rows.json'),
-      rawInput: { rows: [desired] },
-      type: 'flow',
-      outDir: path.join(dir, 'recovered'),
-      commit: true,
-      executionContractPath: contractPath,
-      env,
-      fetchImpl: executionFetch({ state, writes }),
+test('execution contract recovers an orphan attempt and terminalizes a readback failure without replay', async (context) => {
+  await withAssertedRetryDelays(context, [1000, 2000, 4000], async () => {
+    const dir = mkdtempSync(path.join(os.tmpdir(), 'tg-cli-execution-contract-orphan-'));
+    const desired = flow('11111111-1111-1111-1111-111111111111', 'Desired');
+    const state = new Map<string, JsonObject>([[identity(desired).id, desired]]);
+    const writes: string[] = [];
+    const contractValue = contract({ desired: [desired] });
+    const contractPath = writeContract(dir, contractValue);
+    const parsedContract = __testInternals.parseExecutionContract(contractValue);
+    const action = parsedContract.actions[0]!;
+    const env = executionEnv(dir, 'orphan-1');
+    const ledgerRoot = __testInternals.executionLedgerRoot(env, parsedContract);
+    const attempt = ledgerEvent({
+      contractSha256: sha256Json(parsedContract),
+      action: action as unknown as JsonObject,
+      sequence: 1,
+      eventType: 'attempt_emitted',
+      outcome: null,
     });
-    assert.equal(recovered.status, 'completed');
-    assert.equal(recovered.rows[0]?.operation, 'recovered_exact_readback');
-    assert.deepEqual(writes, []);
+    writeLedgerEvents(__testInternals.executionLedgerPath(ledgerRoot, action), [attempt]);
+    try {
+      const recovered = await runDatasetSaveDraft({
+        inputPath: path.join(dir, 'rows.json'),
+        rawInput: { rows: [desired] },
+        type: 'flow',
+        outDir: path.join(dir, 'recovered'),
+        commit: true,
+        executionContractPath: contractPath,
+        env,
+        fetchImpl: executionFetch({ state, writes }),
+      });
+      assert.equal(recovered.status, 'completed');
+      assert.equal(recovered.rows[0]?.operation, 'recovered_exact_readback');
+      assert.deepEqual(writes, []);
 
-    const readbackDir = path.join(dir, 'readback-failure');
-    mkdirSync(readbackDir);
-    const readbackDesired = flow('66666666-6666-6666-6666-666666666666', 'Readback failure');
-    const readbackState = new Map<string, JsonObject>();
-    const readbackWrites: string[] = [];
-    const readbackContractPath = writeContract(
-      readbackDir,
-      contract({ desired: [readbackDesired] }),
-    );
-    const baseFetch = executionFetch({ state: readbackState, writes: readbackWrites });
-    let dispatched = false;
-    const fetchImpl: FetchLike = async (input, init) => {
-      const url = String(input);
-      if (url.includes('/functions/v1/app_dataset_')) {
-        const result = await baseFetch(input, init);
-        dispatched = true;
-        return result;
-      }
-      if (dispatched && new URL(url).pathname.endsWith('/flows')) {
-        throw new Error('simulated readback loss');
-      }
-      return baseFetch(input, init);
-    };
-    const unknown = await runDatasetSaveDraft({
-      inputPath: path.join(readbackDir, 'rows.json'),
-      rawInput: { rows: [readbackDesired] },
-      type: 'flow',
-      outDir: path.join(readbackDir, 'out'),
-      commit: true,
-      executionContractPath: readbackContractPath,
-      env: executionEnv(dir, 'readback-1'),
-      fetchImpl,
-    });
-    assert.equal(unknown.status, 'completed_with_unknowns');
-    assert.equal(unknown.rows[0]?.status, 'unknown');
-    assert.deepEqual(readbackWrites, [identity(readbackDesired).id]);
-  } finally {
-    rmSync(dir, { recursive: true, force: true });
-  }
+      const readbackDir = path.join(dir, 'readback-failure');
+      mkdirSync(readbackDir);
+      const readbackDesired = flow('66666666-6666-6666-6666-666666666666', 'Readback failure');
+      const readbackState = new Map<string, JsonObject>();
+      const readbackWrites: string[] = [];
+      const readbackContractPath = writeContract(
+        readbackDir,
+        contract({ desired: [readbackDesired] }),
+      );
+      const baseFetch = executionFetch({ state: readbackState, writes: readbackWrites });
+      let dispatched = false;
+      const fetchImpl: FetchLike = async (input, init) => {
+        const url = String(input);
+        if (url.includes('/functions/v1/app_dataset_')) {
+          const result = await baseFetch(input, init);
+          dispatched = true;
+          return result;
+        }
+        if (dispatched && new URL(url).pathname.endsWith('/flows')) {
+          throw new Error('simulated readback loss');
+        }
+        return baseFetch(input, init);
+      };
+      const unknown = await runDatasetSaveDraft({
+        inputPath: path.join(readbackDir, 'rows.json'),
+        rawInput: { rows: [readbackDesired] },
+        type: 'flow',
+        outDir: path.join(readbackDir, 'out'),
+        commit: true,
+        executionContractPath: readbackContractPath,
+        env: executionEnv(dir, 'readback-1'),
+        fetchImpl,
+      });
+      assert.equal(unknown.status, 'completed_with_unknowns');
+      assert.equal(unknown.rows[0]?.status, 'unknown');
+      assert.deepEqual(readbackWrites, [identity(readbackDesired).id]);
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
+  });
 });
 
 test('execution contract keeps preparation, reference, and dry-run failures at zero attempts', async () => {

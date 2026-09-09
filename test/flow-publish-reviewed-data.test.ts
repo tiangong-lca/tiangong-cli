@@ -1,3 +1,4 @@
+import { withAssertedRetryDelays } from './helpers/supabase-auth.js';
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { mkdtempSync, mkdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
@@ -519,74 +520,89 @@ test('runFlowReviewedPublishData delegates commit publish to flow publish-versio
   }
 });
 
-test('flow publish reviewed data process helpers unwrap root payloads and map update/failure commit outcomes', async () => {
-  const rootProcessRow = makeProcessRow({
-    id: 'proc-root-payload',
-    version: '01.00.030',
-    envelope: 'root',
-  });
-  const directProcessPayloadRow = (
-    makeProcessRow({
-      id: 'proc-direct-payload',
-      version: '01.00.031',
-    }).json_ordered as JsonRecord
-  ).processDataSet as JsonRecord;
-  assert.deepEqual(__testInternals.process_publish_payload_from_row(rootProcessRow), {
-    processDataSet: rootProcessRow.processDataSet,
-  });
-  assert.deepEqual(__testInternals.process_publish_payload_from_row(directProcessPayloadRow), {
-    processDataSet: directProcessPayloadRow,
-  });
+test('flow publish reviewed data process helpers unwrap root payloads and map update/failure commit outcomes', async (context) => {
+  await withAssertedRetryDelays(context, [1000, 2000, 4000], async () => {
+    const rootProcessRow = makeProcessRow({
+      id: 'proc-root-payload',
+      version: '01.00.030',
+      envelope: 'root',
+    });
+    const directProcessPayloadRow = (
+      makeProcessRow({
+        id: 'proc-direct-payload',
+        version: '01.00.031',
+      }).json_ordered as JsonRecord
+    ).processDataSet as JsonRecord;
+    assert.deepEqual(__testInternals.process_publish_payload_from_row(rootProcessRow), {
+      processDataSet: rootProcessRow.processDataSet,
+    });
+    assert.deepEqual(__testInternals.process_publish_payload_from_row(directProcessPayloadRow), {
+      processDataSet: directProcessPayloadRow,
+    });
 
-  assert.deepEqual(
-    __testInternals.build_process_commit_success_report(
+    assert.deepEqual(
+      __testInternals.build_process_commit_success_report(
+        {
+          entity_type: 'process',
+          entity_id: 'proc-updated',
+          entity_name: 'proc updated',
+          original_version: '01.00.001',
+          publish_version: '01.00.001',
+          version_strategy: 'keep_current',
+          publish_policy: 'upsert_current_version',
+          row: {},
+        },
+        'update_existing',
+      ),
       {
         entity_type: 'process',
-        entity_id: 'proc-updated',
-        entity_name: 'proc updated',
+        id: 'proc-updated',
+        name: 'proc updated',
         original_version: '01.00.001',
         publish_version: '01.00.001',
-        version_strategy: 'keep_current',
         publish_policy: 'upsert_current_version',
-        row: {},
+        version_strategy: 'keep_current',
+        status: 'updated',
+        operation: 'update_existing',
       },
-      'update_existing',
-    ),
-    {
-      entity_type: 'process',
-      id: 'proc-updated',
-      name: 'proc updated',
-      original_version: '01.00.001',
-      publish_version: '01.00.001',
-      publish_policy: 'upsert_current_version',
-      version_strategy: 'keep_current',
-      status: 'updated',
-      operation: 'update_existing',
-    },
-  );
+    );
 
-  const updateReports = await __testInternals.commit_process_plans({
-    plans: [
-      {
-        entity_type: 'process',
-        entity_id: 'proc-updated',
-        entity_name: 'proc updated',
-        original_version: '01.00.001',
-        publish_version: '01.00.001',
-        version_strategy: 'keep_current',
-        publish_policy: 'upsert_current_version',
-        row: makeProcessRow({ id: 'proc-updated', version: '01.00.001' }),
-      },
-    ],
-    maxWorkers: 1,
-    env: buildSupabaseTestEnv({
-      TIANGONG_LCA_API_BASE_URL: 'https://example.supabase.co',
-      TIANGONG_LCA_ACCESS_TOKEN: 'key',
-    }),
-    fetchImpl: withSupabaseAuth(async (url, init) => {
-      const method = String(init?.method ?? 'GET');
-      const requestUrl = String(url);
-      if (method === 'GET' && requestUrl.includes('id=eq.proc-updated')) {
+    const updateReports = await __testInternals.commit_process_plans({
+      plans: [
+        {
+          entity_type: 'process',
+          entity_id: 'proc-updated',
+          entity_name: 'proc updated',
+          original_version: '01.00.001',
+          publish_version: '01.00.001',
+          version_strategy: 'keep_current',
+          publish_policy: 'upsert_current_version',
+          row: makeProcessRow({ id: 'proc-updated', version: '01.00.001' }),
+        },
+      ],
+      maxWorkers: 1,
+      env: buildSupabaseTestEnv({
+        TIANGONG_LCA_API_BASE_URL: 'https://example.supabase.co',
+        TIANGONG_LCA_ACCESS_TOKEN: 'key',
+      }),
+      fetchImpl: withSupabaseAuth(async (url, init) => {
+        const method = String(init?.method ?? 'GET');
+        const requestUrl = String(url);
+        if (method === 'GET' && requestUrl.includes('id=eq.proc-updated')) {
+          return {
+            ok: true,
+            status: 200,
+            headers: {
+              get() {
+                return 'application/json';
+              },
+            },
+            async text() {
+              return '[{"id":"proc-updated","version":"01.00.001","state_code":0}]';
+            },
+          };
+        }
+
         return {
           ok: true,
           status: 200,
@@ -596,138 +612,125 @@ test('flow publish reviewed data process helpers unwrap root payloads and map up
             },
           },
           async text() {
-            return '[{"id":"proc-updated","version":"01.00.001","state_code":0}]';
+            return '{"ok":true,"command":"dataset_save_draft","data":{"id":"proc-updated"}}';
           },
         };
-      }
-
-      return {
-        ok: true,
-        status: 200,
-        headers: {
-          get() {
-            return 'application/json';
-          },
-        },
-        async text() {
-          return '{"ok":true,"command":"dataset_save_draft","data":{"id":"proc-updated"}}';
-        },
-      };
-    }),
-  });
-  assert.deepEqual(updateReports, [
-    {
-      entity_type: 'process',
-      id: 'proc-updated',
-      name: 'proc updated',
-      original_version: '01.00.001',
-      publish_version: '01.00.001',
-      publish_policy: 'upsert_current_version',
-      version_strategy: 'keep_current',
-      status: 'updated',
-      operation: 'update_existing',
-    },
-  ]);
-
-  const failedReports = await __testInternals.commit_process_plans({
-    plans: [
+      }),
+    });
+    assert.deepEqual(updateReports, [
       {
         entity_type: 'process',
-        entity_id: 'proc-failed',
-        entity_name: 'proc failed',
+        id: 'proc-updated',
+        name: 'proc updated',
         original_version: '01.00.001',
         publish_version: '01.00.001',
-        version_strategy: 'keep_current',
         publish_policy: 'upsert_current_version',
-        row: makeProcessRow({ id: 'proc-failed', version: '01.00.001' }),
+        version_strategy: 'keep_current',
+        status: 'updated',
+        operation: 'update_existing',
       },
-    ],
-    maxWorkers: 1,
-    env: buildSupabaseTestEnv({
-      TIANGONG_LCA_API_BASE_URL: 'https://example.supabase.co',
-      TIANGONG_LCA_ACCESS_TOKEN: 'key',
-    }),
-    fetchImpl: withSupabaseAuth(async (url, init) => {
-      const method = String(init?.method ?? 'GET');
-      const requestUrl = String(url);
-      if (method === 'GET' && requestUrl.includes('id=eq.proc-failed')) {
+    ]);
+
+    const failedReports = await __testInternals.commit_process_plans({
+      plans: [
+        {
+          entity_type: 'process',
+          entity_id: 'proc-failed',
+          entity_name: 'proc failed',
+          original_version: '01.00.001',
+          publish_version: '01.00.001',
+          version_strategy: 'keep_current',
+          publish_policy: 'upsert_current_version',
+          row: makeProcessRow({ id: 'proc-failed', version: '01.00.001' }),
+        },
+      ],
+      maxWorkers: 1,
+      env: buildSupabaseTestEnv({
+        TIANGONG_LCA_API_BASE_URL: 'https://example.supabase.co',
+        TIANGONG_LCA_ACCESS_TOKEN: 'key',
+      }),
+      fetchImpl: withSupabaseAuth(async (url, init) => {
+        const method = String(init?.method ?? 'GET');
+        const requestUrl = String(url);
+        if (method === 'GET' && requestUrl.includes('id=eq.proc-failed')) {
+          return {
+            ok: true,
+            status: 200,
+            headers: {
+              get() {
+                return 'application/json';
+              },
+            },
+            async text() {
+              return '[]';
+            },
+          };
+        }
+
         return {
-          ok: true,
-          status: 200,
+          ok: false,
+          status: 409,
           headers: {
             get() {
               return 'application/json';
             },
           },
           async text() {
-            return '[]';
+            return '{"message":"duplicate"}';
           },
         };
-      }
-
-      return {
-        ok: false,
-        status: 409,
-        headers: {
-          get() {
-            return 'application/json';
-          },
-        },
-        async text() {
-          return '{"message":"duplicate"}';
-        },
-      };
-    }),
-  });
-  assert.deepEqual(failedReports, [
-    {
-      entity_type: 'process',
-      id: 'proc-failed',
-      name: 'proc failed',
-      original_version: '01.00.001',
-      publish_version: '01.00.001',
-      publish_policy: 'upsert_current_version',
-      version_strategy: 'keep_current',
-      status: 'failed',
-      error: '{"message":"duplicate"}',
-    },
-  ]);
-
-  const stringErrorReports = await __testInternals.commit_process_plans({
-    plans: [
+      }),
+    });
+    assert.deepEqual(failedReports, [
       {
         entity_type: 'process',
-        entity_id: 'proc-string-error',
-        entity_name: 'proc string error',
+        id: 'proc-failed',
+        name: 'proc failed',
         original_version: '01.00.001',
         publish_version: '01.00.001',
-        version_strategy: 'keep_current',
         publish_policy: 'upsert_current_version',
-        row: makeProcessRow({ id: 'proc-string-error', version: '01.00.001' }),
+        version_strategy: 'keep_current',
+        status: 'failed',
+        error: '{"message":"duplicate"}',
       },
-    ],
-    maxWorkers: 1,
-    env: buildSupabaseTestEnv({
-      TIANGONG_LCA_API_BASE_URL: 'https://example.supabase.co',
-      TIANGONG_LCA_ACCESS_TOKEN: 'key',
-    }),
-    fetchImpl: withSupabaseAuth(async () => {
-      throw 'boom-string';
-    }),
+    ]);
+
+    const stringErrorReports = await __testInternals.commit_process_plans({
+      plans: [
+        {
+          entity_type: 'process',
+          entity_id: 'proc-string-error',
+          entity_name: 'proc string error',
+          original_version: '01.00.001',
+          publish_version: '01.00.001',
+          version_strategy: 'keep_current',
+          publish_policy: 'upsert_current_version',
+          row: makeProcessRow({ id: 'proc-string-error', version: '01.00.001' }),
+        },
+      ],
+      maxWorkers: 1,
+      env: buildSupabaseTestEnv({
+        TIANGONG_LCA_API_BASE_URL: 'https://example.supabase.co',
+        TIANGONG_LCA_ACCESS_TOKEN: 'key',
+      }),
+      fetchImpl: withSupabaseAuth(async () => {
+        throw 'boom-string';
+      }),
+    });
+    assert.deepEqual(stringErrorReports, [
+      {
+        entity_type: 'process',
+        id: 'proc-string-error',
+        name: 'proc string error',
+        original_version: '01.00.001',
+        publish_version: '01.00.001',
+        publish_policy: 'upsert_current_version',
+        version_strategy: 'keep_current',
+        status: 'failed',
+        error: 'boom-string',
+      },
+    ]);
   });
-  assert.deepEqual(stringErrorReports, [
-    {
-      entity_type: 'process',
-      id: 'proc-string-error',
-      name: 'proc string error',
-      original_version: '01.00.001',
-      publish_version: '01.00.001',
-      publish_policy: 'upsert_current_version',
-      version_strategy: 'keep_current',
-      status: 'failed',
-      error: 'boom-string',
-    },
-  ]);
 });
 
 test('runFlowReviewedPublishData can use the default flow publish-version implementation for commit mode', async () => {

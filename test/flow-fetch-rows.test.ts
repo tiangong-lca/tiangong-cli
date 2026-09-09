@@ -1,3 +1,4 @@
+import { withAssertedRetryDelays } from './helpers/supabase-auth.js';
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
@@ -435,53 +436,55 @@ test(
   },
 );
 
-test('runFlowFetchRows validates required flags and rethrows non-ambiguous lookup failures', async () => {
-  const dir = mkdtempSync(path.join(os.tmpdir(), 'tg-cli-flow-fetch-rows-required-'));
-  const refsFile = path.join(dir, 'refs.json');
+test('runFlowFetchRows validates required flags and rethrows non-ambiguous lookup failures', async (context) => {
+  await withAssertedRetryDelays(context, [1000, 2000, 4000], async () => {
+    const dir = mkdtempSync(path.join(os.tmpdir(), 'tg-cli-flow-fetch-rows-required-'));
+    const refsFile = path.join(dir, 'refs.json');
 
-  writeJson(refsFile, [{ id: 'flow-a', version: '01.00.001' }]);
+    writeJson(refsFile, [{ id: 'flow-a', version: '01.00.001' }]);
 
-  try {
-    await assert.rejects(
-      () =>
-        runFlowFetchRows({
-          refsFile: '',
-          outDir: path.join(dir, 'out'),
-        }),
-      (error) => error instanceof CliError && error.code === 'FLOW_FETCH_ROWS_REFS_FILE_REQUIRED',
-    );
-    await assert.rejects(
-      () =>
-        runFlowFetchRows({
-          refsFile,
-          outDir: '',
-        }),
-      (error) => error instanceof CliError && error.code === 'FLOW_FETCH_ROWS_OUT_DIR_REQUIRED',
-    );
-    await assert.rejects(
-      () =>
-        runFlowFetchRows({
-          refsFile,
-          outDir: path.join(dir, 'out'),
-          env: buildSupabaseTestEnv({
-            TIANGONG_LCA_API_BASE_URL: 'https://example.supabase.co/functions/v1',
+    try {
+      await assert.rejects(
+        () =>
+          runFlowFetchRows({
+            refsFile: '',
+            outDir: path.join(dir, 'out'),
           }),
-          fetchImpl: (async (input) => {
-            if (isSupabaseAuthTokenUrl(String(input))) {
-              return makeSupabaseAuthResponse();
-            }
+        (error) => error instanceof CliError && error.code === 'FLOW_FETCH_ROWS_REFS_FILE_REQUIRED',
+      );
+      await assert.rejects(
+        () =>
+          runFlowFetchRows({
+            refsFile,
+            outDir: '',
+          }),
+        (error) => error instanceof CliError && error.code === 'FLOW_FETCH_ROWS_OUT_DIR_REQUIRED',
+      );
+      await assert.rejects(
+        () =>
+          runFlowFetchRows({
+            refsFile,
+            outDir: path.join(dir, 'out'),
+            env: buildSupabaseTestEnv({
+              TIANGONG_LCA_API_BASE_URL: 'https://example.supabase.co/functions/v1',
+            }),
+            fetchImpl: (async (input) => {
+              if (isSupabaseAuthTokenUrl(String(input))) {
+                return makeSupabaseAuthResponse();
+              }
 
-            throw new Error('network boom');
-          }) as FetchLike,
-        }),
-      (error) =>
-        error instanceof CliError &&
-        error.code === 'REMOTE_REQUEST_FAILED' &&
-        /HTTP 0 returned/u.test(error.message),
-    );
-  } finally {
-    rmSync(dir, { recursive: true, force: true });
-  }
+              throw new Error('network boom');
+            }) as FetchLike,
+          }),
+        (error) =>
+          error instanceof CliError &&
+          error.code === 'REMOTE_REQUEST_FAILED' &&
+          /HTTP 0 returned/u.test(error.message),
+      );
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
+  });
 });
 
 test('runFlowFetchRows records a missing ref message when no version is requested', async () => {
