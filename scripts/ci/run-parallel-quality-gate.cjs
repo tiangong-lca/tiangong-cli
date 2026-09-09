@@ -34,6 +34,7 @@ async function runParallelGate(scripts, run) {
 }
 
 function run(name) {
+  const started = performance.now();
   console.log(`[parallel gate] pnpm run ${name}`);
   return new Promise((resolve) => {
     const child = spawn('pnpm', ['run', name], {
@@ -44,7 +45,12 @@ function run(name) {
       console.error(error.message);
       resolve(1);
     });
-    child.once('close', (status) => resolve(status ?? 1));
+    child.once('close', (status) => {
+      console.log(
+        `[parallel gate] ${name}: status=${status}, elapsed_ms=${Math.round(performance.now() - started)}`,
+      );
+      resolve(status ?? 1);
+    });
   });
 }
 
