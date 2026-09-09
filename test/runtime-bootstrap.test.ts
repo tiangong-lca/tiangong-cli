@@ -140,6 +140,7 @@ function makeFixture() {
     curlLog,
     lock,
     base,
+    files,
     archiveFile,
     manifestFile,
     close: () => fs.rmSync(root, { recursive: true, force: true }),
@@ -175,6 +176,16 @@ test('POSIX bootstrap installs once without Node on PATH, reuses offline and for
     const first = run(f);
     assert.equal(first.status, 0, first.stderr);
     assert.equal(first.stdout, '');
+    const cacheRoot = path.join(f.root, 'cache', 'tiangong-lca/runtimes/v1');
+    const componentRoot = path.join(cacheRoot, 'components', hash('linux_x64'), 'root');
+    assert.equal(fs.statSync(cacheRoot).mode & 0o777, 0o700);
+    for (const expected of f.files) {
+      const installed = path.join(componentRoot, expected.path);
+      const stat = fs.statSync(installed);
+      assert.equal(stat.size, expected.bytes, expected.path);
+      assert.equal(fileHash(installed), expected.sha256, expected.path);
+      assert.equal(stat.mode & 0o777, expected.mode, expected.path);
+    }
     assert.deepEqual(fs.readFileSync(f.log, 'utf8').trim().split('\n').slice(-3), [
       'task',
       'status',
