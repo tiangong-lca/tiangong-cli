@@ -25,9 +25,9 @@ checkPaths:
   - scripts/docpact
   - scripts/docpact-gate.sh
   - scripts/install-git-hooks.sh
-lastReviewedAt: 2026-09-08
-lastReviewedCommit: f28aea717219b37a5f055acf08cb3d0a14b77c57
-lastReviewedNote: 'Reviewed for CLI #290: version-only 0.1.12 publishes the Windows HTTP bootstrap correction from merged mainf28aea7 after all four native gates. Only package identity, four version fixtures and single-line review metadata advance; dependency/lock/runtime behavior remain as the qualified source. Immutable tag, public provenance/package/script verification and downstream adoption are still required.'
+lastReviewedAt: 2026-09-09
+lastReviewedCommit: e0cdba4a37aa37cf1aef6245ac77cdf0db754931
+lastReviewedNote: 'Reviewed for CLI #298: restore all GitHub-hosted runners with unchanged full quality gates and existing-tag recovery.'
 related:
   - ../AGENTS.md
   - ../.docpact/config.yaml
