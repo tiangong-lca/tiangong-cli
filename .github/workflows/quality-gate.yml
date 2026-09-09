@@ -9,6 +9,11 @@ on:
         type: choice
         default: codebuild
         options: [codebuild, hosted]
+      compute:
+        description: Last-stage CodeBuild x64 size trial; project defaults stay unchanged.
+        type: choice
+        default: current
+        options: [current, large]
       scheduling:
         description: Manual software trial; reusable release calls stay serial.
         type: choice
@@ -33,7 +38,7 @@ permissions:
 jobs:
   quality-gate:
     name: quality-gate (${{ matrix.os }} / ${{ matrix.arch }})
-    runs-on: ${{ (matrix.os == 'macos-latest' || (github.event_name == 'workflow_dispatch' && inputs.provider == 'hosted')) && matrix.os || format('codebuild-tiangong-ci-cli-{0}-{1}-{2}', matrix.executor, github.run_id, github.run_attempt) }}
+    runs-on: ${{ (matrix.os == 'macos-latest' || (github.event_name == 'workflow_dispatch' && inputs.provider == 'hosted')) && matrix.os || format('codebuild-tiangong-ci-cli-{0}-{1}-{2}{3}', matrix.executor, github.run_id, github.run_attempt, github.event_name == 'workflow_dispatch' && inputs.compute == 'large' && matrix.arch == 'x64' && '-large' || '') }}
     strategy:
       fail-fast: false
       matrix:
@@ -81,6 +86,13 @@ jobs:
       - name: Assert runner platform and architecture
         run: node ./scripts/ci/assert-runtime-platform.cjs --platform "${{ matrix.platform }}" --arch "${{ matrix.arch }}"
 
+      - name: Assert requested CodeBuild size
+        if: inputs.compute == 'large' && matrix.arch == 'x64'
+        env:
+          BENCHMARK_PROVIDER: ${{ inputs.provider }}
+        run: >-
+          node -e "const os=require('node:os'); if(process.env.BENCHMARK_PROVIDER!=='codebuild'||os.availableParallelism()!==8||os.totalmem()<14*1024**3) throw Error('Requested CodeBuild LARGE x64 environment was not allocated');"
+
       - name: Install dependencies
         run: pnpm install --frozen-lockfile
 
@@ -118,9 +130,10 @@ jobs:
           BENCHMARK_PROVIDER: ${{ inputs.provider }}
           CACHE_ENABLED: ${{ inputs.cache_enabled }}
           GATE_SCHEDULING: ${{ inputs.scheduling || 'serial' }}
+          REQUESTED_COMPUTE: ${{ inputs.compute || 'current' }}
           CACHE_EPOCH: ${{ inputs.cache_epoch }}
         run: >-
-          node -e "const fs=require('node:fs'),os=require('node:os'),cp=require('node:child_process'),c=require('node:crypto'); const files=['package.json','pnpm-lock.yaml','scripts/run-test-coverage.cjs']; const evidence={sha:cp.execFileSync('git',['-c','safe.directory='+process.cwd(),'rev-parse','HEAD'],{encoding:'utf8'}).trim(),expectedSha:process.env.EXPECTED_SHA,provider:process.env.BENCHMARK_PROVIDER,cacheEnabled:process.env.CACHE_ENABLED,scheduling:process.env.GATE_SCHEDULING,cacheEpoch:process.env.CACHE_EPOCH,platform:process.platform,arch:process.arch,node:process.version,cpus:os.cpus().map(x=>x.model),parallelism:os.availableParallelism(),memory:os.totalmem(),hashes:Object.fromEntries(files.map(f=>[f,c.createHash('sha256').update(fs.readFileSync(f)).digest('hex')]))}; fs.writeFileSync('benchmark-environment.json',JSON.stringify(evidence,null,2)); console.log(JSON.stringify(evidence));"
+          node -e "const fs=require('node:fs'),os=require('node:os'),cp=require('node:child_process'),c=require('node:crypto'); const files=['package.json','pnpm-lock.yaml','scripts/run-test-coverage.cjs']; const evidence={sha:cp.execFileSync('git',['-c','safe.directory='+process.cwd(),'rev-parse','HEAD'],{encoding:'utf8'}).trim(),expectedSha:process.env.EXPECTED_SHA,provider:process.env.BENCHMARK_PROVIDER,cacheEnabled:process.env.CACHE_ENABLED,scheduling:process.env.GATE_SCHEDULING,requestedCompute:process.env.REQUESTED_COMPUTE,cacheEpoch:process.env.CACHE_EPOCH,platform:process.platform,arch:process.arch,node:process.version,cpus:os.cpus().map(x=>x.model),parallelism:os.availableParallelism(),memory:os.totalmem(),hashes:Object.fromEntries(files.map(f=>[f,c.createHash('sha256').update(fs.readFileSync(f)).digest('hex')]))}; fs.writeFileSync('benchmark-environment.json',JSON.stringify(evidence,null,2)); console.log(JSON.stringify(evidence));"
 
       - name: Upload benchmark evidence
         if: always() && github.event_name == 'workflow_dispatch' && inputs.candidate_sha != ''

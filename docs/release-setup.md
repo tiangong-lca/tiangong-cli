@@ -25,7 +25,7 @@ checkPaths:
   - scripts/docpact-gate.sh
   - scripts/install-git-hooks.sh
 lastReviewedAt: 2026-09-09
-lastReviewedCommit: 80b989aa8a9477530bd02c8eec451cd336c01d17
+lastReviewedCommit: 777d9753e3d07c59c229ee315380fbf629a9755d
 lastReviewedNote: 'Reviewed for CLI #296: manual provider/cache/scheduling trials retain every canonical gate and platform; reusable release calls stay serial and npm Trusted Publishing stays GitHub-hosted.'
 related:
   - ../AGENTS.md
