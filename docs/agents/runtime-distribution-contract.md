@@ -18,9 +18,9 @@ checkPaths:
   - scripts/bootstrap/**
   - test/runtime-*.test.ts
   - package.json
-lastReviewedAt: 2026-09-08
-lastReviewedCommit: f28aea717219b37a5f055acf08cb3d0a14b77c57
-lastReviewedNote: 'Reviewed for CLI #290: version-only 0.1.12 publishes the Windows HTTP bootstrap correction from merged mainf28aea7 after all four native gates. Only package identity, four version fixtures and single-line review metadata advance; dependency/lock/runtime behavior remain as the qualified source. Immutable tag, public provenance/package/script verification and downstream adoption are still required.'
+lastReviewedAt: 2026-09-09
+lastReviewedCommit: 1318920e71282bf7fcd9ab975f21b7c5b7173073
+lastReviewedNote: 'Reviewed for CLI #300: POSIX bootstrap preserves verified archive file modes under the private umask, with real cold-install mode/inventory regression. Runtime manager integrity, source coverage, dependencies, version and release automation remain unchanged; a separate qualified C1 release and downstream adoption are required.'
 related:
   - docs/agents/repo-architecture.md
   - docs/agents/repo-validation.md
@@ -72,6 +72,8 @@ Every component binds a stable id/version/platform, immutable distribution URL, 
 The canonical `tar-gzip-ustar-v1` interchange has only regular files, declared 0644/0755 modes, UTF-8 portable paths, zero file padding and exactly two terminating blocks. There are no directory, symlink, hard-link, device, sparse, PAX or executable-install-script entries. Parents are created from the validated inventory. Builders materialize the production dependency graph first; pnpm's documented `nodeLinker: hoisted` supplies a symlinkless layout where appropriate. The release-side writer packages only explicit content-bound files, and tests also read its output with the OS tar implementation. Consumer extraction uses bounded Node gzip streams and the declared inventory, with no tar/package-manager/compiler dependency after bootstrap.
 
 Download sources are HTTPS release assets on GitHub, versioned Node distributions or exact npm tarballs. Redirects are bounded and permit only those origins plus GitHub artifact delivery hosts; credentials and server error bodies are never forwarded or logged. The archive is incrementally hashed and must match exact size/SHA before decoding. Only classified connection, stream or transient HTTP reads may retry once. User cancellation and integrity failures do not replay. Failed cleanup may remove only the download file owned by that attempt; an existing destination is preserved.
+
+POSIX bootstrap extracts the already verified regular-file archive with permission preservation (`tar -xpzf`) while retaining `umask 077` for its private cache and staging directories. The installed files must keep the manifest-declared 0644/0755 modes; masking those modes to 0600/0700 makes later manager adoption fail. The cold-install regression checks every extracted file's size, digest and exact mode alongside the private 0700 cache boundary. Warm reuse and corruption rejection retain the same complete inventory checks.
 
 The owned cache marker is `tiangong-lca.runtime-cache.v1`. Component directories are keyed by the complete canonical component description, so changed metadata cannot reuse a different installation. Each contains `root/` and a final receipt. Separate initialization/component/lease locks use the existing public batch run-lock owner. An installation is assembled privately, checked completely and atomically renamed; partial or corrupt published directories are not overwritten. Bootstrap may publish a full tree before Node can write its receipt, but adoption rechecks every inventory byte/mode and rejects extra files first.
 
