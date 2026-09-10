@@ -5537,6 +5537,10 @@ test('executeCli executes qa process with injected implementation', async () => 
       [
         'qa',
         'process',
+        '--reference-rows-file',
+        path.join(dir, 'flows.jsonl'),
+        '--reference-rows-file',
+        path.join(dir, 'support.json'),
         '--run-root',
         path.join(dir, 'run-root'),
         '--run-id',
@@ -5559,6 +5563,10 @@ test('executeCli executes qa process with injected implementation', async () => 
         ...makeDeps(),
         runProcessQaImpl: async (options) => {
           assert.equal(options.rowsFile, undefined);
+          assert.deepEqual(options.referenceRowsFiles, [
+            path.join(dir, 'flows.jsonl'),
+            path.join(dir, 'support.json'),
+          ]);
           assert.equal(options.runRoot, path.join(dir, 'run-root'));
           assert.equal(options.runId, 'run-001');
           assert.equal(options.startTs, '2026-03-30T00:00:00.000Z');
@@ -7284,4 +7292,32 @@ test('executeCli returns planned command message when a command is missing a sub
   assert.equal(result.exitCode, 2);
   assert.equal(result.stdout, '');
   assert.match(result.stderr, /Command 'job'/u);
+});
+
+test('qa process rejects empty explicit reference evidence before invoking its owner', async () => {
+  for (const file of ['', '  ']) {
+    let calls = 0;
+    const result = await executeCli(
+      [
+        'qa',
+        'process',
+        '--rows-file',
+        'rows.json',
+        '--out-dir',
+        'qa',
+        '--reference-rows-file',
+        file,
+      ],
+      {
+        ...makeDeps(),
+        runProcessQaImpl: async () => {
+          calls++;
+          throw new Error('Owner must not run for malformed selection.');
+        },
+      },
+    );
+    assert.equal(result.exitCode, 2);
+    assert.match(result.stderr, /INVALID_REFERENCE_ROWS_FILE/u);
+    assert.equal(calls, 0);
+  }
 });

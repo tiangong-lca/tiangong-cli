@@ -2233,12 +2233,13 @@ function renderQaProcessHelp(): string {
 
 Options:
   --rows-file <file>        Process rows JSON/JSONL file; full process list reports with rows[] are also accepted
+  --reference-rows-file <file>  Repeatable exact Flow/Flow Property/Unit Group evidence for unit-aware QA
   --run-root <dir>          Process build run root containing exports/processes
   --run-id <id>             Optional QA run identifier; defaults to the rows-file name or run-root basename
   --out-dir <dir>           QA artifact output directory
   --start-ts <iso>          Optional run start timestamp
   --end-ts <iso>            Optional run end timestamp
-  --logic-version <name>    QA logic version label (default: v2.1)
+  --logic-version <name>    QA logic version label (default: v2.2-unit-aware)
   --enable-llm              Deprecated no-op; process semantic authoring now belongs in Foundry curation
   --llm-model <name>        Deprecated no-op kept for older scripts
   --llm-max-processes <n>   Deprecated no-op kept for older scripts
@@ -6058,6 +6059,7 @@ function parseQaProcessFlags(args: string[]): {
   help: boolean;
   json: boolean;
   rowsFile: string | undefined;
+  referenceRowsFiles: string[] | undefined;
   runRoot: string | undefined;
   runId: string | undefined;
   outDir: string;
@@ -6078,6 +6080,7 @@ function parseQaProcessFlags(args: string[]): {
         help: { type: 'boolean', short: 'h' },
         json: { type: 'boolean' },
         'rows-file': { type: 'string' },
+        'reference-rows-file': { type: 'string', multiple: true },
         'run-root': { type: 'string' },
         'run-id': { type: 'string' },
         'out-dir': { type: 'string' },
@@ -6096,6 +6099,12 @@ function parseQaProcessFlags(args: string[]): {
     });
   }
 
+  const referenceRowsFiles = values['reference-rows-file'] as string[] | undefined;
+  if (referenceRowsFiles?.some((file) => !file.trim()))
+    throw new CliError('Each --reference-rows-file must select a non-empty path.', {
+      code: 'INVALID_REFERENCE_ROWS_FILE',
+      exitCode: 2,
+    });
   const llmMaxProcessesValue =
     typeof values['llm-max-processes'] === 'string'
       ? Number.parseInt(values['llm-max-processes'], 10)
@@ -6114,6 +6123,7 @@ function parseQaProcessFlags(args: string[]): {
   return {
     help: Boolean(values.help),
     json: Boolean(values.json),
+    referenceRowsFiles,
     rowsFile: typeof values['rows-file'] === 'string' ? values['rows-file'] : undefined,
     runRoot: typeof values['run-root'] === 'string' ? values['run-root'] : undefined,
     runId: typeof values['run-id'] === 'string' ? values['run-id'] : undefined,
@@ -9907,6 +9917,7 @@ export async function executeCli(argv: string[], deps: CliDeps): Promise<CliResu
       }
 
       const report = await processQaImpl({
+        ...(qaFlags.referenceRowsFiles ? { referenceRowsFiles: qaFlags.referenceRowsFiles } : {}),
         rowsFile: qaFlags.rowsFile,
         runRoot: qaFlags.runRoot,
         runId: qaFlags.runId,

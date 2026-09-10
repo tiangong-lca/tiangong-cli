@@ -31,9 +31,9 @@ checkPaths:
   - scripts/docpact
   - scripts/docpact-gate.sh
   - scripts/install-git-hooks.sh
-lastReviewedAt: 2026-09-10
-lastReviewedCommit: b5e209259d3bb06205b9af131b1c0edc3fba6da2
-lastReviewedNote: 'Reviewed for CLI #304: structured LifecycleModel save failures and the private Production OAuth owner-draft bundle qualification join the command proof contract.'
+lastReviewedAt: 2026-09-11
+lastReviewedCommit: 8e156c55dcbf1b1df3a0c41797bfa027136f578e
+lastReviewedNote: 'Reviewed for CLI #286 with merged main #304: preserve exact-evidence dimensional QA and the LifecycleModel structured-error, OAuth capability and private-qualification contracts. Dependencies, package identity and upstream release gates remain unchanged.'
 related:
   - ../../AGENTS.md
   - ../../.docpact/config.yaml
@@ -233,6 +233,8 @@ Facts that matter:
 - local npm authentication is not release validation evidence; routine publication is verified by the upstream tag workflow and npm Trusted Publishing workflow after merge
 
 If the task changes control flow, add or update tests instead of using coverage-ignore pragmas.
+
+Process mass QA tests must prove count and canonical area-time are not added to kg, mass-valued fuels and scaled mass units remain included, exact reference/version/occurrence conflicts and malformed selections fail closed, quantity and aggregate overflow remain actionable, zero-input ratios are not fabricated, and source quantities remain byte-stable. The CLI transport must retain every explicit reference file. Both the new unit owner and existing QA module remain subject to exact full-source coverage without exclusions; local focused coverage alone is not the release gate.
 
 ## Minimum PR Note Quality
 

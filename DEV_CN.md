@@ -22,9 +22,9 @@ checkPaths:
   - src/**
   - scripts/**
   - .github/workflows/**
-lastReviewedAt: 2026-09-10
-lastReviewedCommit: 3c54a6b1987664b4a8d927fc4a10de507a21ea73
-lastReviewedNote: 'Reviewed for CLI #304: lifecyclemodel save-draft keeps the existing CLI and OAuth workflow, database-engine owns the deployed capability migration, and maintainer runtime, environment, dependency, and release commands remain unchanged.'
+lastReviewedAt: 2026-09-11
+lastReviewedCommit: 8e156c55dcbf1b1df3a0c41797bfa027136f578e
+lastReviewedNote: 'Reviewed for CLI #286 with merged main #304: preserve exact-evidence dimensional QA and the LifecycleModel structured-error, OAuth capability and private-qualification contracts. Dependencies, package identity and upstream release gates remain unchanged.'
 related:
   - AGENTS.md
   - .docpact/config.yaml

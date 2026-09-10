@@ -21,9 +21,9 @@ checkPaths:
   - .oxlintrc.json
   - src/**
   - test/**
-lastReviewedAt: 2026-09-10
-lastReviewedCommit: 46d23c91d91c172e16d010acb2c418a52163322e
-lastReviewedNote: 'Reviewed for CLI #304: lifecyclemodel save-draft keeps the actor-bound bundle path and now preserves sanitized structured application failures; database-engine owns the Production capability migration, while command syntax and artifact layout remain unchanged.'
+lastReviewedAt: 2026-09-11
+lastReviewedCommit: 8e156c55dcbf1b1df3a0c41797bfa027136f578e
+lastReviewedNote: 'Reviewed for CLI #286 with merged main #304: preserve exact-evidence dimensional QA and the LifecycleModel structured-error, OAuth capability and private-qualification contracts. Dependencies, package identity and upstream release gates remain unchanged.'
 related:
   - ../AGENTS.md
   - ../.docpact/config.yaml
@@ -862,7 +862,9 @@ outputs/evidence-search-declaration.json
 它负责：
 
 - 从 `--run-root` 读取 `exports/processes/*.json`
-- 延续现有 v2.1 QA 规则做基础信息核查、物料平衡核查和单位疑似问题记录
+- 以 v2.2-unit-aware 做基础信息和量纲有效的质量平衡核查：显式重复 `--reference-rows-file` 选择 Flow、Flow Property、Unit Group 精确版本证据，沿参考属性和参考单位解析 kg；质量型燃料仍计入输入
+- 计数、规范面积时间（`m2*a` / `m²*a`）等已知非质量参考产品报告 `not_applicable`，质量与偏差为 null；缺失、冲突、未知单位、无效数量和溢出保留待处理 finding，不猜测任意复合单位
+- `mass_balance` 保留过程 payload 哈希和逐 exchange 的精确引用哈希，`reference_evidence` 保留显式输入文件哈希；不修改数量或引用，跨过程合计仅为诊断，独立 source-model 物理平衡仍必需
 - 写出中英文 markdown review、timing、unit issue log、summary 和 report
 - 在显式启用 `--enable-llm` 时，通过 CLI 的 `TIANGONG_LCA_REVIEW_LLM_*` 运行时做可选语义审核
 

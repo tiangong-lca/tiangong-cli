@@ -24,9 +24,9 @@ checkPaths:
   - scripts/docpact
   - scripts/docpact-gate.sh
   - scripts/install-git-hooks.sh
-lastReviewedAt: 2026-09-10
-lastReviewedCommit: 46d23c91d91c172e16d010acb2c418a52163322e
-lastReviewedNote: 'Reviewed for CLI #304: the structured lifecyclemodel failure fix and database-engine capability migration require no release setup, credential, workflow, tag, or Trusted Publishing changes.'
+lastReviewedAt: 2026-09-11
+lastReviewedCommit: 8e156c55dcbf1b1df3a0c41797bfa027136f578e
+lastReviewedNote: 'Reviewed for CLI #286 with merged main #304: preserve exact-evidence dimensional QA and the LifecycleModel structured-error, OAuth capability and private-qualification contracts. Dependencies, package identity and upstream release gates remain unchanged.'
 related:
   - ../AGENTS.md
   - ../.docpact/config.yaml

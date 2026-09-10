@@ -30,9 +30,9 @@ checkPaths:
   - scripts/docpact
   - scripts/docpact-gate.sh
   - scripts/install-git-hooks.sh
-lastReviewedAt: 2026-09-10
-lastReviewedCommit: b5e209259d3bb06205b9af131b1c0edc3fba6da2
-lastReviewedNote: 'Reviewed for CLI #304: LifecycleModel owner-draft bundle writes retain their dedicated OAuth capability and structured failure-artifact boundary.'
+lastReviewedAt: 2026-09-11
+lastReviewedCommit: 8e156c55dcbf1b1df3a0c41797bfa027136f578e
+lastReviewedNote: 'Reviewed for CLI #286 with merged main #304: preserve exact-evidence dimensional QA and the LifecycleModel structured-error, OAuth capability and private-qualification contracts. Dependencies, package identity and upstream release gates remain unchanged.'
 related:
   - ../../AGENTS.md
   - ../../.docpact/config.yaml
@@ -272,6 +272,8 @@ These modules share one contract:
 - `publish run` writes a deterministic `verification-report.json` next to the final publish report so downstream automation can read blockers without parsing execution details
 - `runtime-rulesets` maps CLI-local QA, dedup, and publish findings to stable methodology rule ids so Foundry and UI handoffs can consume one ruleset profile contract
 - maintenance and QA commands still emit artifact-first local outputs and remain covered by the strict `src/**/*.ts` coverage gate
+
+Process dimensional QA is split between `process-mass-balance.ts` (explicit exact reference evidence, unit-chain resolution, applicability and kg arithmetic) and `process-qa.ts` (existing classification, findings and artifact reports). `cli.ts` owns repeatable reference-file parsing and help. No remote lookup, dependency, credential path or Foundry-owned physical-unit implementation is added. Selected file and payload digests bind observations, while canonical area-time is a reviewed nonmass unit and arbitrary composites remain unresolved.
 
 ### Dataset and lifecyclemodel governance commands
 

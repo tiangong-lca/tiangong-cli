@@ -186,14 +186,15 @@ test('runProcessQa writes artifact-first local QA outputs without LLM', async ()
     assert.equal(report.logic_version, 'v2.1');
     assert.equal(report.llm.enabled, false);
     assert.equal(report.llm.reason, 'disabled');
-    assert.equal(report.totals.raw_input, 5);
-    assert.equal(report.totals.product_plus_byproduct_plus_waste, 5);
-    assert.equal(report.totals.energy_excluded, 1);
-    assert.equal(report.totals.relative_deviation, 0);
+    assert.equal(report.totals.raw_input, null);
+    assert.equal(report.totals.product_plus_byproduct_plus_waste, null);
+    assert.equal(report.totals.energy_excluded, null);
+    assert.equal(report.totals.relative_deviation, null);
     assert.equal(report.ruleset_id, 'process-authoring/strict');
     assert.equal(report.ruleset_version, '1');
     assert.equal(report.ruleset_gate?.status, 'needs_review');
-    assert.equal(report.rule_finding_count, 1);
+    assert.equal(report.rule_finding_count, 6);
+    assert.equal(report.mass_balance?.[0].status, 'unresolved');
     assert.equal(report.blocker_count, 0);
     assert.equal(report.policy_decision_owner, 'foundry');
     assert.equal(report.qa_mode, 'deterministic_qa_report');
@@ -528,7 +529,7 @@ test('runProcessQa validates malformed rows-file inputs', async () => {
   }
 });
 
-test('runProcessQa covers exchange-object fallback, empty exchanges, and zero-input totals', async () => {
+test('runProcessQa preserves input diagnostics without fabricating totals from missing exact unit evidence', async () => {
   const dir = mkdtempSync(path.join(os.tmpdir(), 'tg-cli-process-qa-zero-'));
   const runRoot = path.join(dir, 'run-root');
   const processDir = path.join(runRoot, 'exports', 'processes');
@@ -628,9 +629,10 @@ test('runProcessQa covers exchange-object fallback, empty exchanges, and zero-in
     });
 
     assert.equal(report.process_count, 5);
-    assert.equal(report.totals.raw_input, 20);
-    assert.equal(Number(report.totals.relative_deviation?.toFixed(2)), 0.33);
-    assert.equal(report.totals.product_plus_byproduct_plus_waste, 13.4);
+    assert.equal(report.totals.raw_input, null);
+    assert.equal(report.totals.relative_deviation, null);
+    assert.ok(report.mass_balance?.every((mass) => mass.status === 'unresolved'));
+    assert.equal(report.totals.product_plus_byproduct_plus_waste, null);
     assert.equal(report.ruleset_gate?.status, 'needs_review');
   } finally {
     rmSync(dir, { recursive: true, force: true });
@@ -646,11 +648,6 @@ test('process-qa internals cover helper branches and rendering fallbacks', async
   assert.equal(__testInternals.textFromValue([{}]), '');
   assert.equal(__testInternals.textFromValue({}), '');
   assert.equal(__testInternals.textFromValue(undefined), '');
-
-  assert.equal(__testInternals.toNumber('12.5'), 12.5);
-  assert.equal(__testInternals.toNumber('bad'), 0);
-  assert.equal(__testInternals.toNumber(Number.NaN), 0);
-  assert.equal(__testInternals.toNumber(undefined), 0);
 
   assert.equal(__testInternals.deepGet({ a: { b: { c: 1 } } }, ['a', 'b', 'c']), 1);
   assert.equal(__testInternals.deepGet({ a: 1 }, ['a', 'b']), undefined);

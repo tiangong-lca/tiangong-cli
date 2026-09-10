@@ -31,9 +31,9 @@ checkPaths:
   - test/auth-identity*.test.ts
   - test/public-auth-identity-receipt.test.ts
   - test/lca-release*.test.ts
-lastReviewedAt: 2026-09-09
-lastReviewedCommit: b32376e57253d106eaa5064b0740ac248156f936
-lastReviewedNote: 'Reviewed for CLI #302: version-only 0.1.13 publishes the qualified POSIX bootstrap mode correction from merged main b32376e. Only package identity, four version fixtures and review metadata advance; the frozen graph and runtime/release safeguards remain unchanged.'
+lastReviewedAt: 2026-09-11
+lastReviewedCommit: 8e156c55dcbf1b1df3a0c41797bfa027136f578e
+lastReviewedNote: 'Reviewed for CLI #286: explicit exact-reference dimensional QA, nonmass applicability, kg normalization, evidence hashes and arithmetic failure diagnostics. Package identity, dependencies, auth, exact coverage and upstream release gates remain unchanged; Foundry #122 consumes a later qualified successor.'
 ---
 
 CLI 0.1.10 is the designated C1 release for `tiangong-lca runtime describe --json` and the explicit `@tiangong-lca/cli/runtime` API for package, asset and Node content inspection. Runtime inspection loads no project `.env`, performs no authentication and downloads nothing. See [the runtime distribution contract](docs/agents/runtime-distribution-contract.md) for exact fields and trust boundaries; verify public availability and provenance before treating the candidate version as released.
@@ -508,7 +508,7 @@ tiangong-lca lifecyclemodel publish-build --run-dir /abs/path/to/lifecyclemodel-
 tiangong-lca lifecyclemodel save-draft --input ./lifecyclemodels.jsonl --out-dir /abs/path/to/lifecyclemodel-save-draft --dry-run --json
 tiangong-lca lifecyclemodel graph --input ./lifecyclemodels.jsonl --out-dir /abs/path/to/lifecyclemodel-graph --format all --json
 tiangong-lca lifecyclemodel orchestrate plan --input ./lifecyclemodel-orchestrate.request.json --out-dir /abs/path/to/lifecyclemodel-recursive-run --json
-tiangong-lca qa process --rows-file ./process-list-report.json --out-dir ./process-qa
+tiangong-lca qa process --rows-file ./process-list-report.json --reference-rows-file ./flows.jsonl --reference-rows-file ./support.jsonl --out-dir ./process-qa
 tiangong-lca qa process --run-root /abs/path/to/process-run --run-id <run_id> --out-dir ./process-qa
 tiangong-lca process save-draft --input ./patched-processes.jsonl --out-dir /abs/path/to/process-save-draft --dry-run --json
 tiangong-lca process save-draft --input ./patched-processes.jsonl --out-dir /abs/path/to/process-save-draft --commit --target-user-id <user-id> --json
@@ -521,6 +521,12 @@ tiangong-lca doctor --json
 For `publish run`, relative `out_dir` values from either the request body or `--out-dir` are resolved against the request file directory, not the shell `cwd`. Use an absolute path when you want a fixed destination independent of the request file location.
 
 For `qa process`, `--rows-file` accepts either raw process rows as JSON/JSONL or the full JSON report emitted by `tiangong-lca process list --json`, as long as it contains a `rows` array.
+
+Process mass QA defaults to `v2.2-unit-aware`. Supply exact local Flow, Flow Property and Unit Group rows through repeatable `--reference-rows-file <file>`. Each exchange resolves its exact Flow → reference Flow Property → reference Unit Group chain, including unique reference occurrences and reference conversion values. The report retains the selected file hashes, consumer payload hash and per-exchange reference payload hashes. Missing or conflicting identities, unknown/ambiguous units, contradictory unit tags, invalid quantities and arithmetic overflow remain findings; no reference files are discovered implicitly.
+
+Unit symbols retain SI case and internal token boundaries: `Mg` and `mg` have different mass scales, and unsupported `T`, `G` or split symbols cannot be coerced into tonnes or grams. Descriptive names such as `KILOGRAM` may be case folded. Unit-tag names are case insensitive, but their captured symbols retain case.
+
+Only comparable mass amounts are normalized to kilograms. Mass-valued fuels and all mass input/output occurrences participate; by-products, waste and other outputs remain separately visible. A count-, energy-, area-time- or other recognized nonmass reference product has `mass_balance[].status=not_applicable` and null mass totals/deviation. Canonical `m2*a` and NFKC-equivalent `m²*a` are recognized without generic composite-unit inference. Unresolved applicability also retains null totals. Zero input never fabricates a relative denominator; positive mass output with zero mass input remains a finding. `energy_excluded` stays null because heterogeneous nonmass amounts cannot form a numeric total. Cross-process totals are diagnostic only and cannot replace each process's findings or a source-model physical balance. Existing report filenames remain stable, and `--logic-version` is a diagnostic label, not an algorithm-selection or bypass option. QA changes no quantities, references or remote data.
 
 For `process identity-preflight` and `flow identity-preflight`, canonical TIDAS wrappers are schema-checked when present. Loose target objects are accepted for early planning and produce `schema_validation.status: "not_applicable"` until materialization. Candidate rows can be embedded in the request, loaded from repeatable `--candidate-input` local files/directories, or fetched through explicit `--remote-candidates` hybrid search; `identity-candidate-sources.json` records scanned files, remote endpoints, queries, filters, edge-search options, and row counts. The remote Edge Function receives only search-safe query/options fields; local-only `profile_hints` stay in the preflight target profile and candidate scoring evidence.
 

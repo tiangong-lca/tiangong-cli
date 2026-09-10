@@ -3,13 +3,18 @@ import path from 'node:path';
 import { writeJsonArtifact, writeJsonLinesArtifact, writeTextArtifact } from './artifacts.js';
 import { CliError } from './errors.js';
 import type { FetchLike } from './http.js';
+import {
+  assessProcessMassBalance,
+  readProcessMassReferences,
+  type ProcessMassBalance,
+} from './process-mass-balance.js';
 import { readJsonInput } from './io.js';
 import { getRuntimeRuleset, resolveRuntimeRuleId } from './runtime-rulesets.js';
 
 type JsonRecord = Record<string, unknown>;
 
 const KIND_RE = /\[tg_io_kind_tag=([^\]]+)\]/gu;
-const UOM_RE = /\[tg_io_uom_tag=([^\]]+)\]/gu;
+const UOM_RE = /\[tg_io_uom_tag=([^\]]+)\]/giu;
 
 const ENERGY_WORDS = [
   'electric',
@@ -84,21 +89,23 @@ type UnitIssue = {
 
 type ProcessQaRow = {
   process_file: string;
-  raw_input: number;
-  product: number;
-  byproduct: number;
-  waste: number;
-  energy_excluded: number;
-  delta: number;
+  other_output?: number | null;
+  raw_input: number | null;
+  product: number | null;
+  byproduct: number | null;
+  waste: number | null;
+  energy_excluded: number | null;
+  delta: number | null;
   relative_deviation: number | null;
 };
 
 type ProcessQaTotals = {
-  raw_input: number;
-  product_plus_byproduct_plus_waste: number;
-  delta: number;
+  other_output?: number | null;
+  raw_input: number | null;
+  product_plus_byproduct_plus_waste: number | null;
+  delta: number | null;
   relative_deviation: number | null;
-  energy_excluded: number;
+  energy_excluded: number | null;
 };
 
 type ProcessQaFinding = {
@@ -138,11 +145,11 @@ type ProcessSummaryForLlm = {
     admin_ok: boolean;
   };
   balance: {
-    raw_in: number;
-    product: number;
-    byproduct: number;
-    waste: number;
-    energy_excluded: number;
+    raw_in: number | null;
+    product: number | null;
+    byproduct: number | null;
+    waste: number | null;
+    energy_excluded: number | null;
     relative_deviation: number | null;
   };
 };
@@ -165,6 +172,7 @@ export type ProcessQaLlmResult =
     };
 
 export type ProcessQaSummary = {
+  mass_balance?: ProcessMassBalance[];
   run_id: string;
   logic_version: string;
   process_count: number;
@@ -176,6 +184,8 @@ export type ProcessQaSummary = {
 };
 
 export type ProcessQaReport = {
+  mass_balance?: ProcessMassBalance[];
+  reference_evidence?: { path: string; bytes: number; sha256: string }[];
   schema_version: 1;
   generated_at_utc: string;
   status: 'completed_local_process_qa';
@@ -214,6 +224,7 @@ export type ProcessQaReport = {
 
 export type RunProcessQaOptions = {
   rowsFile?: string;
+  referenceRowsFiles?: readonly string[];
   runRoot?: string;
   runId?: string;
   outDir: string;
@@ -256,19 +267,6 @@ function textFromValue(value: unknown): string {
   }
 
   return String(value ?? '');
-}
-
-function toNumber(value: unknown): number {
-  if (typeof value === 'number') {
-    return Number.isFinite(value) ? value : 0;
-  }
-
-  if (typeof value === 'string' && value.trim()) {
-    const parsed = Number(value);
-    return Number.isFinite(parsed) ? parsed : 0;
-  }
-
-  return 0;
 }
 
 function deepGet(value: unknown, pathParts: string[]): unknown {
@@ -358,17 +356,17 @@ function classifyExchange(
   exchange: JsonRecord,
   referenceFlowId: string | null = null,
 ): ClassifiedExchange {
-  const comments =
-    `${textFromValue(exchange.commonComment)} ${textFromValue(exchange.generalComment)}`.toLowerCase();
+  const comments = `${textFromValue(exchange.commonComment)} ${textFromValue(exchange.generalComment)}`;
   const flowDescription = textFromValue(
     isRecord(exchange.referenceToFlowDataSet)
       ? exchange.referenceToFlowDataSet['common:shortDescription']
       : undefined,
-  ).toLowerCase();
-  const blob = `${comments} ${flowDescription}`.trim();
+  );
+  const rawBlob = `${comments} ${flowDescription}`.trim();
+  const blob = rawBlob.toLowerCase();
   const kinds = Array.from(blob.matchAll(KIND_RE), (match) => match[1].toLowerCase());
   const kindSet = new Set(kinds);
-  const uoms = Array.from(blob.matchAll(UOM_RE), (match) => match[1].toLowerCase());
+  const uoms = Array.from(rawBlob.matchAll(UOM_RE), (match) => match[1]);
   const direction = String(exchange.exchangeDirection ?? '').toLowerCase();
   const inputGroup = sourceGroup(exchange, 'inputGroup');
   const outputGroup = sourceGroup(exchange, 'outputGroup');
@@ -435,7 +433,7 @@ function unitIssueCheck(exchange: JsonRecord, uoms: string[], blob: string): Uni
     return [];
   }
 
-  const currentUnit = uoms[0] ?? '';
+  const currentUnit = (uoms[0] ?? '').toLowerCase();
   if (
     ['electric', 'electricity', '交流电', '电力'].some((word) => blob.includes(word)) &&
     currentUnit &&
@@ -936,6 +934,10 @@ async function runOptionalLlmReview(
   };
 }
 
+function formatMass(value: number | null | undefined): string {
+  return value == null ? 'n/a' : value.toPrecision(6);
+}
+
 function formatPercent(value: number | null): string {
   return value === null ? '' : `${(value * 100).toFixed(2)}%`;
 }
@@ -966,20 +968,20 @@ function renderZhReview(options: {
   });
 
   lines.push(
-    '\n## 物料平衡口径\n- 物料平衡：仅核查 `原材料投入 = 产品+副产品+废物`\n- 能量投入：单列记录，不计入平衡\n',
+    '\n## 物料平衡口径\n- 质量平衡：以显式精确单位证据解析可比质量，按 kg 核算所有质量型输入和输出\n- 质量型燃料计入输入；非质量型参考产品不适用质量平衡，缺失证据仍需处理\n',
   );
   lines.push(
-    '\n## 分过程结果\n|process file|原材料投入|产品|副产品|废物|能量投入(不计平衡)|差值(输出-投入)|相对偏差|\n|---|---:|---:|---:|---:|---:|---:|---:|\n',
+    '\n## 分过程结果\n|process file|原材料投入|产品|副产品|废物|其他质量输出|差值(输出-投入)|相对偏差|\n|---|---:|---:|---:|---:|---:|---:|---:|\n',
   );
 
   options.rows.forEach((row) => {
     lines.push(
-      `|${row.process_file}|${row.raw_input.toPrecision(6)}|${row.product.toPrecision(6)}|${row.byproduct.toPrecision(6)}|${row.waste.toPrecision(6)}|${row.energy_excluded.toPrecision(6)}|${row.delta.toPrecision(6)}|${formatPercent(row.relative_deviation)}|\n`,
+      `|${row.process_file}|${formatMass(row.raw_input)}|${formatMass(row.product)}|${formatMass(row.byproduct)}|${formatMass(row.waste)}|${formatMass(row.other_output)}|${formatMass(row.delta)}|${formatPercent(row.relative_deviation)}|\n`,
     );
   });
 
   lines.push(
-    `\n## 汇总\n- 原材料投入合计: **${options.totals.raw_input.toPrecision(6)}**\n- 产品+副产品+废物合计: **${options.totals.product_plus_byproduct_plus_waste.toPrecision(6)}**\n- 差值(输出-投入): **${options.totals.delta.toPrecision(6)}**\n- 相对偏差: **${formatPercent(options.totals.relative_deviation)}**\n- 能量投入(不计平衡)合计: **${options.totals.energy_excluded.toPrecision(6)}**\n`,
+    `\n## 汇总\n- 原材料投入合计: **${formatMass(options.totals.raw_input)}**\n- 产品+副产品+废物合计: **${formatMass(options.totals.product_plus_byproduct_plus_waste)}**\n- 差值(输出-投入): **${formatMass(options.totals.delta)}**\n- 相对偏差: **${formatPercent(options.totals.relative_deviation)}**\n- 其他质量输出合计: **${formatMass(options.totals.other_output)}**\n`,
   );
   lines.push('\n## LLM 语义审核层（可选）\n');
 
@@ -1040,20 +1042,20 @@ function renderEnReview(options: {
   });
 
   lines.push(
-    '\n## Material balance scope\n- Check only `raw material input = product + by-product + waste`\n- Energy inputs are listed but excluded from balance\n',
+    '\n## Material balance scope\n- Check comparable mass inputs and outputs in kg; output categories remain separately visible\n- Only comparable exact-unit masses are summed in kg, including mass-valued fuels. Nonmass or unresolved reference products have no mass deviation; see the bound per-process assessments.\n',
   );
   lines.push(
-    '\n## Per-process results\n|process file|raw material in|product|by-product|waste|energy in (excluded)|delta(out-in)|relative deviation|\n|---|---:|---:|---:|---:|---:|---:|---:|\n',
+    '\n## Per-process kg results (all mass inputs; categorized outputs)\n|process file|raw material in|product|by-product|waste|other mass outputs|delta(out-in)|relative deviation|\n|---|---:|---:|---:|---:|---:|---:|---:|\n',
   );
 
   options.rows.forEach((row) => {
     lines.push(
-      `|${row.process_file}|${row.raw_input.toPrecision(6)}|${row.product.toPrecision(6)}|${row.byproduct.toPrecision(6)}|${row.waste.toPrecision(6)}|${row.energy_excluded.toPrecision(6)}|${row.delta.toPrecision(6)}|${formatPercent(row.relative_deviation)}|\n`,
+      `|${row.process_file}|${formatMass(row.raw_input)}|${formatMass(row.product)}|${formatMass(row.byproduct)}|${formatMass(row.waste)}|${formatMass(row.other_output)}|${formatMass(row.delta)}|${formatPercent(row.relative_deviation)}|\n`,
     );
   });
 
   lines.push(
-    `\n## Summary\n- Raw material input total: **${options.totals.raw_input.toPrecision(6)}**\n- Product+by-product+waste total: **${options.totals.product_plus_byproduct_plus_waste.toPrecision(6)}**\n- Delta (out-in): **${options.totals.delta.toPrecision(6)}**\n- Relative deviation: **${formatPercent(options.totals.relative_deviation)}**\n- Energy input total (excluded from balance): **${options.totals.energy_excluded.toPrecision(6)}**\n`,
+    `\n## Summary\n- Raw material input total: **${formatMass(options.totals.raw_input)}**\n- Product+by-product+waste total: **${formatMass(options.totals.product_plus_byproduct_plus_waste)}**\n- Delta (out-in): **${formatMass(options.totals.delta)}**\n- Relative deviation: **${formatPercent(options.totals.relative_deviation)}**\n- Other mass output total: **${formatMass(options.totals.other_output)}**\n`,
   );
   lines.push(
     `\n## Evidence-sufficient conclusions\n${options.evidenceStrong.map((item) => `- ${item}`).join('\n')}\n`,
@@ -1127,6 +1129,7 @@ export async function runProcessQa(options: RunProcessQaOptions): Promise<Proces
   const outDir = path.resolve(
     requiredNonEmpty(options.outDir, '--out-dir', 'PROCESS_QA_OUT_DIR_REQUIRED'),
   );
+  const referenceEvidence = readProcessMassReferences(options.referenceRowsFiles);
   const resolvedInput = resolveReviewInput({
     rowsFile: options.rowsFile,
     runRoot: options.runRoot,
@@ -1134,7 +1137,7 @@ export async function runProcessQa(options: RunProcessQaOptions): Promise<Proces
     outDir,
   });
   const runId = requiredNonEmpty(resolvedInput.runId, '--run-id', 'PROCESS_QA_RUN_ID_REQUIRED');
-  const logicVersion = options.logicVersion?.trim() || 'v2.1';
+  const logicVersion = options.logicVersion?.trim() || 'v2.2-unit-aware';
   const fetchImpl = options.fetchImpl ?? (fetch as FetchLike);
   const env = options.env ?? process.env;
   const llmMaxProcesses =
@@ -1150,11 +1153,7 @@ export async function runProcessQa(options: RunProcessQaOptions): Promise<Proces
   const ruleFindings: ProcessQaFinding[] = [];
   const processSummariesForLlm: ProcessSummaryForLlm[] = [];
 
-  let totalRaw = 0;
-  let totalProduct = 0;
-  let totalByproduct = 0;
-  let totalWaste = 0;
-  let totalEnergy = 0;
+  const massBalances: ProcessMassBalance[] = [];
 
   processFiles.forEach((filePath) => {
     const processPayload = unwrapProcessPayload(readJsonInput(filePath), filePath);
@@ -1178,12 +1177,6 @@ export async function runProcessQa(options: RunProcessQaOptions): Promise<Proces
     baseRows.push([fileName, base]);
     ruleFindings.push(...reviewFindingsForBase(fileName, base));
 
-    let rawInput = 0;
-    let product = 0;
-    let byproduct = 0;
-    let waste = 0;
-    let energyExcluded = 0;
-
     exchanges.forEach((exchange) => {
       const classified = classifyExchange(exchange, referenceFlowId);
       if (!hasNumericAmount(exchange)) {
@@ -1201,18 +1194,6 @@ export async function runProcessQa(options: RunProcessQaOptions): Promise<Proces
           }),
         );
       }
-      const amount = toNumber(exchange.meanAmount ?? exchange.resultingAmount);
-      if (classified.classification === 'raw_material_input') {
-        rawInput += amount;
-      } else if (classified.classification === 'product_output') {
-        product += amount;
-      } else if (classified.classification === 'byproduct_output') {
-        byproduct += amount;
-      } else if (classified.classification === 'waste_output') {
-        waste += amount;
-      } else if (classified.classification === 'energy_input') {
-        energyExcluded += amount;
-      }
       const currentUnitIssues = unitIssueCheck(exchange, classified.uoms, classified.blob);
       unitIssues.push(...currentUnitIssues);
       currentUnitIssues.forEach((issue) => {
@@ -1228,29 +1209,55 @@ export async function runProcessQa(options: RunProcessQaOptions): Promise<Proces
       });
     });
 
-    const balanceOut = product + byproduct + waste;
-    const delta = balanceOut - rawInput;
-    const relativeDeviation = rawInput > 0 ? Math.abs(delta) / rawInput : null;
-
+    const mass = assessProcessMassBalance({
+      processFile: fileName,
+      processPayload,
+      exchanges,
+      referenceFlowId,
+      references: referenceEvidence,
+      classify: (exchange) => classifyExchange(exchange, referenceFlowId),
+    });
+    massBalances.push(mass);
+    ruleFindings.push(
+      ...mass.findings.map((finding) =>
+        createProcessQaFinding({
+          processFile: fileName,
+          severity: 'warning',
+          code: finding.code,
+          message: finding.message,
+          evidence: { ...finding, unit: 'kg' },
+        }),
+      ),
+    );
+    const rawInput = mass.raw_input,
+      product = mass.product,
+      byproduct = mass.byproduct,
+      waste = mass.waste,
+      energyExcluded = mass.energy_excluded,
+      relativeDeviation = mass.relative_deviation;
     rows.push({
       process_file: fileName,
       raw_input: rawInput,
       product,
       byproduct,
       waste,
+      other_output: mass.other_output,
       energy_excluded: energyExcluded,
-      delta,
+      delta: mass.delta,
       relative_deviation: relativeDeviation,
     });
 
-    if (relativeDeviation !== null && relativeDeviation > 0.05) {
+    if (
+      (relativeDeviation !== null && relativeDeviation > 0.05) ||
+      (mass.input_mass_kg === 0 && mass.output_mass_kg! > 0)
+    ) {
       ruleFindings.push(
         createProcessQaFinding({
           processFile: fileName,
           severity: 'warning',
           code: 'process_material_balance_deviation',
           message:
-            'Material balance deviation exceeds the QA threshold for raw inputs versus product/by-product/waste outputs.',
+            'Comparable mass inputs and outputs require review: positive output has zero input, or the relative kg deviation exceeds the QA threshold.',
           evidence: {
             raw_input: rawInput,
             product,
@@ -1262,12 +1269,6 @@ export async function runProcessQa(options: RunProcessQaOptions): Promise<Proces
         }),
       );
     }
-
-    totalRaw += rawInput;
-    totalProduct += product;
-    totalByproduct += byproduct;
-    totalWaste += waste;
-    totalEnergy += energyExcluded;
 
     if (processSummariesForLlm.length < Math.max(1, llmMaxProcesses)) {
       processSummariesForLlm.push({
@@ -1294,27 +1295,40 @@ export async function runProcessQa(options: RunProcessQaOptions): Promise<Proces
     }
   });
 
+  const comparable =
+    massBalances.length > 0 && massBalances.every((mass) => mass.status === 'applicable');
+  const sum = (field: 'raw_input' | 'product' | 'byproduct' | 'waste' | 'other_output') =>
+    comparable ? massBalances.reduce((total, mass) => total + mass[field]!, 0) : null;
+  const totalRaw = sum('raw_input'),
+    productAndWaste = comparable ? sum('product')! + sum('byproduct')! + sum('waste')! : null,
+    other = sum('other_output');
+  const totalOutput = comparable ? productAndWaste! + other! : null;
   const totals: ProcessQaTotals = {
     raw_input: totalRaw,
-    product_plus_byproduct_plus_waste: totalProduct + totalByproduct + totalWaste,
-    delta: totalProduct + totalByproduct + totalWaste - totalRaw,
+    product_plus_byproduct_plus_waste: productAndWaste,
+    other_output: other,
+    delta: comparable ? totalOutput! - totalRaw! : null,
     relative_deviation:
-      totalRaw > 0
-        ? Math.abs(totalProduct + totalByproduct + totalWaste - totalRaw) / totalRaw
-        : null,
-    energy_excluded: totalEnergy,
+      comparable && totalRaw! > 0 ? Math.abs(totalOutput! - totalRaw!) / totalRaw! : null,
+    energy_excluded: null,
   };
-
+  if (Object.values(totals).some((value) => typeof value === 'number' && !Number.isFinite(value))) {
+    for (const key of Object.keys(totals) as (keyof ProcessQaTotals)[]) totals[key] = null;
+    ruleFindings.push(
+      createProcessQaFinding({
+        processFile: '[aggregate]',
+        severity: 'warning',
+        code: 'process_mass_sum_overflow',
+        message: 'Diagnostic mass totals across processes must remain finite.',
+      }),
+    );
+  }
   const evidenceStrong = [
-    '已优先使用 quantitativeReference.referenceToReferenceFlow、EcoSpold inputGroup/outputGroup 和 exchange 标签/描述做口径过滤，仅核算 原材料投入 vs 产品+副产品+废物，能量单列不计入平衡。',
-    ...(unitIssues.length > 0
-      ? ['发现单位疑似错误时均附带 flow 描述与单位标签的直接矛盾证据。']
-      : []),
+    'Mass applicability and kilograms are resolved from the explicitly selected exact Flow, reference Flow Property and reference Unit Group chain. Mass-valued fuels remain inputs. Nonmass quantities are never added to kilograms.',
   ];
-
   const evidenceWeak = [
-    '部分 exchange 缺少结构化 type 标签，仅能依赖文本关键词分类，存在误判风险。',
-    '未逐条拉取 flow 数据集参考单位做机器核对，单位结论以评论标签与流名称语义一致性为主。',
+    'A nonmass reference product is not applicable to this mass balance. Missing or conflicting evidence remains actionable. A separate source-model physical balance is still required.',
+    'Cross-process totals are diagnostic sums across distinct functional units; each process retains its own assessment and findings.',
   ];
 
   const llmResult = await runOptionalLlmReview(processSummariesForLlm, {
@@ -1331,6 +1345,7 @@ export async function runProcessQa(options: RunProcessQaOptions): Promise<Proces
     logic_version: logicVersion,
     process_count: processFiles.length,
     totals,
+    mass_balance: massBalances,
     ruleset_gate: rulesetGate,
     llm: llmResult,
     policy_decision_owner: 'foundry',
@@ -1391,6 +1406,8 @@ export async function runProcessQa(options: RunProcessQaOptions): Promise<Proces
 
   const report: ProcessQaReport = {
     schema_version: 1,
+    mass_balance: massBalances,
+    reference_evidence: referenceEvidence.artifacts,
     generated_at_utc: (options.now ?? (() => new Date()))().toISOString(),
     status: 'completed_local_process_qa',
     run_id: runId,
@@ -1435,7 +1452,6 @@ export async function runProcessQa(options: RunProcessQaOptions): Promise<Proces
 export const __testInternals = {
   requiredNonEmpty,
   textFromValue,
-  toNumber,
   deepGet,
   hasNonEmpty,
   extractBaseNames,
