@@ -31,8 +31,8 @@ checkPaths:
   - scripts/docpact-gate.sh
   - scripts/install-git-hooks.sh
 lastReviewedAt: 2026-09-11
-lastReviewedCommit: 8e156c55dcbf1b1df3a0c41797bfa027136f578e
-lastReviewedNote: 'Reviewed for CLI #286 with merged main #304: preserve exact-evidence dimensional QA and the LifecycleModel structured-error, OAuth capability and private-qualification contracts. Dependencies, package identity and upstream release gates remain unchanged.'
+lastReviewedCommit: 577d6fdf6ffb9de594b098a166c6b1f2ac3657f1
+lastReviewedNote: 'Reviewed for CLI #289: explicit exact-reference consumer/actor/review binding, current RLS payload observations and input drift checks. Preserve merged #286 dimensional QA, #304 LifecycleModel guidance, frozen dependencies and upstream release gates.'
 related:
   - ../../AGENTS.md
   - ../../.docpact/config.yaml
@@ -274,6 +274,8 @@ These modules share one contract:
 - maintenance and QA commands still emit artifact-first local outputs and remain covered by the strict `src/**/*.ts` coverage gate
 
 Process dimensional QA is split between `process-mass-balance.ts` (explicit exact reference evidence, unit-chain resolution, applicability and kg arithmetic) and `process-qa.ts` (existing classification, findings and artifact reports). `cli.ts` owns repeatable reference-file parsing and help. No remote lookup, dependency, credential path or Foundry-owned physical-unit implementation is added. Selected file and payload digests bind observations, while canonical area-time is a reviewed nonmass unit and arbitrary composites remain unresolved.
+
+`dataset-exact-reference-intent.ts` owns the [exact-reference input and evidence contract](exact-reference-intent-contract.md). `dataset-remote-verify.ts` retains row/reference collection, fresh actor identity, current-user RLS payload reads, observation caching and report output. Reference matching includes role so no path collision can change root policy. Current consumer and control-file facts are checked again before report publication; no mutation, retry or credential owner is added.
 
 ### Dataset and lifecyclemodel governance commands
 

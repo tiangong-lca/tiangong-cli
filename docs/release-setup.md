@@ -25,8 +25,8 @@ checkPaths:
   - scripts/docpact-gate.sh
   - scripts/install-git-hooks.sh
 lastReviewedAt: 2026-09-11
-lastReviewedCommit: 8e156c55dcbf1b1df3a0c41797bfa027136f578e
-lastReviewedNote: 'Reviewed for CLI #286 with merged main #304: preserve exact-evidence dimensional QA and the LifecycleModel structured-error, OAuth capability and private-qualification contracts. Dependencies, package identity and upstream release gates remain unchanged.'
+lastReviewedCommit: 577d6fdf6ffb9de594b098a166c6b1f2ac3657f1
+lastReviewedNote: 'Reviewed for CLI #289: explicit exact-reference consumer/actor/review binding, current RLS payload observations and input drift checks. Preserve merged #286 dimensional QA, #304 LifecycleModel guidance, frozen dependencies and upstream release gates.'
 related:
   - ../AGENTS.md
   - ../.docpact/config.yaml

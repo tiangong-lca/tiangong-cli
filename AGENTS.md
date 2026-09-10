@@ -38,8 +38,8 @@ checkPaths:
   - scripts/docpact-gate.sh
   - scripts/install-git-hooks.sh
 lastReviewedAt: 2026-09-11
-lastReviewedCommit: 8e156c55dcbf1b1df3a0c41797bfa027136f578e
-lastReviewedNote: 'Reviewed for CLI #286 with merged main #304: preserve exact-evidence dimensional QA and the LifecycleModel structured-error, OAuth capability and private-qualification contracts. Dependencies, package identity and upstream release gates remain unchanged.'
+lastReviewedCommit: 577d6fdf6ffb9de594b098a166c6b1f2ac3657f1
+lastReviewedNote: 'Reviewed for CLI #289: explicit exact-reference consumer/actor/review binding, current RLS payload observations and input drift checks. Preserve merged #286 dimensional QA, #304 LifecycleModel guidance, frozen dependencies and upstream release gates.'
 related:
   - .docpact/config.yaml
   - docs/agents/repo-validation.md
@@ -56,6 +56,8 @@ Runtime distribution work is owned by [the runtime distribution contract](docs/a
 Private live-account testing is maintainer-only and requires explicit account authorization. Follow [the live case guide](docs/agents/live-case-testing.md); public CLI authentication remains OAuth-only and personal credentials never enter public CI.
 
 Process QA consumes explicitly selected exact Flow/Flow Property/Unit Group evidence through `process-mass-balance.ts`; `process-qa.ts` owns report/finding projection. Keep nonmass or unresolved applicability separate from a physical mass result, retain null unavailable values and hash-bound evidence, and never infer arbitrary composite units or use a version label to restore mixed-dimension arithmetic. Foundry #122 owns downstream evidence selection and transport.
+
+Explicit exact-reference verification follows `docs/agents/exact-reference-intent-contract.md`. Keep strict consumer/actor/reference/review binding and current input rechecks in the CLI owner; preserve default latest/root policy and current-user RLS. Foundry transports the evidence without implementing eligibility or treating a review file as write authority.
 
 ## Repo Contract
 

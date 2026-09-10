@@ -22,8 +22,8 @@ checkPaths:
   - src/**
   - test/**
 lastReviewedAt: 2026-09-11
-lastReviewedCommit: 8e156c55dcbf1b1df3a0c41797bfa027136f578e
-lastReviewedNote: 'Reviewed for CLI #286 with merged main #304: preserve exact-evidence dimensional QA and the LifecycleModel structured-error, OAuth capability and private-qualification contracts. Dependencies, package identity and upstream release gates remain unchanged.'
+lastReviewedCommit: 577d6fdf6ffb9de594b098a166c6b1f2ac3657f1
+lastReviewedNote: 'Reviewed for CLI #289: explicit exact-reference consumer/actor/review binding, current RLS payload observations and input drift checks. Preserve merged #286 dimensional QA, #304 LifecycleModel guidance, frozen dependencies and upstream release gates.'
 related:
   - ../AGENTS.md
   - ../.docpact/config.yaml
@@ -856,6 +856,8 @@ outputs/evidence-search-declaration.json
 - 直接执行远端 publish commit 或数据库 CRUD
 - 重新实现历史 MCP transport
 - reference-model discovery
+
+`dataset verify-remote --reference-intent-file` 接受显式、绑定消费者/项目/当前账户/内容/评审文件的精确引用意图。它只对实际匹配的 reference occurrence 应用例外；root、未声明引用、缺失/不可见版本及变化后的 owner/state/payload/latest 证据仍阻断。现有身份凭据和 RLS GET 传输归 CLI 所有，Foundry 只负责选择、快照、传递与 handoff/readback 绑定。完整字段、哈希域及失败语义见 [精确引用意图契约](agents/exact-reference-intent-contract.md)。
 
 `qa process` 现在固定的是“本地 process QA 契约层”。
 
