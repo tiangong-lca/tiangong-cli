@@ -32,8 +32,8 @@ checkPaths:
   - scripts/docpact-gate.sh
   - scripts/install-git-hooks.sh
 lastReviewedAt: 2026-09-11
-lastReviewedCommit: 8e156c55dcbf1b1df3a0c41797bfa027136f578e
-lastReviewedNote: 'Reviewed for CLI #286 with merged main #304: preserve exact-evidence dimensional QA and the LifecycleModel structured-error, OAuth capability and private-qualification contracts. Dependencies, package identity and upstream release gates remain unchanged.'
+lastReviewedCommit: 577d6fdf6ffb9de594b098a166c6b1f2ac3657f1
+lastReviewedNote: 'Reviewed for CLI #289: explicit exact-reference consumer/actor/review binding, current RLS payload observations and input drift checks. Preserve merged #286 dimensional QA, #304 LifecycleModel guidance, frozen dependencies and upstream release gates.'
 related:
   - ../../AGENTS.md
   - ../../.docpact/config.yaml
@@ -235,6 +235,8 @@ Facts that matter:
 If the task changes control flow, add or update tests instead of using coverage-ignore pragmas.
 
 Process mass QA tests must prove count and canonical area-time are not added to kg, mass-valued fuels and scaled mass units remain included, exact reference/version/occurrence conflicts and malformed selections fail closed, quantity and aggregate overflow remain actionable, zero-input ratios are not fabricated, and source quantities remain byte-stable. The CLI transport must retain every explicit reference file. Both the new unit owner and existing QA module remain subject to exact full-source coverage without exclusions; local focused coverage alone is not the release gate.
+
+Exact-reference tests must cover default latest behavior, explicit older/public/own-draft success, fresh actor/project mismatch, root and undeclared-reference preservation, role/path collisions, consumer/control-file drift, selected/latest owner/state/payload mismatch, missing transport evidence, exact-payload/review caching, and zero mutation through the real RLS adapter with controlled HTTP responses. The parser and verifier remain under the whole-source 100% gate. See [the protocol contract](exact-reference-intent-contract.md).
 
 ## Minimum PR Note Quality
 
