@@ -3,6 +3,7 @@ import { existsSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'no
 import os from 'node:os';
 import path from 'node:path';
 import test from 'node:test';
+import { CliError } from '../src/lib/errors.js';
 import type { FetchLike } from '../src/lib/http.js';
 import {
   __testInternals,
@@ -287,6 +288,21 @@ test('runLifecyclemodelSaveDraft records candidate failures and default output l
     assert.deepEqual(__testInternals.serializeError('string failure'), {
       message: 'string failure',
     });
+    assert.deepEqual(__testInternals.serializeError(new Error('ordinary failure')), {
+      message: 'ordinary failure',
+    });
+    assert.deepEqual(
+      __testInternals.serializeError(
+        new CliError('HTTP 502 returned from bundle endpoint', {
+          code: 'REMOTE_REQUEST_FAILED',
+          details: 'raw upstream response body',
+        }),
+      ),
+      {
+        message: 'HTTP 502 returned from bundle endpoint',
+        code: 'REMOTE_REQUEST_FAILED',
+      },
+    );
     assert.equal(
       __testInternals.summarizeValidation({
         ok: false,
@@ -438,6 +454,74 @@ test('runLifecyclemodelSaveDraft validates commit runtime and executes remote wr
       outDir: path.join(dir, 'default-validator-out'),
     });
     assert.equal(defaultValidator.status, 'completed_with_failures');
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+test('runLifecyclemodelSaveDraft preserves structured bundle authorization failures', async () => {
+  const dir = mkdtempSync(path.join(os.tmpdir(), 'tg-cli-lifecyclemodel-save-draft-authz-'));
+  const inputPath = path.join(dir, 'lifecyclemodels.jsonl');
+  const outDir = path.join(dir, 'out');
+  writeJsonl(inputPath, [
+    {
+      id: 'lm-authz',
+      version: '01.01.000',
+      json_ordered: makeLifecyclemodel('lm-authz'),
+    },
+  ]);
+
+  try {
+    let requestCount = 0;
+    const fetchImpl = withSupabaseAuthBootstrap(async () => {
+      requestCount += 1;
+      if (requestCount === 1) {
+        return makeResponse({
+          ok: true,
+          status: 200,
+          body: '[{"id":"lm-authz","version":"01.01.000"}]',
+        });
+      }
+      return makeResponse({
+        ok: false,
+        status: 400,
+        body: JSON.stringify({
+          ok: false,
+          code: 'PROCESS_PERSIST_FAILED',
+          message: 'Failed to persist lifecycle model bundle',
+          details: 'OAuth client is not authorized for this API route',
+        }),
+      });
+    });
+
+    const report = await runLifecyclemodelSaveDraft({
+      inputPath,
+      outDir,
+      commit: true,
+      env: buildSupabaseTestEnv({
+        TIANGONG_LCA_API_BASE_URL: 'https://example.supabase.co/functions/v1',
+        TIANGONG_LCA_ACCESS_TOKEN: 'key',
+      }),
+      fetchImpl,
+      validateLifecyclemodelPayloadImpl: VALIDATION_OK,
+    });
+
+    const expectedError = {
+      message: 'Failed to persist lifecycle model bundle',
+      code: 'PROCESS_PERSIST_FAILED',
+      details: 'OAuth client is not authorized for this API route',
+    };
+    assert.equal(report.status, 'completed_with_failures');
+    assert.deepEqual(report.lifecyclemodels[0]?.error, expectedError);
+    assert.deepEqual(readJsonl(report.files.failures_jsonl), [
+      {
+        id: 'lm-authz',
+        version: '01.01.000',
+        status: 'failed',
+        validation: VALIDATION_OK(),
+        error: expectedError,
+      },
+    ]);
   } finally {
     rmSync(dir, { recursive: true, force: true });
   }

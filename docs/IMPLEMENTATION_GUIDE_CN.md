@@ -23,7 +23,7 @@ checkPaths:
   - test/**
 lastReviewedAt: 2026-09-11
 lastReviewedCommit: 8e156c55dcbf1b1df3a0c41797bfa027136f578e
-lastReviewedNote: 'Reviewed for CLI #286: explicit exact-reference dimensional QA, nonmass applicability, kg normalization, evidence hashes and arithmetic failure diagnostics. Package identity, dependencies, auth, exact coverage and upstream release gates remain unchanged; Foundry #122 consumes a later qualified successor.'
+lastReviewedNote: 'Reviewed for CLI #286 with merged main #304: preserve exact-evidence dimensional QA and the LifecycleModel structured-error, OAuth capability and private-qualification contracts. Dependencies, package identity and upstream release gates remain unchanged.'
 related:
   - ../AGENTS.md
   - ../.docpact/config.yaml
