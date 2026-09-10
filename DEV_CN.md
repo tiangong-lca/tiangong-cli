@@ -22,9 +22,9 @@ checkPaths:
   - src/**
   - scripts/**
   - .github/workflows/**
-lastReviewedAt: 2026-09-04
-lastReviewedCommit: ee56a45fcbb7ed1453fbd85d20b51358a273a580
-lastReviewedNote: 'Reviewed for CLI #270: OAuth-only support export reuses identity, Data API and exact-count pagination; observed stability is non-transactional, output completion is atomic, and ownership, dependencies and mutation rules remain unchanged.'
+lastReviewedAt: 2026-09-11
+lastReviewedCommit: 8e156c55dcbf1b1df3a0c41797bfa027136f578e
+lastReviewedNote: 'Reviewed for CLI #286: dimensional Process QA uses explicit reference evidence, nullable nonmass/unresolved assessments and the existing CLI-owned report/coverage/release boundaries.'
 related:
   - AGENTS.md
   - .docpact/config.yaml

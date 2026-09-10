@@ -31,9 +31,9 @@ checkPaths:
   - scripts/docpact
   - scripts/docpact-gate.sh
   - scripts/install-git-hooks.sh
-lastReviewedAt: 2026-09-09
-lastReviewedCommit: b32376e57253d106eaa5064b0740ac248156f936
-lastReviewedNote: 'Reviewed for CLI #302: version-only 0.1.13 publishes the qualified POSIX bootstrap mode correction from merged main b32376e. Only package identity, four version fixtures and review metadata advance; the frozen graph and runtime/release safeguards remain unchanged.'
+lastReviewedAt: 2026-09-11
+lastReviewedCommit: 8e156c55dcbf1b1df3a0c41797bfa027136f578e
+lastReviewedNote: 'Reviewed for CLI #286: explicit exact-reference dimensional QA, nonmass applicability, kg normalization, evidence hashes and arithmetic failure diagnostics. Package identity, dependencies, auth, exact coverage and upstream release gates remain unchanged; Foundry #122 consumes a later qualified successor.'
 related:
   - ../../AGENTS.md
   - ../../.docpact/config.yaml
@@ -231,6 +231,8 @@ Facts that matter:
 - local npm authentication is not release validation evidence; routine publication is verified by the upstream tag workflow and npm Trusted Publishing workflow after merge
 
 If the task changes control flow, add or update tests instead of using coverage-ignore pragmas.
+
+Process mass QA tests must prove count and canonical area-time are not added to kg, mass-valued fuels and scaled mass units remain included, exact reference/version/occurrence conflicts and malformed selections fail closed, quantity and aggregate overflow remain actionable, zero-input ratios are not fabricated, and source quantities remain byte-stable. The CLI transport must retain every explicit reference file. Both the new unit owner and existing QA module remain subject to exact full-source coverage without exclusions; local focused coverage alone is not the release gate.
 
 ## Minimum PR Note Quality
 
