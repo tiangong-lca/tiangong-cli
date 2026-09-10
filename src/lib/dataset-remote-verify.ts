@@ -4,6 +4,17 @@ import crypto from 'node:crypto';
 import path from 'node:path';
 import { writeJsonArtifact, writeJsonLinesArtifact } from './artifacts.js';
 import { CliError } from './errors.js';
+import { runAuthIdentityReceipt } from './auth-identity-receipt.js';
+import { loadCliPackageVersion } from './package-version.js';
+import {
+  loadExactReferenceIntent,
+  evaluateExactReference,
+  assertExactReferenceInputsCurrent,
+  type ExactReferenceConsumer,
+  type ExactReferenceObservation,
+  type ExactReferenceCheckEvidence,
+  type LoadedExactReferenceIntent,
+} from './dataset-exact-reference-intent.js';
 import type { FetchLike } from './http.js';
 import {
   createSupabaseDataClient,
@@ -50,7 +61,8 @@ export type RemoteVerificationIssueCode =
   | 'owner_mismatch'
   | 'payload_mismatch'
   | 'remote_payload_missing'
-  | 'state_code_mismatch';
+  | 'state_code_mismatch'
+  | 'reference_intent_mismatch';
 
 export type RemoteDatasetReference = {
   row_index: number;
@@ -92,6 +104,7 @@ export type RemoteDatasetLookupRequest = {
 };
 
 export type RemoteVerificationCheck = {
+  reference_intent?: ExactReferenceCheckEvidence;
   row_index: number;
   role: RemoteVerificationReferenceRole;
   table: RemoteDatasetTable | null;
@@ -127,6 +140,7 @@ export type RemoteVerificationBlocker = {
 };
 
 export type DatasetRemoteVerificationReport = {
+  reference_intent?: LoadedExactReferenceIntent;
   schema_version: 1;
   generated_at_utc: string;
   status: 'passed_remote_verification' | 'blocked_remote_verification';
@@ -152,6 +166,11 @@ export type DatasetRemoteVerificationReport = {
 };
 
 export type RunDatasetRemoteVerifyOptions = {
+  referenceIntentFile?: string;
+  resolveReferenceIdentityImpl?: () => Promise<{ project_ref: string; user_id: string }>;
+  lookupReferencePayloadImpl?: (
+    request: RemoteDatasetLookupRequest,
+  ) => Promise<RemoteDatasetPayloadLookup | null>;
   inputPath: string;
   outDir: string;
   rootPolicy?: RemoteVerificationRootPolicy;
@@ -594,12 +613,15 @@ function buildRemotePayloadUrl(
   restBaseUrl: string,
   table: RemoteDatasetTable,
   id: string,
-  version: string,
+  version: string | null,
 ): string {
   const url = new URL(`${restBaseUrl.replace(/\/+$/u, '')}/${table}`);
   url.searchParams.set('select', 'id,version,user_id,state_code,modified_at,json,json_ordered');
   url.searchParams.set('id', `eq.${id}`);
-  url.searchParams.set('version', `eq.${version}`);
+  if (version === null) {
+    url.searchParams.set('order', 'version.desc');
+    url.searchParams.set('limit', '1');
+  } else url.searchParams.set('version', `eq.${version}`);
   return url.toString();
 }
 
@@ -684,8 +706,9 @@ async function lookupRemoteDatasetPayload(options: {
   fetchImpl: FetchLike;
   timeoutMs: number;
   request: RemoteDatasetLookupRequest;
+  allowLatest?: boolean;
 }): Promise<RemoteDatasetPayloadLookup | null> {
-  if (!options.request.version) {
+  if (!options.request.version && !(options.allowLatest && options.request.version === null)) {
     return null;
   }
   const { client, restBaseUrl } = createSupabaseDataClient(
@@ -699,12 +722,14 @@ async function lookupRemoteDatasetPayload(options: {
     options.request.id,
     options.request.version,
   );
+  const query = client
+    .from(options.request.table)
+    .select('id,version,user_id,state_code,modified_at,json,json_ordered')
+    .eq('id', options.request.id);
   const rows = await runSupabaseArrayQuery(
-    client
-      .from(options.request.table)
-      .select('id,version,user_id,state_code,modified_at,json,json_ordered')
-      .eq('id', options.request.id)
-      .eq('version', options.request.version),
+    options.request.version === null
+      ? query.order('version', { ascending: false }).limit(1)
+      : query.eq('version', options.request.version),
     sourceUrl,
   );
   const payloadRow = normalizePayloadRow(Array.isArray(rows) ? rows[0] : null);
@@ -922,6 +947,33 @@ function uniqueLookupKey(reference: RemoteDatasetReference): string | null {
     : null;
 }
 
+function exactReferenceConsumers(rows: JsonObject[]): ExactReferenceConsumer[] {
+  return rows.map((row, index) => {
+    const payload = unwrapDatasetPayload(row),
+      root = rootIdentity({}, payload),
+      envelope = rootIdentity(row, payload);
+    if (
+      !root?.table ||
+      !root.id ||
+      !root.version ||
+      !envelope?.id ||
+      envelope.id.toLowerCase() !== root.id.toLowerCase() ||
+      envelope.version !== root.version
+    )
+      throw new CliError('Exact-reference consumers need matching payload and row identities.', {
+        code: 'DATASET_REFERENCE_INTENT_INVALID',
+        exitCode: 2,
+      });
+    return {
+      row_index: index,
+      table: root.table,
+      id: root.id.toLowerCase(),
+      version: root.version,
+      payload_sha256: sha256Json(payload),
+    };
+  });
+}
+
 export async function runDatasetRemoteVerify(
   options: RunDatasetRemoteVerifyOptions,
 ): Promise<DatasetRemoteVerificationReport> {
@@ -933,6 +985,15 @@ export async function runDatasetRemoteVerify(
   );
   const rows = readDatasetRowsInput(inputPath, options.rawInput);
   const references = collectRemoteReferences(rows);
+  const intent =
+    options.referenceIntentFile === undefined
+      ? null
+      : loadExactReferenceIntent({
+          file: options.referenceIntentFile,
+          consumers: exactReferenceConsumers(rows),
+          references,
+        });
+  const environment = { ...(options.env ?? process.env) };
   const rootPolicy = options.rootPolicy ?? 'existing';
   const compareRootPayload = options.compareRootPayload === true;
   const targetUserId = trimToken(options.targetUserId);
@@ -943,7 +1004,7 @@ export async function runDatasetRemoteVerify(
   const runtime =
     options.lookupDatasetImpl === undefined
       ? createSupabaseDataRuntime({
-          runtime: requireSupabaseRestRuntime(options.env ?? process.env),
+          runtime: requireSupabaseRestRuntime(environment),
           fetchImpl,
           timeoutMs,
           now: options.now,
@@ -969,6 +1030,65 @@ export async function runDatasetRemoteVerify(
             request,
           })
       : null);
+  if (intent) {
+    const observed = options.resolveReferenceIdentityImpl
+      ? await options.resolveReferenceIdentityImpl()
+      : await (async () => {
+          const receipt = await runAuthIdentityReceipt({
+            env: environment,
+            fetchImpl,
+            cliVersion: loadCliPackageVersion(new URL('../cli.js', import.meta.url).href),
+            expectedProjectRef: intent.project_ref,
+            expectedUserId: intent.actor_user_id,
+            timeoutMs,
+            now: options.now,
+          });
+          return { project_ref: receipt.project.project_ref, user_id: receipt.identity.user_id };
+        })();
+    if (observed.project_ref !== intent.project_ref || observed.user_id !== intent.actor_user_id)
+      throw new CliError(
+        'Exact-reference intent differs from the current verified actor or project.',
+        { code: 'DATASET_REFERENCE_INTENT_IDENTITY_MISMATCH', exitCode: 2 },
+      );
+  }
+  const referencePins = new Map(
+    intent?.references.map((pin) => [`${pin.row_index}:reference:${pin.path}`, pin]),
+  );
+  const referencePayloadCache = new Map<string, Promise<ExactReferenceObservation | null>>();
+  const readReferencePayload = (request: RemoteDatasetLookupRequest) => {
+    const key = `${request.table}:${request.id}:${request.version ?? 'latest'}`;
+    let cached = referencePayloadCache.get(key);
+    if (!cached) {
+      cached = (async () => {
+        const remote = options.lookupReferencePayloadImpl
+          ? await options.lookupReferencePayloadImpl(request)
+          : runtime
+            ? await lookupRemoteDatasetPayload({
+                runtime,
+                fetchImpl,
+                timeoutMs,
+                request,
+                allowLatest: true,
+              })
+            : null;
+        if (!remote) return null;
+        const root = remote.payload ? rootIdentity({}, remote.payload) : null;
+        const valid =
+          root?.table === request.table &&
+          root.id?.toLowerCase() === remote.id.toLowerCase() &&
+          root.version === remote.version;
+        return {
+          id: remote.id,
+          version: remote.version,
+          user_id: remote.user_id,
+          state_code: remote.state_code,
+          payload_sha256: valid && remote.payload ? sha256Json(remote.payload) : null,
+        };
+      })();
+      referencePayloadCache.set(key, cached);
+    }
+    return cached;
+  };
   const lookupCache = new Map<string, Promise<RemoteDatasetLookup>>();
   const checks: RemoteVerificationCheck[] = [];
 
@@ -1017,7 +1137,41 @@ export async function runDatasetRemoteVerify(
         lookupFailed = true;
       }
     }
-    checks.push(classifyCheck(reference, lookup, lookupFailed, rootPolicy));
+    let check = classifyCheck(reference, lookup, lookupFailed, rootPolicy);
+    const pin = referencePins.get(`${reference.row_index}:${reference.role}:${reference.path}`);
+    if (intent && pin) {
+      let selected: ExactReferenceObservation | null = null,
+        latest: ExactReferenceObservation | null = null,
+        payloadLookupFailed = false;
+      if (check.status === 'ok' || check.status === 'version_outdated') {
+        try {
+          latest = await readReferencePayload({
+            table: pin.selected.table,
+            id: pin.selected.id,
+            version: null,
+          });
+          selected =
+            latest?.version === pin.selected.version
+              ? latest
+              : await readReferencePayload({
+                  table: pin.selected.table,
+                  id: pin.selected.id,
+                  version: pin.selected.version,
+                });
+        } catch {
+          payloadLookupFailed = true;
+        }
+      }
+      check = evaluateExactReference({
+        intent,
+        pin,
+        check,
+        selected,
+        latest,
+        lookupFailed: payloadLookupFailed,
+      });
+    }
+    checks.push(check);
   }
 
   if (needsRootReadback) {
@@ -1082,9 +1236,17 @@ export async function runDatasetRemoteVerify(
     (check) => check.status === 'payload_mismatch',
   ).length;
 
+  if (intent)
+    assertExactReferenceInputsCurrent(
+      intent,
+      exactReferenceConsumers(
+        options.rawInput === undefined ? readDatasetRowsInput(inputPath) : rows,
+      ),
+    );
   const files = buildFiles(outDir);
   const report: DatasetRemoteVerificationReport = {
     schema_version: 1,
+    ...(intent ? { reference_intent: intent } : {}),
     generated_at_utc: nowIso(options.now),
     status: blockers.length > 0 ? 'blocked_remote_verification' : 'passed_remote_verification',
     root_policy: rootPolicy,

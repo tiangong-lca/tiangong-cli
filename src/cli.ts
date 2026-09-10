@@ -1549,6 +1549,7 @@ function renderDatasetRemoteVerifyHelp(): string {
 Options:
   --input <file>         Local rows as JSON or JSONL; objects with rows[] are also accepted
   --out-dir <dir>        Artifact directory for the remote verification report
+  --reference-intent-file <file> Explicit consumer/content/review-bound exact-reference intent
   --root-policy <mode>   existing | candidate (default: existing)
   --compare-root-payload Compare each root row payload hash against the remote row
   --target-user-id <id>  Require root readback rows to belong to this user
@@ -4075,12 +4076,22 @@ function parseDatasetRemoteVerifyFlags(args: string[]): {
   help: boolean;
   json: boolean;
   inputPath: string;
+  referenceIntentFile: string | undefined;
   outDir: string;
   rootPolicy: 'existing' | 'candidate';
   compareRootPayload: boolean;
   targetUserId: string | null;
   stateCode: number | null;
 } {
+  if (
+    args.filter(
+      (arg) => arg === '--reference-intent-file' || arg.startsWith('--reference-intent-file='),
+    ).length > 1
+  )
+    throw new CliError('Select exactly one reference intent file.', {
+      code: 'DATASET_REFERENCE_INTENT_INVALID',
+      exitCode: 2,
+    });
   let values: ReturnType<typeof parseArgs>['values'];
   try {
     ({ values } = parseArgs({
@@ -4091,6 +4102,7 @@ function parseDatasetRemoteVerifyFlags(args: string[]): {
         help: { type: 'boolean', short: 'h' },
         json: { type: 'boolean' },
         input: { type: 'string' },
+        'reference-intent-file': { type: 'string' },
         'out-dir': { type: 'string' },
         'root-policy': { type: 'string' },
         'compare-root-payload': { type: 'boolean' },
@@ -4105,6 +4117,15 @@ function parseDatasetRemoteVerifyFlags(args: string[]): {
     });
   }
 
+  const referenceIntentFile =
+    typeof values['reference-intent-file'] === 'string'
+      ? values['reference-intent-file']
+      : undefined;
+  if (referenceIntentFile !== undefined && !referenceIntentFile.trim())
+    throw new CliError('Reference intent selection cannot be empty.', {
+      code: 'DATASET_REFERENCE_INTENT_INVALID',
+      exitCode: 2,
+    });
   const rawRootPolicy =
     typeof values['root-policy'] === 'string' ? values['root-policy'] : 'existing';
   if (!['existing', 'candidate'].includes(rawRootPolicy)) {
@@ -4128,6 +4149,7 @@ function parseDatasetRemoteVerifyFlags(args: string[]): {
   return {
     help: Boolean(values.help),
     json: Boolean(values.json),
+    referenceIntentFile,
     inputPath: typeof values.input === 'string' ? values.input : '',
     outDir: typeof values['out-dir'] === 'string' ? values['out-dir'] : '',
     rootPolicy,
@@ -7982,6 +8004,9 @@ export async function executeCli(argv: string[], deps: CliDeps): Promise<CliResu
       }
 
       const report = await datasetRemoteVerifyImpl({
+        ...(datasetFlags.referenceIntentFile !== undefined
+          ? { referenceIntentFile: datasetFlags.referenceIntentFile }
+          : {}),
         inputPath: datasetFlags.inputPath,
         outDir: datasetFlags.outDir,
         rootPolicy: datasetFlags.rootPolicy,

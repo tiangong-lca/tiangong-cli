@@ -1041,6 +1041,8 @@ test('executeCli routes dataset verify-remote and maps blockers to exit code one
       'rows.jsonl',
       '--out-dir',
       'out',
+      '--reference-intent-file',
+      'reviewed-intent.json',
       '--root-policy',
       'candidate',
       '--compare-root-payload',
@@ -1061,6 +1063,7 @@ test('executeCli routes dataset verify-remote and maps blockers to exit code one
       })) as FetchLike,
       runDatasetRemoteVerifyImpl: async (options) => {
         assert.equal(options.rootPolicy, 'candidate');
+        assert.equal(options.referenceIntentFile, 'reviewed-intent.json');
         assert.equal(options.compareRootPayload, true);
         assert.equal(options.targetUserId, 'target-user');
         assert.equal(options.stateCode, 0);
