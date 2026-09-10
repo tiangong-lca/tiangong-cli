@@ -32,8 +32,8 @@ checkPaths:
   - test/public-auth-identity-receipt.test.ts
   - test/lca-release*.test.ts
 lastReviewedAt: 2026-09-11
-lastReviewedCommit: 577d6fdf6ffb9de594b098a166c6b1f2ac3657f1
-lastReviewedNote: 'Reviewed for CLI #289: explicit exact-reference consumer/actor/review binding, current RLS payload observations and input drift checks. Preserve merged #286 dimensional QA, #304 LifecycleModel guidance, frozen dependencies and upstream release gates.'
+lastReviewedCommit: 79a61f933c5c3e241eca03116fbb7088a273e8ce
+lastReviewedNote: 'Reviewed for CLI #310: version-only 0.1.14 releases merged #286 dimensional QA and #289 exact-reference evidence from main 79a61f9. Frozen dependencies, auth, #304 guidance, source contracts and upstream qualification/publication gates remain unchanged.'
 ---
 
 CLI 0.1.10 is the designated C1 release for `tiangong-lca runtime describe --json` and the explicit `@tiangong-lca/cli/runtime` API for package, asset and Node content inspection. Runtime inspection loads no project `.env`, performs no authentication and downloads nothing. See [the runtime distribution contract](docs/agents/runtime-distribution-contract.md) for exact fields and trust boundaries; verify public availability and provenance before treating the candidate version as released.
