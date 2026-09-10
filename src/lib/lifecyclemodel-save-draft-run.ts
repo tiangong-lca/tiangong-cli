@@ -42,13 +42,19 @@ export type LifecyclemodelPayloadValidationResult =
       issues: LifecyclemodelPayloadValidationIssue[];
     };
 
+type LifecyclemodelSaveDraftError = {
+  message: string;
+  code?: string;
+  details?: unknown;
+};
+
 type LifecyclemodelSaveDraftCandidate = {
   id: string | null;
   version: string | null;
   payload: JsonObject;
   metadata: LifecyclemodelPublishMetadata | null;
   validation?: LifecyclemodelPayloadValidationResult;
-  error?: { message: string };
+  error?: LifecyclemodelSaveDraftError;
 };
 
 export type LifecyclemodelSaveDraftModelReport = {
@@ -57,7 +63,7 @@ export type LifecyclemodelSaveDraftModelReport = {
   status: 'prepared' | 'executed' | 'failed';
   validation?: LifecyclemodelPayloadValidationResult;
   execution?: LifecyclemodelBundleWriteResult;
-  error?: { message: string };
+  error?: LifecyclemodelSaveDraftError;
 };
 
 export type LifecyclemodelSaveDraftReport = {
@@ -280,10 +286,17 @@ function compactCandidate(candidate: LifecyclemodelSaveDraftCandidate): JsonObje
   };
 }
 
-function serializeError(error: unknown): { message: string } {
-  return {
-    message: error instanceof Error ? error.message : String(error),
-  };
+function serializeError(error: unknown): LifecyclemodelSaveDraftError {
+  if (error instanceof CliError) {
+    return {
+      message: error.message,
+      code: error.code,
+      ...(error.details === undefined || error.code === 'REMOTE_REQUEST_FAILED'
+        ? {}
+        : { details: error.details }),
+    };
+  }
+  return { message: error instanceof Error ? error.message : String(error) };
 }
 
 export async function runLifecyclemodelSaveDraft(
