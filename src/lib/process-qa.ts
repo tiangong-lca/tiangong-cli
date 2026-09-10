@@ -14,7 +14,7 @@ import { getRuntimeRuleset, resolveRuntimeRuleId } from './runtime-rulesets.js';
 type JsonRecord = Record<string, unknown>;
 
 const KIND_RE = /\[tg_io_kind_tag=([^\]]+)\]/gu;
-const UOM_RE = /\[tg_io_uom_tag=([^\]]+)\]/gu;
+const UOM_RE = /\[tg_io_uom_tag=([^\]]+)\]/giu;
 
 const ENERGY_WORDS = [
   'electric',
@@ -356,17 +356,17 @@ function classifyExchange(
   exchange: JsonRecord,
   referenceFlowId: string | null = null,
 ): ClassifiedExchange {
-  const comments =
-    `${textFromValue(exchange.commonComment)} ${textFromValue(exchange.generalComment)}`.toLowerCase();
+  const comments = `${textFromValue(exchange.commonComment)} ${textFromValue(exchange.generalComment)}`;
   const flowDescription = textFromValue(
     isRecord(exchange.referenceToFlowDataSet)
       ? exchange.referenceToFlowDataSet['common:shortDescription']
       : undefined,
-  ).toLowerCase();
-  const blob = `${comments} ${flowDescription}`.trim();
+  );
+  const rawBlob = `${comments} ${flowDescription}`.trim();
+  const blob = rawBlob.toLowerCase();
   const kinds = Array.from(blob.matchAll(KIND_RE), (match) => match[1].toLowerCase());
   const kindSet = new Set(kinds);
-  const uoms = Array.from(blob.matchAll(UOM_RE), (match) => match[1].toLowerCase());
+  const uoms = Array.from(rawBlob.matchAll(UOM_RE), (match) => match[1]);
   const direction = String(exchange.exchangeDirection ?? '').toLowerCase();
   const inputGroup = sourceGroup(exchange, 'inputGroup');
   const outputGroup = sourceGroup(exchange, 'outputGroup');
@@ -433,7 +433,7 @@ function unitIssueCheck(exchange: JsonRecord, uoms: string[], blob: string): Uni
     return [];
   }
 
-  const currentUnit = uoms[0] ?? '';
+  const currentUnit = (uoms[0] ?? '').toLowerCase();
   if (
     ['electric', 'electricity', '交流电', '电力'].some((word) => blob.includes(word)) &&
     currentUnit &&

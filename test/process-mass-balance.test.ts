@@ -451,3 +451,33 @@ test('cross-process diagnostic totals reject overflow even when each kg inventor
   assert.equal(report.totals.raw_input, null);
   assert.match(fs.readFileSync(report.files.rule_findings!, 'utf8'), /process_mass_sum_overflow/u);
 });
+
+test('SI unit symbol case must not turn magnetic units into mass', async (t) => {
+  for (const unit of ['T', 'G', 'KG', 'm g', 'k g']) {
+    const report = await evaluate(t, unit);
+    assert.equal(report.mass_balance![0].status, 'unresolved', unit);
+    assert.equal(report.totals.raw_input, null);
+  }
+});
+
+test('Mg and mg preserve distinct mass scales while descriptive unit names may be case folded', async (t) => {
+  for (const [unit, kilograms] of [
+    ['Mg', 1000],
+    ['mg', 0.000001],
+    ['KILOGRAM', 1],
+  ] as const) {
+    const report = await evaluate(t, unit);
+    assert.equal(report.mass_balance![0].exchanges[0].mass_kg, kilograms, unit);
+  }
+});
+
+test('unit tags preserve SI case independently of case-insensitive tag names', async (t) => {
+  const matching = await evaluate(t, 'Mg', (process) => {
+    exchanges(process)[0].commonComment = '[TG_IO_UOM_TAG=Mg]';
+  });
+  assert.equal(matching.mass_balance![0].exchanges[0].mass_kg, 1000);
+  const mismatched = await evaluate(t, 'Mg', (process) => {
+    exchanges(process)[0].commonComment = '[tg_io_uom_tag=mg]';
+  });
+  assert.equal(mismatched.mass_balance![0].status, 'unresolved');
+});

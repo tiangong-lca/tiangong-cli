@@ -118,36 +118,57 @@ export function readProcessMassReferences(files: readonly string[] = []): MassRe
 }
 
 function recognizedUnit(value: unknown): Unit | null {
-  const name = token(value).normalize('NFKC').toLowerCase().replaceAll(' ', '');
-  const mass: Record<string, number> = {
+  // SI symbols retain case and token boundaries; descriptive names may be case folded.
+  const name = token(value).normalize('NFKC');
+  const lowerName = name.toLowerCase();
+  const massSymbols: Record<string, number> = {
     kg: 1,
-    kilogram: 1,
-    kilograms: 1,
     g: 1e-3,
-    gram: 1e-3,
-    grams: 1e-3,
     mg: 1e-6,
-    milligram: 1e-6,
     ug: 1e-9,
     μg: 1e-9,
+    Mg: 1e3,
     t: 1e3,
+  };
+  const massNames: Record<string, number> = {
+    kilogram: 1,
+    kilograms: 1,
+    gram: 1e-3,
+    grams: 1e-3,
+    milligram: 1e-6,
+    milligrams: 1e-6,
+    microgram: 1e-9,
+    micrograms: 1e-9,
+    megagram: 1e3,
     tonne: 1e3,
     tonnes: 1e3,
   };
-  if (Object.hasOwn(mass, name)) return { name, dimension: 'mass', kilograms: mass[name] };
-  const dimensions: [Dimension, readonly string[]][] = [
+  const kilograms = Object.hasOwn(massSymbols, name)
+    ? massSymbols[name]
+    : Object.hasOwn(massNames, lowerName)
+      ? massNames[lowerName]
+      : null;
+  if (kilograms !== null) return { name, dimension: 'mass', kilograms };
+  const dimensions: [Dimension, readonly string[], readonly string[]][] = [
     [
       'count',
-      ['1', 'item', 'items', 'item(s)', 'piece', 'pieces', 'unit', 'units', 'unit(s)', 'count'],
+      ['1'],
+      ['item', 'items', 'item(s)', 'piece', 'pieces', 'unit', 'units', 'unit(s)', 'count'],
     ],
-    ['energy', ['j', 'kj', 'mj', 'gj', 'wh', 'kwh', 'mwh']],
-    ['length', ['m', 'km', 'cm', 'mm']],
-    ['area', ['m2', 'km2', 'ha']],
-    ['volume', ['m3', 'cm3', 'l', 'litre', 'liter']],
-    ['time', ['s', 'min', 'h', 'd', 'a', 'yr']],
-    ['area_time', ['m2*a']],
+    ['energy', ['J', 'kJ', 'MJ', 'GJ', 'mJ', 'Wh', 'kWh', 'MWh'], []],
+    ['length', ['m', 'km', 'cm', 'mm'], []],
+    ['area', ['m2', 'km2', 'ha'], []],
+    ['volume', ['m3', 'cm3', 'l', 'L'], ['litre', 'liter']],
+    [
+      'time',
+      ['s', 'min', 'h', 'd', 'a', 'yr'],
+      ['second', 'seconds', 'hour', 'hours', 'year', 'years'],
+    ],
+    ['area_time', ['m2*a'], []],
   ];
-  const matched = dimensions.find(([, names]) => names.includes(name));
+  const matched = dimensions.find(
+    ([, symbols, names]) => symbols.includes(name) || names.includes(lowerName),
+  );
   return matched ? { name, dimension: matched[0], kilograms: null } : null;
 }
 
