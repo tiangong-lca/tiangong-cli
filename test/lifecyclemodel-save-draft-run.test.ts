@@ -288,6 +288,9 @@ test('runLifecyclemodelSaveDraft records candidate failures and default output l
     assert.deepEqual(__testInternals.serializeError('string failure'), {
       message: 'string failure',
     });
+    assert.deepEqual(__testInternals.serializeError(new Error('ordinary failure')), {
+      message: 'ordinary failure',
+    });
     assert.deepEqual(
       __testInternals.serializeError(
         new CliError('HTTP 502 returned from bundle endpoint', {
