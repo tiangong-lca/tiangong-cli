@@ -13,6 +13,7 @@
 ### Task 1: Preserve structured LifecycleModel save failures
 
 **Files:**
+
 - Modify: `test/lifecyclemodel-save-draft-run.test.ts`
 - Modify: `src/lib/lifecyclemodel-save-draft-run.ts`
 
@@ -26,6 +27,7 @@
 ### Task 2: Add durable qualification guidance
 
 **Files:**
+
 - Modify: `docs/agents/live-case-testing.md`
 - Modify: `docs/agents/repo-validation.md`
 - Modify: `AGENTS.md`
@@ -38,17 +40,20 @@
 ### Task 3: Repair the Production client grant
 
 **Files:**
-- No repository source files; this is audited Production runtime configuration evidence in Issue #304.
+
+- Implemented in the owning `database-engine` repository as an idempotent migration and upgrade regression; the CLI repository records only the cross-repository contract and validation evidence.
 
 1. Revalidate the official client identity from `OFFICIAL_PRODUCTION_PROFILE` and the current capability evidence from CLI #266.
-2. Through the authorized Production administrator path, acquire/verify the exact client row and current grants under a row lock.
+2. In the migration, acquire and verify the exact client row and current grants under a lock that serializes competing registry changes.
 3. Fail closed unless the client kind, enabled state, and exact before-state match the durable evidence.
-4. Call `api.svc_oauth_client_configure` with the complete before-state plus only `EDGE-BUNDLE-01`.
-5. Verify exact after-state and one audit delta; record only capability names, timestamp, fixed result, and redacted evidence location in Issue #304.
+4. Have the migration call `api.svc_oauth_client_configure` with the complete before-state plus only `EDGE-BUNDLE-01`.
+5. Merge the database PR so deployment applies the migration; do not run manual Production SQL.
+6. Verify exact after-state and one audit delta; record only capability names, timestamp, fixed result, and redacted evidence location in Issue #304.
 
 ### Task 4: Run Production create/update smoke
 
 **Files:**
+
 - No public fixture files; use a private, user-authorized disposable case directory outside Git.
 
 1. Use the existing official OAuth session boundary and a disposable canonical LifecycleModel fixture.
@@ -59,6 +64,7 @@
 ### Task 5: Validate and submit
 
 **Files:**
+
 - Review the complete branch diff.
 
 1. Run focused tests, `pnpm prepush:gate`, and strict Docpact lint.
