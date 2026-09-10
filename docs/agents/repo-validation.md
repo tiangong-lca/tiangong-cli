@@ -31,9 +31,9 @@ checkPaths:
   - scripts/docpact
   - scripts/docpact-gate.sh
   - scripts/install-git-hooks.sh
-lastReviewedAt: 2026-09-09
-lastReviewedCommit: b32376e57253d106eaa5064b0740ac248156f936
-lastReviewedNote: 'Reviewed for CLI #302: version-only 0.1.13 publishes the qualified POSIX bootstrap mode correction from merged main b32376e. Only package identity, four version fixtures and review metadata advance; the frozen graph and runtime/release safeguards remain unchanged.'
+lastReviewedAt: 2026-09-10
+lastReviewedCommit: b5e209259d3bb06205b9af131b1c0edc3fba6da2
+lastReviewedNote: 'Reviewed for CLI #304: structured LifecycleModel save failures and the private Production OAuth owner-draft bundle qualification join the command proof contract.'
 related:
   - ../../AGENTS.md
   - ../../.docpact/config.yaml
@@ -109,6 +109,8 @@ Review note, 2026-08-31: Issue #257 records npm/tag 0.1.6 absence, commits RED f
 When command-surface, release-gate, or governed docs change, also run the repo-local documentation governance gate:
 
 Issue #263 adds clean first-install proof: source and built runtime share one Production profile; empty/blank environments, exact aliases, partial custom settings, cross-project mixing, explicit headless destinations, and `--base-url` overrides are covered without live credentials. An isolated installed tarball consumer must run `doctor`, `auth status`, and `auth doctor-auth` without any public config and return truthful defaults / `login-required`, without creating a session. Deterministic PKCE login/status/live-doctor/logout tests use only fake tokens and an isolated private session. Flow/process/lifecyclemodel dry-runs share the profile, while configured-only local publish selection stays offline. Release acceptance additionally exercises a fresh published CLI with a real human-controlled browser login and installed Skills; repository tests never require a live grant or secret. The exact 100% and four-platform gates remain mandatory.
+
+Issue #304 requires LifecycleModel save-draft regressions to preserve sanitized structured application `code` and `details` while excluding unstructured HTTP response bodies. Its Production qualification is private and explicitly authorized: the official client retains `CLI-RPC-01`, `DB-CORE-READ-01`, `DB-CORE-WRITE-01`, `NX-CORE-02`, and `EDGE-BUNDLE-01`; a disposable canonical fixture proves create, exact owner/state/payload readback, update, repeated readback, actor-bound cleanup, and exact absence. Public evidence contains fixed outcomes only, and any ambiguous mutation or cleanup blocks acceptance.
 
 ```bash
 scripts/docpact validate-config --root . --strict

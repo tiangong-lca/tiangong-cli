@@ -24,9 +24,9 @@ checkPaths:
   - scripts/docpact
   - scripts/docpact-gate.sh
   - scripts/install-git-hooks.sh
-lastReviewedAt: 2026-09-09
-lastReviewedCommit: b32376e57253d106eaa5064b0740ac248156f936
-lastReviewedNote: 'Reviewed for CLI #302: version-only 0.1.13 publishes the qualified POSIX bootstrap mode correction from merged main b32376e. Only package identity, four version fixtures and review metadata advance; the frozen graph and runtime/release safeguards remain unchanged.'
+lastReviewedAt: 2026-09-10
+lastReviewedCommit: 46d23c91d91c172e16d010acb2c418a52163322e
+lastReviewedNote: 'Reviewed for CLI #304: the structured lifecyclemodel failure fix and database-engine capability migration require no release setup, credential, workflow, tag, or Trusted Publishing changes.'
 related:
   - ../AGENTS.md
   - ../.docpact/config.yaml

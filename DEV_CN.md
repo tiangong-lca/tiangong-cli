@@ -22,9 +22,9 @@ checkPaths:
   - src/**
   - scripts/**
   - .github/workflows/**
-lastReviewedAt: 2026-09-04
-lastReviewedCommit: ee56a45fcbb7ed1453fbd85d20b51358a273a580
-lastReviewedNote: 'Reviewed for CLI #270: OAuth-only support export reuses identity, Data API and exact-count pagination; observed stability is non-transactional, output completion is atomic, and ownership, dependencies and mutation rules remain unchanged.'
+lastReviewedAt: 2026-09-10
+lastReviewedCommit: 3c54a6b1987664b4a8d927fc4a10de507a21ea73
+lastReviewedNote: 'Reviewed for CLI #304: lifecyclemodel save-draft keeps the existing CLI and OAuth workflow, database-engine owns the deployed capability migration, and maintainer runtime, environment, dependency, and release commands remain unchanged.'
 related:
   - AGENTS.md
   - .docpact/config.yaml
