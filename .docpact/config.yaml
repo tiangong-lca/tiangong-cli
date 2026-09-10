@@ -766,6 +766,8 @@ rules:
     scope: repo
     repo: cli
     triggers:
+      - path: docs/agents/exact-reference-intent-contract.md
+        kind: doc-contract
       - path: src/lib/dataset-exact-reference-*.ts
         kind: command-logic
       - path: src/lib/dataset-remote-verify.ts
