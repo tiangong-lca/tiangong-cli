@@ -1,5 +1,6 @@
 import { isJsonObject } from './dataset-maintenance-contract.js';
 import { CliError } from './errors.js';
+import { cliRepositoryIdentity, type CliRepositoryIdentity } from './cli-repository-identity.js';
 
 export const PROTECTED_TOOLCHAIN_EVIDENCE_SCHEMA =
   'dataset-alias-protected-toolchain-evidence.v1' as const;
@@ -15,13 +16,13 @@ export type DatasetMaintenanceProtectedToolchainEvidence = {
   project_ref: string;
   verified_at_utc: string;
   database_engine: {
-    repository: 'tiangong-lca/database-engine';
+    repository: 'tiangong-lca/database-engine' | 'tiangong-lca/database';
     production_main_commit_sha: string;
     production_readback_evidence_sha256: string;
     status: 'released_and_read_back';
   };
   cli: {
-    repository: 'tiangong-lca/tiangong-cli';
+    repository: 'tiangong-lca/tiangong-cli' | 'tiangong-lca/cli';
     package_name: '@tiangong-lca/cli';
     package_version: string;
     release_commit_sha: string;
@@ -94,6 +95,12 @@ export function parseProtectedToolchainEvidence(
   if (!VERSION.test(packageVersion) || packageVersion !== expected.cliVersion) {
     return invalid('Toolchain evidence does not bind the running published CLI version.');
   }
+  let identity: CliRepositoryIdentity;
+  try {
+    identity = cliRepositoryIdentity(packageVersion);
+  } catch {
+    return invalid('Toolchain evidence requires a stable canonical published CLI version.');
+  }
   const integrationIssueUrl = token(
     value.workspace.integration_issue_url,
     'workspace.integration_issue_url',
@@ -109,7 +116,7 @@ export function parseProtectedToolchainEvidence(
     database_engine: {
       repository: exact(
         value.database_engine.repository,
-        'tiangong-lca/database-engine',
+        identity.databaseRepository,
         'database_engine.repository',
       ),
       production_main_commit_sha: commit(
@@ -127,7 +134,7 @@ export function parseProtectedToolchainEvidence(
       ),
     },
     cli: {
-      repository: exact(value.cli.repository, 'tiangong-lca/tiangong-cli', 'cli.repository'),
+      repository: exact(value.cli.repository, identity.repository, 'cli.repository'),
       package_name: exact(value.cli.package_name, '@tiangong-lca/cli', 'cli.package_name'),
       package_version: packageVersion,
       release_commit_sha: commit(value.cli.release_commit_sha, 'cli.release_commit_sha'),

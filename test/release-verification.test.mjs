@@ -8,6 +8,8 @@ const {
   PACKAGE_NAME,
   REGISTRY_ORIGIN,
   collectDependencyVersions,
+  certificateString,
+  provenanceVerificationOptions,
   packagePurl,
   parseArgs,
   parseSha512Integrity,
@@ -81,6 +83,14 @@ function attestations(overrides = {}) {
   };
   const provenancePredicate = {
     buildDefinition: {
+      buildType: 'https://slsa-framework.github.io/github-actions-buildtypes/workflow/v1',
+      internalParameters: {
+        github: {
+          event_name: 'push',
+          repository_id: '1194220834',
+          repository_owner_id: '199785309',
+        },
+      },
       externalParameters: {
         workflow: {
           ref: tagRef,
@@ -96,6 +106,7 @@ function attestations(overrides = {}) {
       ],
     },
     runDetails: {
+      builder: { id: 'https://github.com/actions/runner/github-hosted' },
       metadata: {
         invocationId: 'https://github.com/tiangong-lca/tiangong-cli/actions/runs/123/attempts/1',
       },
@@ -251,4 +262,147 @@ test('temporary consumer cleanup runs even when private-directory setup fails', 
       options: { recursive: true, force: true },
     },
   ]);
+});
+
+function releaseEvidence(version, repository, ownerId) {
+  const payload = attestations();
+  const item = payload.attestations[1];
+  const signed = JSON.parse(Buffer.from(item.bundle.dsseEnvelope.payload, 'base64'));
+  const ref = `refs/tags/cli-v${version}`;
+  signed.subject[0].name = packagePurl(version);
+  const build = signed.predicate.buildDefinition;
+  build.externalParameters.workflow.repository = `https://github.com/${repository}`;
+  build.externalParameters.workflow.ref = ref;
+  build.internalParameters.github.repository_owner_id = ownerId;
+  build.resolvedDependencies[0].uri = `git+https://github.com/${repository}@${ref}`;
+  signed.predicate.runDetails.metadata.invocationId = `https://github.com/${repository}/actions/runs/123/attempts/1`;
+  item.bundle.dsseEnvelope.payload = Buffer.from(JSON.stringify(signed)).toString('base64');
+  return payload;
+}
+
+function changeStatement(payload, update) {
+  const item = payload.attestations[1];
+  const signed = JSON.parse(Buffer.from(item.bundle.dsseEnvelope.payload, 'base64'));
+  update(signed);
+  item.bundle.dsseEnvelope.payload = Buffer.from(JSON.stringify(signed)).toString('base64');
+  return payload;
+}
+
+test('future release evidence has one current repository/owner tuple and no legacy fallback', async () => {
+  const future = { version: '0.1.15', expectedGitHead: COMMIT };
+  const current = () => releaseEvidence(future.version, 'tiangong-lca/cli', '327771381');
+  assert.match(
+    (await validateAttestations(current(), future, SHA512_HEX, async () => {})).invocationId,
+    /tiangong-lca\/cli\//,
+  );
+  await assert.rejects(() =>
+    validateAttestations(
+      releaseEvidence(future.version, 'tiangong-lca/tiangong-cli', '199785309'),
+      future,
+      SHA512_HEX,
+      async () => {},
+    ),
+  );
+  await assert.rejects(() =>
+    validateAttestations(
+      releaseEvidence(VERSION, 'tiangong-lca/cli', '327771381'),
+      options(),
+      SHA512_HEX,
+      async () => {},
+    ),
+  );
+  for (const modify of [
+    (s) => {
+      s.predicate.buildDefinition.internalParameters.github.repository_id = '999';
+    },
+    (s) => {
+      s.predicate.buildDefinition.internalParameters.github.repository_owner_id = '199785309';
+    },
+    (s) => {
+      s.predicate.buildDefinition.externalParameters.workflow.ref = 'refs/heads/main';
+    },
+    (s) => {
+      s.predicate.buildDefinition.resolvedDependencies[0].uri =
+        'git+https://github.com/tiangong-lca/tiangong-cli@refs/tags/cli-v0.1.15';
+    },
+    (s) => {
+      s.predicate.buildDefinition.resolvedDependencies[0].digest.gitCommit = 'b'.repeat(40);
+    },
+    (s) => {
+      s.predicate.buildDefinition.resolvedDependencies.push(
+        s.predicate.buildDefinition.resolvedDependencies[0],
+      );
+    },
+    (s) => {
+      s.predicate.buildDefinition.internalParameters.github.event_name = 'pull_request';
+    },
+    (s) => {
+      s.predicate.runDetails.builder.id = 'https://example.org/runner';
+    },
+    (s) => {
+      s.predicate.runDetails.metadata.invocationId += '/unbound';
+    },
+    (s) => {
+      s.subject.push(s.subject[0]);
+    },
+  ]) {
+    await assert.rejects(() =>
+      validateAttestations(changeStatement(current(), modify), future, SHA512_HEX, async () => {}),
+    );
+  }
+  const duplicate = current();
+  duplicate.attestations.push(duplicate.attestations[1]);
+  await assert.rejects(
+    () => validateAttestations(duplicate, future, SHA512_HEX, async () => {}),
+    /unambiguous/,
+  );
+});
+
+test('certificate policy binds numeric identity, exact source and hosted signer without disabling transparency', async () => {
+  for (const [version, repository, owner] of [
+    ['0.1.14', 'tiangong-lca/tiangong-cli', '199785309'],
+    ['0.1.15', 'tiangong-lca/cli', '327771381'],
+  ]) {
+    const evidence = releaseEvidence(version, repository, owner);
+    const policy = await provenanceVerificationOptions(evidence.attestations[1].bundle, {
+      version,
+      expectedGitHead: COMMIT,
+    });
+    assert.equal(policy.certificateIssuer, 'https://token.actions.githubusercontent.com');
+    assert.equal(policy.ctLogThreshold, 1);
+    assert.equal(policy.tlogThreshold, 1);
+    assert.ok(
+      new RegExp(policy.certificateIdentityURI).test(
+        `https://github.com/${repository}/.github/workflows/publish.yml@refs/tags/cli-v${version}`,
+      ),
+    );
+    assert.equal(
+      Buffer.from(policy.certificateOIDs['1.3.6.1.4.1.57264.1.15']).toString('hex'),
+      '0c0a31313934323230383334',
+    );
+    assert.equal(policy.certificateOIDs['1.3.6.1.4.1.57264.1.17'], certificateString(owner));
+    assert.equal(policy.certificateOIDs['1.3.6.1.4.1.57264.1.13'], certificateString(COMMIT));
+    assert.equal(
+      policy.certificateOIDs['1.3.6.1.4.1.57264.1.14'],
+      certificateString(`refs/tags/cli-v${version}`),
+    );
+    assert.equal(
+      policy.certificateOIDs['1.3.6.1.4.1.57264.1.11'],
+      certificateString('github-hosted'),
+    );
+  }
+  assert.throws(() => certificateString('x'.repeat(128)));
+  assert.throws(() => certificateString('\n'));
+});
+
+test('verification owns input snapshots across asynchronous crypto validation', async () => {
+  const payload = attestations();
+  const intent = options();
+  const result = await validateAttestations(payload, intent, SHA512_HEX, async () => {
+    intent.version = '9.9.9';
+    changeStatement(payload, (s) => {
+      s.predicate.buildDefinition.internalParameters.github.repository_owner_id = '999';
+    });
+  });
+  assert.match(result.invocationId, /tiangong-lca\/tiangong-cli\/actions/);
 });

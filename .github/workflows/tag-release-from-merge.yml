@@ -10,7 +10,8 @@ permissions:
 
 jobs:
   release-context:
-    if: github.repository == 'tiangong-lca/tiangong-cli'
+    if: >-
+      github.repository == 'tiangong-lca/cli' && github.repository_id == '1194220834' && github.repository_owner_id == '327771381'
     runs-on: ubuntu-latest
     outputs:
       cli_changed: ${{ steps.release.outputs.cli_changed }}
@@ -50,7 +51,7 @@ jobs:
       - release-context
       - quality-gate
     if: >-
-      github.repository == 'tiangong-lca/tiangong-cli' && needs.release-context.outputs.cli_changed == 'true' && needs.quality-gate.result == 'success'
+      github.repository == 'tiangong-lca/cli' && github.repository_id == '1194220834' && github.repository_owner_id == '327771381' && needs.release-context.outputs.cli_changed == 'true' && needs.quality-gate.result == 'success'
 
 
     runs-on: ubuntu-latest
@@ -106,6 +107,11 @@ jobs:
         run: |
           node ./scripts/ci/release-version.cjs assert-unpublished \
             --version "$CLI_VERSION"
+
+      - name: Enforce publication floor
+        env:
+          CLI_VERSION: ${{ needs.release-context.outputs.cli_version }}
+        run: node ./scripts/ci/check-publication-floor.cjs "$CLI_VERSION"
 
       - name: Create release tag
         env:

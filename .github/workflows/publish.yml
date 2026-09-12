@@ -46,68 +46,15 @@ jobs:
         id: release
         env:
           REQUESTED_TAG_NAME: ${{ github.event.inputs.tag_name || '' }}
-        run: |
-          set -euo pipefail
-
-          if [ "${GITHUB_REPOSITORY}" != "tiangong-lca/tiangong-cli" ]; then
-            echo "should_release=false" >> "$GITHUB_OUTPUT"
-            echo "::notice::Skipping release outside canonical repository: ${GITHUB_REPOSITORY}."
-            exit 0
-          fi
-
-          read_package_version() {
-            git show "${1}:package.json" | node -e "const fs = require('fs'); const pkg = JSON.parse(fs.readFileSync(0, 'utf8')); console.log(pkg.version);"
-          }
-
-          if [ "${GITHUB_EVENT_NAME}" = "workflow_dispatch" ]; then
-            tag_name="${REQUESTED_TAG_NAME}"
-            if [ -z "${tag_name}" ] || [[ "${tag_name}" != cli-v* ]]; then
-              echo "::error::workflow_dispatch tag_name must be an existing cli-v* tag."
-              exit 1
-            fi
-          else
-            tag_name="${GITHUB_REF_NAME}"
-          fi
-
-          if ! release_head="$(git rev-list -n 1 "${tag_name}" 2>/dev/null)"; then
-            echo "::error::Release tag ${tag_name} does not exist."
-            exit 1
-          fi
-
-          if ! git cat-file -e "${release_head}:pnpm-lock.yaml" 2>/dev/null; then
-            echo "::error::Release tag ${tag_name} predates the pnpm release contract and cannot be replayed by this workflow."
-            exit 1
-          fi
-
-          package_version="$(read_package_version "${release_head}")"
-          expected_tag="cli-v${package_version}"
-          if [ "${tag_name}" != "${expected_tag}" ]; then
-            echo "::error::Release tag ${tag_name} does not match package.json version ${package_version} at ${release_head}."
-            exit 1
-          fi
-
-          if ! git merge-base --is-ancestor "${release_head}" origin/main; then
-            echo "should_release=false" >> "$GITHUB_OUTPUT"
-            echo "tag_name=${tag_name}" >> "$GITHUB_OUTPUT"
-            echo "release_head=${release_head}" >> "$GITHUB_OUTPUT"
-            echo "::notice::Release target ${tag_name} points to ${release_head}, which is not on origin/main. Skipping npm publish."
-            exit 0
-          fi
-
-          release_base="$(git rev-parse "${release_head}^")"
-
-          echo "release_base=${release_base}" >> "$GITHUB_OUTPUT"
-          echo "release_head=${release_head}" >> "$GITHUB_OUTPUT"
-          echo "should_release=true" >> "$GITHUB_OUTPUT"
-          echo "tag_name=${tag_name}" >> "$GITHUB_OUTPUT"
-
-          {
-            echo "### Release context"
-            echo "- tag: \`${tag_name}\`"
-            echo "- head: \`${release_head}\`"
-            echo "- base: \`${release_base}\`"
-            echo "- package version: \`${package_version}\`"
-          } >> "$GITHUB_STEP_SUMMARY"
+          EXPECTED_REPOSITORY: tiangong-lca/cli
+          EXPECTED_REPOSITORY_ID: '1194220834'
+          EXPECTED_REPOSITORY_OWNER_ID: '327771381'
+          EVENT_REPOSITORY: ${{ github.repository }}
+          EVENT_REPOSITORY_ID: ${{ github.repository_id }}
+          EVENT_REPOSITORY_OWNER_ID: ${{ github.repository_owner_id }}
+          EVENT_COMMIT_SHA: ${{ github.sha }}
+          EVENT_WORKFLOW_SHA: ${{ github.workflow_sha }}
+        run: bash scripts/ci/release-context.sh
 
   release-gate:
     name: Release Gate

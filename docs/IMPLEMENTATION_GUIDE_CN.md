@@ -21,9 +21,9 @@ checkPaths:
   - .oxlintrc.json
   - src/**
   - test/**
-lastReviewedAt: 2026-09-11
-lastReviewedCommit: 79a61f933c5c3e241eca03116fbb7088a273e8ce
-lastReviewedNote: 'Reviewed for CLI #310: version-only 0.1.14 releases merged #286 dimensional QA and #289 exact-reference evidence from main 79a61f9. Frozen dependencies, auth, #304 guidance, source contracts and upstream qualification/publication gates remain unchanged.'
+lastReviewedAt: 2026-09-13
+lastReviewedCommit: bcc5dbee5b909dbb912e09d99ca07e858d3d7cec
+lastReviewedNote: 'Reviewed for CLI #312: version-bound historical/current repository and owner identity, certificate OIDs, exact event/workflow/tag SHA guards, publication floor and protected-toolchain label compatibility preserve immutable releases, OAuth and all execution/integration gates.'
 related:
   - ../AGENTS.md
   - ../.docpact/config.yaml
@@ -372,6 +372,8 @@ tiangong-lca
 - 这样做的目的不是“假装已完成”，而是先固定命令树，再逐个把 workflow 迁入 TypeScript CLI
 
 ### 2.1.1 `dataset maintenance plan/apply/freeze-protected/seal-protected-approval/run-protected/verify` v1 契约
+
+CLI #312 的仓库身份迁移保留 `dataset-alias-protected-toolchain-evidence.v1` 及历史封存字节。证据仍须绑定运行中的已发布 CLI 版本、production project、精确 commit、摘要及 workspace integration。`<=0.1.14` 的历史版本继续要求 `tiangong-lca/tiangong-cli` 与 `tiangong-lca/database-engine`；未来版本要求 `tiangong-lca/cli` 与 `tiangong-lca/database`，拒绝跨版本混搭。该名称分类不授予 production 写入、重放或新的批准权限。
 
 公开命令面固定为：
 

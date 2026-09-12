@@ -435,7 +435,11 @@ test('workflows use the reviewed Node 24 pnpm setup, frozen installs, and truste
   }
 
   const publishWorkflow = readFileSync(join(workflowRoot, 'publish.yml'), 'utf8');
-  assert.match(publishWorkflow, /predates the pnpm release contract/u);
+  assert.match(publishWorkflow, /run: bash scripts\/ci\/release-context\.sh/u);
+  assert.match(
+    readFileSync(join(REPOSITORY_ROOT, 'scripts', 'ci', 'release-context.sh'), 'utf8'),
+    /predates the pnpm release contract/u,
+  );
   assert.match(
     publishWorkflow,
     /run:\s+pnpm --filter @tiangong-lca\/cli --fail-if-no-match publish --access public --provenance --no-git-checks\s*$/mu,
@@ -488,7 +492,7 @@ test('release tags are blocked by the reusable four-platform gate and have execu
   );
   assert.match(
     releaseRunbook,
-    /scripts\/workspace-ops task finish tiangong-lca\/tiangong-cli#<cli-issue-number>[\s\S]*?follow the exact `Next` command[\s\S]*?short-lived continuation[\s\S]*?scripts\/workspace-ops task finish tiangong-lca\/workspace#<integration-issue-number>/u,
+    /scripts\/workspace-ops task finish tiangong-lca\/cli#<cli-issue-number>[\s\S]*?follow the exact `Next` command[\s\S]*?short-lived continuation[\s\S]*?scripts\/workspace-ops task finish tiangong-lca\/workspace#<integration-issue-number>/u,
   );
   assert.doesNotMatch(releaseRunbook, /scripts\/workspace-ops task create --repo workspace/u);
   assert.doesNotMatch(releaseRunbook, /lca-workspace-delivery-workflow|workflow_ops\.py/u);
