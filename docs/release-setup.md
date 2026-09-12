@@ -24,9 +24,9 @@ checkPaths:
   - scripts/docpact
   - scripts/docpact-gate.sh
   - scripts/install-git-hooks.sh
-lastReviewedAt: 2026-09-11
-lastReviewedCommit: 79a61f933c5c3e241eca03116fbb7088a273e8ce
-lastReviewedNote: 'Reviewed for CLI #310: version-only 0.1.14 releases merged #286 dimensional QA and #289 exact-reference evidence from main 79a61f9. Frozen dependencies, auth, #304 guidance, source contracts and upstream qualification/publication gates remain unchanged.'
+lastReviewedAt: 2026-09-13
+lastReviewedCommit: bcc5dbee5b909dbb912e09d99ca07e858d3d7cec
+lastReviewedNote: 'Reviewed for CLI #312: version-bound historical/current repository and owner identity, certificate OIDs, exact event/workflow/tag SHA guards, publication floor and protected-toolchain label compatibility preserve immutable releases, OAuth and all execution/integration gates.'
 related:
   - ../AGENTS.md
   - ../.docpact/config.yaml
@@ -145,11 +145,11 @@ Important constraint:
 
 Required secret:
 
-- in `tiangong-lca/tiangong-cli`: `TIANGONG_CLI_RELEASE_AUTOMATION_TOKEN`
+- in `tiangong-lca/cli`: `TIANGONG_CLI_RELEASE_AUTOMATION_TOKEN`
 
 The current workflows expect a token that can:
 
-- create tag refs in `tiangong-lca/tiangong-cli`
+- create tag refs in `tiangong-lca/cli`
 - read repository contents needed by the release automation
 
 ## GitHub Repository
@@ -183,8 +183,10 @@ Do not rename that workflow file without updating the npm Trusted Publisher conf
 Configure Trusted Publishing for `@tiangong-lca/cli` on npm with:
 
 - organization or user: `tiangong-lca`
-- repository: `tiangong-cli`
+- repository: `cli`
 - workflow filename: `publish.yml`
+
+Migration note, 2026-09-13 (CLI #312): update the npm Trusted Publisher repository value to `cli` in the same tracked step as the next release. Versions published through 0.1.14 were released under the `tiangong-cli` Trusted Publisher configuration and stay valid as historical artifacts; the npm-side change is not applied retroactively by this source migration.
 
 The publish job expects tags named `cli-vX.Y.Z`.
 

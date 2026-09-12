@@ -6,11 +6,16 @@ const { chmodSync, mkdtempSync, readFileSync, rmSync, writeFileSync } = require(
 const { tmpdir } = require('node:os');
 const path = require('node:path');
 const { verify: verifySigstore } = require('sigstore');
+// Load the shared source policy as ESM; synchronous require under TS loaders
+// creates an additional CommonJS wrapper and a different module instance.
+async function repositoryIdentity(version) {
+  const { cliRepositoryIdentity } = await import('../../src/lib/cli-repository-identity.ts');
+  return cliRepositoryIdentity(version);
+}
 
 const PACKAGE_NAME = '@tiangong-lca/cli';
 const PACKAGE_MANAGER = 'pnpm@11.24.0';
 const REGISTRY_ORIGIN = 'https://registry.npmjs.org';
-const REPOSITORY_URL = 'https://github.com/tiangong-lca/tiangong-cli';
 const PUBLISH_WORKFLOW_PATH = '.github/workflows/publish.yml';
 const SLSA_PROVENANCE_PREDICATE = 'https://slsa.dev/provenance/v1';
 const GITHUB_OIDC_ISSUER = 'https://token.actions.githubusercontent.com';
@@ -187,8 +192,13 @@ function decodeStatement(attestation, expectedPredicateType) {
 
 function assertSubject(statement, options, expectedTarballSha512) {
   const subjects = Array.isArray(statement.subject) ? statement.subject : [];
-  const subject = subjects.find((candidate) => candidate?.name === packagePurl(options.version));
-  if (!subject || subject.digest?.sha512 !== expectedTarballSha512) {
+  const subject = subjects[0];
+  if (
+    subjects.length !== 1 ||
+    subject?.name !== packagePurl(options.version) ||
+    !/^[0-9a-f]{128}$/u.test(expectedTarballSha512) ||
+    subject.digest?.sha512 !== expectedTarballSha512
+  ) {
     throw new Error('attestation subject does not bind the expected package tarball sha512');
   }
 }
@@ -197,16 +207,49 @@ function escapeRegExp(value) {
   return value.replace(/[.*+?^${}()|[\]\\]/gu, '\\$&');
 }
 
-async function verifyProvenanceBundle(bundle, options) {
-  const expectedIdentity = `${REPOSITORY_URL}/${PUBLISH_WORKFLOW_PATH}@refs/tags/cli-v${options.version}`;
-  return verifySigstore(bundle, {
+// Fulcio's modern extensions contain DER UTF8String values. These policy
+// values are bounded ASCII IDs/refs/SHAs, so the short-form length is exact.
+function certificateString(value) {
+  const bytes = Buffer.from(value, 'utf8');
+  if (bytes.length >= 128 || !/^[\x20-\x7e]+$/u.test(value)) {
+    throw new Error('certificate policy value is outside the bounded ASCII contract');
+  }
+  return String.fromCharCode(0x0c, bytes.length) + value;
+}
+
+async function provenanceVerificationOptions(bundle, options) {
+  const source = await repositoryIdentity(options.version);
+  const repositoryUrl = `https://github.com/${source.repository}`;
+  const tagRef = `refs/tags/cli-v${options.version}`;
+  const expectedIdentity = `${repositoryUrl}/${PUBLISH_WORKFLOW_PATH}@${tagRef}`;
+  const decoded = decodeStatement({ bundle }, SLSA_PROVENANCE_PREDICATE);
+  const event = decoded.predicate?.buildDefinition?.internalParameters?.github?.event_name;
+  if (!['push', 'workflow_dispatch'].includes(event)) {
+    throw new Error('SLSA provenance has an unsupported publication event');
+  }
+  // Reading this allowlisted event is only policy selection. Sigstore must
+  // prove that the certificate carries that same event before it is trusted.
+  return {
     certificateIssuer: GITHUB_OIDC_ISSUER,
     certificateIdentityURI: `^${escapeRegExp(expectedIdentity)}$`,
+    certificateOIDs: {
+      '1.3.6.1.4.1.57264.1.11': certificateString('github-hosted'),
+      '1.3.6.1.4.1.57264.1.12': certificateString(repositoryUrl),
+      '1.3.6.1.4.1.57264.1.13': certificateString(options.expectedGitHead),
+      '1.3.6.1.4.1.57264.1.14': certificateString(tagRef),
+      '1.3.6.1.4.1.57264.1.15': certificateString(source.repositoryId),
+      '1.3.6.1.4.1.57264.1.17': certificateString(source.ownerId),
+      '1.3.6.1.4.1.57264.1.20': certificateString(event),
+    },
     ctLogThreshold: 1,
     tlogThreshold: 1,
     timeout: 30_000,
     retry: 2,
-  });
+  };
+}
+
+async function verifyProvenanceBundle(bundle, options) {
+  return verifySigstore(bundle, await provenanceVerificationOptions(bundle, options));
 }
 
 async function validateAttestations(
@@ -215,18 +258,26 @@ async function validateAttestations(
   expectedTarballSha512,
   verifyBundle = verifyProvenanceBundle,
 ) {
+  options = Object.freeze({ version: options.version, expectedGitHead: options.expectedGitHead });
   const root = requireRecord(payload, 'registry attestation response');
   const attestations = Array.isArray(root.attestations) ? root.attestations : [];
-  const provenanceAttestation = attestations.find(
+  const provenances = attestations.filter(
     (candidate) => candidate?.predicateType === SLSA_PROVENANCE_PREDICATE,
   );
-  if (!provenanceAttestation) {
-    throw new Error('registry attestations must include SLSA provenance v1');
+  if (provenances.length !== 1) {
+    throw new Error('registry attestations must include one unambiguous SLSA provenance v1');
   }
-
-  const provenanceBundle = requireRecord(provenanceAttestation.bundle, 'SLSA provenance bundle');
+  // Own the payload snapshot across asynchronous signature verification.
+  const provenanceBundle = JSON.parse(
+    JSON.stringify(requireRecord(provenances[0].bundle, 'SLSA provenance bundle')),
+  );
+  const provenanceStatement = decodeStatement(
+    { bundle: provenanceBundle },
+    SLSA_PROVENANCE_PREDICATE,
+  );
+  const source = await repositoryIdentity(options.version);
+  const repositoryUrl = `https://github.com/${source.repository}`;
   await verifyBundle(provenanceBundle, options);
-  const provenanceStatement = decodeStatement(provenanceAttestation, SLSA_PROVENANCE_PREDICATE);
   assertSubject(provenanceStatement, options, expectedTarballSha512);
   const predicate = requireRecord(provenanceStatement.predicate, 'SLSA provenance predicate');
   const buildDefinition = requireRecord(
@@ -237,21 +288,41 @@ async function validateAttestations(
   const expectedTagRef = `refs/tags/cli-v${options.version}`;
   if (
     workflow?.ref !== expectedTagRef ||
-    workflow?.repository !== REPOSITORY_URL ||
+    workflow?.repository !== repositoryUrl ||
     workflow?.path !== PUBLISH_WORKFLOW_PATH
   ) {
     throw new Error('SLSA provenance does not bind the canonical tag publish workflow');
   }
-  const dependency = (buildDefinition.resolvedDependencies ?? []).find(
-    (candidate) => candidate?.uri === `git+${REPOSITORY_URL}@${expectedTagRef}`,
+  const github = requireRecord(
+    buildDefinition.internalParameters?.github,
+    'SLSA GitHub parameters',
   );
-  if (dependency?.digest?.gitCommit !== options.expectedGitHead) {
+  if (
+    buildDefinition.buildType !==
+      'https://slsa-framework.github.io/github-actions-buildtypes/workflow/v1' ||
+    github.repository_id !== source.repositoryId ||
+    github.repository_owner_id !== source.ownerId ||
+    !['push', 'workflow_dispatch'].includes(github.event_name) ||
+    predicate.runDetails?.builder?.id !== 'https://github.com/actions/runner/github-hosted'
+  ) {
+    throw new Error('SLSA provenance repository/owner/event/builder identity mismatch');
+  }
+  const dependencies = buildDefinition.resolvedDependencies;
+  const dependency =
+    Array.isArray(dependencies) && dependencies.length === 1 ? dependencies[0] : null;
+  if (
+    dependency?.uri !== `git+${repositoryUrl}@${expectedTagRef}` ||
+    dependency?.digest?.gitCommit !== options.expectedGitHead
+  ) {
     throw new Error('SLSA provenance gitCommit does not match the expected release commit');
   }
   const invocationId = predicate.runDetails?.metadata?.invocationId;
   if (
     typeof invocationId !== 'string' ||
-    !invocationId.startsWith(`${REPOSITORY_URL}/actions/runs/`)
+    !new RegExp(
+      `^${escapeRegExp(repositoryUrl)}/actions/runs/[1-9]\\d*/attempts/[1-9]\\d*$`,
+      'u',
+    ).test(invocationId)
   ) {
     throw new Error('SLSA provenance invocation is not a canonical GitHub Actions run');
   }
@@ -590,6 +661,7 @@ async function fetchJson(url, maxBytes, label, fetchImpl = fetch) {
 }
 
 async function verifyPublishedRelease(options, dependencies = {}) {
+  await repositoryIdentity(options.version);
   const fetchImpl = dependencies.fetchImpl ?? fetch;
   const metadataUrl = `${REGISTRY_ORIGIN}/${encodeURIComponent(PACKAGE_NAME)}/${options.version}`;
   const metadata = await fetchJson(
@@ -654,6 +726,8 @@ module.exports = {
   PACKAGE_NAME,
   REGISTRY_ORIGIN,
   collectDependencyVersions,
+  certificateString,
+  provenanceVerificationOptions,
   packagePurl,
   parseArgs,
   parseSha512Integrity,

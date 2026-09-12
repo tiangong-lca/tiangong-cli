@@ -25,9 +25,9 @@ checkPaths:
   - scripts/docpact
   - scripts/docpact-gate.sh
   - scripts/install-git-hooks.sh
-lastReviewedAt: 2026-09-11
-lastReviewedCommit: 79a61f933c5c3e241eca03116fbb7088a273e8ce
-lastReviewedNote: 'Reviewed for CLI #310: version-only 0.1.14 releases merged #286 dimensional QA and #289 exact-reference evidence from main 79a61f9. Frozen dependencies, auth, #304 guidance, source contracts and upstream qualification/publication gates remain unchanged.'
+lastReviewedAt: 2026-09-13
+lastReviewedCommit: bcc5dbee5b909dbb912e09d99ca07e858d3d7cec
+lastReviewedNote: 'Reviewed for CLI #312: version-bound historical/current repository and owner identity, certificate OIDs, exact event/workflow/tag SHA guards, publication floor and protected-toolchain label compatibility preserve immutable releases, OAuth and all execution/integration gates.'
 related:
   - ../AGENTS.md
   - ../.docpact/config.yaml
@@ -203,8 +203,8 @@ The merge to `main` should trigger:
 Check:
 
 ```bash
-gh run list --repo tiangong-lca/tiangong-cli --workflow "Tag Release From Merge" --limit 3
-gh api repos/tiangong-lca/tiangong-cli/git/ref/tags/cli-v<x.y.z>
+gh run list --repo tiangong-lca/cli --workflow "Tag Release From Merge" --limit 3
+gh api repos/tiangong-lca/cli/git/ref/tags/cli-v<x.y.z>
 ```
 
 Expected result:
@@ -225,21 +225,21 @@ The release tag should trigger:
 Check:
 
 ```bash
-gh run list --repo tiangong-lca/tiangong-cli --workflow "Publish Package" --limit 3
-gh run watch <publish-run-id> --repo tiangong-lca/tiangong-cli
+gh run list --repo tiangong-lca/cli --workflow "Publish Package" --limit 3
+gh run watch <publish-run-id> --repo tiangong-lca/cli
 ```
 
 Expected result:
 
 - `Publish Package` finishes successfully
 
-If a pnpm-era tag exists but the publish workflow needs to be re-run with the current workflow definition, use the manual dispatch input:
+If a pnpm-era tag exists but the publish workflow needs to be re-run with the current workflow definition, dispatch at the exact release tag ref (CLI #312):
 
 ```bash
-gh workflow run publish.yml --repo tiangong-lca/tiangong-cli --field tag_name=cli-v<x.y.z>
+gh workflow run publish.yml --repo tiangong-lca/cli --ref cli-v<x.y.z> --field tag_name=cli-v<x.y.z>
 ```
 
-Manual replay supports only tags whose tagged commit contains the root `pnpm-lock.yaml`. A pre-pnpm `cli-v*` tag is rejected before install/build/publish; the workflow intentionally has no npm fallback. Recover a historical release from its original immutable workflow evidence instead of replaying it through the current pnpm workflow.
+Manual replay supports only tags whose tagged commit contains the root `pnpm-lock.yaml`. The release-context guard requires the dispatch to run at `refs/tags/<requested cli-v tag>` with `GITHUB_SHA` and the workflow SHA equal to the resolved release head, so a dispatch from `main` fails before install/build/publish and cannot publish provenance the strict verifier would reject. A pre-pnpm `cli-v*` tag is rejected before install/build/publish; the workflow intentionally has no npm fallback. Recover a historical release from its original immutable workflow evidence instead of replaying it through the current pnpm workflow.
 
 ### 3. npm registry
 
@@ -275,7 +275,7 @@ If the workspace tracks the CLI submodule, bump the workspace pointer only after
 From the workspace root, first run the child completion preflight:
 
 ```bash
-scripts/workspace-ops task finish tiangong-lca/tiangong-cli#<cli-issue-number>
+scripts/workspace-ops task finish tiangong-lca/cli#<cli-issue-number>
 ```
 
 Read the complete result and follow the exact `Next` command. The first finish call is non-mutating; execute only the short-lived continuation it returns. That continuation creates or reuses the required root integration task, completes the child task, and returns the integration task's exact start action. Do not independently create a root task and do not rerun finish on the now-complete child.

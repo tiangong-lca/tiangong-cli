@@ -118,3 +118,42 @@ test('protected toolchain token and version validation fail closed', () => {
   (malformedVersion.cli as Record<string, unknown>).package_version = 'latest';
   assert.throws(() => parse(malformedVersion), /running published CLI version/u);
 });
+
+test('historical toolchain values stay byte-stable while future versions require current names', () => {
+  const historical = fixture();
+  const original = JSON.stringify(historical);
+  assert.equal(JSON.stringify(parse(historical)), original);
+  assert.equal(JSON.stringify(historical), original);
+
+  const future = fixture();
+  const cli = future.cli as Record<string, unknown>;
+  const database = future.database_engine as Record<string, unknown>;
+  cli.package_version = '0.1.15';
+  cli.repository = 'tiangong-lca/cli';
+  database.repository = 'tiangong-lca/database';
+  const current = () =>
+    parseProtectedToolchainEvidence(future, { projectRef: 'production-ref', cliVersion: '0.1.15' });
+  assert.equal(current().cli.repository, 'tiangong-lca/cli');
+  cli.repository = 'tiangong-lca/tiangong-cli';
+  assert.throws(current, /cli.repository/u);
+  cli.repository = 'tiangong-lca/cli';
+  database.repository = 'tiangong-lca/database-engine';
+  assert.throws(current, /database_engine.repository/u);
+
+  const mixedHistorical = fixture();
+  (mixedHistorical.cli as Record<string, unknown>).repository = 'tiangong-lca/cli';
+  assert.throws(() => parse(mixedHistorical), /cli.repository/u);
+});
+
+test('protected published toolchain refuses noncanonical release versions', () => {
+  const value = fixture();
+  (value.cli as Record<string, unknown>).package_version = '0.1.15-beta';
+  assert.throws(
+    () =>
+      parseProtectedToolchainEvidence(value, {
+        projectRef: 'production-ref',
+        cliVersion: '0.1.15-beta',
+      }),
+    /stable canonical published CLI/u,
+  );
+});

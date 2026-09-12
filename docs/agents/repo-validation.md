@@ -31,9 +31,9 @@ checkPaths:
   - scripts/docpact
   - scripts/docpact-gate.sh
   - scripts/install-git-hooks.sh
-lastReviewedAt: 2026-09-11
-lastReviewedCommit: 79a61f933c5c3e241eca03116fbb7088a273e8ce
-lastReviewedNote: 'Reviewed for CLI #310: version-only 0.1.14 releases merged #286 dimensional QA and #289 exact-reference evidence from main 79a61f9. Frozen dependencies, auth, #304 guidance, source contracts and upstream qualification/publication gates remain unchanged.'
+lastReviewedAt: 2026-09-13
+lastReviewedCommit: bcc5dbee5b909dbb912e09d99ca07e858d3d7cec
+lastReviewedNote: 'Reviewed for CLI #312: version-bound historical/current repository and owner identity, certificate OIDs, exact event/workflow/tag SHA guards, publication floor and protected-toolchain label compatibility preserve immutable releases, OAuth and all execution/integration gates.'
 related:
   - ../../AGENTS.md
   - ../../.docpact/config.yaml
@@ -255,3 +255,16 @@ Install the versioned local hook once per checkout:
 ```
 
 The `pre-push` hook runs `scripts/docpact-gate.sh`, which delegates CLI lookup to `scripts/docpact` and performs strict config validation plus enforced lint before the push leaves the machine. It then runs `pnpm prepush:gate` as the local test gate, including `pnpm test:package` and exact 100% source coverage. The wrapper checks `DOCPACT_BIN`, Cargo install locations, Homebrew install locations, and then `PATH`, so local agent shells should not fail only because bare `docpact` is unavailable. The default comparison base is `origin/main`. Override it for unusual stacks with `DOCPACT_BASE_REF=<ref>` or `scripts/docpact-gate.sh --base <ref>`. The gate writes its detailed report to a temporary file so normal pushes do not create `.docpact/runs/` artifacts.
+
+## Version-bound source profile (CLI #312)
+
+Each published CLI version maps to exactly one source identity; no version may choose freely between identities:
+
+- `<= 0.1.14` (legacy): repository `tiangong-lca/tiangong-cli`, repository id `1194220834`, owner id `199785309`, tag ref `refs/tags/cli-v<version>`.
+- `future versions` (current): repository `tiangong-lca/cli`, repository id `1194220834`, owner id `327771381`, tag ref `refs/tags/cli-v<version>`.
+
+The repository id is the continuity anchor across the migration (identical on both sides); the owner id differs and the legacy owner id stays bound only to historical evidence. Mixed fields across the two profiles are rejected. `scripts/ci/release-context.sh` enforces the current profile (name, numeric repository/owner ids, tag-ref dispatch binding) and is executed against real git fixtures by `test/workflow-release-context.test.mjs`; the verifier enforces the same profile through certificate OIDs, exact SAN/issuer, signed workflow/source/event/builder fields, one tarball subject and one resolved dependency. CT and Rekor remain mandatory.
+
+Publication floor: new-identity publication (tag creation and release) requires a version above the frozen legacy ceiling `CLI_LEGACY_LAST_VERSION` (0.1.14), as classified by the shared `src/lib/cli-repository-identity.ts` helper via `scripts/ci/check-publication-floor.cjs`. The publish release-context guard rejects legacy-ceiling versions for both tag pushes and exact-tag dispatch, and the tag-creation automation enforces the same floor before creating `cli-v*` refs, so an unused lower/backport version can never be published under the current identity and become unverifiable. This rule does not select the next release version; unchanged-version main source PRs remain no-release. Historical tags and registry packages stay immutable.
+
+The event SHA and workflow-definition SHA are separate facts (`github.sha` and `github.workflow_sha`). Both tag pushes and exact-tag dispatch must match the resolved release commit; a moved tag or divergent workflow fails before publication. The workflow regression reads the actual YAML-to-shell bindings so one SHA cannot be substituted for the other. The shared source policy is loaded as ESM by the private CommonJS helpers without requiring a build or application runtime imports.

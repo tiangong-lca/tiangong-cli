@@ -30,9 +30,9 @@ checkPaths:
   - scripts/docpact
   - scripts/docpact-gate.sh
   - scripts/install-git-hooks.sh
-lastReviewedAt: 2026-09-11
-lastReviewedCommit: 79a61f933c5c3e241eca03116fbb7088a273e8ce
-lastReviewedNote: 'Reviewed for CLI #310: version-only 0.1.14 releases merged #286 dimensional QA and #289 exact-reference evidence from main 79a61f9. Frozen dependencies, auth, #304 guidance, source contracts and upstream qualification/publication gates remain unchanged.'
+lastReviewedAt: 2026-09-13
+lastReviewedCommit: bcc5dbee5b909dbb912e09d99ca07e858d3d7cec
+lastReviewedNote: 'Reviewed for CLI #312: version-bound historical/current repository and owner identity, certificate OIDs, exact event/workflow/tag SHA guards, publication floor and protected-toolchain label compatibility preserve immutable releases, OAuth and all execution/integration gates.'
 related:
   - ../../AGENTS.md
   - ../../.docpact/config.yaml
