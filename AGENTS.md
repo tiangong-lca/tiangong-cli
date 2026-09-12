@@ -39,7 +39,7 @@ checkPaths:
   - scripts/install-git-hooks.sh
 lastReviewedAt: 2026-09-13
 lastReviewedCommit: bcc5dbee5b909dbb912e09d99ca07e858d3d7cec
-lastReviewedNote: "Reviewed for CLI #312: version-bound historical/current repository and owner identity, certificate OIDs, exact event/workflow/tag SHA guards, publication floor and protected-toolchain label compatibility preserve immutable releases, OAuth and all execution/integration gates."
+lastReviewedNote: 'Reviewed for CLI #312: version-bound historical/current repository and owner identity, certificate OIDs, exact event/workflow/tag SHA guards, publication floor and protected-toolchain label compatibility preserve immutable releases, OAuth and all execution/integration gates.'
 related:
   - .docpact/config.yaml
   - docs/agents/repo-validation.md

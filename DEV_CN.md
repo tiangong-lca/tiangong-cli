@@ -24,7 +24,7 @@ checkPaths:
   - .github/workflows/**
 lastReviewedAt: 2026-09-13
 lastReviewedCommit: bcc5dbee5b909dbb912e09d99ca07e858d3d7cec
-lastReviewedNote: "Reviewed for CLI #312: active source/publisher identity is canonical, historical evidence stays version-bound, and exact OID/ref/SHA and publication-floor checks preserve the existing runtime and execution gates."
+lastReviewedNote: 'Reviewed for CLI #312: active source/publisher identity is canonical, historical evidence stays version-bound, and exact OID/ref/SHA and publication-floor checks preserve the existing runtime and execution gates.'
 related:
   - AGENTS.md
   - .docpact/config.yaml
